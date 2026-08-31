@@ -1,0 +1,64 @@
+:root {
+  color: #d7f5df;
+  background: #09100d;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, select { font: inherit; }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.display-panel { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; }
+.screen-frame {
+  width: min(100%, calc((100vh - 70px) * 4 / 3));
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 12px solid #1d2822;
+  border-radius: 28px;
+  background: #030604;
+  box-shadow: 0 0 0 2px #314238, 0 20px 80px #000, inset 0 0 28px #000;
+}
+.output-canvas { display: block; width: 100%; height: 100%; }
+.display-status, footer, .eyebrow { color: #6b9178; font-size: 11px; letter-spacing: .12em; }
+.error { color: #ff9b9b; }
+
+.settings-panel {
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid #263b2d;
+  border-radius: 12px;
+  background: #101a14;
+}
+.eyebrow { margin: 0 0 8px; color: #7dffae; }
+h1 { margin: 0; font-size: 24px; }
+.subtitle { margin: 8px 0 22px; color: #9db7a5; font-size: 13px; line-height: 1.4; }
+
+fieldset { margin: 18px 0 0; padding: 12px; border: 1px solid #294433; border-radius: 8px; }
+legend { padding: 0 5px; color: #7dffae; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+.resolution-control, .slider-control, .check-control { display: block; color: #b9d7c1; font-size: 13px; }
+.resolution-control select { display: block; width: 100%; margin-top: 8px; padding: 8px; border: 1px solid #355840; border-radius: 5px; color: #d7f5df; background: #0b130e; }
+.slider-control { margin: 13px 0; }
+.slider-control span { display: flex; justify-content: space-between; gap: 10px; }
+output { color: #79d897; font-variant-numeric: tabular-nums; }
+input[type='range'] { width: 100%; accent-color: #65d58a; }
+.check-control { margin: 11px 0; }
+.check-control input { margin-right: 8px; accent-color: #65d58a; }
+.reset-button { width: 100%; margin-top: 20px; padding: 10px; border: 1px solid #4a875d; border-radius: 6px; color: #d7f5df; background: #163321; cursor: pointer; }
+.reset-button:hover { background: #204b2d; }
+footer { margin-top: 18px; text-align: center; }
+
+@media (max-width: 850px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .settings-panel { max-height: none; }
+  .screen-frame { width: min(100%, calc((100vw - 36px) * 4 / 3)); }
+}

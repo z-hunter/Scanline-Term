@@ -1,0 +1,16 @@
+[package]
+name = "scanline_term"
+version = "0.1.0"
+description = "Desktop shell for the Scanline Term CRT demo"
+authors = ["Michael Voitovich and contributors"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.1", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
