@@ -1,6 +1,7 @@
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 
 export interface CRTSettings {
+  crtEmulation: boolean;
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
   scanlineIntensity: number; // 0.0 to 1.0
@@ -33,6 +34,7 @@ export class CRTFilter {
   sourceResolutionLocation: WebGLUniformLocation | null;
   antiAliasedPixelsLocation: WebGLUniformLocation | null;
   colorModeLocation: WebGLUniformLocation | null;
+  crtEmulationLocation: WebGLUniformLocation | null;
   imageBrightnessLocation: WebGLUniformLocation | null;
   imageContrastLocation: WebGLUniformLocation | null;
   backgroundDesaturationLocation: WebGLUniformLocation | null;
@@ -105,6 +107,7 @@ export class CRTFilter {
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
       this.colorModeLocation = null;
+      this.crtEmulationLocation = null;
       this.imageBrightnessLocation = null;
       this.imageContrastLocation = null;
       this.backgroundDesaturationLocation = null;
@@ -136,6 +139,7 @@ export class CRTFilter {
     this.breathingScaleLocation = null;
     this.imageLocation = null;
     this.colorModeLocation = null;
+    this.crtEmulationLocation = null;
     this.imageBrightnessLocation = null;
     this.imageContrastLocation = null;
     this.backgroundDesaturationLocation = null;
@@ -219,6 +223,7 @@ export class CRTFilter {
             uniform vec2 u_sourceResolution;
             uniform float u_antiAliasedPixels;
             uniform float u_colorMode;
+            uniform float u_crtEmulation;
             uniform float u_imageBrightness;
             uniform float u_imageContrast;
             uniform float u_backgroundDesaturation;
@@ -292,6 +297,13 @@ export class CRTFilter {
              }
 
              void main() {
+                 if (u_crtEmulation < 0.5) {
+                     vec3 imageColor = texture2D(u_image, v_texCoord).rgb;
+                     imageColor = (imageColor - 0.5) * u_imageContrast + 0.5;
+                     imageColor *= u_imageBrightness;
+                     gl_FragColor = vec4(clamp(imageColor, 0.0, 1.0), 1.0);
+                     return;
+                 }
                  vec2 curvedUV = curve(v_texCoord);
 
                  // Check invalid/bezel area explicitely (Static bezel and glass curvature geometry)
@@ -546,6 +558,7 @@ export class CRTFilter {
     this.sourceResolutionLocation = gl.getUniformLocation(this.program, 'u_sourceResolution');
     this.antiAliasedPixelsLocation = gl.getUniformLocation(this.program, 'u_antiAliasedPixels');
     this.colorModeLocation = gl.getUniformLocation(this.program, 'u_colorMode');
+    this.crtEmulationLocation = gl.getUniformLocation(this.program, 'u_crtEmulation');
     this.imageBrightnessLocation = gl.getUniformLocation(this.program, 'u_imageBrightness');
     this.imageContrastLocation = gl.getUniformLocation(this.program, 'u_imageContrast');
     this.backgroundDesaturationLocation = gl.getUniformLocation(this.program, 'u_backgroundDesaturation');
@@ -711,7 +724,7 @@ export class CRTFilter {
     let activeInputTexture = this.texture;
 
     // 2. Accumulation Pass for Phosphor Persistence (if enabled)
-    const persistence = settings.persistence || 0.0;
+    const persistence = settings.crtEmulation ? settings.persistence || 0.0 : 0.0;
     if (persistence > 0.0 && this.accumProgram) {
       this.ensureFBO(sourceCanvas.width, sourceCanvas.height);
       const targetFBO = this.fboCurrent === 0 ? this.fboA : this.fboB;
@@ -803,6 +816,7 @@ export class CRTFilter {
       const colorMode = { color: 0, bw: 1, green: 2, amber: 3, blue: 4 }[settings.colorMode] ?? 0;
       gl.uniform1f(this.colorModeLocation, colorMode);
     }
+    if (this.crtEmulationLocation) gl.uniform1f(this.crtEmulationLocation, settings.crtEmulation ? 1.0 : 0.0);
     if (this.imageBrightnessLocation) gl.uniform1f(this.imageBrightnessLocation, settings.imageBrightness);
     if (this.imageContrastLocation) gl.uniform1f(this.imageContrastLocation, settings.imageContrast);
     if (this.backgroundDesaturationLocation) {

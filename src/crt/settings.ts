@@ -1,6 +1,7 @@
 import type { CRTColorMode, CRTSettings } from './CRTFilter';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
+  crtEmulation: true,
   curvature: 0.16,
   scanlineCount: 200,
   scanlineIntensity: 0.4,
@@ -87,6 +88,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       }
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
+    if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }

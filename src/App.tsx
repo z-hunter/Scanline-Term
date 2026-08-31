@@ -15,7 +15,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
+type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -459,6 +459,15 @@ export default function App() {
         </fieldset>
         <fieldset>
           <legend>Display</legend>
+          <label className="check-control">
+            <input
+              type="checkbox"
+              checked={stored.crt.crtEmulation}
+              data-testid="control-crtEmulation"
+              onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, crtEmulation: event.target.checked } }))}
+            />
+            CRT Emulation
+          </label>
           <label className="check-control">
             <input
               type="checkbox"

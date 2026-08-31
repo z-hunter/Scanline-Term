@@ -10,6 +10,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
+    expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
   });
 
@@ -36,6 +37,10 @@ describe('CRT settings', () => {
 
   it('accepts a phosphor color mode', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
+  });
+
+  it('preserves the CRT emulation switch', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { crtEmulation: false } })).crt.crtEmulation).toBe(false);
   });
 
   it('sanitizes image-only final controls', () => {
