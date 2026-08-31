@@ -91,7 +91,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
-    if (value.crt.colorProfile === 'zx-spectrum') result.crt.colorProfile = 'retrowave';
+    if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;

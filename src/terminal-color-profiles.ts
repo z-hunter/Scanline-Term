@@ -1,4 +1,4 @@
-export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'retrowave'] as const;
+export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'cyberpunk'] as const;
 
 export type ColorProfileId = (typeof COLOR_PROFILE_IDS)[number];
 
@@ -57,8 +57,8 @@ const profiles: TerminalColorProfile[] = [
     colors: ['#000000', '#be1a24', '#1fd21e', '#dff60a', '#211bae', '#b41ae2', '#30e6c6', '#fdfefc', '#424540', '#fe4a57', '#59fe59', '#b84104', '#5f53fe', '#6a3304', '#70746f', '#a4a7a2'],
   },
   {
-    id: 'retrowave', label: 'Retrowave', foreground: '#ffa600', background: '#220036', cursor: '#f949ff',
-    colors: ['#580051', '#dc322f', '#ff00f2', '#ff5e00', '#743eca', '#d33682', '#2aa198', '#c0c0c0', '#59c2ff', '#ff4d00', '#f949ff', '#c20092', '#00d9ff', '#ff00bf', '#e7ffff', '#fdf6e3'],
+    id: 'cyberpunk', label: 'Cyberpunk', foreground: '#b8b4c4', background: '#080812',
+    colors: ['#080812', '#8A2458', '#187D56', '#8C7C25', '#28187D', '#630D7A', '#3D99CA', '#B8B4C4', '#555064', '#ED4B78', '#51E946', '#FFFE4C', '#5A4ED6', '#DA11C9', '#46FEEC', '#F4F2FF'],
   },
 ];
 

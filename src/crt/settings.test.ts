@@ -41,8 +41,9 @@ describe('CRT settings', () => {
 
   it('accepts a color profile', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'solarized-dark' } })).crt.colorProfile).toBe('solarized-dark');
-    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'retrowave' } })).crt.colorProfile).toBe('retrowave');
-    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'zx-spectrum' } })).crt.colorProfile).toBe('retrowave');
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'cyberpunk' } })).crt.colorProfile).toBe('cyberpunk');
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'retrowave' } })).crt.colorProfile).toBe('cyberpunk');
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'zx-spectrum' } })).crt.colorProfile).toBe('cyberpunk');
   });
 
   it('preserves the CRT emulation switch', () => {
