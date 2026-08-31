@@ -113,7 +113,7 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   if (Math.floor(time * 2) % 2 === 0) {
     const cursorX = padding + cellWidth * buffer.cursorX;
     const cursorY = padding + cellHeight * buffer.cursorY;
-    ctx.fillStyle = profile.foreground;
+    ctx.fillStyle = profile.cursor ?? profile.foreground;
     ctx.fillRect(cursorX, cursorY, Math.max(2, Math.floor(cellWidth * 0.8)), Math.ceil(cellHeight));
   }
 }

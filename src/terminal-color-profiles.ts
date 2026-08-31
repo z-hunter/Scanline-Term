@@ -1,4 +1,4 @@
-export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'zx-spectrum'] as const;
+export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'retrowave'] as const;
 
 export type ColorProfileId = (typeof COLOR_PROFILE_IDS)[number];
 
@@ -7,6 +7,7 @@ export type TerminalColorProfile = {
   label: string;
   foreground: string;
   background: string;
+  cursor?: string;
   colors: string[];
 };
 
@@ -56,8 +57,8 @@ const profiles: TerminalColorProfile[] = [
     colors: ['#000000', '#be1a24', '#1fd21e', '#dff60a', '#211bae', '#b41ae2', '#30e6c6', '#fdfefc', '#424540', '#fe4a57', '#59fe59', '#b84104', '#5f53fe', '#6a3304', '#70746f', '#a4a7a2'],
   },
   {
-    id: 'zx-spectrum', label: 'ZX Spectrum', foreground: '#d7d7d7', background: '#000000',
-    colors: ['#000000', '#d70000', '#00d700', '#d7d700', '#0000d7', '#d700d7', '#00d7d7', '#d7d7d7', '#000000', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff'],
+    id: 'retrowave', label: 'Retrowave', foreground: '#ffa600', background: '#220036', cursor: '#f949ff',
+    colors: ['#580051', '#dc322f', '#ff00f2', '#ff5e00', '#743eca', '#d33682', '#2aa198', '#6a008a', '#59c2ff', '#ff4d00', '#f949ff', '#c20092', '#00d9ff', '#ff00bf', '#e7ffff', '#fdf6e3'],
   },
 ];
 

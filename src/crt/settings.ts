@@ -91,7 +91,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
-    if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
+    if (value.crt.colorProfile === 'zx-spectrum') result.crt.colorProfile = 'retrowave';
+    else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
