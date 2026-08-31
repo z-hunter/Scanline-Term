@@ -12,6 +12,7 @@ export interface CRTSettings {
   vignette: number; // 0.0 to 1.0
   phosphor: number; // 0.0 to 1.0 (Surface noise/lift)
   bezelGlow: boolean; // Optimization toggle
+  showBezel: boolean;
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   glow: number; // 0.0 to 1.0 (Ambient screen glow)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)

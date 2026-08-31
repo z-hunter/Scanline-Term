@@ -11,6 +11,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   vignette: 0.9,
   phosphor: 1,
   bezelGlow: true,
+  showBezel: true,
   bloom: 0.05,
   glow: 0.2,
   persistence: 0,
@@ -90,6 +91,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       }
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
+    if (typeof value.crt.showBezel === 'boolean') result.crt.showBezel = value.crt.showBezel;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
     if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;

@@ -1,6 +1,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
 import { Terminal, type IBufferCell } from '@xterm/xterm';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { CRTFilter, type CRTColorMode, type CRTSettings } from './crt/CRTFilter';
 import {
@@ -16,7 +17,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
+type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -359,10 +360,22 @@ export default function App() {
     sendInput(input);
   };
 
+  useEffect(() => {
+    const onKeyDown = async (event: KeyboardEvent) => {
+      if (event.altKey && event.key === 'Enter' && isTauri()) {
+        event.preventDefault();
+        const window = getCurrentWindow();
+        await window.setFullscreen(!(await window.isFullscreen()));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <main className="app-shell">
       <section className="display-panel" aria-label="CRT display">
-        <div className="screen-frame">
+        <div className={`screen-frame${stored.crt.showBezel ? '' : ' bezel-hidden'}`}>
           <canvas
             ref={outputRef}
             className="output-canvas"
@@ -378,7 +391,6 @@ export default function App() {
             }}
           />
         </div>
-        <p className="display-status">{terminalLive ? 'WINDOWS CMD · click screen to type' : 'MOCK SESSION'} · {resolution.width}×{resolution.height}</p>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
       <aside className="settings-panel">
@@ -479,6 +491,14 @@ export default function App() {
               onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, bezelGlow: event.target.checked } }))}
             />
             Bezel glow
+          </label>
+          <label className="check-control">
+            <input
+              type="checkbox"
+              checked={stored.crt.showBezel}
+              onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, showBezel: event.target.checked } }))}
+            />
+            Monitor frame
           </label>
           <label className="check-control">
             <input

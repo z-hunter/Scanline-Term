@@ -23,10 +23,11 @@ button, input, select { font: inherit; }
   aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 12px solid #1d2822;
-  border-radius: 28px;
+  border-radius: 20px;
   background: #030604;
   box-shadow: 0 0 0 2px #314238, 0 20px 80px #000, inset 0 0 28px #000;
 }
+.screen-frame.bezel-hidden { border: 0; border-radius: 0; box-shadow: none; }
 .output-canvas { display: block; width: 100%; height: 100%; }
 .display-status, footer, .eyebrow { color: #6b9178; font-size: 11px; letter-spacing: .12em; }
 .error { color: #ff9b9b; }
@@ -49,7 +50,9 @@ legend { padding: 0 5px; color: #7dffae; font-size: 12px; letter-spacing: .08em;
 .slider-control { margin: 13px 0; }
 .slider-control span { display: flex; justify-content: space-between; gap: 10px; }
 output { color: #79d897; font-variant-numeric: tabular-nums; }
-input[type='range'] { width: 100%; accent-color: #65d58a; }
+input[type='range'] { width: 100%; height: 42px; accent-color: #65d58a; appearance: none; background: transparent; }
+input[type='range']::-webkit-slider-runnable-track { height: 34px; border: 1px solid #355840; border-radius: 50%; background: #17271c; }
+input[type='range']::-webkit-slider-thumb { width: 30px; height: 30px; margin-top: 1px; appearance: none; border: 2px solid #65d58a; border-radius: 50%; background: #0b130e; }
 .check-control { margin: 11px 0; }
 .check-control input { margin-right: 8px; accent-color: #65d58a; }
 .reset-button { width: 100%; margin-top: 20px; padding: 10px; border: 1px solid #4a875d; border-radius: 6px; color: #d7f5df; background: #163321; cursor: pointer; }
