@@ -1,3 +1,5 @@
+export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
+
 export interface CRTSettings {
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
@@ -9,10 +11,11 @@ export interface CRTSettings {
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   glow: number; // 0.0 to 1.0 (Ambient screen glow)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)
-  persistenceIntensity: number; // 0.0 to 1.0 (Visible phosphor trail intensity)
+  persistenceIntensity: number; // 0.0 to 4.0 (Visible phosphor trail intensity)
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
+  colorMode: CRTColorMode;
 }
 
 export class CRTFilter {
@@ -26,6 +29,7 @@ export class CRTFilter {
   resolutionLocation: WebGLUniformLocation | null;
   sourceResolutionLocation: WebGLUniformLocation | null;
   antiAliasedPixelsLocation: WebGLUniformLocation | null;
+  colorModeLocation: WebGLUniformLocation | null;
   timeLocation: WebGLUniformLocation | null;
   scanlineCountLocation: WebGLUniformLocation | null;
   curvatureLocation: WebGLUniformLocation | null;
@@ -94,6 +98,7 @@ export class CRTFilter {
       this.imageLocation = null;
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
+      this.colorModeLocation = null;
       return;
     }
 
@@ -121,6 +126,7 @@ export class CRTFilter {
     this.beamModulationLocation = null;
     this.breathingScaleLocation = null;
     this.imageLocation = null;
+    this.colorModeLocation = null;
 
     this.init();
   }
@@ -200,6 +206,7 @@ export class CRTFilter {
             uniform float u_breathingScale;
             uniform vec2 u_sourceResolution;
             uniform float u_antiAliasedPixels;
+            uniform float u_colorMode;
             uniform sampler2D u_trail;
             varying vec2 v_texCoord;
 
@@ -473,6 +480,18 @@ export class CRTFilter {
                 // Brightness boost (static for now)
                 color *= 1.1;
 
+                // Monochrome phosphor presets. Color mode leaves the source RGB untouched;
+                // monochrome modes preserve luminance and tint it like a real phosphor.
+                if (u_colorMode > 0.5) {
+                    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                    vec3 phosphorTint = vec3(1.0);
+                    if (u_colorMode < 1.5) phosphorTint = vec3(1.0); // B&W, D65 white point (~6500K)
+                    else if (u_colorMode < 2.5) phosphorTint = vec3(0.45, 1.0, 0.62); // Green
+                    else if (u_colorMode < 3.5) phosphorTint = vec3(1.0, 0.58, 0.2); // Amber
+                    else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
+                    color = luma * phosphorTint;
+                }
+
                 gl_FragColor = vec4(color, 1.0);
             }
         `;
@@ -501,6 +520,7 @@ export class CRTFilter {
     this.breathingScaleLocation = gl.getUniformLocation(this.program, 'u_breathingScale');
     this.sourceResolutionLocation = gl.getUniformLocation(this.program, 'u_sourceResolution');
     this.antiAliasedPixelsLocation = gl.getUniformLocation(this.program, 'u_antiAliasedPixels');
+    this.colorModeLocation = gl.getUniformLocation(this.program, 'u_colorMode');
     this.imageLocation = gl.getUniformLocation(this.program, 'u_image');
 
     // Create buffer for a quad (2 triangles)
@@ -751,6 +771,10 @@ export class CRTFilter {
       gl.uniform2f(this.sourceResolutionLocation, sourceCanvas.width, sourceCanvas.height);
     if (this.antiAliasedPixelsLocation)
       gl.uniform1f(this.antiAliasedPixelsLocation, settings.antiAliasedPixels !== false ? 1.0 : 0.0);
+    if (this.colorModeLocation) {
+      const colorMode = { color: 0, bw: 1, green: 2, amber: 3, blue: 4 }[settings.colorMode] ?? 0;
+      gl.uniform1f(this.colorModeLocation, colorMode);
+    }
 
     // High-Voltage Anode Breathing (Raster Bloom expansion on bright scenes)
     let breathingScale = 0.0;

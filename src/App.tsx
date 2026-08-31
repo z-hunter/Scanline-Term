@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CRTFilter, type CRTSettings } from './crt/CRTFilter';
+import { CRTFilter, type CRTColorMode, type CRTSettings } from './crt/CRTFilter';
 import {
   DEFAULT_CRT_SETTINGS,
   DEFAULT_RESOLUTION,
@@ -11,7 +11,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'bezelGlow' | 'antiAliasedPixels'>;
+type NumericKey = Exclude<keyof CRTSettings, 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -64,10 +64,44 @@ function drawMockTerminal(canvas: HTMLCanvasElement, time: number): void {
     `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`,
   ];
   lines.forEach((line, index) => {
-    ctx.fillStyle = index % 3 === 0 ? '#9affbd' : '#62db91';
+    ctx.fillStyle = ['#9affbd', '#62db91', '#78c9ff', '#ffd166', '#ff8a80'][index % 5];
     ctx.fillText(line, fontSize, fontSize + lineHeight * (index + 3));
   });
   const menuTop = canvas.height - lineHeight * 4;
+
+  if (canvas.width >= 480) {
+    // Keep a colorful ANSI-like diagnostic area in the otherwise empty terminal space.
+    const paletteX = Math.floor(canvas.width * 0.58);
+    const paletteY = fontSize + lineHeight * 3;
+    ctx.fillStyle = '#d8b4ff';
+    ctx.fillText('ANSI COLOR TABLE', paletteX, paletteY);
+    const palette = [
+      ['RED', '#ff6b6b'], ['GREEN', '#72f1a4'], ['BLUE', '#72b7ff'],
+      ['AMBER', '#ffd166'], ['MAGENTA', '#e59cff'], ['CYAN', '#63e6e2'],
+    ] as const;
+    palette.forEach(([label, color], index) => {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const x = paletteX + column * Math.max(fontSize * 10, Math.floor(canvas.width * 0.16));
+      const y = paletteY + lineHeight * (row + 1);
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y + 2, Math.max(6, Math.floor(fontSize * 1.2)), Math.max(6, fontSize - 2));
+      ctx.fillText(label, x + fontSize * 2, y);
+    });
+
+    // A breathing pseudo-graphics box expands and collapses in the free area.
+    const pulse = (Math.sin(time * 1.8) + 1) / 2;
+    const boxX = paletteX;
+    const boxY = paletteY + lineHeight * 4;
+    const boxWidth = Math.max(8, Math.floor(Math.max(8, (canvas.width - boxX - fontSize * 2) / fontSize) * (0.45 + pulse * 0.55)));
+    const maxBoxRows = Math.max(3, Math.floor((menuTop - boxY - lineHeight) / lineHeight));
+    const boxHeight = Math.max(3, 3 + Math.floor(pulse * Math.max(0, maxBoxRows - 3)));
+    const horizontal = '─'.repeat(boxWidth);
+    const boxLines = [`┌${horizontal}┐`, ...Array.from({ length: boxHeight - 2 }, () => `│${' '.repeat(boxWidth)}│`), `└${horizontal}┘`];
+    ctx.fillStyle = pulse > 0.5 ? '#63e6e2' : '#e59cff';
+    boxLines.forEach((line, index) => ctx.fillText(line, boxX, boxY + lineHeight * index));
+  }
+
   ctx.fillStyle = '#092615';
   ctx.fillRect(0, menuTop - 2, canvas.width, lineHeight * 4 + 2);
   ctx.fillStyle = '#7dffae';
@@ -181,6 +215,23 @@ export default function App() {
             onChange={(event) => setStored((current) => ({ ...current, resolution: event.target.value as ResolutionId }))}
           >
             {RESOLUTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <label className="resolution-control">
+          Color mode
+          <select
+            value={stored.crt.colorMode}
+            data-testid="color-mode-select"
+            onChange={(event) => setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
+            }))}
+          >
+            <option value="color">Color</option>
+            <option value="bw">B&amp;W</option>
+            <option value="green">Green</option>
+            <option value="amber">Amber</option>
+            <option value="blue">Phosphor Blue</option>
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (

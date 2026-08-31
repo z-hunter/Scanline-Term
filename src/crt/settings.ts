@@ -1,4 +1,4 @@
-import type { CRTSettings } from './CRTFilter';
+import type { CRTColorMode, CRTSettings } from './CRTFilter';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   curvature: 0.16,
@@ -15,6 +15,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   beamModulation: 0,
   breathing: 0,
   antiAliasedPixels: true,
+  colorMode: 'color',
 });
 
 export const RESOLUTIONS = [
@@ -52,6 +53,9 @@ const numericRanges = {
 const isResolution = (value: unknown): value is ResolutionId =>
   RESOLUTIONS.some((resolution) => resolution.id === value);
 
+const isColorMode = (value: unknown): value is CRTColorMode =>
+  value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
+
 const numberInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 
@@ -80,6 +84,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
+    if (isColorMode(value.crt.colorMode)) result.crt.colorMode = value.crt.colorMode;
   } catch {
     // Corrupt localStorage must never prevent the demo from starting.
   }
