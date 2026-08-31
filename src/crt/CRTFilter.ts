@@ -12,6 +12,9 @@ export interface CRTSettings {
   glow: number; // 0.0 to 1.0 (Ambient screen glow)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)
   persistenceIntensity: number; // 0.0 to 4.0 (Visible phosphor trail intensity)
+  imageBrightness: number; // 0.5 to 1.5 (Image-only final correction)
+  imageContrast: number; // 0.5 to 1.5 (Image-only final correction)
+  backgroundDesaturation: number; // 0.0 to 1.0 (Monochrome background texture only)
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
@@ -30,6 +33,9 @@ export class CRTFilter {
   sourceResolutionLocation: WebGLUniformLocation | null;
   antiAliasedPixelsLocation: WebGLUniformLocation | null;
   colorModeLocation: WebGLUniformLocation | null;
+  imageBrightnessLocation: WebGLUniformLocation | null;
+  imageContrastLocation: WebGLUniformLocation | null;
+  backgroundDesaturationLocation: WebGLUniformLocation | null;
   timeLocation: WebGLUniformLocation | null;
   scanlineCountLocation: WebGLUniformLocation | null;
   curvatureLocation: WebGLUniformLocation | null;
@@ -99,6 +105,9 @@ export class CRTFilter {
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
       this.colorModeLocation = null;
+      this.imageBrightnessLocation = null;
+      this.imageContrastLocation = null;
+      this.backgroundDesaturationLocation = null;
       return;
     }
 
@@ -127,6 +136,9 @@ export class CRTFilter {
     this.breathingScaleLocation = null;
     this.imageLocation = null;
     this.colorModeLocation = null;
+    this.imageBrightnessLocation = null;
+    this.imageContrastLocation = null;
+    this.backgroundDesaturationLocation = null;
 
     this.init();
   }
@@ -207,6 +219,9 @@ export class CRTFilter {
             uniform vec2 u_sourceResolution;
             uniform float u_antiAliasedPixels;
             uniform float u_colorMode;
+            uniform float u_imageBrightness;
+            uniform float u_imageContrast;
+            uniform float u_backgroundDesaturation;
             uniform sampler2D u_trail;
             varying vec2 v_texCoord;
 
@@ -358,13 +373,13 @@ export class CRTFilter {
                 float g = sampleScreen(rasterUV).g;
                 float b = sampleScreen(rasterUV + vec2(-offset, 0.0)).b;
 
-                vec3 color = vec3(r, g, b);
+                vec3 imageColor = vec3(r, g, b);
 
                 // Phosphor Afterglow Trail (Soft, translucent trail overlay)
                 if (u_persistence > 0.0) {
                      vec3 trail = texture2D(u_trail, rasterUV).rgb;
                      float inBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0) * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
-                     color = max(color, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
+                     imageColor = max(imageColor, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
 
                 // BLOOM / HALATION (Smooth phosphor electron bleed on bright highlights)
@@ -396,19 +411,17 @@ export class CRTFilter {
                      }
                      bloomSum /= max(totalWeight, 0.001);
 
-                     color += bloomSum * u_bloom * 2.5;
+                     imageColor += bloomSum * u_bloom * 2.5;
                 }
 
-                // Phosphor Surface Simulation (The "Greyish" look)
+                // Background phosphor texture is kept separate from the displayed image.
+                vec3 backgroundColor = vec3(0.0);
                 if (u_phosphor > 0.0) {
-                     // 1. Lift blacks slightly scaling with phosphor setting
-                    color += 0.05 * u_phosphor; 
-
-                    // 2. Add subtle background noise (phosphor grain) - CHAOTIC STATIC
-                    // Use u_time to randomize the seed vector every frame
                     float noise = fract(sin(dot(curvedUV, vec2(12.9898, 78.233) + u_time)) * 43758.5453);
-                    color += noise * 0.05 * u_phosphor;
+                    backgroundColor += vec3(0.05 + noise * 0.05) * u_phosphor;
                 }
+
+                float scanline = 1.0;
 
                 // Scanlines (Analytic Sinc-Integrated Fourier Beam with Timothy Lottes Phase Jitter)
                 if (u_scanlineCount > 0.0 && u_scanlineIntensity > 0.0) {
@@ -440,13 +453,14 @@ export class CRTFilter {
                     float beam = clamp(0.6666667 * harmonics + 0.3333333, 0.0, 1.0);
 
                     // 4. Beam Spot Modulation (Dynamic electron beam widening on bright pixels)
-                    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                    float luma = dot(imageColor, vec3(0.2126, 0.7152, 0.0722));
                     float effectiveIntensity = u_scanlineIntensity * mix(1.0, max(0.1, 1.0 - luma * 0.9), u_beamModulation);
 
                     // 5. Intensity Modulation: perfectly uniform across all lines and resolutions
-                    float scanline = mix(1.0 - (effectiveIntensity * 0.6), 1.0, beam);
-                    color *= scanline;
+                    scanline = mix(1.0 - (effectiveIntensity * 0.6), 1.0, beam);
                 }
+
+                backgroundColor *= scanline;
 
                 // CRT Ambient Screen Glow (Wide diffuse glass light scatter applied OVER the scanline raster)
                 if (u_glow > 0.0) {
@@ -480,19 +494,28 @@ export class CRTFilter {
 
                      // Screen blend mode: illuminates both phosphors and scanline gaps
                      vec3 diffuseGlow = glowSum * u_glow * 0.5;
-                     color = 1.0 - (1.0 - color) * (1.0 - diffuseGlow);
+                     imageColor = 1.0 - (1.0 - imageColor) * (1.0 - diffuseGlow);
                 }
+
+                // Image-only final correction, before the two layers are color-converted and combined.
+                imageColor = (imageColor - 0.5) * u_imageContrast + 0.5;
+                imageColor *= u_imageBrightness;
+
+                vec3 finalImage = applyColorMode(imageColor);
+                vec3 finalBackground = applyColorMode(backgroundColor);
+                if (u_colorMode > 0.5) {
+                    float backgroundLuma = dot(finalBackground, vec3(0.2126, 0.7152, 0.0722));
+                    finalBackground = mix(finalBackground, vec3(backgroundLuma), clamp(u_backgroundDesaturation, 0.0, 1.0));
+                }
+                vec3 color = finalImage * scanline + finalBackground;
 
                 // Vignette (Physical curved faceplate glass property)
                 float vignette = curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y);
                 float vig = pow(vignette * (15.0), 0.25);
                 color *= mix(1.0, vig, u_vignette);
 
-                // Brightness boost (static for now)
-                color *= 1.1;
-
-                // Monochrome phosphor presets preserve luminance and tint the final image.
-                color = applyColorMode(color);
+                // Keep the final composite in displayable range.
+                color = clamp(color * 1.1, 0.0, 1.0);
 
                 gl_FragColor = vec4(color, 1.0);
             }
@@ -523,6 +546,9 @@ export class CRTFilter {
     this.sourceResolutionLocation = gl.getUniformLocation(this.program, 'u_sourceResolution');
     this.antiAliasedPixelsLocation = gl.getUniformLocation(this.program, 'u_antiAliasedPixels');
     this.colorModeLocation = gl.getUniformLocation(this.program, 'u_colorMode');
+    this.imageBrightnessLocation = gl.getUniformLocation(this.program, 'u_imageBrightness');
+    this.imageContrastLocation = gl.getUniformLocation(this.program, 'u_imageContrast');
+    this.backgroundDesaturationLocation = gl.getUniformLocation(this.program, 'u_backgroundDesaturation');
     this.imageLocation = gl.getUniformLocation(this.program, 'u_image');
 
     // Create buffer for a quad (2 triangles)
@@ -776,6 +802,14 @@ export class CRTFilter {
     if (this.colorModeLocation) {
       const colorMode = { color: 0, bw: 1, green: 2, amber: 3, blue: 4 }[settings.colorMode] ?? 0;
       gl.uniform1f(this.colorModeLocation, colorMode);
+    }
+    if (this.imageBrightnessLocation) gl.uniform1f(this.imageBrightnessLocation, settings.imageBrightness);
+    if (this.imageContrastLocation) gl.uniform1f(this.imageContrastLocation, settings.imageContrast);
+    if (this.backgroundDesaturationLocation) {
+      gl.uniform1f(
+        this.backgroundDesaturationLocation,
+        settings.colorMode === 'color' ? 0.0 : settings.backgroundDesaturation,
+      );
     }
 
     // High-Voltage Anode Breathing (Raster Bloom expansion on bright scenes)

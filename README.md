@@ -12,6 +12,7 @@ mock terminal canvas → CRTFilter → WebGL output canvas → Tauri window
 
 - Curvature, vignette, bezel glow, scanlines, beam modulation, RGB split, bloom, screen glow, phosphor grain, persistence duration and trail intensity (0–4), HV breathing and anti-moiré pixels.
 - Color output modes: Color, B&W (~6500K white phosphor), Green, Amber and Phosphor Blue.
+- Separate image brightness/contrast controls and monochrome-only background desaturation; phosphor grain/static and scanlines are composited as an independent surface layer.
 - Virtual modes: QVGA 320×240, VGA 640×480, SVGA 800×600 and XGA 1024×768.
 - Native controls with validated `localStorage` settings and reset-to-defaults.
 - A mock terminal only. Windows ConPTY and a real shell are deliberately deferred.

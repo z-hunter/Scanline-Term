@@ -29,6 +29,10 @@ const controls: Record<string, Control[]> = {
     { key: 'glow', label: 'Screen glow', min: 0, max: 1, step: 0.05 },
     { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
+  'Final image': [
+    { key: 'imageBrightness', label: 'Image brightness', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'imageContrast', label: 'Image contrast', min: 0.5, max: 1.5, step: 0.05 },
+  ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
     { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 4, step: 0.05 },
@@ -253,6 +257,22 @@ export default function App() {
             ))}
           </fieldset>
         ))}
+        <fieldset>
+          <legend>Surface</legend>
+          <label className="slider-control">
+            <span>Background desaturation<output>{formatValue(stored.crt.backgroundDesaturation)}</output></span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={stored.crt.backgroundDesaturation}
+              disabled={stored.crt.colorMode === 'color'}
+              data-testid="control-backgroundDesaturation"
+              onChange={(event) => updateCrt('backgroundDesaturation', Number(event.target.value))}
+            />
+          </label>
+        </fieldset>
         <fieldset>
           <legend>Display</legend>
           <label className="check-control">

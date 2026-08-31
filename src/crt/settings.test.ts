@@ -6,19 +6,23 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.16);
     expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(200);
     expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.imageBrightness).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
     expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
   });
 
   it('rejects corrupt values and falls back to VGA', () => {
     const loaded = loadStoredSettings(
-      JSON.stringify({ resolution: 'not-a-resolution', crt: { bloom: 9, persistenceIntensity: 0.35, curvature: 0.25, colorMode: 'invalid' } }),
+      JSON.stringify({ resolution: 'not-a-resolution', crt: { bloom: 9, persistenceIntensity: 0.35, curvature: 0.25, colorMode: 'invalid', imageBrightness: 9 } }),
     );
     expect(loaded.resolution).toBe(DEFAULT_RESOLUTION);
     expect(loaded.crt.bloom).toBe(DEFAULT_CRT_SETTINGS.bloom);
     expect(loaded.crt.persistenceIntensity).toBe(0.35);
     expect(loaded.crt.curvature).toBe(0.25);
     expect(loaded.crt.colorMode).toBe(DEFAULT_CRT_SETTINGS.colorMode);
+    expect(loaded.crt.imageBrightness).toBe(DEFAULT_CRT_SETTINGS.imageBrightness);
   });
 
   it('survives malformed JSON', () => {
@@ -32,5 +36,12 @@ describe('CRT settings', () => {
 
   it('accepts a phosphor color mode', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
+  });
+
+  it('sanitizes image-only final controls', () => {
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { imageBrightness: 1.25, imageContrast: 0.75, backgroundDesaturation: 0.6 } }));
+    expect(loaded.crt.imageBrightness).toBe(1.25);
+    expect(loaded.crt.imageContrast).toBe(0.75);
+    expect(loaded.crt.backgroundDesaturation).toBe(0.6);
   });
 });
