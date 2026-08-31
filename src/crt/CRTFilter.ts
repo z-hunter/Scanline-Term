@@ -9,6 +9,7 @@ export interface CRTSettings {
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   glow: number; // 0.0 to 1.0 (Ambient screen glow)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)
+  persistenceIntensity: number; // 0.0 to 1.0 (Visible phosphor trail intensity)
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
@@ -37,6 +38,7 @@ export class CRTFilter {
   glowLocation: WebGLUniformLocation | null;
   trailLocation: WebGLUniformLocation | null;
   persistenceLocation: WebGLUniformLocation | null;
+  persistenceIntensityLocation: WebGLUniformLocation | null;
   beamModulationLocation: WebGLUniformLocation | null;
   breathingScaleLocation: WebGLUniformLocation | null;
   imageLocation: WebGLUniformLocation | null;
@@ -86,6 +88,7 @@ export class CRTFilter {
       this.glowLocation = null;
       this.trailLocation = null;
       this.persistenceLocation = null;
+      this.persistenceIntensityLocation = null;
       this.beamModulationLocation = null;
       this.breathingScaleLocation = null;
       this.imageLocation = null;
@@ -114,6 +117,7 @@ export class CRTFilter {
     this.glowLocation = null;
     this.trailLocation = null;
     this.persistenceLocation = null;
+    this.persistenceIntensityLocation = null;
     this.beamModulationLocation = null;
     this.breathingScaleLocation = null;
     this.imageLocation = null;
@@ -191,6 +195,7 @@ export class CRTFilter {
             uniform float u_bloom;
             uniform float u_glow;
             uniform float u_persistence;
+            uniform float u_persistenceIntensity;
             uniform float u_beamModulation;
             uniform float u_breathingScale;
             uniform vec2 u_sourceResolution;
@@ -340,7 +345,7 @@ export class CRTFilter {
                 if (u_persistence > 0.0) {
                      vec3 trail = texture2D(u_trail, rasterUV).rgb;
                      float inBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0) * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
-                     color = max(color, trail * inBounds);
+                     color = max(color, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 1.0));
                 }
 
                 // BLOOM / HALATION (Smooth phosphor electron bleed on bright highlights)
@@ -490,6 +495,7 @@ export class CRTFilter {
     this.glowLocation = gl.getUniformLocation(this.program, 'u_glow');
     this.trailLocation = gl.getUniformLocation(this.program, 'u_trail');
     this.persistenceLocation = gl.getUniformLocation(this.program, 'u_persistence');
+    this.persistenceIntensityLocation = gl.getUniformLocation(this.program, 'u_persistenceIntensity');
     this.beamModulationLocation = gl.getUniformLocation(this.program, 'u_beamModulation');
     this.breathingScaleLocation = gl.getUniformLocation(this.program, 'u_breathingScale');
     this.sourceResolutionLocation = gl.getUniformLocation(this.program, 'u_sourceResolution');
@@ -538,8 +544,8 @@ export class CRTFilter {
           vec3 current = texture2D(u_current, v_texCoord).rgb;
           vec3 history = texture2D(u_history, v_texCoord).rgb;
           
-          // Extended decay duration (up to ~3.5 - 4.0 seconds at max persistence)
-          float decay = mix(0.20, 0.983, clamp(u_persistence, 0.0, 1.0));
+          // Maximum duration is approximately doubled; time-based decay remains backlog work.
+          float decay = mix(0.20, 0.9915, clamp(u_persistence, 0.0, 1.0));
           
           // Quantization cutoff: subtracting 0.5/255 guarantees 8-bit framebuffers decay to absolute 0
           // without getting stuck at a 1/255 truncation floor ("phosphor burn-in")
@@ -800,8 +806,12 @@ export class CRTFilter {
       gl.bindTexture(gl.TEXTURE_2D, activeInputTexture);
       if (this.trailLocation) gl.uniform1i(this.trailLocation, 1);
       if (this.persistenceLocation) gl.uniform1f(this.persistenceLocation, persistence);
+      if (this.persistenceIntensityLocation) {
+        gl.uniform1f(this.persistenceIntensityLocation, settings.persistenceIntensity);
+      }
     } else {
       if (this.persistenceLocation) gl.uniform1f(this.persistenceLocation, 0.0);
+      if (this.persistenceIntensityLocation) gl.uniform1f(this.persistenceIntensityLocation, 0.0);
     }
 
     // Draw Main

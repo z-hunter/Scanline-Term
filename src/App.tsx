@@ -31,6 +31,7 @@ const controls: Record<string, Control[]> = {
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
+    { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 1, step: 0.05 },
     { key: 'breathing', label: 'HV breathing', min: 0, max: 1, step: 0.05 },
   ],
 };

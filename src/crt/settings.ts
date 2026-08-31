@@ -11,6 +11,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   bloom: 0.05,
   glow: 0.2,
   persistence: 0,
+  persistenceIntensity: 1,
   beamModulation: 0,
   breathing: 0,
   antiAliasedPixels: true,
@@ -43,6 +44,7 @@ const numericRanges = {
   bloom: [0, 1],
   glow: [0, 1],
   persistence: [0, 1],
+  persistenceIntensity: [0, 1],
   beamModulation: [0, 1],
   breathing: [0, 1],
 } as const;
