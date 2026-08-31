@@ -58,7 +58,7 @@ const profiles: TerminalColorProfile[] = [
   },
   {
     id: 'retrowave', label: 'Retrowave', foreground: '#ffa600', background: '#220036', cursor: '#f949ff',
-    colors: ['#580051', '#dc322f', '#ff00f2', '#ff5e00', '#743eca', '#d33682', '#2aa198', '#6a008a', '#59c2ff', '#ff4d00', '#f949ff', '#c20092', '#00d9ff', '#ff00bf', '#e7ffff', '#fdf6e3'],
+    colors: ['#580051', '#dc322f', '#ff00f2', '#ff5e00', '#743eca', '#d33682', '#2aa198', '#c0c0c0', '#59c2ff', '#ff4d00', '#f949ff', '#c20092', '#00d9ff', '#ff00bf', '#e7ffff', '#fdf6e3'],
   },
 ];
 

@@ -8,6 +8,7 @@ describe('terminal color profiles', () => {
     expect(colorProfile('ibm-3279').colors[13]).toBe('#ff00ff');
     expect(colorProfile('commodore-64').colors[11]).toBe('#b84104');
     expect(colorProfile('retrowave').colors[10]).toBe('#f949ff');
+    expect(colorProfile('retrowave').colors[7]).toBe('#c0c0c0');
     expect(colorProfile('xterm-x11').colors).toHaveLength(256);
     expect(profileColor(colorProfile('solarized-dark'), 196)).toBe('rgb(255 0 0)');
   });
