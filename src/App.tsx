@@ -385,7 +385,6 @@ export default function App() {
         <header>
           <p className="eyebrow">SCANLINE TERM</p>
           <h1>CRT display lab</h1>
-          <p className="subtitle">A reusable Quest CRT shader in a tiny Tauri shell.</p>
         </header>
         <label className="resolution-control">
           Virtual resolution

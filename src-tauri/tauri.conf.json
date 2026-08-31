@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Scanline Term",
+        "icon": "icons/icon.png",
         "width": 1440,
         "height": 960,
         "resizable": true

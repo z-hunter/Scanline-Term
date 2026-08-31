@@ -41,7 +41,6 @@ button, input, select { font: inherit; }
 }
 .eyebrow { margin: 0 0 8px; color: #7dffae; }
 h1 { margin: 0; font-size: 24px; }
-.subtitle { margin: 8px 0 22px; color: #9db7a5; font-size: 13px; line-height: 1.4; }
 
 fieldset { margin: 18px 0 0; padding: 12px; border: 1px solid #294433; border-radius: 8px; }
 legend { padding: 0 5px; color: #7dffae; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
