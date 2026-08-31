@@ -324,6 +324,8 @@ export default function App() {
       const dpr = window.devicePixelRatio || 1;
       output.width = Math.max(1, Math.round(rect.width * dpr));
       output.height = Math.max(1, Math.round(rect.height * dpr));
+      // A resized presentation surface must start with a fresh phosphor history.
+      filter.clearPersistence();
       const terminal = terminalRef.current;
       if (!terminalLiveRef.current || !terminal) return;
       const { cols, rows } = terminalDimensions(source.width, source.height, rect.width, rect.height);

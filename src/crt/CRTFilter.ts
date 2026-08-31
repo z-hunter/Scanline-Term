@@ -674,6 +674,7 @@ export class CRTFilter {
     this.fboTexB = b.tex;
     this.fboCurrent = 0;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.clearPersistence();
     return true;
   }
 
