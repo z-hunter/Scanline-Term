@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from 'react';
 import { Terminal, type IBufferCell } from '@xterm/xterm';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -12,6 +12,7 @@ import {
   type ResolutionId,
 } from './crt/settings';
 import { terminalKey } from './terminal-input';
+import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from './win32-input';
 import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, remapLegacyRgb, type TerminalColorProfile } from './terminal-color-profiles';
 import './styles.css';
@@ -110,9 +111,10 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   const buffer = terminal.buffer.active;
+  const ydisp = (terminal as unknown as { _core?: { bufferService?: { buffer?: { ydisp?: number } } } })._core?.bufferService?.buffer?.ydisp ?? buffer.baseY;
   const cell = buffer.getNullCell();
   for (let row = 0; row < terminal.rows; row += 1) {
-    const line = buffer.getLine(buffer.baseY + row);
+    const line = buffer.getLine(ydisp + row);
     if (!line) continue;
     const y = padding + cellHeight * (row + 0.5);
     for (let column = 0; column < terminal.cols; column += 1) {
@@ -138,7 +140,8 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   }
   ctx.globalAlpha = 1;
   const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
-  const cursorVisible = core?.coreService?.isCursorHidden !== true
+  const cursorVisible = ydisp === buffer.baseY
+    && core?.coreService?.isCursorHidden !== true
     && buffer.cursorX >= 0 && buffer.cursorX < terminal.cols && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows;
   if (cursorVisible && Math.floor(time * 2) % 2 === 0) {
     const cursorX = padding + cellWidth * buffer.cursorX;
@@ -252,6 +255,8 @@ export default function App() {
   const inputFrameRef = useRef(0);
   const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
+  const sgrMouseModeRef = useRef(false);
+  const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const initialResolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
@@ -277,13 +282,16 @@ export default function App() {
     const profile = activeColorProfile(settingsRef.current);
     const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     terminalRef.current = terminal;
+    const pressedMouseButtons = pressedMouseButtonsRef.current;
     const terminalResponse = terminal.onData((data) => sendInputRef.current(data));
     const enableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      if (params.includes(1006)) sgrMouseModeRef.current = true;
       if (params.length !== 1 || params[0] !== 9001) return false;
       win32InputModeRef.current = true;
       return true;
     });
     const disableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      if (params.includes(1006)) sgrMouseModeRef.current = false;
       if (params.length !== 1 || params[0] !== 9001) return false;
       win32InputModeRef.current = false;
       return true;
@@ -305,6 +313,8 @@ export default function App() {
       unlisten?.();
       terminalLiveRef.current = false;
       win32InputModeRef.current = false;
+      sgrMouseModeRef.current = false;
+      pressedMouseButtons.clear();
       terminalSizeRef.current = { cols: 0, rows: 0 };
       pendingInputRef.current = '';
       cancelAnimationFrame(inputFrameRef.current);
@@ -417,6 +427,69 @@ export default function App() {
     sendInput(input);
   };
 
+  const terminalMouseCell = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, terminal: Terminal) => {
+    const output = outputRef.current;
+    const source = sourceRef.current;
+    if (!output || !source) return null;
+    const rect = output.getBoundingClientRect();
+    const padding = terminalPadding(source.width, source.height);
+    const x = (event.clientX - rect.left) * source.width / rect.width;
+    const y = (event.clientY - rect.top) * source.height / rect.height;
+    return {
+      col: Math.max(1, Math.min(terminal.cols, Math.floor((x - padding) / ((source.width - padding * 2) / terminal.cols)) + 1)),
+      row: Math.max(1, Math.min(terminal.rows, Math.floor((y - padding) / ((source.height - padding * 2) / terminal.rows)) + 1)),
+    };
+  };
+
+  const sendMouse = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => {
+    const terminal = terminalRef.current;
+    const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
+    if (!terminal || !tracking || tracking === 'none') return false;
+    if (tracking === 'x10' && (action !== 'press' || event.ctrlKey || event.altKey || event.shiftKey)) return false;
+    if (tracking === 'vt200' && action === 'move') return false;
+    const cell = terminalMouseCell(event, terminal);
+    if (!cell) return false;
+    event.preventDefault();
+    sendInput(terminalMouse({ ...cell, action, button, sgr: sgrMouseModeRef.current, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: event.shiftKey }));
+    return true;
+  };
+
+  const handleTerminalWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    const terminal = terminalRef.current;
+    if (!terminal || event.deltaY === 0) return;
+    if (sendMouse(event, event.deltaY < 0 ? 'wheel-up' : 'wheel-down')) return;
+    event.preventDefault();
+    if (terminal.buffer.active !== terminal.buffer.normal) return;
+    terminal.scrollLines(Math.sign(event.deltaY) * 3);
+  };
+
+  const handleTerminalMouseMove = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const terminal = terminalRef.current;
+    const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
+    if (!terminal || !tracking || tracking === 'none') return;
+    if (tracking === 'drag' && pressedMouseButtonsRef.current.size === 0) return;
+    if (tracking === 'x10' || tracking === 'vt200') return;
+    sendMouse(event, 'move', pressedMouseButtonsRef.current.values().next().value as 0 | 1 | 2 | undefined);
+  };
+
+  const handleTerminalMouseDown = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    if (event.button > 2) return;
+    const button = event.button as 0 | 1 | 2;
+    if (sendMouse(event, 'press', button)) pressedMouseButtonsRef.current.add(button);
+  };
+
+  const handleTerminalMouseUp = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    if (event.button <= 2) {
+      sendMouse(event, 'release', event.button as 0 | 1 | 2);
+      pressedMouseButtonsRef.current.delete(event.button);
+    }
+  };
+
+  const handleTerminalMouseLeave = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    for (const button of pressedMouseButtonsRef.current) sendMouse(event, 'release', button as 0 | 1 | 2);
+    pressedMouseButtonsRef.current.clear();
+  };
+
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
       if (!win32InputModeRef.current && event.altKey && event.key === 'Enter' && isTauri()) {
@@ -441,6 +514,11 @@ export default function App() {
             aria-label={terminalLive ? 'Windows console' : 'CRT display'}
             onKeyDown={(event) => handleTerminalKey(event, true)}
             onKeyUp={(event) => handleTerminalKey(event, false)}
+            onWheel={handleTerminalWheel}
+            onMouseDown={handleTerminalMouseDown}
+            onMouseUp={handleTerminalMouseUp}
+            onMouseMove={handleTerminalMouseMove}
+            onMouseLeave={handleTerminalMouseLeave}
             onContextMenu={(event) => event.preventDefault()}
             onPaste={(event) => {
               const input = event.clipboardData.getData('text');
