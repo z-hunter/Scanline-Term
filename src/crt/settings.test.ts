@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { persistenceDecay } from './CRTFilter';
 import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
+  it('decays phosphor history by elapsed time rather than render frames', () => {
+    expect(persistenceDecay(1, 1 / 60).decay).toBeCloseTo(0.9915);
+    expect(persistenceDecay(1, 1).decay).toBeLessThan(0.61);
+  });
+
   it('keeps Quest defaults without the removed hum setting', () => {
     expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.16);
     expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(200);

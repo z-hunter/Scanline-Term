@@ -2,6 +2,14 @@ import type { ColorProfileId } from '../terminal-color-profiles';
 
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 
+export function persistenceDecay(persistence: number, elapsedSeconds: number): { decay: number; cutoff: number } {
+  const frameCount = Math.max(0, elapsedSeconds * 60);
+  return {
+    decay: Math.pow(0.2 + (0.9915 - 0.2) * Math.min(1, Math.max(0, persistence)), frameCount),
+    cutoff: (0.5 / 255) * frameCount,
+  };
+}
+
 export interface CRTSettings {
   crtEmulation: boolean;
   colorProfile: ColorProfileId;
@@ -61,6 +69,7 @@ export class CRTFilter {
 
   smoothedExpansion: number = 0;
   lastBreathingTime: number = 0;
+  lastPersistenceTime: number = 0;
 
   // Accumulation / Persistence resources
   accumProgram: WebGLProgram | null = null;
@@ -68,7 +77,8 @@ export class CRTFilter {
   accumTexCoordLocation: number = 0;
   accumCurrentTexLocation: WebGLUniformLocation | null = null;
   accumHistoryTexLocation: WebGLUniformLocation | null = null;
-  accumPersistenceLocation: WebGLUniformLocation | null = null;
+  accumDecayLocation: WebGLUniformLocation | null = null;
+  accumCutoffLocation: WebGLUniformLocation | null = null;
 
   fboA: WebGLFramebuffer | null = null;
   fboB: WebGLFramebuffer | null = null;
@@ -603,19 +613,17 @@ export class CRTFilter {
       precision mediump float;
       uniform sampler2D u_current;
       uniform sampler2D u_history;
-      uniform float u_persistence;
+      uniform float u_decay;
+      uniform float u_cutoff;
       varying vec2 v_texCoord;
 
       void main() {
           vec3 current = texture2D(u_current, v_texCoord).rgb;
           vec3 history = texture2D(u_history, v_texCoord).rgb;
           
-          // Maximum duration is approximately doubled; time-based decay remains backlog work.
-          float decay = mix(0.20, 0.9915, clamp(u_persistence, 0.0, 1.0));
-          
           // Quantization cutoff: subtracting 0.5/255 guarantees 8-bit framebuffers decay to absolute 0
           // without getting stuck at a 1/255 truncation floor ("phosphor burn-in")
-          vec3 decayedHistory = max(vec3(0.0), history * decay - vec3(0.5 / 255.0));
+          vec3 decayedHistory = max(vec3(0.0), history * u_decay - vec3(u_cutoff));
 
           // Soft translucent trail: enters at 9% of active source brightness for an ultra-delicate afterglow
           vec3 trail = max(current * 0.09, decayedHistory);
@@ -634,7 +642,8 @@ export class CRTFilter {
       this.accumTexCoordLocation = gl.getAttribLocation(this.accumProgram, 'a_texCoord');
       this.accumCurrentTexLocation = gl.getUniformLocation(this.accumProgram, 'u_current');
       this.accumHistoryTexLocation = gl.getUniformLocation(this.accumProgram, 'u_history');
-      this.accumPersistenceLocation = gl.getUniformLocation(this.accumProgram, 'u_persistence');
+      this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
+      this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
     }
   }
 
@@ -679,6 +688,7 @@ export class CRTFilter {
   }
 
   clearPersistence(): void {
+    this.lastPersistenceTime = 0;
     if (!this.gl || !this.fboA || !this.fboB) return;
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboA);
@@ -731,6 +741,10 @@ export class CRTFilter {
     // 2. Accumulation Pass for Phosphor Persistence (if enabled)
     const persistence = settings.crtEmulation ? settings.persistence || 0.0 : 0.0;
     if (persistence > 0.0 && this.accumProgram) {
+      const now = performance.now();
+      const elapsedSeconds = this.lastPersistenceTime ? (now - this.lastPersistenceTime) / 1000 : 1 / 60;
+      this.lastPersistenceTime = now;
+      const { decay, cutoff } = persistenceDecay(persistence, elapsedSeconds);
       this.ensureFBO(sourceCanvas.width, sourceCanvas.height);
       const targetFBO = this.fboCurrent === 0 ? this.fboA : this.fboB;
       const targetTex = this.fboCurrent === 0 ? this.fboTexA : this.fboTexB;
@@ -758,7 +772,8 @@ export class CRTFilter {
       gl.bindTexture(gl.TEXTURE_2D, historyTex);
       if (this.accumHistoryTexLocation) gl.uniform1i(this.accumHistoryTexLocation, 1);
 
-      if (this.accumPersistenceLocation) gl.uniform1f(this.accumPersistenceLocation, persistence);
+      if (this.accumDecayLocation) gl.uniform1f(this.accumDecayLocation, decay);
+      if (this.accumCutoffLocation) gl.uniform1f(this.accumCutoffLocation, cutoff);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -890,6 +905,7 @@ export class CRTFilter {
         gl.uniform1f(this.persistenceIntensityLocation, settings.persistenceIntensity);
       }
     } else {
+      this.lastPersistenceTime = 0;
       if (this.persistenceLocation) gl.uniform1f(this.persistenceLocation, 0.0);
       if (this.persistenceIntensityLocation) gl.uniform1f(this.persistenceIntensityLocation, 0.0);
     }
