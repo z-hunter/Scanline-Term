@@ -107,7 +107,9 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
       const x = padding + cellWidth * column;
       if (background !== terminalBackground) {
         ctx.fillStyle = background;
-        ctx.fillRect(x, y - cellHeight / 2, cellWidth * current.getWidth() + 0.01, cellHeight + 0.01);
+        const left = Math.floor(x);
+        const top = Math.floor(y - cellHeight / 2);
+        ctx.fillRect(left, top, Math.ceil(x + cellWidth * current.getWidth()) - left, Math.ceil(y + cellHeight / 2) - top);
       }
       const chars = current.getChars();
       if (chars && !current.isInvisible()) {

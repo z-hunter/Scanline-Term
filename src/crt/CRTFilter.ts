@@ -348,8 +348,8 @@ export class CRTFilter {
                            float fade = 1.0 - smoothstep(0.0, 0.25, dist);
                            
                            // Match bezel halo and ambient floor to the selected phosphor mode.
-                           glow = max(applyColorMode(pow(glow, vec3(1.5))), applyColorMode(vec3(0.004, 0.014, 0.007)));
-                           finalColor += glow * 4.0 * fade;
+                           glow = max(applyColorMode(pow(glow, vec3(1.7))), applyColorMode(vec3(0.002, 0.007, 0.004)));
+                           finalColor += glow * 2.2 * fade;
                       }
 
                      gl_FragColor = vec4(finalColor, 1.0);
