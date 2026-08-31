@@ -136,11 +136,17 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
     }
   }
   ctx.globalAlpha = 1;
-  if (Math.floor(time * 2) % 2 === 0) {
+  const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
+  const cursorVisible = core?.coreService?.isCursorHidden !== true
+    && buffer.cursorX >= 0 && buffer.cursorX < terminal.cols && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows;
+  if (cursorVisible && Math.floor(time * 2) % 2 === 0) {
     const cursorX = padding + cellWidth * buffer.cursorX;
     const cursorY = padding + cellHeight * buffer.cursorY;
     ctx.fillStyle = profile.cursor ?? profile.foreground;
-    ctx.fillRect(cursorX, cursorY, Math.max(2, Math.floor(cellWidth * 0.8)), Math.ceil(cellHeight));
+    const cursorWidth = Math.max(2, Math.min(cellWidth, terminal.options.cursorWidth ?? cellWidth * 0.15));
+    if (terminal.options.cursorStyle === 'underline') ctx.fillRect(cursorX, cursorY + cellHeight - 2, cellWidth, 2);
+    else if (terminal.options.cursorStyle === 'bar') ctx.fillRect(cursorX, cursorY, cursorWidth, Math.ceil(cellHeight));
+    else ctx.fillRect(cursorX, cursorY, cellWidth, Math.ceil(cellHeight));
   }
 }
 
