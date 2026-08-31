@@ -1,4 +1,4 @@
-export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279'] as const;
+export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'zx-spectrum'] as const;
 
 export type ColorProfileId = (typeof COLOR_PROFILE_IDS)[number];
 
@@ -50,6 +50,14 @@ const profiles: TerminalColorProfile[] = [
   {
     id: 'ibm-3279', label: 'IBM 3279', foreground: '#00ff00', background: '#000000',
     colors: ['#000000', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff', '#000000', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff'],
+  },
+  {
+    id: 'commodore-64', label: 'Commodore 64', foreground: '#5f53fe', background: '#211bae',
+    colors: ['#000000', '#be1a24', '#1fd21e', '#dff60a', '#211bae', '#b41ae2', '#30e6c6', '#fdfefc', '#424540', '#fe4a57', '#59fe59', '#b84104', '#5f53fe', '#6a3304', '#70746f', '#a4a7a2'],
+  },
+  {
+    id: 'zx-spectrum', label: 'ZX Spectrum', foreground: '#d7d7d7', background: '#000000',
+    colors: ['#000000', '#d70000', '#00d700', '#d7d700', '#0000d7', '#d700d7', '#00d7d7', '#d7d7d7', '#000000', '#ff0000', '#00ff00', '#ffff00', '#0000ff', '#ff00ff', '#00ffff', '#ffffff'],
   },
 ];
 
