@@ -162,7 +162,8 @@ mod tests {
         while !String::from_utf8_lossy(&output).contains("scanline-conpty") {
             output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap().unwrap());
         }
-        assert!(String::from_utf8_lossy(&output).contains("\x1b[?9001h"));
+        let output = String::from_utf8_lossy(&output);
+        assert!(output.contains("\x1b[?9001h"));
     }
 
     #[cfg(windows)]

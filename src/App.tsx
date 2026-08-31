@@ -250,6 +250,7 @@ export default function App() {
   const terminalInputRef = useRef(Promise.resolve());
   const pendingInputRef = useRef('');
   const inputFrameRef = useRef(0);
+  const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const initialResolutionRef = useRef(resolution);
@@ -276,6 +277,7 @@ export default function App() {
     const profile = activeColorProfile(settingsRef.current);
     const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     terminalRef.current = terminal;
+    const terminalResponse = terminal.onData((data) => sendInputRef.current(data));
     const enableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
       if (params.length !== 1 || params[0] !== 9001) return false;
       win32InputModeRef.current = true;
@@ -307,6 +309,7 @@ export default function App() {
       pendingInputRef.current = '';
       cancelAnimationFrame(inputFrameRef.current);
       inputFrameRef.current = 0;
+      terminalResponse.dispose();
       terminal.dispose();
       enableWin32Input.dispose();
       disableWin32Input.dispose();
@@ -397,8 +400,12 @@ export default function App() {
         .then(() => invoke('write_terminal', { input: pending }))
         .then(() => undefined)
         .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
-    });
+      });
   };
+
+  useEffect(() => {
+    sendInputRef.current = sendInput;
+  });
 
   const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>, keyDown: boolean) => {
     const terminal = terminalRef.current;
