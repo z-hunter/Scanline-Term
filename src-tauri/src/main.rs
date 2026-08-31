@@ -2,15 +2,21 @@
 
 use std::{
     io::{Read, Write},
+    path::PathBuf,
     sync::Mutex,
     thread,
 };
 
-use tauri::{Emitter, Manager, State};
+use conpty_oxide::{
+    blocking::{Child, Command, OwnedWriteHalf},
+    ConPtyBackend, PtyController, SessionOptions, Size,
+};
+use tauri::{path::BaseDirectory, Emitter, Manager, State};
 
 struct TerminalSession {
-    process: conpty::Process,
-    writer: conpty::io::PipeWriter,
+    child: Child,
+    writer: OwnedWriteHalf,
+    controller: PtyController,
 }
 
 #[derive(Default)]
@@ -20,17 +26,30 @@ impl Drop for TerminalState {
     fn drop(&mut self) {
         if let Ok(session) = self.0.get_mut() {
             if let Some(mut session) = session.take() {
-                let _ = session.process.exit(1);
+                let _ = session.child.kill();
             }
         }
     }
 }
 
-fn pty_size(cols: u16, rows: u16) -> Result<(i16, i16), String> {
+fn pty_size(cols: u16, rows: u16) -> Result<Size, String> {
     if !(20..=300).contains(&cols) || !(8..=150).contains(&rows) {
         return Err("terminal size is out of range".into());
     }
-    Ok((cols as i16, rows as i16))
+    Size::try_new(cols, rows).map_err(|error| error.to_string())
+}
+
+fn bundled_conpty_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if cfg!(debug_assertions) {
+        return Ok(dev_conpty_dir());
+    }
+    app.path()
+        .resolve("conpty/x64", BaseDirectory::Resource)
+        .map_err(|error| error.to_string())
+}
+
+fn dev_conpty_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/conpty/x64")
 }
 
 #[tauri::command]
@@ -42,18 +61,17 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, cols: u16,
     }
 
     let shell = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
-    let mut command = std::process::Command::new(shell);
+    let mut command = Command::new(shell);
     if let Some(home) = std::env::var_os("USERPROFILE") {
         command.current_dir(home);
     }
-    let mut options = conpty::ProcessOptions::default();
-    options.set_console_size(Some(size));
-    let mut process = options.spawn(command).map_err(|error| error.to_string())?;
-    let mut reader = process.output().map_err(|error| error.to_string())?;
-    let mut writer = process.input().map_err(|error| error.to_string())?;
+    let backend = ConPtyBackend::from_dir(bundled_conpty_dir(&app)?).map_err(|error| error.to_string())?;
+    let options = SessionOptions::new().size(size).backend(backend);
+    let conpty_session = command.spawn_with(options).map_err(|error| error.to_string())?;
+    let conpty_oxide::blocking::SessionParts { child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
     writer.write_all(b"\r").map_err(|error| error.to_string())?;
     writer.flush().map_err(|error| error.to_string())?;
-    *session = Some(TerminalSession { process, writer });
+    *session = Some(TerminalSession { child, writer, controller });
     drop(session);
 
     thread::spawn(move || {
@@ -82,10 +100,10 @@ fn write_terminal(state: State<TerminalState>, input: String) -> Result<(), Stri
 
 #[tauri::command]
 fn resize_terminal(state: State<TerminalState>, cols: u16, rows: u16) -> Result<(), String> {
-    let (cols, rows) = pty_size(cols, rows)?;
+    let size = pty_size(cols, rows)?;
     let mut session = state.0.lock().map_err(|_| "terminal state is unavailable")?;
     let session = session.as_mut().ok_or("terminal is not running")?;
-    session.process.resize(cols, rows).map_err(|error| error.to_string())
+    session.controller.resize(size).map_err(|error| error.to_string())
 }
 
 fn main() {
@@ -98,7 +116,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::pty_size;
+    use super::{dev_conpty_dir, pty_size};
 
     #[test]
     fn limits_terminal_dimensions() {
@@ -109,7 +127,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn conpty_streams_cmd_output() {
+    fn bundled_conpty_streams_win32_input_request() {
         use std::{
             io::{Read, Write},
             sync::mpsc,
@@ -117,13 +135,12 @@ mod tests {
             time::Duration,
         };
 
-        use conpty::ProcessOptions;
+        use conpty_oxide::{blocking::Command, ConPtyBackend, SessionOptions};
 
-        let mut options = ProcessOptions::default();
-        options.set_console_size(Some(pty_size(80, 30).unwrap()));
-        let mut process = options.spawn(std::process::Command::new("cmd.exe")).unwrap();
-        let mut reader = process.output().unwrap();
-        let mut writer = process.input().unwrap();
+        let backend = ConPtyBackend::from_dir(dev_conpty_dir()).unwrap();
+        let mut command = Command::new("cmd.exe");
+        let session = command.spawn_with(SessionOptions::new().size(pty_size(80, 30).unwrap()).backend(backend)).unwrap();
+        let conpty_oxide::blocking::SessionParts { child: _child, output: mut reader, input: mut writer, .. } = session.into_parts();
         writer.write_all(b"echo scanline-conpty\r").unwrap();
         writer.flush().unwrap();
         let (sender, receiver) = mpsc::channel();
@@ -145,5 +162,6 @@ mod tests {
         while !String::from_utf8_lossy(&output).contains("scanline-conpty") {
             output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap().unwrap());
         }
+        assert!(String::from_utf8_lossy(&output).contains("\x1b[?9001h"));
     }
 }
