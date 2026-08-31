@@ -22,4 +22,9 @@ describe('CRT settings', () => {
   it('survives malformed JSON', () => {
     expect(loadStoredSettings('{broken').crt).toEqual(DEFAULT_CRT_SETTINGS);
   });
+
+  it('accepts the expanded trail intensity range', () => {
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { persistenceIntensity: 4 } }));
+    expect(loaded.crt.persistenceIntensity).toBe(4);
+  });
 });

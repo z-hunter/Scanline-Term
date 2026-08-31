@@ -44,7 +44,7 @@ const numericRanges = {
   bloom: [0, 1],
   glow: [0, 1],
   persistence: [0, 1],
-  persistenceIntensity: [0, 1],
+  persistenceIntensity: [0, 4],
   beamModulation: [0, 1],
   breathing: [0, 1],
 } as const;

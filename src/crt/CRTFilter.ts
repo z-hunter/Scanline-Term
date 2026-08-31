@@ -314,8 +314,9 @@ export class CRTFilter {
                            float dist = length(distVec);
                            float fade = 1.0 - smoothstep(0.0, 0.25, dist);
                            
-                           glow = pow(glow, vec3(2.0));
-                           finalColor += glow * 2.5 * fade;
+                           // Keep the bezel halo visible even against mostly-black content.
+                           glow = max(pow(glow, vec3(1.5)), vec3(0.004, 0.014, 0.007));
+                           finalColor += glow * 8.0 * fade;
                       }
 
                      gl_FragColor = vec4(finalColor, 1.0);
@@ -345,7 +346,7 @@ export class CRTFilter {
                 if (u_persistence > 0.0) {
                      vec3 trail = texture2D(u_trail, rasterUV).rgb;
                      float inBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0) * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
-                     color = max(color, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 1.0));
+                     color = max(color, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
 
                 // BLOOM / HALATION (Smooth phosphor electron bleed on bright highlights)

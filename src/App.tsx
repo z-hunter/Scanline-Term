@@ -31,7 +31,7 @@ const controls: Record<string, Control[]> = {
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
-    { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 1, step: 0.05 },
+    { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 4, step: 0.05 },
     { key: 'breathing', label: 'HV breathing', min: 0, max: 1, step: 0.05 },
   ],
 };
@@ -67,10 +67,20 @@ function drawMockTerminal(canvas: HTMLCanvasElement, time: number): void {
     ctx.fillStyle = index % 3 === 0 ? '#9affbd' : '#62db91';
     ctx.fillText(line, fontSize, fontSize + lineHeight * (index + 3));
   });
+  const menuTop = canvas.height - lineHeight * 4;
+  ctx.fillStyle = '#092615';
+  ctx.fillRect(0, menuTop - 2, canvas.width, lineHeight * 4 + 2);
+  ctx.fillStyle = '#7dffae';
+  ctx.fillText('C:\\SCANLINE   A: PROGRAMS   B: DATA', fontSize, menuTop);
+  ctx.fillStyle = '#62db91';
+  ctx.fillText('README.TXT  CRT.CFG   QUEST.BIN   TERMINAL.LOG', fontSize, menuTop + lineHeight);
+  ctx.fillText('F1 Help  F2 Menu  F3 View  F4 Edit  F5 Copy', fontSize, menuTop + lineHeight * 2);
+  ctx.fillText('F6 Move  F7 MkDir F8 Delete F9 PullDn F10 Quit', fontSize, menuTop + lineHeight * 3);
   if (Math.floor(time * 2) % 2 === 0) {
-    const cursorY = fontSize + lineHeight * (lines.length + 4);
+    const cursorY = menuTop + lineHeight * 3;
+    const cursorX = fontSize + ctx.measureText('F6 Move  F7 MkDir F8 Delete F9 PullDn F10 Quit').width;
     ctx.fillStyle = '#b7ffd0';
-    ctx.fillRect(fontSize, cursorY, Math.max(6, Math.floor(fontSize * 0.65)), lineHeight - 2);
+    ctx.fillRect(cursorX, cursorY, Math.max(6, Math.floor(fontSize * 0.65)), lineHeight - 2);
   }
 }
 
