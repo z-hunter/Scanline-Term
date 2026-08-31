@@ -164,4 +164,37 @@ mod tests {
         }
         assert!(String::from_utf8_lossy(&output).contains("\x1b[?9001h"));
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn win32_input_mode_delivers_function_key() {
+        use std::{io::{Read, Write}, sync::mpsc, thread, time::Duration};
+
+        use conpty_oxide::{blocking::Command, ConPtyBackend, SessionOptions};
+
+        let backend = ConPtyBackend::from_dir(dev_conpty_dir()).unwrap();
+        let mut command = Command::new("powershell.exe");
+        command.args(["-NoProfile", "-Command", "$key=[Console]::ReadKey($true); [Console]::WriteLine($key.Key)"]);
+        let session = command.spawn_with(SessionOptions::new().size(pty_size(80, 30).unwrap()).backend(backend)).unwrap();
+        let conpty_oxide::blocking::SessionParts { child: _child, output: mut reader, input: mut writer, .. } = session.into_parts();
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || loop {
+            let mut bytes = [0; 1024];
+            match reader.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(count) if sender.send(Ok(bytes[..count].to_vec())).is_err() => break,
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = sender.send(Err(error));
+                    break;
+                }
+            }
+        });
+        writer.write_all(b"\x1b[112;59;0;1;0;1_").unwrap();
+        writer.flush().unwrap();
+        let mut output = Vec::new();
+        while !String::from_utf8_lossy(&output).contains("F1") {
+            output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap().unwrap());
+        }
+    }
 }

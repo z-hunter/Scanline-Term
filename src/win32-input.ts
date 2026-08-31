@@ -50,6 +50,8 @@ function controlState(event: KeyEvent): number {
 }
 
 function unicodeCharacter(event: KeyEvent): number {
+  const control = ({ Enter: 0x0d, NumpadEnter: 0x0d, Tab: 0x09, Backspace: 0x08, Escape: 0x1b } as Record<string, number | undefined>)[event.code];
+  if (control !== undefined) return control;
   if (event.ctrlKey && event.key.length === 1) {
     const key = event.key.toUpperCase();
     if (key === ' ' || event.code === 'Digit2') return 0;
