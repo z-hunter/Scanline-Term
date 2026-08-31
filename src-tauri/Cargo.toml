@@ -9,6 +9,7 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+conpty = "0.7.0"
 tauri = { version = "2.11.1", features = [] }
 
 [features]

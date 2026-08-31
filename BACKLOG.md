@@ -13,5 +13,5 @@
 
 ## Deferred product work
 
-- Connect Windows ConPTY and a real shell.
-- Add a terminal emulator/parser and clipboard/mouse-mode behavior.
+- Add cell-level ANSI colors and text attributes to the CRT canvas renderer.
+- Add selection, clipboard shortcuts and mouse-mode behavior.

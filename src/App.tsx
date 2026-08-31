@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { CRTFilter, type CRTColorMode, type CRTSettings } from './crt/CRTFilter';
 import {
   DEFAULT_CRT_SETTINGS,
@@ -40,6 +43,52 @@ const controls: Record<string, Control[]> = {
   ],
 };
 
+function terminalDimensions(width: number, height: number): { cols: number; rows: number } {
+  const fontSize = Math.max(10, Math.floor(width / 80));
+  const lineHeight = Math.floor(fontSize * 1.5);
+  return {
+    cols: Math.max(20, Math.min(300, Math.floor((width - fontSize * 2) / (fontSize * 0.62)))),
+    rows: Math.max(8, Math.min(150, Math.floor((height - fontSize * 2) / lineHeight))),
+  };
+}
+
+function terminalKey(event: KeyboardEvent<HTMLCanvasElement>): string | null {
+  if (event.ctrlKey && event.key.length === 1 && /[a-z]/i.test(event.key)) {
+    return String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
+  }
+  if (event.altKey && event.key.length === 1) return `\x1b${event.key}`;
+  if (!event.ctrlKey && !event.metaKey && event.key.length === 1) return event.key;
+  return ({
+    Enter: '\r', Backspace: '\x7f', Tab: event.shiftKey ? '\x1b[Z' : '\t', Escape: '\x1b',
+    ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D',
+    Home: '\x1b[H', End: '\x1b[F', Delete: '\x1b[3~', PageUp: '\x1b[5~', PageDown: '\x1b[6~',
+  } as Record<string, string | undefined>)[event.key] ?? null;
+}
+
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const fontSize = Math.max(10, Math.floor(canvas.width / 80));
+  const lineHeight = Math.floor(fontSize * 1.5);
+  const startX = fontSize;
+  ctx.fillStyle = '#050806';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#7dffae';
+  const buffer = terminal.buffer.active;
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const line = buffer.getLine(buffer.baseY + row);
+    if (line) ctx.fillText(line.translateToString(true), startX, fontSize + lineHeight * row);
+  }
+  if (Math.floor(time * 2) % 2 === 0) {
+    const cursorX = startX + ctx.measureText('M').width * buffer.cursorX;
+    const cursorY = fontSize + lineHeight * buffer.cursorY;
+    ctx.fillStyle = '#b7ffd0';
+    ctx.fillRect(cursorX, cursorY, Math.max(6, Math.floor(fontSize * 0.65)), lineHeight - 2);
+  }
+}
+
 function drawMockTerminal(canvas: HTMLCanvasElement, time: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -60,7 +109,7 @@ function drawMockTerminal(canvas: HTMLCanvasElement, time: number): void {
     '[ OK ] scanline generator synchronized',
     '[ OK ] WebGL fragment pipeline ready',
     '> rendering an ordinary terminal as an old monitor',
-    '> this is a mock session; ConPTY comes later',
+    '> browser preview uses a mock session',
     '',
     '  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F',
     '  -- amber phosphor / green phosphor / glass glow --',
@@ -129,12 +178,16 @@ function formatValue(value: number): string {
 export default function App() {
   const [stored, setStored] = useState(() => loadStoredSettings(localStorage.getItem(STORAGE_KEY)));
   const [error, setError] = useState<string | null>(null);
+  const [terminalLive, setTerminalLive] = useState(false);
+  const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
   const outputRef = useRef<HTMLCanvasElement>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
   const filterRef = useRef<CRTFilter | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const terminalLiveRef = useRef(false);
+  const terminalInputRef = useRef(Promise.resolve());
+  const initialResolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
-
-  const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
@@ -147,6 +200,40 @@ export default function App() {
     source.width = resolution.width;
     source.height = resolution.height;
     filterRef.current?.clearPersistence();
+  }, [resolution.height, resolution.width]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    const { width, height } = initialResolutionRef.current;
+    const { cols, rows } = terminalDimensions(width, height);
+    const terminal = new Terminal({ cols, rows, scrollback: 1000 });
+    terminalRef.current = terminal;
+    let unlisten: UnlistenFn | undefined;
+    const start = window.setTimeout(async () => {
+      try {
+        unlisten = await listen<number[]>('terminal-output', (event) => terminal.write(Uint8Array.from(event.payload)));
+        await invoke('start_terminal', { cols, rows });
+        terminalLiveRef.current = true;
+        setTerminalLive(true);
+      } catch (reason) {
+        setError(`Windows console could not start: ${String(reason)}`);
+      }
+    });
+    return () => {
+      window.clearTimeout(start);
+      unlisten?.();
+      terminalLiveRef.current = false;
+      terminal.dispose();
+      terminalRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminalLiveRef.current || !terminal) return;
+    const { cols, rows } = terminalDimensions(resolution.width, resolution.height);
+    terminal.resize(cols, rows);
+    void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
   }, [resolution.height, resolution.width]);
 
   useEffect(() => {
@@ -169,7 +256,9 @@ export default function App() {
     resize();
 
     const render = (now: number) => {
-      drawMockTerminal(source, now / 1000);
+      const time = now / 1000;
+      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time);
+      else drawMockTerminal(source, time);
       if (!filter.isValid() && !errorReported) {
         errorReported = true;
         setError('WebGL is unavailable in this WebView.');
@@ -196,13 +285,41 @@ export default function App() {
     filterRef.current?.clearPersistence();
   };
 
+  const sendInput = (input: string) => {
+    if (!terminalLiveRef.current || !input) return;
+    terminalInputRef.current = terminalInputRef.current
+      .then(() => invoke('write_terminal', { input }))
+      .then(() => undefined)
+      .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
+  };
+
+  const handleTerminalKey = (event: KeyboardEvent<HTMLCanvasElement>) => {
+    const input = terminalKey(event);
+    if (!input) return;
+    event.preventDefault();
+    sendInput(input);
+  };
+
   return (
     <main className="app-shell">
       <section className="display-panel" aria-label="CRT display">
         <div className="screen-frame">
-          <canvas ref={outputRef} className="output-canvas" data-testid="output-canvas" />
+          <canvas
+            ref={outputRef}
+            className="output-canvas"
+            data-testid="output-canvas"
+            tabIndex={terminalLive ? 0 : -1}
+            aria-label={terminalLive ? 'Windows console' : 'CRT display'}
+            onKeyDown={handleTerminalKey}
+            onPaste={(event) => {
+              const input = event.clipboardData.getData('text');
+              if (!input) return;
+              event.preventDefault();
+              sendInput(input);
+            }}
+          />
         </div>
-        <p className="display-status">MOCK SESSION · {resolution.width}×{resolution.height}</p>
+        <p className="display-status">{terminalLive ? 'WINDOWS CMD · click screen to type' : 'MOCK SESSION'} · {resolution.width}×{resolution.height}</p>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
       <aside className="settings-panel">
@@ -293,7 +410,7 @@ export default function App() {
           </label>
         </fieldset>
         <button type="button" className="reset-button" onClick={reset}>Reset defaults</button>
-        <footer>v0.1 · mock terminal · no ConPTY yet</footer>
+        <footer>v0.2 · ConPTY · ANSI screen buffer</footer>
       </aside>
     </main>
   );

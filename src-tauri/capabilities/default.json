@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Allow the bundled terminal UI to receive ConPTY output events.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen"]
+}

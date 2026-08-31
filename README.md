@@ -1,11 +1,11 @@
 # Scanline Term
 
-Reusable WebGL CRT shader demo and foundation for a retro Windows terminal, built with React, Vite, and Tauri 2.
+WebGL CRT terminal for Windows, built with React, Vite, and Tauri 2.
 
 The demo renders an animated mock terminal into a virtual framebuffer and applies the CRT filter extracted from our Quest/Scanline engine:
 
 ```text
-mock terminal canvas → CRTFilter → WebGL output canvas → Tauri window
+ConPTY (`cmd.exe`) ↔ Tauri commands/events ↔ VT screen buffer → canvas → CRTFilter → WebGL output canvas
 ```
 
 ## Included
@@ -15,7 +15,7 @@ mock terminal canvas → CRTFilter → WebGL output canvas → Tauri window
 - Separate image brightness/contrast controls and monochrome-only background desaturation; phosphor grain/static and scanlines are composited as an independent surface layer.
 - Virtual modes: QVGA 320×240, VGA 640×480, SVGA 800×600 and XGA 1024×768.
 - Native controls with validated `localStorage` settings and reset-to-defaults.
-- A mock terminal only. Windows ConPTY and a real shell are deliberately deferred.
+- In the Tauri app, a native Windows ConPTY session runs `cmd.exe`; click the screen to type and paste. Browser/Vite preview keeps using the mock session.
 
 ## Development
 
