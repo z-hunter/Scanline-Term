@@ -12,6 +12,7 @@ import {
   type ResolutionId,
 } from './crt/settings';
 import { terminalKey } from './terminal-input';
+import { win32InputKey } from './win32-input';
 import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, remapLegacyRgb, type TerminalColorProfile } from './terminal-color-profiles';
 import './styles.css';
 
@@ -249,6 +250,7 @@ export default function App() {
   const terminalInputRef = useRef(Promise.resolve());
   const pendingInputRef = useRef('');
   const inputFrameRef = useRef(0);
+  const win32InputModeRef = useRef(false);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const initialResolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
@@ -274,6 +276,16 @@ export default function App() {
     const profile = activeColorProfile(settingsRef.current);
     const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     terminalRef.current = terminal;
+    const enableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      if (params.length !== 1 || params[0] !== 9001) return false;
+      win32InputModeRef.current = true;
+      return true;
+    });
+    const disableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      if (params.length !== 1 || params[0] !== 9001) return false;
+      win32InputModeRef.current = false;
+      return true;
+    });
     let unlisten: UnlistenFn | undefined;
     const start = window.setTimeout(async () => {
       try {
@@ -290,11 +302,14 @@ export default function App() {
       window.clearTimeout(start);
       unlisten?.();
       terminalLiveRef.current = false;
+      win32InputModeRef.current = false;
       terminalSizeRef.current = { cols: 0, rows: 0 };
       pendingInputRef.current = '';
       cancelAnimationFrame(inputFrameRef.current);
       inputFrameRef.current = 0;
       terminal.dispose();
+      enableWin32Input.dispose();
+      disableWin32Input.dispose();
       terminalRef.current = null;
     };
   }, []);
@@ -385,9 +400,11 @@ export default function App() {
     });
   };
 
-  const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+  const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>, keyDown: boolean) => {
     const terminal = terminalRef.current;
-    const input = terminal && terminalKey(event.nativeEvent, terminal.modes);
+    const input = terminal && (win32InputModeRef.current
+      ? win32InputKey(event.nativeEvent, keyDown)
+      : keyDown ? terminalKey(event.nativeEvent, terminal.modes) : null);
     if (!input) return;
     event.preventDefault();
     sendInput(input);
@@ -395,7 +412,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
-      if (event.altKey && event.key === 'Enter' && isTauri()) {
+      if (!win32InputModeRef.current && event.altKey && event.key === 'Enter' && isTauri()) {
         event.preventDefault();
         const window = getCurrentWindow();
         await window.setFullscreen(!(await window.isFullscreen()));
@@ -415,7 +432,9 @@ export default function App() {
             data-testid="output-canvas"
             tabIndex={terminalLive ? 0 : -1}
             aria-label={terminalLive ? 'Windows console' : 'CRT display'}
-            onKeyDown={handleTerminalKey}
+            onKeyDown={(event) => handleTerminalKey(event, true)}
+            onKeyUp={(event) => handleTerminalKey(event, false)}
+            onContextMenu={(event) => event.preventDefault()}
             onPaste={(event) => {
               const input = event.clipboardData.getData('text');
               if (!input) return;
