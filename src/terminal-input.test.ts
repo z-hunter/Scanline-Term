@@ -13,6 +13,7 @@ describe('terminal keyboard encoding', () => {
 
   it('encodes console controls and navigation modes', () => {
     expect(terminalKey(key('c', { ctrlKey: true, code: 'KeyC' }), normal)).toBe('\x03');
+    expect(terminalKey(key('c', { ctrlKey: true, altKey: true, code: 'KeyC' }), normal)).toBe('\x1b\x03');
     expect(terminalKey(key('ArrowUp', { ctrlKey: true }), normal)).toBe('\x1b[1;5A');
     expect(terminalKey(key('ArrowLeft'), { applicationCursorKeysMode: true, applicationKeypadMode: false })).toBe('\x1bOD');
     expect(terminalKey(key('1', { code: 'Numpad1' }), { applicationCursorKeysMode: false, applicationKeypadMode: true })).toBe('\x1bOq');

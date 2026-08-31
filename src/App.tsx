@@ -44,18 +44,21 @@ const controls: Record<string, Control[]> = {
   ],
 };
 
-function terminalDimensions(width: number, height: number): { cols: number; rows: number } {
-  const fontSize = Math.max(10, Math.floor(width / 80));
-  const lineHeight = Math.floor(fontSize * 1.5);
+function terminalPadding(width: number, height: number): number {
+  return Math.max(4, Math.floor(Math.min(width, height) * 0.02));
+}
+
+function terminalDimensions(width: number, height: number, visibleWidth: number, visibleHeight: number): { cols: number; rows: number } {
+  const padding = terminalPadding(width, height);
   return {
-    cols: Math.max(20, Math.min(300, Math.floor((width - fontSize * 2) / (fontSize * 0.62)))),
-    rows: Math.max(8, Math.min(150, Math.floor((height - fontSize * 2) / lineHeight))),
+    cols: Math.max(20, Math.min(300, Math.floor(Math.min((width - padding * 2) / 6, visibleWidth / 8)))),
+    rows: Math.max(8, Math.min(150, Math.floor(Math.min((height - padding * 2) / 12, visibleHeight / 16)))),
   };
 }
 
 const terminalPalette = ['#000000', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#e5e5e5', '#666666', '#cd3131', '#23d18b', '#f5f543', '#3b8eea', '#d966d9', '#29b8db', '#ffffff'];
-const terminalBackground = '#050806';
-const terminalForeground = '#7dffae';
+const terminalBackground = '#0c0c0c';
+const terminalForeground = '#cccccc';
 
 function indexedColor(index: number): string {
   if (index < 16) return terminalPalette[index];
@@ -80,30 +83,31 @@ function cellColor(cell: IBufferCell, foreground: boolean): string {
 function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const fontSize = Math.max(10, Math.floor(canvas.width / 80));
-  const lineHeight = Math.floor(fontSize * 1.5);
-  const startX = fontSize;
+  const padding = terminalPadding(canvas.width, canvas.height);
+  const cellWidth = (canvas.width - padding * 2) / terminal.cols;
+  const cellHeight = (canvas.height - padding * 2) / terminal.rows;
+  const fontSize = Math.max(7, Math.floor(Math.min(cellHeight * 0.78, cellWidth / 0.55)));
   ctx.fillStyle = terminalBackground;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
-  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   const buffer = terminal.buffer.active;
-  const cellWidth = ctx.measureText('M').width;
   const cell = buffer.getNullCell();
   for (let row = 0; row < terminal.rows; row += 1) {
     const line = buffer.getLine(buffer.baseY + row);
     if (!line) continue;
-    const y = fontSize + lineHeight * row;
+    const y = padding + cellHeight * (row + 0.5);
     for (let column = 0; column < terminal.cols; column += 1) {
       const current = line.getCell(column, cell);
       if (!current || current.getWidth() === 0) continue;
       let foreground = cellColor(current, true);
       let background = cellColor(current, false);
       if (current.isInverse()) [foreground, background] = [background, foreground];
-      const x = startX + cellWidth * column;
+      const x = padding + cellWidth * column;
       if (background !== terminalBackground) {
         ctx.fillStyle = background;
-        ctx.fillRect(x, y, Math.ceil(cellWidth * current.getWidth()), lineHeight);
+        ctx.fillRect(x, y - cellHeight / 2, cellWidth * current.getWidth() + 0.01, cellHeight + 0.01);
       }
       const chars = current.getChars();
       if (chars && !current.isInvisible()) {
@@ -115,10 +119,10 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   }
   ctx.globalAlpha = 1;
   if (Math.floor(time * 2) % 2 === 0) {
-    const cursorX = startX + ctx.measureText('M').width * buffer.cursorX;
-    const cursorY = fontSize + lineHeight * buffer.cursorY;
-    ctx.fillStyle = '#b7ffd0';
-    ctx.fillRect(cursorX, cursorY, Math.max(6, Math.floor(fontSize * 0.65)), lineHeight - 2);
+    const cursorX = padding + cellWidth * buffer.cursorX;
+    const cursorY = padding + cellHeight * buffer.cursorY;
+    ctx.fillStyle = terminalForeground;
+    ctx.fillRect(cursorX, cursorY, Math.max(2, Math.floor(cellWidth * 0.8)), Math.ceil(cellHeight));
   }
 }
 
@@ -219,6 +223,9 @@ export default function App() {
   const terminalRef = useRef<Terminal | null>(null);
   const terminalLiveRef = useRef(false);
   const terminalInputRef = useRef(Promise.resolve());
+  const pendingInputRef = useRef('');
+  const inputFrameRef = useRef(0);
+  const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const initialResolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
 
@@ -238,14 +245,16 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     const { width, height } = initialResolutionRef.current;
-    const { cols, rows } = terminalDimensions(width, height);
-    const terminal = new Terminal({ cols, rows, scrollback: 1000 });
+    const rect = outputRef.current?.getBoundingClientRect();
+    const { cols, rows } = terminalDimensions(width, height, rect?.width ?? window.innerWidth, rect?.height ?? window.innerHeight);
+    const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: terminalForeground, background: terminalBackground } });
     terminalRef.current = terminal;
     let unlisten: UnlistenFn | undefined;
     const start = window.setTimeout(async () => {
       try {
         unlisten = await listen<number[]>('terminal-output', (event) => terminal.write(Uint8Array.from(event.payload)));
         await invoke('start_terminal', { cols, rows });
+        terminalSizeRef.current = { cols, rows };
         terminalLiveRef.current = true;
         setTerminalLive(true);
       } catch (reason) {
@@ -256,6 +265,10 @@ export default function App() {
       window.clearTimeout(start);
       unlisten?.();
       terminalLiveRef.current = false;
+      terminalSizeRef.current = { cols: 0, rows: 0 };
+      pendingInputRef.current = '';
+      cancelAnimationFrame(inputFrameRef.current);
+      inputFrameRef.current = 0;
       terminal.dispose();
       terminalRef.current = null;
     };
@@ -264,7 +277,10 @@ export default function App() {
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminalLiveRef.current || !terminal) return;
-    const { cols, rows } = terminalDimensions(resolution.width, resolution.height);
+    const rect = outputRef.current?.getBoundingClientRect();
+    const { cols, rows } = terminalDimensions(resolution.width, resolution.height, rect?.width ?? window.innerWidth, rect?.height ?? window.innerHeight);
+    if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
+    terminalSizeRef.current = { cols, rows };
     terminal.resize(cols, rows);
     void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
   }, [resolution.height, resolution.width]);
@@ -283,6 +299,13 @@ export default function App() {
       const dpr = window.devicePixelRatio || 1;
       output.width = Math.max(1, Math.round(rect.width * dpr));
       output.height = Math.max(1, Math.round(rect.height * dpr));
+      const terminal = terminalRef.current;
+      if (!terminalLiveRef.current || !terminal) return;
+      const { cols, rows } = terminalDimensions(source.width, source.height, rect.width, rect.height);
+      if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
+      terminalSizeRef.current = { cols, rows };
+      terminal.resize(cols, rows);
+      void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
     };
     const observer = new ResizeObserver(resize);
     observer.observe(output);
@@ -320,10 +343,18 @@ export default function App() {
 
   const sendInput = (input: string) => {
     if (!terminalLiveRef.current || !input) return;
-    terminalInputRef.current = terminalInputRef.current
-      .then(() => invoke('write_terminal', { input }))
-      .then(() => undefined)
-      .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
+    pendingInputRef.current += input;
+    if (inputFrameRef.current) return;
+    inputFrameRef.current = requestAnimationFrame(() => {
+      inputFrameRef.current = 0;
+      const pending = pendingInputRef.current;
+      pendingInputRef.current = '';
+      if (!pending || !terminalLiveRef.current) return;
+      terminalInputRef.current = terminalInputRef.current
+        .then(() => invoke('write_terminal', { input: pending }))
+        .then(() => undefined)
+        .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
+    });
   };
 
   const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
