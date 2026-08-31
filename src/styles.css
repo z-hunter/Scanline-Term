@@ -50,9 +50,9 @@ legend { padding: 0 5px; color: #7dffae; font-size: 12px; letter-spacing: .08em;
 .slider-control { margin: 13px 0; }
 .slider-control span { display: flex; justify-content: space-between; gap: 10px; }
 output { color: #79d897; font-variant-numeric: tabular-nums; }
-input[type='range'] { width: 100%; height: 42px; accent-color: #65d58a; appearance: none; background: transparent; }
-input[type='range']::-webkit-slider-runnable-track { height: 34px; border: 1px solid #355840; border-radius: 50%; background: #17271c; }
-input[type='range']::-webkit-slider-thumb { width: 30px; height: 30px; margin-top: 1px; appearance: none; border: 2px solid #65d58a; border-radius: 50%; background: #0b130e; }
+.knob { width: 48px; height: 48px; display: grid; place-items: center; margin: 6px auto 0; border: 2px solid #355840; border-radius: 50%; color: #b9d7c1; font-size: 10px; cursor: ns-resize; background: conic-gradient(from -135deg, #65d58a var(--knob-progress), #17271c var(--knob-progress)); box-shadow: inset 0 0 0 5px #0b130e; user-select: none; }
+.knob span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #0b130e; }
+.knob:focus-visible { outline: 2px solid #7dffae; outline-offset: 2px; }
 .check-control { margin: 11px 0; }
 .check-control input { margin-right: 8px; accent-color: #65d58a; }
 .reset-button { width: 100%; margin-top: 20px; padding: 10px; border: 1px solid #4a875d; border-radius: 6px; color: #d7f5df; background: #163321; cursor: pointer; }

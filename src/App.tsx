@@ -46,6 +46,31 @@ const controls: Record<string, Control[]> = {
   ],
 };
 
+function Knob({ value, min, max, step, label, onChange }: { value: number; min: number; max: number; step: number; label: string; onChange: (value: number) => void }) {
+  const start = useRef<{ y: number; value: number } | null>(null);
+  const setFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!start.current || !event.buttons) return;
+    const next = Math.min(max, Math.max(min, start.current.value + (start.current.y - event.clientY) * step / 8));
+    onChange(Math.round(next / step) * step);
+  };
+  const ratio = (value - min) / (max - min);
+  return <div
+    className="knob"
+    role="slider"
+    aria-label={label}
+    aria-valuemin={min}
+    aria-valuemax={max}
+    aria-valuenow={value}
+    tabIndex={0}
+    style={{ '--knob-progress': `${ratio * 270 - 135}deg` } as React.CSSProperties}
+    onPointerDown={(event) => { start.current = { y: event.clientY, value }; event.currentTarget.setPointerCapture(event.pointerId); }}
+    onPointerMove={setFromPointer}
+    onPointerUp={() => { start.current = null; }}
+    onWheel={(event) => { event.preventDefault(); onChange(Math.min(max, Math.max(min, value + (event.deltaY < 0 ? step : -step)))); }}
+    onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowRight') onChange(Math.min(max, value + step)); if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') onChange(Math.max(min, value - step)); }}
+  ><span>{formatValue(value)}</span></div>;
+}
+
 function terminalPadding(width: number, height: number): number {
   return Math.max(4, Math.floor(Math.min(width, height) * 0.02));
 }
@@ -444,15 +469,7 @@ export default function App() {
             {groupControls.map((control) => (
               <label className="slider-control" key={control.key}>
                 <span>{control.label}<output>{formatValue(stored.crt[control.key])}</output></span>
-                <input
-                  type="range"
-                  min={control.min}
-                  max={control.max}
-                  step={control.step}
-                  value={stored.crt[control.key]}
-                  data-testid={`control-${control.key}`}
-                  onChange={(event) => updateCrt(control.key, Number(event.target.value))}
-                />
+                <Knob value={stored.crt[control.key]} min={control.min} max={control.max} step={control.step} label={control.label} onChange={(value) => updateCrt(control.key, value)} />
               </label>
             ))}
           </fieldset>
@@ -461,16 +478,7 @@ export default function App() {
           <legend>Surface</legend>
           <label className="slider-control">
             <span>Background desaturation<output>{formatValue(stored.crt.backgroundDesaturation)}</output></span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={stored.crt.backgroundDesaturation}
-              disabled={stored.crt.colorMode === 'color'}
-              data-testid="control-backgroundDesaturation"
-              onChange={(event) => updateCrt('backgroundDesaturation', Number(event.target.value))}
-            />
+            <Knob value={stored.crt.backgroundDesaturation} min={0} max={1} step={0.05} label="Background desaturation" onChange={(value) => updateCrt('backgroundDesaturation', value)} />
           </label>
         </fieldset>
         <fieldset>
