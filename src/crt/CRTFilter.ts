@@ -265,6 +265,17 @@ export class CRTFilter {
                  return color * inBounds;
              }
 
+             vec3 applyColorMode(vec3 value) {
+                 if (u_colorMode <= 0.5) return value;
+                 float luma = dot(value, vec3(0.2126, 0.7152, 0.0722));
+                 vec3 phosphorTint = vec3(1.0);
+                 if (u_colorMode < 1.5) phosphorTint = vec3(1.0); // B&W, D65 white point (~6500K)
+                 else if (u_colorMode < 2.5) phosphorTint = vec3(0.45, 1.0, 0.62); // Green
+                 else if (u_colorMode < 3.5) phosphorTint = vec3(1.0, 0.58, 0.2); // Amber
+                 else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
+                 return luma * phosphorTint;
+             }
+
              void main() {
                  vec2 curvedUV = curve(v_texCoord);
 
@@ -321,9 +332,9 @@ export class CRTFilter {
                            float dist = length(distVec);
                            float fade = 1.0 - smoothstep(0.0, 0.25, dist);
                            
-                           // Keep the bezel halo visible even against mostly-black content.
-                           glow = max(pow(glow, vec3(1.5)), vec3(0.004, 0.014, 0.007));
-                           finalColor += glow * 8.0 * fade;
+                           // Match bezel halo and ambient floor to the selected phosphor mode.
+                           glow = max(applyColorMode(pow(glow, vec3(1.5))), applyColorMode(vec3(0.004, 0.014, 0.007)));
+                           finalColor += glow * 4.0 * fade;
                       }
 
                      gl_FragColor = vec4(finalColor, 1.0);
@@ -480,17 +491,8 @@ export class CRTFilter {
                 // Brightness boost (static for now)
                 color *= 1.1;
 
-                // Monochrome phosphor presets. Color mode leaves the source RGB untouched;
-                // monochrome modes preserve luminance and tint it like a real phosphor.
-                if (u_colorMode > 0.5) {
-                    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-                    vec3 phosphorTint = vec3(1.0);
-                    if (u_colorMode < 1.5) phosphorTint = vec3(1.0); // B&W, D65 white point (~6500K)
-                    else if (u_colorMode < 2.5) phosphorTint = vec3(0.45, 1.0, 0.62); // Green
-                    else if (u_colorMode < 3.5) phosphorTint = vec3(1.0, 0.58, 0.2); // Amber
-                    else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
-                    color = luma * phosphorTint;
-                }
+                // Monochrome phosphor presets preserve luminance and tint the final image.
+                color = applyColorMode(color);
 
                 gl_FragColor = vec4(color, 1.0);
             }
