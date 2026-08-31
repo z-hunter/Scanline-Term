@@ -68,3 +68,8 @@ export function colorProfile(id: ColorProfileId): TerminalColorProfile {
 export function profileColor(profile: TerminalColorProfile, index: number): string {
   return profile.colors[index] ?? xtermExtended[index - 16] ?? profile.background;
 }
+
+export function remapLegacyRgb(profile: TerminalColorProfile, color: string): string {
+  const legacyIndex = colorProfile('windows-legacy').colors.indexOf(color.toLowerCase());
+  return legacyIndex < 0 ? color : profileColor(profile, legacyIndex);
+}

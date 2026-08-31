@@ -11,7 +11,7 @@ import {
   type ResolutionId,
 } from './crt/settings';
 import { terminalKey } from './terminal-input';
-import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, type TerminalColorProfile } from './terminal-color-profiles';
+import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, remapLegacyRgb, type TerminalColorProfile } from './terminal-color-profiles';
 import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
@@ -65,7 +65,7 @@ function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColo
   const isRgb = foreground ? cell.isFgRGB() : cell.isBgRGB();
   const isPalette = foreground ? cell.isFgPalette() : cell.isBgPalette();
   const value = foreground ? cell.getFgColor() : cell.getBgColor();
-  if (isRgb) return `#${value.toString(16).padStart(6, '0')}`;
+  if (isRgb) return remapLegacyRgb(profile, `#${value.toString(16).padStart(6, '0')}`);
   if (isPalette) return profileColor(profile, value);
   return foreground ? profile.foreground : profile.background;
 }
