@@ -62,7 +62,7 @@ function Knob({ value, min, max, step, label, onChange }: { value: number; min: 
     aria-valuemax={max}
     aria-valuenow={value}
     tabIndex={0}
-    style={{ '--knob-progress': `${ratio * 270 - 135}deg` } as React.CSSProperties}
+    style={{ '--knob-progress': `${ratio * 340}deg` } as React.CSSProperties}
     onPointerDown={(event) => { start.current = { y: event.clientY, value }; event.currentTarget.setPointerCapture(event.pointerId); }}
     onPointerMove={setFromPointer}
     onPointerUp={() => { start.current = null; }}
@@ -464,7 +464,7 @@ export default function App() {
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (
-          <fieldset key={group}>
+          <fieldset className="knob-group" key={group}>
             <legend>{group}</legend>
             {groupControls.map((control) => (
               <label className="slider-control" key={control.key}>
@@ -474,7 +474,7 @@ export default function App() {
             ))}
           </fieldset>
         ))}
-        <fieldset>
+        <fieldset className="knob-group">
           <legend>Surface</legend>
           <label className="slider-control">
             <span>Background desaturation<output>{formatValue(stored.crt.backgroundDesaturation)}</output></span>
