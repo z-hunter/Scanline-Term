@@ -15,7 +15,7 @@ ConPTY (`cmd.exe`) ↔ Tauri commands/events ↔ VT screen buffer → canvas →
 - Separate image brightness/contrast controls and monochrome-only background desaturation; phosphor grain/static and scanlines are composited as an independent surface layer.
 - Virtual modes: QVGA 320×240, VGA 640×480, SVGA 800×600 and XGA 1024×768.
 - Native controls with validated `localStorage` settings and reset-to-defaults.
-- In the Tauri app, a native Windows ConPTY session runs `cmd.exe`; click the screen to type and paste. Browser/Vite preview keeps using the mock session.
+- In the Tauri app, a native Windows ConPTY session runs `cmd.exe`; ANSI 16/256/RGB foreground and background colors are composited into the CRT canvas. Click the screen to type or paste; Ctrl combinations, navigation, numpad application mode and F1–F24 are serialized as VT input. Browser/Vite preview keeps using the mock session.
 
 ## Development
 

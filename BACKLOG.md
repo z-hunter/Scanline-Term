@@ -13,5 +13,5 @@
 
 ## Deferred product work
 
-- Add cell-level ANSI colors and text attributes to the CRT canvas renderer.
+- Add ANSI text attributes such as bold, underline and strikethrough to the CRT canvas renderer.
 - Add selection, clipboard shortcuts and mouse-mode behavior.

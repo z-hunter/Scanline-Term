@@ -1,5 +1,5 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from 'react';
+import { Terminal, type IBufferCell } from '@xterm/xterm';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { CRTFilter, type CRTColorMode, type CRTSettings } from './crt/CRTFilter';
@@ -10,6 +10,7 @@ import {
   RESOLUTIONS,
   type ResolutionId,
 } from './crt/settings';
+import { terminalKey } from './terminal-input';
 import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
@@ -52,17 +53,28 @@ function terminalDimensions(width: number, height: number): { cols: number; rows
   };
 }
 
-function terminalKey(event: KeyboardEvent<HTMLCanvasElement>): string | null {
-  if (event.ctrlKey && event.key.length === 1 && /[a-z]/i.test(event.key)) {
-    return String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64);
+const terminalPalette = ['#000000', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#e5e5e5', '#666666', '#cd3131', '#23d18b', '#f5f543', '#3b8eea', '#d966d9', '#29b8db', '#ffffff'];
+const terminalBackground = '#050806';
+const terminalForeground = '#7dffae';
+
+function indexedColor(index: number): string {
+  if (index < 16) return terminalPalette[index];
+  if (index < 232) {
+    const level = [0, 95, 135, 175, 215, 255];
+    const color = index - 16;
+    return `rgb(${level[Math.floor(color / 36)]} ${level[Math.floor(color / 6) % 6]} ${level[color % 6]})`;
   }
-  if (event.altKey && event.key.length === 1) return `\x1b${event.key}`;
-  if (!event.ctrlKey && !event.metaKey && event.key.length === 1) return event.key;
-  return ({
-    Enter: '\r', Backspace: '\x7f', Tab: event.shiftKey ? '\x1b[Z' : '\t', Escape: '\x1b',
-    ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D',
-    Home: '\x1b[H', End: '\x1b[F', Delete: '\x1b[3~', PageUp: '\x1b[5~', PageDown: '\x1b[6~',
-  } as Record<string, string | undefined>)[event.key] ?? null;
+  const gray = 8 + (index - 232) * 10;
+  return `rgb(${gray} ${gray} ${gray})`;
+}
+
+function cellColor(cell: IBufferCell, foreground: boolean): string {
+  const isRgb = foreground ? cell.isFgRGB() : cell.isBgRGB();
+  const isPalette = foreground ? cell.isFgPalette() : cell.isBgPalette();
+  const value = foreground ? cell.getFgColor() : cell.getBgColor();
+  if (isRgb) return `#${value.toString(16).padStart(6, '0')}`;
+  if (isPalette) return indexedColor(value);
+  return foreground ? terminalForeground : terminalBackground;
 }
 
 function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number): void {
@@ -71,16 +83,37 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   const fontSize = Math.max(10, Math.floor(canvas.width / 80));
   const lineHeight = Math.floor(fontSize * 1.5);
   const startX = fontSize;
-  ctx.fillStyle = '#050806';
+  ctx.fillStyle = terminalBackground;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
   ctx.textBaseline = 'top';
-  ctx.fillStyle = '#7dffae';
   const buffer = terminal.buffer.active;
+  const cellWidth = ctx.measureText('M').width;
+  const cell = buffer.getNullCell();
   for (let row = 0; row < terminal.rows; row += 1) {
     const line = buffer.getLine(buffer.baseY + row);
-    if (line) ctx.fillText(line.translateToString(true), startX, fontSize + lineHeight * row);
+    if (!line) continue;
+    const y = fontSize + lineHeight * row;
+    for (let column = 0; column < terminal.cols; column += 1) {
+      const current = line.getCell(column, cell);
+      if (!current || current.getWidth() === 0) continue;
+      let foreground = cellColor(current, true);
+      let background = cellColor(current, false);
+      if (current.isInverse()) [foreground, background] = [background, foreground];
+      const x = startX + cellWidth * column;
+      if (background !== terminalBackground) {
+        ctx.fillStyle = background;
+        ctx.fillRect(x, y, Math.ceil(cellWidth * current.getWidth()), lineHeight);
+      }
+      const chars = current.getChars();
+      if (chars && !current.isInvisible()) {
+        ctx.globalAlpha = current.isDim() ? 0.6 : 1;
+        ctx.fillStyle = foreground;
+        ctx.fillText(chars, x, y);
+      }
+    }
   }
+  ctx.globalAlpha = 1;
   if (Math.floor(time * 2) % 2 === 0) {
     const cursorX = startX + ctx.measureText('M').width * buffer.cursorX;
     const cursorY = fontSize + lineHeight * buffer.cursorY;
@@ -293,8 +326,9 @@ export default function App() {
       .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
   };
 
-  const handleTerminalKey = (event: KeyboardEvent<HTMLCanvasElement>) => {
-    const input = terminalKey(event);
+  const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>) => {
+    const terminal = terminalRef.current;
+    const input = terminal && terminalKey(event.nativeEvent, terminal.modes);
     if (!input) return;
     event.preventDefault();
     sendInput(input);
