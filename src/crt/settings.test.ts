@@ -39,6 +39,10 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
   });
 
+  it('accepts a color profile', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'solarized-dark' } })).crt.colorProfile).toBe('solarized-dark');
+  });
+
   it('preserves the CRT emulation switch', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { crtEmulation: false } })).crt.crtEmulation).toBe(false);
   });

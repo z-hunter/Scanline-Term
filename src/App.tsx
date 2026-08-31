@@ -11,11 +11,12 @@ import {
   type ResolutionId,
 } from './crt/settings';
 import { terminalKey } from './terminal-input';
+import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, type TerminalColorProfile } from './terminal-color-profiles';
 import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
+type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'antiAliasedPixels' | 'colorMode'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -56,38 +57,27 @@ function terminalDimensions(width: number, height: number, visibleWidth: number,
   };
 }
 
-const terminalPalette = ['#000000', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#e5e5e5', '#666666', '#cd3131', '#23d18b', '#f5f543', '#3b8eea', '#d966d9', '#29b8db', '#ffffff'];
-const terminalBackground = '#0c0c0c';
-const terminalForeground = '#cccccc';
-
-function indexedColor(index: number): string {
-  if (index < 16) return terminalPalette[index];
-  if (index < 232) {
-    const level = [0, 95, 135, 175, 215, 255];
-    const color = index - 16;
-    return `rgb(${level[Math.floor(color / 36)]} ${level[Math.floor(color / 6) % 6]} ${level[color % 6]})`;
-  }
-  const gray = 8 + (index - 232) * 10;
-  return `rgb(${gray} ${gray} ${gray})`;
+function activeColorProfile(settings: CRTSettings): TerminalColorProfile {
+  return colorProfile(settings.colorMode === 'color' ? settings.colorProfile : DEFAULT_COLOR_PROFILE_ID);
 }
 
-function cellColor(cell: IBufferCell, foreground: boolean): string {
+function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColorProfile): string {
   const isRgb = foreground ? cell.isFgRGB() : cell.isBgRGB();
   const isPalette = foreground ? cell.isFgPalette() : cell.isBgPalette();
   const value = foreground ? cell.getFgColor() : cell.getBgColor();
   if (isRgb) return `#${value.toString(16).padStart(6, '0')}`;
-  if (isPalette) return indexedColor(value);
-  return foreground ? terminalForeground : terminalBackground;
+  if (isPalette) return profileColor(profile, value);
+  return foreground ? profile.foreground : profile.background;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number): void {
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
   const cellWidth = (canvas.width - padding * 2) / terminal.cols;
   const cellHeight = (canvas.height - padding * 2) / terminal.rows;
   const fontSize = Math.max(7, Math.floor(Math.min(cellHeight * 0.78, cellWidth / 0.55)));
-  ctx.fillStyle = terminalBackground;
+  ctx.fillStyle = profile.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
   ctx.textAlign = 'left';
@@ -101,11 +91,11 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
     for (let column = 0; column < terminal.cols; column += 1) {
       const current = line.getCell(column, cell);
       if (!current || current.getWidth() === 0) continue;
-      let foreground = cellColor(current, true);
-      let background = cellColor(current, false);
+      let foreground = cellColor(current, true, profile);
+      let background = cellColor(current, false, profile);
       if (current.isInverse()) [foreground, background] = [background, foreground];
       const x = padding + cellWidth * column;
-      if (background !== terminalBackground) {
+      if (background !== profile.background) {
         ctx.fillStyle = background;
         const left = Math.floor(x);
         const top = Math.floor(y - cellHeight / 2);
@@ -123,7 +113,7 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   if (Math.floor(time * 2) % 2 === 0) {
     const cursorX = padding + cellWidth * buffer.cursorX;
     const cursorY = padding + cellHeight * buffer.cursorY;
-    ctx.fillStyle = terminalForeground;
+    ctx.fillStyle = profile.foreground;
     ctx.fillRect(cursorX, cursorY, Math.max(2, Math.floor(cellWidth * 0.8)), Math.ceil(cellHeight));
   }
 }
@@ -249,7 +239,8 @@ export default function App() {
     const { width, height } = initialResolutionRef.current;
     const rect = outputRef.current?.getBoundingClientRect();
     const { cols, rows } = terminalDimensions(width, height, rect?.width ?? window.innerWidth, rect?.height ?? window.innerHeight);
-    const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: terminalForeground, background: terminalBackground } });
+    const profile = activeColorProfile(settingsRef.current);
+    const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     terminalRef.current = terminal;
     let unlisten: UnlistenFn | undefined;
     const start = window.setTimeout(async () => {
@@ -315,13 +306,14 @@ export default function App() {
 
     const render = (now: number) => {
       const time = now / 1000;
-      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time);
+      const settings = settingsRef.current;
+      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings));
       else drawMockTerminal(source, time);
       if (!filter.isValid() && !errorReported) {
         errorReported = true;
         setError('WebGL is unavailable in this WebView.');
       }
-      if (filter.isValid()) filter.render(source, settingsRef.current);
+      if (filter.isValid()) filter.render(source, settings);
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
@@ -420,6 +412,20 @@ export default function App() {
             <option value="green">Green</option>
             <option value="amber">Amber</option>
             <option value="blue">Phosphor Blue</option>
+          </select>
+        </label>
+        <label className="resolution-control">
+          Color profile
+          <select
+            value={stored.crt.colorProfile}
+            data-testid="color-profile-select"
+            disabled={stored.crt.colorMode !== 'color'}
+            onChange={(event) => setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] },
+            }))}
+          >
+            {COLOR_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (

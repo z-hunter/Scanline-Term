@@ -1,7 +1,10 @@
+import type { ColorProfileId } from '../terminal-color-profiles';
+
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 
 export interface CRTSettings {
   crtEmulation: boolean;
+  colorProfile: ColorProfileId;
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
   scanlineIntensity: number; // 0.0 to 1.0

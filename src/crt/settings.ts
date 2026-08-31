@@ -1,7 +1,9 @@
 import type { CRTColorMode, CRTSettings } from './CRTFilter';
+import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   crtEmulation: true,
+  colorProfile: DEFAULT_COLOR_PROFILE_ID,
   curvature: 0.16,
   scanlineCount: 200,
   scanlineIntensity: 0.4,
@@ -89,6 +91,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
+    if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
