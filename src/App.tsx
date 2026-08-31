@@ -13,7 +13,6 @@ import {
 import { terminalKey } from './terminal-input';
 import { COLOR_PROFILES, colorProfile, DEFAULT_COLOR_PROFILE_ID, profileColor, remapLegacyRgb, type TerminalColorProfile } from './terminal-color-profiles';
 import './styles.css';
-import miniLogo from './assets/scanline-term-mini.png';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
@@ -383,13 +382,10 @@ export default function App() {
         {error && <p className="error" role="alert">{error}</p>}
       </section>
       <aside className="settings-panel">
-        <header className="app-header">
-          <img className="header-logo" src={miniLogo} alt="" aria-hidden="true" />
-          <div>
-            <p className="eyebrow">SCANLINE TERM</p>
-            <h1>CRT display lab</h1>
-            <p className="subtitle">A reusable Quest CRT shader in a tiny Tauri shell.</p>
-          </div>
+        <header>
+          <p className="eyebrow">SCANLINE TERM</p>
+          <h1>CRT display lab</h1>
+          <p className="subtitle">A reusable Quest CRT shader in a tiny Tauri shell.</p>
         </header>
         <label className="resolution-control">
           Virtual resolution

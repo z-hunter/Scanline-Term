@@ -40,8 +40,6 @@ button, input, select { font: inherit; }
   background: #101a14;
 }
 .eyebrow { margin: 0 0 8px; color: #7dffae; }
-.app-header { display: flex; align-items: center; gap: 10px; }
-.header-logo { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 6px; object-fit: cover; }
 h1 { margin: 0; font-size: 24px; }
 .subtitle { margin: 8px 0 22px; color: #9db7a5; font-size: 13px; line-height: 1.4; }
 
