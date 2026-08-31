@@ -58,7 +58,7 @@ function terminalDimensions(width: number, height: number, visibleWidth: number,
 }
 
 function activeColorProfile(settings: CRTSettings): TerminalColorProfile {
-  return colorProfile(settings.colorMode === 'color' ? settings.colorProfile : DEFAULT_COLOR_PROFILE_ID);
+  return colorProfile(settings.colorProfile ?? DEFAULT_COLOR_PROFILE_ID);
 }
 
 function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColorProfile): string {
@@ -418,7 +418,6 @@ export default function App() {
           <select
             value={stored.crt.colorProfile}
             data-testid="color-profile-select"
-            disabled={stored.crt.colorMode !== 'color'}
             onChange={(event) => setStored((current) => ({
               ...current,
               crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] },
