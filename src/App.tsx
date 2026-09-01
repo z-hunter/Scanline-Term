@@ -250,9 +250,8 @@ export default function App() {
   const filterRef = useRef<CRTFilter | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalLiveRef = useRef(false);
-  const terminalInputRef = useRef(Promise.resolve());
   const pendingInputRef = useRef('');
-  const inputFlushPendingRef = useRef(false);
+  const inputWritingRef = useRef(false);
   const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
   const fullscreenShortcutRef = useRef(false);
@@ -318,7 +317,7 @@ export default function App() {
       pressedMouseButtons.clear();
       terminalSizeRef.current = { cols: 0, rows: 0 };
       pendingInputRef.current = '';
-      inputFlushPendingRef.current = false;
+      inputWritingRef.current = false;
       terminalResponse.dispose();
       terminal.dispose();
       enableWin32Input.dispose();
@@ -397,21 +396,24 @@ export default function App() {
     filterRef.current?.clearPersistence();
   };
 
+  const flushInput = () => {
+    if (inputWritingRef.current || !terminalLiveRef.current) return;
+    const pending = pendingInputRef.current;
+    if (!pending) return;
+    pendingInputRef.current = '';
+    inputWritingRef.current = true;
+    void invoke('write_terminal', { input: pending })
+      .catch((reason) => setError(`Terminal input failed: ${String(reason)}`))
+      .finally(() => {
+        inputWritingRef.current = false;
+        flushInput();
+      });
+  };
+
   const sendInput = (input: string) => {
     if (!terminalLiveRef.current || !input) return;
     pendingInputRef.current += input;
-    if (inputFlushPendingRef.current) return;
-    inputFlushPendingRef.current = true;
-    queueMicrotask(() => {
-      inputFlushPendingRef.current = false;
-      const pending = pendingInputRef.current;
-      pendingInputRef.current = '';
-      if (!pending || !terminalLiveRef.current) return;
-      terminalInputRef.current = terminalInputRef.current
-        .then(() => invoke('write_terminal', { input: pending }))
-        .then(() => undefined)
-        .catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
-      });
+    flushInput();
   };
 
   useEffect(() => {
