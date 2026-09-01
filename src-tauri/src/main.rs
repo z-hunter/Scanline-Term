@@ -7,6 +7,9 @@ use std::{
     thread,
 };
 
+#[cfg(windows)]
+use std::collections::BTreeSet;
+
 use conpty_oxide::{
     blocking::{Child, Command, OwnedWriteHalf},
     ConPtyBackend, PtyController, SessionOptions, Size,
@@ -50,6 +53,58 @@ fn bundled_conpty_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn dev_conpty_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/conpty/x64")
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn collect_monospace_font(
+    logfont: *const windows_sys::Win32::Graphics::Gdi::LOGFONTW,
+    metric: *const windows_sys::Win32::Graphics::Gdi::TEXTMETRICW,
+    _: u32,
+    param: windows_sys::Win32::Foundation::LPARAM,
+) -> i32 {
+    use windows_sys::Win32::Graphics::Gdi::TMPF_FIXED_PITCH;
+
+    let metric = unsafe { &*metric };
+    if metric.tmPitchAndFamily & TMPF_FIXED_PITCH != 0 || metric.tmAveCharWidth != metric.tmMaxCharWidth {
+        return 1;
+    }
+    let face_name = unsafe { &(*logfont).lfFaceName };
+    let length = face_name.iter().position(|&unit| unit == 0).unwrap_or(face_name.len());
+    let name = String::from_utf16_lossy(&face_name[..length]);
+    if !name.is_empty() && !name.starts_with('@') {
+        unsafe { &mut *(param as *mut BTreeSet<String>) }.insert(name);
+    }
+    1
+}
+
+#[tauri::command]
+fn list_monospace_fonts() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Graphics::Gdi::{CreateCompatibleDC, DeleteDC, EnumFontFamiliesExW, LOGFONTW};
+
+        let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+        if dc.is_null() {
+            return vec!["Consolas".into()];
+        }
+        let mut fonts = BTreeSet::new();
+        let filter = LOGFONTW::default();
+        unsafe {
+            EnumFontFamiliesExW(
+                dc,
+                &filter,
+                Some(collect_monospace_font),
+                &mut fonts as *mut BTreeSet<String> as isize,
+                0,
+            );
+            DeleteDC(dc);
+        }
+        fonts.into_iter().collect()
+    }
+    #[cfg(not(windows))]
+    {
+        vec!["Consolas".into()]
+    }
 }
 
 #[tauri::command]
@@ -109,7 +164,7 @@ fn resize_terminal(state: State<TerminalState>, cols: u16, rows: u16) -> Result<
 fn main() {
     tauri::Builder::default()
         .manage(TerminalState::default())
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, list_monospace_fonts])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }

@@ -57,6 +57,10 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'zx-spectrum' } })).crt.colorProfile).toBe('cyberpunk');
   });
 
+  it('preserves a selected console font', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { consoleFont: 'Cascadia Mono' } })).crt.consoleFont).toBe('Cascadia Mono');
+  });
+
   it('preserves the CRT emulation switch', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { crtEmulation: false } })).crt.crtEmulation).toBe(false);
   });

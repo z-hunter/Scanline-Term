@@ -15,6 +15,7 @@ export function persistenceDecay(persistence: number, elapsedSeconds: number): {
 export interface CRTSettings {
   crtEmulation: boolean;
   colorProfile: ColorProfileId;
+  consoleFont: string;
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
   scanlineIntensity: number; // 0.0 to 1.0

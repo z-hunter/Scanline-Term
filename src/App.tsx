@@ -19,7 +19,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode' | 'bloomAlgorithm'>;
+type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'consoleFont' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode' | 'bloomAlgorithm'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -98,7 +98,11 @@ function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColo
   return foreground ? profile.foreground : profile.background;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile): void {
+function canvasFont(fontSize: number, family: string): string {
+  return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`;
+}
+
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
@@ -107,7 +111,7 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   const fontSize = Math.max(7, Math.floor(Math.min(cellHeight * 0.78, cellWidth / 0.55)));
   ctx.fillStyle = profile.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
+  ctx.font = canvasFont(fontSize, fontFamily);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   const buffer = terminal.buffer.active;
@@ -154,14 +158,14 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   }
 }
 
-function drawMockTerminal(canvas: HTMLCanvasElement, time: number): void {
+function drawMockTerminal(canvas: HTMLCanvasElement, time: number, fontFamily: string): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const fontSize = Math.max(10, Math.floor(canvas.width / 80));
   const lineHeight = Math.floor(fontSize * 1.5);
   ctx.fillStyle = '#050806';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.font = `${fontSize}px Consolas, "Courier New", monospace`;
+  ctx.font = canvasFont(fontSize, fontFamily);
   ctx.textBaseline = 'top';
 
   ctx.fillStyle = '#7dffae';
@@ -244,6 +248,7 @@ export default function App() {
   const [stored, setStored] = useState(() => loadStoredSettings(localStorage.getItem(STORAGE_KEY)));
   const [error, setError] = useState<string | null>(null);
   const [terminalLive, setTerminalLive] = useState(false);
+  const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
   const outputRef = useRef<HTMLCanvasElement>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
@@ -273,6 +278,13 @@ export default function App() {
     source.height = resolution.height;
     filterRef.current?.clearPersistence();
   }, [resolution.height, resolution.width]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void invoke<string[]>('list_monospace_fonts')
+      .then((fonts) => setMonospaceFonts([...new Set(['Consolas', ...fonts])]))
+      .catch((reason) => setError(`Could not list system fonts: ${String(reason)}`));
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -368,8 +380,8 @@ export default function App() {
     const render = (now: number) => {
       const time = now / 1000;
       const settings = settingsRef.current;
-      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings));
-      else drawMockTerminal(source, time);
+      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont);
+      else drawMockTerminal(source, time, settings.consoleFont);
       if (!filter.isValid() && !errorReported) {
         errorReported = true;
         setError('WebGL is unavailable in this WebView.');
@@ -608,6 +620,19 @@ export default function App() {
           >
             <option value="soft">Soft blur</option>
             <option value="spiral">Spiral (legacy)</option>
+          </select>
+        </label>
+        <label className="resolution-control">
+          Console font
+          <select
+            value={stored.crt.consoleFont}
+            onChange={(event) => setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, consoleFont: event.target.value },
+            }))}
+          >
+            {!monospaceFonts.includes(stored.crt.consoleFont) && <option value={stored.crt.consoleFont}>{stored.crt.consoleFont} (fallback)</option>}
+            {monospaceFonts.map((font) => <option key={font} value={font}>{font}</option>)}
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (

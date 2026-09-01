@@ -4,6 +4,7 @@ import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-prof
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   crtEmulation: true,
   colorProfile: DEFAULT_COLOR_PROFILE_ID,
+  consoleFont: 'Consolas',
   curvature: 0.16,
   scanlineCount: 200,
   scanlineIntensity: 0.4,
@@ -98,6 +99,9 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
     if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
+    if (typeof value.crt.consoleFont === 'string' && value.crt.consoleFont.length > 0 && value.crt.consoleFont.length <= 128) {
+      result.crt.consoleFont = value.crt.consoleFont;
+    }
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
