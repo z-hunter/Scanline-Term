@@ -65,7 +65,9 @@ unsafe extern "system" fn collect_monospace_font(
     use windows_sys::Win32::Graphics::Gdi::TMPF_FIXED_PITCH;
 
     let metric = unsafe { &*metric };
-    if metric.tmPitchAndFamily & TMPF_FIXED_PITCH != 0 || metric.tmAveCharWidth != metric.tmMaxCharWidth {
+    // GDI already reports the family pitch here.  Comparing the rounded
+    // average and maximum widths rejects valid OpenType monospace fonts.
+    if metric.tmPitchAndFamily & TMPF_FIXED_PITCH != 0 {
         return 1;
     }
     let face_name = unsafe { &(*logfont).lfFaceName };
@@ -81,14 +83,15 @@ unsafe extern "system" fn collect_monospace_font(
 fn list_monospace_fonts() -> Vec<String> {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::Graphics::Gdi::{CreateCompatibleDC, DeleteDC, EnumFontFamiliesExW, LOGFONTW};
+        use windows_sys::Win32::Graphics::Gdi::{CreateCompatibleDC, DeleteDC, EnumFontFamiliesExW, DEFAULT_CHARSET, LOGFONTW};
 
         let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
         if dc.is_null() {
             return vec!["Consolas".into()];
         }
         let mut fonts = BTreeSet::new();
-        let filter = LOGFONTW::default();
+        let mut filter = LOGFONTW::default();
+        filter.lfCharSet = DEFAULT_CHARSET;
         unsafe {
             EnumFontFamiliesExW(
                 dc,
