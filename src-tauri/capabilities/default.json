@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Allow the bundled terminal UI to receive ConPTY output events.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen"
+  ]
 }

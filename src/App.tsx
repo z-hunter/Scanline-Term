@@ -252,9 +252,10 @@ export default function App() {
   const terminalLiveRef = useRef(false);
   const terminalInputRef = useRef(Promise.resolve());
   const pendingInputRef = useRef('');
-  const inputFrameRef = useRef(0);
+  const inputFlushPendingRef = useRef(false);
   const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
+  const fullscreenShortcutRef = useRef(false);
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
@@ -317,8 +318,7 @@ export default function App() {
       pressedMouseButtons.clear();
       terminalSizeRef.current = { cols: 0, rows: 0 };
       pendingInputRef.current = '';
-      cancelAnimationFrame(inputFrameRef.current);
-      inputFrameRef.current = 0;
+      inputFlushPendingRef.current = false;
       terminalResponse.dispose();
       terminal.dispose();
       enableWin32Input.dispose();
@@ -400,9 +400,10 @@ export default function App() {
   const sendInput = (input: string) => {
     if (!terminalLiveRef.current || !input) return;
     pendingInputRef.current += input;
-    if (inputFrameRef.current) return;
-    inputFrameRef.current = requestAnimationFrame(() => {
-      inputFrameRef.current = 0;
+    if (inputFlushPendingRef.current) return;
+    inputFlushPendingRef.current = true;
+    queueMicrotask(() => {
+      inputFlushPendingRef.current = false;
       const pending = pendingInputRef.current;
       pendingInputRef.current = '';
       if (!pending || !terminalLiveRef.current) return;
@@ -482,11 +483,17 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
-      if (!win32InputModeRef.current && event.altKey && event.key === 'Enter' && isTauri()) {
+      if (event.altKey && event.key === 'Enter' && isTauri()) {
         event.preventDefault();
         event.stopPropagation();
-        const window = getCurrentWindow();
-        await window.setFullscreen(!(await window.isFullscreen()));
+        fullscreenShortcutRef.current = true;
+        if (event.repeat) return;
+        try {
+          const window = getCurrentWindow();
+          await window.setFullscreen(!(await window.isFullscreen()));
+        } catch (reason) {
+          setError(`Fullscreen toggle failed: ${String(reason)}`);
+        }
         return;
       }
       const terminal = terminalRef.current;
@@ -497,6 +504,12 @@ export default function App() {
       if (input) sendInputRef.current(input);
     };
     const onKeyUp = (event: KeyboardEvent) => {
+      if (fullscreenShortcutRef.current && event.key === 'Enter') {
+        fullscreenShortcutRef.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const terminal = terminalRef.current;
       if (!terminalLiveRef.current || !terminal) return;
       event.preventDefault();
