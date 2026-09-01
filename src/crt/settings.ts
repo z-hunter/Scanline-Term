@@ -1,4 +1,4 @@
-import type { CRTColorMode, CRTSettings } from './CRTFilter';
+import type { BloomAlgorithm, CRTColorMode, CRTSettings } from './CRTFilter';
 import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
@@ -13,6 +13,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   bezelGlow: true,
   showBezel: true,
   bloom: 0.05,
+  bloomAlgorithm: 'soft',
   glow: 0.2,
   persistence: 0,
   persistenceIntensity: 1,
@@ -66,6 +67,8 @@ const isResolution = (value: unknown): value is ResolutionId =>
 const isColorMode = (value: unknown): value is CRTColorMode =>
   value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
 
+const isBloomAlgorithm = (value: unknown): value is BloomAlgorithm => value === 'soft' || value === 'spiral';
+
 const numberInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 
@@ -99,6 +102,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
     if (isColorMode(value.crt.colorMode)) result.crt.colorMode = value.crt.colorMode;
+    if (isBloomAlgorithm(value.crt.bloomAlgorithm)) result.crt.bloomAlgorithm = value.crt.bloomAlgorithm;
   } catch {
     // Corrupt localStorage must never prevent the demo from starting.
   }

@@ -19,7 +19,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'scanline-term.settings.v1';
 
-type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode'>;
+type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode' | 'bloomAlgorithm'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
 const controls: Record<string, Control[]> = {
   Geometry: [
@@ -595,6 +595,19 @@ export default function App() {
             }))}
           >
             {COLOR_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
+          </select>
+        </label>
+        <label className="resolution-control">
+          Bloom algorithm
+          <select
+            value={stored.crt.bloomAlgorithm}
+            onChange={(event) => setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, bloomAlgorithm: event.target.value as CRTSettings['bloomAlgorithm'] },
+            }))}
+          >
+            <option value="soft">Soft blur</option>
+            <option value="spiral">Spiral (legacy)</option>
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (

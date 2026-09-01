@@ -15,6 +15,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.imageBrightness).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('soft');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
@@ -43,6 +44,10 @@ describe('CRT settings', () => {
 
   it('accepts a phosphor color mode', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
+  });
+
+  it('accepts the legacy bloom algorithm', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { bloomAlgorithm: 'spiral' } })).crt.bloomAlgorithm).toBe('spiral');
   });
 
   it('accepts a color profile', () => {
