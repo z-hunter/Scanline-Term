@@ -20,6 +20,7 @@ button, input, select { font: inherit; }
 
 .display-panel { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; }
 .screen-frame {
+  position: relative;
   width: min(100%, calc((100vh - 36px) * 4 / 3));
   aspect-ratio: 4 / 3;
   overflow: hidden;
@@ -30,6 +31,10 @@ button, input, select { font: inherit; }
 }
 .screen-frame.bezel-hidden { border: 0; border-radius: 0; box-shadow: none; }
 .output-canvas { display: block; width: 100%; height: 100%; }
+.frame-status { display: none; position: absolute; left: 50%; top: calc(100% + 1px); z-index: 1; transform: translateX(-50%); color: #6b9178; font-size: 7px; line-height: 9px; letter-spacing: .08em; pointer-events: none; white-space: nowrap; }
+.settings-hidden .screen-frame { overflow: visible; }
+.settings-hidden .frame-status { display: block; }
+.settings-hidden .screen-frame.bezel-hidden .frame-status { top: calc(100% + 4px); }
 .display-status, footer, .eyebrow { color: #6b9178; font-size: 11px; letter-spacing: .12em; }
 .error { color: #ff9b9b; }
 

@@ -596,6 +596,7 @@ export default function App() {
               sendInput(input);
             }}
           />
+          <span className="frame-status">{terminalSize.cols} × {terminalSize.rows}</span>
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
