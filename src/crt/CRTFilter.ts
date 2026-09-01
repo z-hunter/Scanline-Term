@@ -495,7 +495,7 @@ export class CRTFilter {
 
                 backgroundColor *= scanline;
 
-                // CRT Ambient Screen Glow (wide second blur of the same bright phosphor source)
+                // CRT Ambient Screen Glow (wide blur of the complete screen image, like light through glass)
                 if (u_glow > 0.0) {
                      vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
 
@@ -922,7 +922,7 @@ export class CRTFilter {
         this.blur(this.bloomTexA, width, height, this.bloomFboB, 0, 1, 0.0, 1);
         bloomTexture = this.bloomTexB;
         if (glow > 0.0 && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
-          this.blur(this.bloomTexB, width, height, this.glowFboA, 1, 0, 0.0, 8);
+          this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.0, 8);
           this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 8);
           glowTexture = this.glowTexB;
         }
