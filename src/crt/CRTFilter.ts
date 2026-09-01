@@ -61,6 +61,8 @@ export class CRTFilter {
   bezelGlowLocation: WebGLUniformLocation | null;
   bloomLocation: WebGLUniformLocation | null;
   glowLocation: WebGLUniformLocation | null;
+  bloomTextureLocation: WebGLUniformLocation | null;
+  glowTextureLocation: WebGLUniformLocation | null;
   trailLocation: WebGLUniformLocation | null;
   persistenceLocation: WebGLUniformLocation | null;
   persistenceIntensityLocation: WebGLUniformLocation | null;
@@ -91,6 +93,27 @@ export class CRTFilter {
 
   persistenceResolutionScale: number = 0.5;
 
+  // Reduced-resolution separable blur shared by Bloom and glass Glow.
+  blurProgram: WebGLProgram | null = null;
+  blurPosLocation: number = 0;
+  blurTexCoordLocation: number = 0;
+  blurImageLocation: WebGLUniformLocation | null = null;
+  blurTexelLocation: WebGLUniformLocation | null = null;
+  blurDirectionLocation: WebGLUniformLocation | null = null;
+  blurThresholdLocation: WebGLUniformLocation | null = null;
+  blurSpreadLocation: WebGLUniformLocation | null = null;
+  bloomFboA: WebGLFramebuffer | null = null;
+  bloomFboB: WebGLFramebuffer | null = null;
+  glowFboA: WebGLFramebuffer | null = null;
+  glowFboB: WebGLFramebuffer | null = null;
+  bloomTexA: WebGLTexture | null = null;
+  bloomTexB: WebGLTexture | null = null;
+  glowTexA: WebGLTexture | null = null;
+  glowTexB: WebGLTexture | null = null;
+  glowWidth: number = 0;
+  glowHeight: number = 0;
+  glowResolutionScale: number = 0.5;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.gl =
@@ -115,6 +138,8 @@ export class CRTFilter {
       this.bezelGlowLocation = null;
       this.bloomLocation = null;
       this.glowLocation = null;
+      this.bloomTextureLocation = null;
+      this.glowTextureLocation = null;
       this.trailLocation = null;
       this.persistenceLocation = null;
       this.persistenceIntensityLocation = null;
@@ -149,6 +174,8 @@ export class CRTFilter {
     this.bezelGlowLocation = null;
     this.bloomLocation = null;
     this.glowLocation = null;
+    this.bloomTextureLocation = null;
+    this.glowTextureLocation = null;
     this.trailLocation = null;
     this.persistenceLocation = null;
     this.persistenceIntensityLocation = null;
@@ -233,6 +260,8 @@ export class CRTFilter {
             uniform float u_bezelGlow;
             uniform float u_bloom;
             uniform float u_glow;
+            uniform sampler2D u_bloomTexture;
+            uniform sampler2D u_glowTexture;
             uniform float u_persistence;
             uniform float u_persistenceIntensity;
             uniform float u_beamModulation;
@@ -411,36 +440,11 @@ export class CRTFilter {
                      imageColor = max(imageColor, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
 
-                // BLOOM / HALATION (Smooth phosphor electron bleed on bright highlights)
+                // BLOOM / HALATION (tight bright-pass blur, precomputed at half resolution)
                 if (u_bloom > 0.0) {
-                     float bloomRadius = 0.015;
-                     vec3 bloomSum = vec3(0.0);
-                     float totalWeight = 0.0;
-                     
-                     vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
-                     float dither = fract(magic.z * fract(dot(v_texCoord * u_resolution, magic.xy)));
-                     float startAngle = dither * 6.28318530718;
-
-                     for (int i = 0; i < 16; i++) {
-                          float fi = float(i) + dither;
-                          float normDist = sqrt(fi / 16.0);
-                          float r = normDist * bloomRadius;
-                          float theta = startAngle + float(i) * 2.39996323; 
-                          
-                          vec2 b_offset = vec2(cos(theta), sin(theta)) * r;
-                          b_offset.y *= 0.75;
-
-                          vec3 sample = sampleScreen(rasterUV + b_offset);
-                          float luma = dot(sample, vec3(0.2126, 0.7152, 0.0722));
-                          float brightPass = smoothstep(0.55, 0.9, luma);
-
-                          float weight = exp(-normDist * normDist * 3.5);
-                          bloomSum += sample * brightPass * weight;
-                          totalWeight += weight;
-                     }
-                     bloomSum /= max(totalWeight, 0.001);
-
-                     imageColor += bloomSum * u_bloom * 2.5;
+                     vec3 bloom = texture2D(u_bloomTexture, rasterUV).rgb;
+                     imageColor += min(bloom * u_bloom * 1.5, vec3(0.5));
+                     imageColor /= 1.0 + u_bloom * 0.2;
                 }
 
                 // Background phosphor texture is kept separate from the displayed image.
@@ -491,31 +495,9 @@ export class CRTFilter {
 
                 backgroundColor *= scanline;
 
-                // CRT Ambient Screen Glow (Wide diffuse glass light scatter applied OVER the scanline raster)
+                // CRT Ambient Screen Glow (wide second blur of the same bright phosphor source)
                 if (u_glow > 0.0) {
-                     float glowRadius = 0.18;
-                     vec3 glowSum = vec3(0.0);
-                     float totalGlowWeight = 0.0;
-                     
-                     // Dither pattern to ensure smooth blur without concentric banding
-                     vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
-                     float dither = fract(magic.z * fract(dot(v_texCoord * u_resolution, magic.xy)));
-                     float startAngle = dither * 6.28318530718;
-
-                     for (int i = 0; i < 16; i++) {
-                          float fi = float(i) + dither;
-                          float normDist = sqrt(fi / 16.0);
-                          float r = normDist * glowRadius;
-                          float theta = startAngle + float(i) * 2.39996323;
-
-                          vec2 g_offset = vec2(cos(theta), sin(theta)) * r;
-                          g_offset.y *= 0.75; // aspect ratio correction
-
-                          float weight = exp(-normDist * normDist * 2.2);
-                          glowSum += sampleScreen(rasterUV + g_offset) * weight;
-                          totalGlowWeight += weight;
-                     }
-                     glowSum /= max(totalGlowWeight, 0.001);
+                     vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
 
                      // Slight desaturation: diffuse light scattered inside thick CRT faceplate glass is less chromatic
                      float glowLuma = dot(glowSum, vec3(0.2126, 0.7152, 0.0722));
@@ -567,6 +549,8 @@ export class CRTFilter {
     this.bezelGlowLocation = gl.getUniformLocation(this.program, 'u_bezelGlow');
     this.bloomLocation = gl.getUniformLocation(this.program, 'u_bloom');
     this.glowLocation = gl.getUniformLocation(this.program, 'u_glow');
+    this.bloomTextureLocation = gl.getUniformLocation(this.program, 'u_bloomTexture');
+    this.glowTextureLocation = gl.getUniformLocation(this.program, 'u_glowTexture');
     this.trailLocation = gl.getUniformLocation(this.program, 'u_trail');
     this.persistenceLocation = gl.getUniformLocation(this.program, 'u_persistence');
     this.persistenceIntensityLocation = gl.getUniformLocation(this.program, 'u_persistenceIntensity');
@@ -648,6 +632,43 @@ export class CRTFilter {
       this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
       this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
     }
+
+    const blurFsSource = `
+      precision mediump float;
+      uniform sampler2D u_image;
+      uniform vec2 u_texel;
+      uniform vec2 u_direction;
+      uniform float u_threshold;
+      uniform float u_spread;
+      varying vec2 v_texCoord;
+
+      vec3 sampleBlur(vec2 uv) {
+        vec3 color = texture2D(u_image, uv).rgb;
+        if (u_threshold <= 0.0) return color;
+        float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        return color * smoothstep(u_threshold, u_threshold + 0.3, luma);
+      }
+
+      void main() {
+        vec2 offset = u_texel * u_direction * u_spread;
+        vec3 color = sampleBlur(v_texCoord) * 0.227027;
+        color += sampleBlur(v_texCoord + offset * 1.384615) * 0.316216;
+        color += sampleBlur(v_texCoord - offset * 1.384615) * 0.316216;
+        color += sampleBlur(v_texCoord + offset * 3.230769) * 0.070270;
+        color += sampleBlur(v_texCoord - offset * 3.230769) * 0.070270;
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+    this.blurProgram = this.createProgram(gl, vsSource, blurFsSource);
+    if (this.blurProgram) {
+      this.blurPosLocation = gl.getAttribLocation(this.blurProgram, 'a_position');
+      this.blurTexCoordLocation = gl.getAttribLocation(this.blurProgram, 'a_texCoord');
+      this.blurImageLocation = gl.getUniformLocation(this.blurProgram, 'u_image');
+      this.blurTexelLocation = gl.getUniformLocation(this.blurProgram, 'u_texel');
+      this.blurDirectionLocation = gl.getUniformLocation(this.blurProgram, 'u_direction');
+      this.blurThresholdLocation = gl.getUniformLocation(this.blurProgram, 'u_threshold');
+      this.blurSpreadLocation = gl.getUniformLocation(this.blurProgram, 'u_spread');
+    }
   }
 
   ensureFBO(width: number, height: number): boolean {
@@ -690,6 +711,79 @@ export class CRTFilter {
     return true;
   }
 
+  ensureGlowFBO(width: number, height: number): boolean {
+    if (!this.gl) return false;
+    const gl = this.gl;
+    if (this.bloomFboA && this.glowWidth === width && this.glowHeight === height) return true;
+
+    for (const fbo of [this.bloomFboA, this.bloomFboB, this.glowFboA, this.glowFboB]) {
+      if (fbo) gl.deleteFramebuffer(fbo);
+    }
+    for (const tex of [this.bloomTexA, this.bloomTexB, this.glowTexA, this.glowTexB]) {
+      if (tex) gl.deleteTexture(tex);
+    }
+    this.glowWidth = width;
+    this.glowHeight = height;
+
+    const createTarget = () => {
+      const texture = gl.createTexture();
+      const framebuffer = gl.createFramebuffer();
+      if (!texture || !framebuffer) return null;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      return { framebuffer, texture };
+    };
+    const targets = [createTarget(), createTarget(), createTarget(), createTarget()];
+    if (targets.some((target) => !target)) return false;
+    const [bloomA, bloomB, glowA, glowB] = targets as { framebuffer: WebGLFramebuffer; texture: WebGLTexture }[];
+    this.bloomFboA = bloomA.framebuffer;
+    this.bloomTexA = bloomA.texture;
+    this.bloomFboB = bloomB.framebuffer;
+    this.bloomTexB = bloomB.texture;
+    this.glowFboA = glowA.framebuffer;
+    this.glowTexA = glowA.texture;
+    this.glowFboB = glowB.framebuffer;
+    this.glowTexB = glowB.texture;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return true;
+  }
+
+  blur(
+    input: WebGLTexture,
+    inputWidth: number,
+    inputHeight: number,
+    target: WebGLFramebuffer,
+    directionX: number,
+    directionY: number,
+    threshold: number,
+    spread: number,
+  ): void {
+    if (!this.gl || !this.blurProgram || !this.buffer) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.viewport(0, 0, this.glowWidth, this.glowHeight);
+    gl.useProgram(this.blurProgram);
+    gl.enableVertexAttribArray(this.blurPosLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.vertexAttribPointer(this.blurPosLocation, 2, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(this.blurTexCoordLocation);
+    gl.vertexAttribPointer(this.blurTexCoordLocation, 2, gl.FLOAT, false, 16, 8);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, input);
+    if (this.blurImageLocation) gl.uniform1i(this.blurImageLocation, 0);
+    if (this.blurTexelLocation) gl.uniform2f(this.blurTexelLocation, 1 / inputWidth, 1 / inputHeight);
+    if (this.blurDirectionLocation) gl.uniform2f(this.blurDirectionLocation, directionX, directionY);
+    if (this.blurThresholdLocation) gl.uniform1f(this.blurThresholdLocation, threshold);
+    if (this.blurSpreadLocation) gl.uniform1f(this.blurSpreadLocation, spread);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
   clearPersistence(): void {
     this.lastPersistenceTime = 0;
     if (!this.gl || !this.fboA || !this.fboB) return;
@@ -714,10 +808,17 @@ export class CRTFilter {
     if (this.fboB) gl.deleteFramebuffer(this.fboB);
     if (this.fboTexA) gl.deleteTexture(this.fboTexA);
     if (this.fboTexB) gl.deleteTexture(this.fboTexB);
+    for (const fbo of [this.bloomFboA, this.bloomFboB, this.glowFboA, this.glowFboB]) {
+      if (fbo) gl.deleteFramebuffer(fbo);
+    }
+    for (const tex of [this.bloomTexA, this.bloomTexB, this.glowTexA, this.glowTexB]) {
+      if (tex) gl.deleteTexture(tex);
+    }
     if (this.texture) gl.deleteTexture(this.texture);
     if (this.buffer) gl.deleteBuffer(this.buffer);
     if (this.program) gl.deleteProgram(this.program);
     if (this.accumProgram) gl.deleteProgram(this.accumProgram);
+    if (this.blurProgram) gl.deleteProgram(this.blurProgram);
     this.fboA = null;
     this.fboB = null;
     this.fboTexA = null;
@@ -726,6 +827,15 @@ export class CRTFilter {
     this.buffer = null;
     this.program = null;
     this.accumProgram = null;
+    this.blurProgram = null;
+    this.bloomFboA = null;
+    this.bloomFboB = null;
+    this.glowFboA = null;
+    this.glowFboB = null;
+    this.bloomTexA = null;
+    this.bloomTexB = null;
+    this.glowTexA = null;
+    this.glowTexB = null;
   }
 
   render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings): void {
@@ -800,6 +910,25 @@ export class CRTFilter {
       }
     }
 
+    let bloomTexture = this.texture;
+    let glowTexture = this.texture;
+    const bloom = settings.crtEmulation ? settings.bloom || 0.0 : 0.0;
+    const glow = settings.crtEmulation ? settings.glow || 0.0 : 0.0;
+    if ((bloom > 0.0 || glow > 0.0) && this.blurProgram) {
+      const width = Math.max(1, Math.floor(sourceCanvas.width * this.glowResolutionScale));
+      const height = Math.max(1, Math.floor(sourceCanvas.height * this.glowResolutionScale));
+      if (this.ensureGlowFBO(width, height) && this.bloomFboA && this.bloomFboB && this.bloomTexA && this.bloomTexB) {
+        this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.bloomFboA, 1, 0, 0.55, 1);
+        this.blur(this.bloomTexA, width, height, this.bloomFboB, 0, 1, 0.0, 1);
+        bloomTexture = this.bloomTexB;
+        if (glow > 0.0 && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
+          this.blur(this.bloomTexB, width, height, this.glowFboA, 1, 0, 0.0, 8);
+          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 8);
+          glowTexture = this.glowTexB;
+        }
+      }
+    }
+
     // 3. Final CRT Pass (Render to Screen)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -831,8 +960,8 @@ export class CRTFilter {
     if (this.phosphorLocation) gl.uniform1f(this.phosphorLocation, settings.phosphor || 0.0);
     if (this.bezelGlowLocation)
       gl.uniform1f(this.bezelGlowLocation, settings.bezelGlow ? 1.0 : 0.0);
-    if (this.bloomLocation) gl.uniform1f(this.bloomLocation, settings.bloom || 0.0);
-    if (this.glowLocation) gl.uniform1f(this.glowLocation, settings.glow || 0.0);
+    if (this.bloomLocation) gl.uniform1f(this.bloomLocation, bloom);
+    if (this.glowLocation) gl.uniform1f(this.glowLocation, glow);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
     if (this.sourceResolutionLocation)
@@ -901,6 +1030,13 @@ export class CRTFilter {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     if (this.imageLocation) gl.uniform1i(this.imageLocation, 0);
+
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, bloomTexture);
+    if (this.bloomTextureLocation) gl.uniform1i(this.bloomTextureLocation, 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, glowTexture);
+    if (this.glowTextureLocation) gl.uniform1i(this.glowTextureLocation, 3);
 
     // Texture Unit 1: Phosphor Trail (if persistence enabled)
     if (persistence > 0.0) {
