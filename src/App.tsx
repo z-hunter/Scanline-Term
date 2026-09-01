@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from 'react';
 import { Terminal, type IBufferCell } from '@xterm/xterm';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -417,16 +417,6 @@ export default function App() {
     sendInputRef.current = sendInput;
   });
 
-  const handleTerminalKey = (event: ReactKeyboardEvent<HTMLCanvasElement>, keyDown: boolean) => {
-    const terminal = terminalRef.current;
-    const input = terminal && (win32InputModeRef.current
-      ? win32InputKey(event.nativeEvent, keyDown)
-      : keyDown ? terminalKey(event.nativeEvent, terminal.modes) : null);
-    if (!input) return;
-    event.preventDefault();
-    sendInput(input);
-  };
-
   const terminalMouseCell = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, terminal: Terminal) => {
     const output = outputRef.current;
     const source = sourceRef.current;
@@ -494,12 +484,31 @@ export default function App() {
     const onKeyDown = async (event: KeyboardEvent) => {
       if (!win32InputModeRef.current && event.altKey && event.key === 'Enter' && isTauri()) {
         event.preventDefault();
+        event.stopPropagation();
         const window = getCurrentWindow();
         await window.setFullscreen(!(await window.isFullscreen()));
+        return;
       }
+      const terminal = terminalRef.current;
+      if (!terminalLiveRef.current || !terminal) return;
+      const input = win32InputModeRef.current ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
+      event.preventDefault();
+      event.stopPropagation();
+      if (input) sendInputRef.current(input);
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    const onKeyUp = (event: KeyboardEvent) => {
+      const terminal = terminalRef.current;
+      if (!terminalLiveRef.current || !terminal) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (win32InputModeRef.current) sendInputRef.current(win32InputKey(event, false));
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+    };
   }, []);
 
   return (
@@ -512,8 +521,6 @@ export default function App() {
             data-testid="output-canvas"
             tabIndex={terminalLive ? 0 : -1}
             aria-label={terminalLive ? 'Windows console' : 'CRT display'}
-            onKeyDown={(event) => handleTerminalKey(event, true)}
-            onKeyUp={(event) => handleTerminalKey(event, false)}
             onWheel={handleTerminalWheel}
             onMouseDown={handleTerminalMouseDown}
             onMouseUp={handleTerminalMouseUp}
