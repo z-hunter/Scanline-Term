@@ -74,7 +74,7 @@ function Knob({ value, min, max, step, label, onChange }: { value: number; min: 
 }
 
 function terminalPadding(width: number, height: number): number {
-  return Math.max(4, Math.floor(Math.min(width, height) * 0.02));
+  return Math.max(2, Math.floor(Math.min(width, height) * 0.01));
 }
 
 function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D): { width: number; height: number } {
