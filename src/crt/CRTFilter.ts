@@ -922,8 +922,11 @@ export class CRTFilter {
         this.blur(this.bloomTexA, width, height, this.bloomFboB, 0, 1, 0.0, 1);
         bloomTexture = this.bloomTexB;
         if (glow > 0.0 && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
-          this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.0, 8);
-          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 8);
+          // Two small separable passes approximate a wide Gaussian without sparse ghost copies.
+          this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.0, 1.5);
+          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
+          this.blur(this.glowTexB, width, height, this.glowFboA, 1, 0, 0.0, 1.5);
+          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
           glowTexture = this.glowTexB;
         }
       }
