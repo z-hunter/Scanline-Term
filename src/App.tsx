@@ -257,6 +257,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [terminalLive, setTerminalLive] = useState(false);
   const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
+  const [settingsVisible, setSettingsVisible] = useState(true);
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
   const outputRef = useRef<HTMLCanvasElement>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
@@ -268,6 +269,7 @@ export default function App() {
   const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
   const fullscreenShortcutRef = useRef(false);
+  const menuKeyDownRef = useRef(false);
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
@@ -504,6 +506,13 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
+      if (event.key === 'ContextMenu') menuKeyDownRef.current = true;
+      if (menuKeyDownRef.current && event.code === 'KeyS') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) setSettingsVisible((visible) => !visible);
+        return;
+      }
       if (event.altKey && event.key === 'Enter' && isTauri()) {
         event.preventDefault();
         event.stopPropagation();
@@ -525,6 +534,7 @@ export default function App() {
       if (input) sendInputRef.current(input);
     };
     const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'ContextMenu') menuKeyDownRef.current = false;
       if (fullscreenShortcutRef.current && event.key === 'Enter') {
         fullscreenShortcutRef.current = false;
         event.preventDefault();
@@ -546,7 +556,7 @@ export default function App() {
   }, []);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${settingsVisible ? '' : ' settings-hidden'}`}>
       <section className="display-panel" aria-label="CRT display">
         <div className={`screen-frame${stored.crt.showBezel ? '' : ' bezel-hidden'}`}>
           <canvas
@@ -571,7 +581,7 @@ export default function App() {
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
-      <aside className="settings-panel">
+      {settingsVisible && <aside className="settings-panel">
         <header>
           <p className="eyebrow">SCANLINE TERM</p>
           <h1>CRT display lab</h1>
@@ -710,7 +720,7 @@ export default function App() {
         </fieldset>
         <button type="button" className="reset-button" onClick={reset}>Reset defaults</button>
         <footer>v0.2 · ConPTY · ANSI screen buffer</footer>
-      </aside>
+      </aside>}
     </main>
   );
 }
