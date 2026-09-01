@@ -29,6 +29,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
 });
 
 export const RESOLUTIONS = [
+  { id: 'physical', label: 'Physical — window pixels' },
   { id: '320x240', label: 'QVGA — 320×240', width: 320, height: 240 },
   { id: '640x480', label: 'VGA — 640×480', width: 640, height: 480 },
   { id: '800x600', label: 'SVGA — 800×600', width: 800, height: 600 },

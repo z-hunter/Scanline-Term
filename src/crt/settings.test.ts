@@ -33,6 +33,10 @@ describe('CRT settings', () => {
     expect(loaded.crt.imageBrightness).toBe(DEFAULT_CRT_SETTINGS.imageBrightness);
   });
 
+  it('accepts the physical display resolution', () => {
+    expect(loadStoredSettings(JSON.stringify({ resolution: 'physical' })).resolution).toBe('physical');
+  });
+
   it('survives malformed JSON', () => {
     expect(loadStoredSettings('{broken').crt).toEqual(DEFAULT_CRT_SETTINGS);
   });

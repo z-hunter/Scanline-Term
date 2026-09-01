@@ -96,6 +96,11 @@ function terminalDimensions(width: number, height: number, fontSize: number, fon
   };
 }
 
+function sourceDimensions(resolution: (typeof RESOLUTIONS)[number], output?: HTMLCanvasElement | null): { width: number; height: number } {
+  if (resolution.id === 'physical') return { width: output?.width || 1, height: output?.height || 1 };
+  return resolution;
+}
+
 function activeColorProfile(settings: CRTSettings): TerminalColorProfile {
   return colorProfile(settings.colorProfile ?? DEFAULT_COLOR_PROFILE_ID);
 }
@@ -258,6 +263,7 @@ export default function App() {
   const [terminalLive, setTerminalLive] = useState(false);
   const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
   const [settingsVisible, setSettingsVisible] = useState(true);
+  const [terminalSize, setTerminalSize] = useState({ cols: 0, rows: 0 });
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
   const outputRef = useRef<HTMLCanvasElement>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
@@ -273,21 +279,23 @@ export default function App() {
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
-  const initialResolutionRef = useRef(resolution);
+  const resolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     settingsRef.current = stored.crt;
-  }, [stored]);
+    resolutionRef.current = resolution;
+  }, [stored, resolution]);
 
   useEffect(() => {
     const source = sourceRef.current ?? document.createElement('canvas');
     sourceRef.current = source;
-    source.width = resolution.width;
-    source.height = resolution.height;
+    const size = sourceDimensions(resolution, outputRef.current);
+    source.width = size.width;
+    source.height = size.height;
     filterRef.current?.clearPersistence();
-  }, [resolution.height, resolution.width]);
+  }, [resolution]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -298,7 +306,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isTauri()) return;
-    const { width, height } = initialResolutionRef.current;
+    const { width, height } = sourceDimensions(resolutionRef.current, outputRef.current);
     const { cols, rows } = terminalDimensions(width, height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const profile = activeColorProfile(settingsRef.current);
     const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
@@ -323,6 +331,7 @@ export default function App() {
         unlisten = await listen<number[]>('terminal-output', (event) => terminal.write(Uint8Array.from(event.payload)));
         await invoke('start_terminal', { cols, rows });
         terminalSizeRef.current = { cols, rows };
+        setTerminalSize({ cols, rows });
         terminalLiveRef.current = true;
         setTerminalLive(true);
       } catch (reason) {
@@ -337,6 +346,7 @@ export default function App() {
       sgrMouseModeRef.current = false;
       pressedMouseButtons.clear();
       terminalSizeRef.current = { cols: 0, rows: 0 };
+      setTerminalSize({ cols: 0, rows: 0 });
       pendingInputRef.current = '';
       inputWritingRef.current = false;
       terminalResponse.dispose();
@@ -350,12 +360,15 @@ export default function App() {
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminalLiveRef.current || !terminal) return;
-    const { cols, rows } = terminalDimensions(resolution.width, resolution.height, stored.crt.consoleFontSize, stored.crt.consoleFont);
+    const source = sourceRef.current;
+    if (!source) return;
+    const { cols, rows } = terminalDimensions(source.width, source.height, stored.crt.consoleFontSize, stored.crt.consoleFont);
     if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
     terminalSizeRef.current = { cols, rows };
+    setTerminalSize({ cols, rows });
     terminal.resize(cols, rows);
     void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
-  }, [resolution.height, resolution.width, stored.crt.consoleFont, stored.crt.consoleFontSize]);
+  }, [resolution, stored.crt.consoleFont, stored.crt.consoleFontSize]);
 
   useEffect(() => {
     const output = outputRef.current;
@@ -371,6 +384,10 @@ export default function App() {
       const dpr = window.devicePixelRatio || 1;
       output.width = Math.max(1, Math.round(rect.width * dpr));
       output.height = Math.max(1, Math.round(rect.height * dpr));
+      if (resolutionRef.current.id === 'physical') {
+        source.width = output.width;
+        source.height = output.height;
+      }
       // A resized presentation surface must start with a fresh phosphor history.
       filter.clearPersistence();
       const terminal = terminalRef.current;
@@ -378,6 +395,7 @@ export default function App() {
       const { cols, rows } = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
       if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
       terminalSizeRef.current = { cols, rows };
+      setTerminalSize({ cols, rows });
       terminal.resize(cols, rows);
       void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
     };
@@ -585,6 +603,7 @@ export default function App() {
         <header>
           <p className="eyebrow">SCANLINE TERM</p>
           <h1>CRT display lab</h1>
+          <p className="display-status">CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows}</p>
         </header>
         <label className="resolution-control">
           Virtual resolution
