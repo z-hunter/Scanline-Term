@@ -264,14 +264,13 @@ export default function App() {
   const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
   const [settingsVisible, setSettingsVisible] = useState(true);
   const [terminalSize, setTerminalSize] = useState({ cols: 0, rows: 0 });
+  const [fps, setFps] = useState(0);
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
   const outputRef = useRef<HTMLCanvasElement>(null);
   const sourceRef = useRef<HTMLCanvasElement | null>(null);
   const filterRef = useRef<CRTFilter | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const terminalLiveRef = useRef(false);
-  const pendingInputRef = useRef('');
-  const inputWritingRef = useRef(false);
   const sendInputRef = useRef<(input: string) => void>(() => {});
   const win32InputModeRef = useRef(false);
   const fullscreenShortcutRef = useRef(false);
@@ -347,8 +346,6 @@ export default function App() {
       pressedMouseButtons.clear();
       terminalSizeRef.current = { cols: 0, rows: 0 };
       setTerminalSize({ cols: 0, rows: 0 });
-      pendingInputRef.current = '';
-      inputWritingRef.current = false;
       terminalResponse.dispose();
       terminal.dispose();
       enableWin32Input.dispose();
@@ -379,6 +376,15 @@ export default function App() {
 
     let raf = 0;
     let errorReported = false;
+    let sourceDirty = true;
+    let lastCursorPhase = -1;
+    let lastSourceSize = '';
+    let lastSourceStyle = '';
+    let frameCount = 0;
+    let fpsStarted = performance.now();
+    const terminal = terminalRef.current;
+    const outputWritten = terminal?.onWriteParsed(() => { sourceDirty = true; });
+    const scrolled = terminal?.onScroll(() => { sourceDirty = true; });
     const resize = () => {
       const rect = output.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -388,6 +394,7 @@ export default function App() {
         source.width = output.width;
         source.height = output.height;
       }
+      sourceDirty = true;
       // A resized presentation surface must start with a fresh phosphor history.
       filter.clearPersistence();
       const terminal = terminalRef.current;
@@ -406,19 +413,39 @@ export default function App() {
     const render = (now: number) => {
       const time = now / 1000;
       const settings = settingsRef.current;
-      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize);
-      else drawMockTerminal(source, time, settings.consoleFont, settings.consoleFontSize);
+      const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}`;
+      const sourceSize = `${source.width}x${source.height}`;
+      const cursorPhase = Math.floor(time * 2);
+      if (sourceStyle !== lastSourceStyle || sourceSize !== lastSourceSize || cursorPhase !== lastCursorPhase) sourceDirty = true;
+      if (terminalLiveRef.current && terminalRef.current) {
+        if (sourceDirty) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize);
+      } else {
+        drawMockTerminal(source, time, settings.consoleFont, settings.consoleFontSize);
+        sourceDirty = true;
+      }
+      lastSourceStyle = sourceStyle;
+      lastSourceSize = sourceSize;
+      lastCursorPhase = cursorPhase;
       if (!filter.isValid() && !errorReported) {
         errorReported = true;
         setError('WebGL is unavailable in this WebView.');
       }
-      if (filter.isValid()) filter.render(source, settings);
+      if (filter.isValid()) filter.render(source, settings, sourceDirty);
+      sourceDirty = false;
+      frameCount += 1;
+      if (now - fpsStarted >= 500) {
+        setFps(Math.round(frameCount * 1000 / (now - fpsStarted)));
+        frameCount = 0;
+        fpsStarted = now;
+      }
       raf = requestAnimationFrame(render);
     };
     raf = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      outputWritten?.dispose();
+      scrolled?.dispose();
       filter.dispose();
       filterRef.current = null;
     };
@@ -434,24 +461,9 @@ export default function App() {
     filterRef.current?.clearPersistence();
   };
 
-  const flushInput = () => {
-    if (inputWritingRef.current || !terminalLiveRef.current) return;
-    const pending = pendingInputRef.current;
-    if (!pending) return;
-    pendingInputRef.current = '';
-    inputWritingRef.current = true;
-    void invoke('write_terminal', { input: pending })
-      .catch((reason) => setError(`Terminal input failed: ${String(reason)}`))
-      .finally(() => {
-        inputWritingRef.current = false;
-        flushInput();
-      });
-  };
-
   const sendInput = (input: string) => {
     if (!terminalLiveRef.current || !input) return;
-    pendingInputRef.current += input;
-    flushInput();
+    void invoke('write_terminal', { input }).catch((reason) => setError(`Terminal input failed: ${String(reason)}`));
   };
 
   useEffect(() => {
@@ -604,7 +616,7 @@ export default function App() {
         <header>
           <p className="eyebrow">SCANLINE TERM</p>
           <h1>CRT display lab</h1>
-          <p className="display-status">CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows}</p>
+          <p className="display-status">CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows} · FPS: {fps}</p>
         </header>
         <label className="resolution-control">
           Virtual resolution

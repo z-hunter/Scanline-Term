@@ -869,16 +869,18 @@ export class CRTFilter {
     this.glowTexB = null;
   }
 
-  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings): void {
+  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true): void {
     if (!this.gl || !this.program || !this.buffer || !this.texture) return;
     const gl = this.gl;
 
     // 1. Upload source canvas to texture
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    if (sourceChanged) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
 
     let activeInputTexture = this.texture;
 

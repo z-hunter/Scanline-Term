@@ -3,7 +3,7 @@
 use std::{
     io::{Read, Write},
     path::PathBuf,
-    sync::Mutex,
+    sync::{mpsc::{self, Sender}, Mutex},
     thread,
 };
 
@@ -11,14 +11,14 @@ use std::{
 use std::collections::BTreeSet;
 
 use conpty_oxide::{
-    blocking::{Child, Command, OwnedWriteHalf},
+    blocking::{Child, Command},
     ConPtyBackend, PtyController, SessionOptions, Size,
 };
 use tauri::{path::BaseDirectory, Emitter, Manager, State};
 
 struct TerminalSession {
     child: Child,
-    writer: OwnedWriteHalf,
+    input: Sender<Vec<u8>>,
     controller: PtyController,
 }
 
@@ -129,7 +129,15 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, cols: u16,
     let conpty_oxide::blocking::SessionParts { child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
     writer.write_all(b"\r").map_err(|error| error.to_string())?;
     writer.flush().map_err(|error| error.to_string())?;
-    *session = Some(TerminalSession { child, writer, controller });
+    let (input_sender, input_receiver) = mpsc::channel::<Vec<u8>>();
+    thread::spawn(move || {
+        while let Ok(input) = input_receiver.recv() {
+            if writer.write_all(&input).and_then(|_| writer.flush()).is_err() {
+                break;
+            }
+        }
+    });
+    *session = Some(TerminalSession { child, input: input_sender, controller });
     drop(session);
 
     thread::spawn(move || {
@@ -150,10 +158,9 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, cols: u16,
 
 #[tauri::command]
 fn write_terminal(state: State<TerminalState>, input: String) -> Result<(), String> {
-    let mut session = state.0.lock().map_err(|_| "terminal state is unavailable")?;
-    let session = session.as_mut().ok_or("terminal is not running")?;
-    session.writer.write_all(input.as_bytes()).map_err(|error| error.to_string())?;
-    session.writer.flush().map_err(|error| error.to_string())
+    let sender = state.0.lock().map_err(|_| "terminal state is unavailable")?
+        .as_ref().ok_or("terminal is not running")?.input.clone();
+    sender.send(input.into_bytes()).map_err(|_| "terminal is not running".into())
 }
 
 #[tauri::command]
