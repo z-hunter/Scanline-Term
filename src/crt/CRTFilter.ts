@@ -3,10 +3,11 @@ import type { ColorProfileId } from '../terminal-color-profiles';
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 
 export function persistenceDecay(persistence: number, elapsedSeconds: number): { decay: number; cutoff: number } {
-  const frameCount = Math.max(0, elapsedSeconds * 60);
+  const base = 0.2 + (0.9915 - 0.2) * Math.min(1, Math.max(0, persistence));
+  const halfLife = -Math.LN2 / (60.0 * Math.log(base));
   return {
-    decay: Math.pow(0.2 + (0.9915 - 0.2) * Math.min(1, Math.max(0, persistence)), frameCount),
-    cutoff: (0.5 / 255) * frameCount,
+    decay: Math.exp((-Math.LN2 / halfLife) * elapsedSeconds),
+    cutoff: (30.0 / 255.0) * elapsedSeconds,
   };
 }
 
@@ -87,6 +88,8 @@ export class CRTFilter {
   fboCurrent: number = 0;
   fboWidth: number = 0;
   fboHeight: number = 0;
+
+  persistenceResolutionScale: number = 0.5;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -745,7 +748,11 @@ export class CRTFilter {
       const elapsedSeconds = this.lastPersistenceTime ? (now - this.lastPersistenceTime) / 1000 : 1 / 60;
       this.lastPersistenceTime = now;
       const { decay, cutoff } = persistenceDecay(persistence, elapsedSeconds);
-      this.ensureFBO(sourceCanvas.width, sourceCanvas.height);
+      
+      const pWidth = Math.max(1, Math.floor(sourceCanvas.width * this.persistenceResolutionScale));
+      const pHeight = Math.max(1, Math.floor(sourceCanvas.height * this.persistenceResolutionScale));
+      this.ensureFBO(pWidth, pHeight);
+      
       const targetFBO = this.fboCurrent === 0 ? this.fboA : this.fboB;
       const targetTex = this.fboCurrent === 0 ? this.fboTexA : this.fboTexB;
       const historyTex = this.fboCurrent === 0 ? this.fboTexB : this.fboTexA;
