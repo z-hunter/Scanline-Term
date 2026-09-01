@@ -5,6 +5,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   crtEmulation: true,
   colorProfile: DEFAULT_COLOR_PROFILE_ID,
   consoleFont: 'Consolas',
+  consoleFontSize: 9,
   curvature: 0.16,
   scanlineCount: 200,
   scanlineIntensity: 0.4,
@@ -45,6 +46,7 @@ export type StoredSettings = {
 };
 
 const numericRanges = {
+  consoleFontSize: [6, 32],
   curvature: [0, 0.5],
   scanlineCount: [0, 768],
   scanlineIntensity: [0, 1],

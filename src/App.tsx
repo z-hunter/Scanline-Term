@@ -77,11 +77,22 @@ function terminalPadding(width: number, height: number): number {
   return Math.max(4, Math.floor(Math.min(width, height) * 0.02));
 }
 
-function terminalDimensions(width: number, height: number, visibleWidth: number, visibleHeight: number): { cols: number; rows: number } {
+function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D): { width: number; height: number } {
+  context ??= document.createElement('canvas').getContext('2d') ?? undefined;
+  if (!context) return { width: Math.ceil(fontSize * 0.6), height: Math.ceil(fontSize * 1.2) };
+  context.font = canvasFont(fontSize, family);
+  const metrics = context.measureText('M');
+  const ascent = metrics.fontBoundingBoxAscent || metrics.actualBoundingBoxAscent || fontSize;
+  const descent = metrics.fontBoundingBoxDescent || metrics.actualBoundingBoxDescent || Math.ceil(fontSize * 0.2);
+  return { width: Math.ceil(metrics.width), height: Math.ceil(ascent + descent) };
+}
+
+function terminalDimensions(width: number, height: number, fontSize: number, fontFamily: string): { cols: number; rows: number } {
   const padding = terminalPadding(width, height);
+  const cell = fontCellSize(fontSize, fontFamily);
   return {
-    cols: Math.max(20, Math.min(300, Math.floor(Math.min((width - padding * 2) / 6, visibleWidth / 8)))),
-    rows: Math.max(8, Math.min(150, Math.floor(Math.min((height - padding * 2) / 12, visibleHeight / 16)))),
+    cols: Math.max(20, Math.min(300, Math.floor((width - padding * 2) / cell.width))),
+    rows: Math.max(8, Math.min(150, Math.floor((height - padding * 2) / cell.height))),
   };
 }
 
@@ -102,13 +113,11 @@ function canvasFont(fontSize: number, family: string): string {
   return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string): void {
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
-  const cellWidth = (canvas.width - padding * 2) / terminal.cols;
-  const cellHeight = (canvas.height - padding * 2) / terminal.rows;
-  const fontSize = Math.max(7, Math.floor(Math.min(cellHeight * 0.78, cellWidth / 0.55)));
+  const { width: cellWidth, height: cellHeight } = fontCellSize(fontSize, fontFamily, ctx);
   ctx.fillStyle = profile.background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = canvasFont(fontSize, fontFamily);
@@ -158,10 +167,9 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   }
 }
 
-function drawMockTerminal(canvas: HTMLCanvasElement, time: number, fontFamily: string): void {
+function drawMockTerminal(canvas: HTMLCanvasElement, time: number, fontFamily: string, fontSize: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const fontSize = Math.max(10, Math.floor(canvas.width / 80));
   const lineHeight = Math.floor(fontSize * 1.5);
   ctx.fillStyle = '#050806';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -289,8 +297,7 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     const { width, height } = initialResolutionRef.current;
-    const rect = outputRef.current?.getBoundingClientRect();
-    const { cols, rows } = terminalDimensions(width, height, rect?.width ?? window.innerWidth, rect?.height ?? window.innerHeight);
+    const { cols, rows } = terminalDimensions(width, height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const profile = activeColorProfile(settingsRef.current);
     const terminal = new Terminal({ cols, rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     terminalRef.current = terminal;
@@ -341,13 +348,12 @@ export default function App() {
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminalLiveRef.current || !terminal) return;
-    const rect = outputRef.current?.getBoundingClientRect();
-    const { cols, rows } = terminalDimensions(resolution.width, resolution.height, rect?.width ?? window.innerWidth, rect?.height ?? window.innerHeight);
+    const { cols, rows } = terminalDimensions(resolution.width, resolution.height, stored.crt.consoleFontSize, stored.crt.consoleFont);
     if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
     terminalSizeRef.current = { cols, rows };
     terminal.resize(cols, rows);
     void invoke('resize_terminal', { cols, rows }).catch((reason) => setError(`Terminal resize failed: ${String(reason)}`));
-  }, [resolution.height, resolution.width]);
+  }, [resolution.height, resolution.width, stored.crt.consoleFont, stored.crt.consoleFontSize]);
 
   useEffect(() => {
     const output = outputRef.current;
@@ -367,7 +373,7 @@ export default function App() {
       filter.clearPersistence();
       const terminal = terminalRef.current;
       if (!terminalLiveRef.current || !terminal) return;
-      const { cols, rows } = terminalDimensions(source.width, source.height, rect.width, rect.height);
+      const { cols, rows } = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
       if (cols === terminalSizeRef.current.cols && rows === terminalSizeRef.current.rows) return;
       terminalSizeRef.current = { cols, rows };
       terminal.resize(cols, rows);
@@ -380,8 +386,8 @@ export default function App() {
     const render = (now: number) => {
       const time = now / 1000;
       const settings = settingsRef.current;
-      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont);
-      else drawMockTerminal(source, time, settings.consoleFont);
+      if (terminalLiveRef.current && terminalRef.current) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize);
+      else drawMockTerminal(source, time, settings.consoleFont, settings.consoleFontSize);
       if (!filter.isValid() && !errorReported) {
         errorReported = true;
         setError('WebGL is unavailable in this WebView.');
@@ -440,9 +446,10 @@ export default function App() {
     const padding = terminalPadding(source.width, source.height);
     const x = (event.clientX - rect.left) * source.width / rect.width;
     const y = (event.clientY - rect.top) * source.height / rect.height;
+    const cell = fontCellSize(settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     return {
-      col: Math.max(1, Math.min(terminal.cols, Math.floor((x - padding) / ((source.width - padding * 2) / terminal.cols)) + 1)),
-      row: Math.max(1, Math.min(terminal.rows, Math.floor((y - padding) / ((source.height - padding * 2) / terminal.rows)) + 1)),
+      col: Math.max(1, Math.min(terminal.cols, Math.floor((x - padding) / cell.width) + 1)),
+      row: Math.max(1, Math.min(terminal.rows, Math.floor((y - padding) / cell.height) + 1)),
     };
   };
 
@@ -633,6 +640,18 @@ export default function App() {
           >
             {!monospaceFonts.includes(stored.crt.consoleFont) && <option value={stored.crt.consoleFont}>{stored.crt.consoleFont} (fallback)</option>}
             {monospaceFonts.map((font) => <option key={font} value={font}>{font}</option>)}
+          </select>
+        </label>
+        <label className="resolution-control">
+          Console font size
+          <select
+            value={stored.crt.consoleFontSize}
+            onChange={(event) => setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, consoleFontSize: Number(event.target.value) },
+            }))}
+          >
+            {[6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32].map((size) => <option key={size} value={size}>{size} px</option>)}
           </select>
         </label>
         {Object.entries(controls).map(([group, groupControls]) => (

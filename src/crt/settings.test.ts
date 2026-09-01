@@ -61,6 +61,10 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { consoleFont: 'Cascadia Mono' } })).crt.consoleFont).toBe('Cascadia Mono');
   });
 
+  it('preserves a selected console font size', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { consoleFontSize: 14 } })).crt.consoleFontSize).toBe(14);
+  });
+
   it('preserves the CRT emulation switch', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { crtEmulation: false } })).crt.crtEmulation).toBe(false);
   });
