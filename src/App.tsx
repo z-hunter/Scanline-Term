@@ -124,7 +124,7 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   const buffer = terminal.buffer.active;
-  const ydisp = (terminal as unknown as { _core?: { bufferService?: { buffer?: { ydisp?: number } } } })._core?.bufferService?.buffer?.ydisp ?? buffer.baseY;
+  const ydisp = buffer.viewportY;
   const cell = buffer.getNullCell();
   for (let row = 0; row < terminal.rows; row += 1) {
     const line = buffer.getLine(ydisp + row);
