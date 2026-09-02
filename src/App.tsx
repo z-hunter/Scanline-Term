@@ -263,6 +263,7 @@ export default function App() {
   const [terminalLive, setTerminalLive] = useState(false);
   const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
   const [settingsVisible, setSettingsVisible] = useState(true);
+  const [copyMode, setCopyMode] = useState(false);
   const [terminalSize, setTerminalSize] = useState({ cols: 0, rows: 0 });
   const [fps, setFps] = useState(0);
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
@@ -277,6 +278,7 @@ export default function App() {
   const menuKeyDownRef = useRef(false);
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
+  const copyStartRowRef = useRef<number | null>(null);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const resolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
@@ -485,6 +487,13 @@ export default function App() {
     };
   };
 
+  const copyLines = async (terminal: Terminal, start: number, end: number) => {
+    terminal.selectLines(Math.min(start, end), Math.max(start, end));
+    const text = terminal.getSelection();
+    terminal.clearSelection();
+    if (text) await navigator.clipboard.writeText(text);
+  };
+
   const sendMouse = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => {
     const terminal = terminalRef.current;
     const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
@@ -509,6 +518,11 @@ export default function App() {
 
   const handleTerminalMouseMove = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     const terminal = terminalRef.current;
+    if (terminal && copyStartRowRef.current !== null && event.buttons) {
+      const cell = terminalMouseCell(event, terminal);
+      if (cell) terminal.selectLines(copyStartRowRef.current, terminal.buffer.active.viewportY + cell.row - 1);
+      return;
+    }
     const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
     if (!terminal || !tracking || tracking === 'none') return;
     if (tracking === 'drag' && pressedMouseButtonsRef.current.size === 0) return;
@@ -517,12 +531,31 @@ export default function App() {
   };
 
   const handleTerminalMouseDown = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const terminal = terminalRef.current;
+    if (terminal && (copyMode || event.button === 1)) {
+      const cell = terminalMouseCell(event, terminal);
+      if (cell) {
+        event.preventDefault();
+        copyStartRowRef.current = terminal.buffer.active.viewportY + cell.row - 1;
+        terminal.selectLines(copyStartRowRef.current, copyStartRowRef.current);
+      }
+      return;
+    }
     if (event.button > 2) return;
     const button = event.button as 0 | 1 | 2;
     if (sendMouse(event, 'press', button)) pressedMouseButtonsRef.current.add(button);
   };
 
   const handleTerminalMouseUp = (event: ReactMouseEvent<HTMLCanvasElement>) => {
+    const terminal = terminalRef.current;
+    if (terminal && copyStartRowRef.current !== null) {
+      const cell = terminalMouseCell(event, terminal);
+      const start = copyStartRowRef.current;
+      copyStartRowRef.current = null;
+      setCopyMode(false);
+      if (cell) void copyLines(terminal, start, terminal.buffer.active.viewportY + cell.row - 1).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
+      return;
+    }
     if (event.button <= 2) {
       sendMouse(event, 'release', event.button as 0 | 1 | 2);
       pressedMouseButtonsRef.current.delete(event.button);
@@ -541,6 +574,18 @@ export default function App() {
         event.preventDefault();
         event.stopPropagation();
         if (!event.repeat) setSettingsVisible((visible) => !visible);
+        return;
+      }
+      if (menuKeyDownRef.current && event.code === 'KeyV') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) navigator.clipboard.readText().then(sendInputRef.current).catch((reason) => setError(`Clipboard paste failed: ${String(reason)}`));
+        return;
+      }
+      if (menuKeyDownRef.current && event.code === 'KeyC') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) setCopyMode(true);
         return;
       }
       if (event.altKey && event.key === 'Enter' && isTauri()) {
