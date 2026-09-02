@@ -506,7 +506,7 @@ export default function App() {
       const row = first.row + index;
       const line = buffer.getLine(row);
       return line?.translateToString(index === last.row - first.row, row === first.row ? first.column : 0, row === last.row ? last.column + 1 : terminal.cols) ?? '';
-    }).join('\r\n');
+    }).join('\r\n').replace(/(?:\r\n|\r|\n)$/, '');
     if (text) await navigator.clipboard.writeText(text);
   };
 
