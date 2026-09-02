@@ -484,14 +484,37 @@ export default function App() {
     sendInputRef.current = sendInput;
   });
 
+  const uncurve = (uv_x: number, uv_y: number, curvature: number) => {
+    if (curvature <= 0.0) return { x: uv_x, y: uv_y };
+    let ux = (uv_x - 0.5) * 2.0;
+    let uy = (uv_y - 0.5) * 2.0;
+    const zoom = 1.0 + (curvature * 0.1);
+    ux *= zoom;
+    uy *= zoom;
+    ux *= 1.0 + Math.pow(Math.abs(uy) / 5.0, 2.0) * curvature * 5.0;
+    uy *= 1.0 + Math.pow(Math.abs(ux) / 4.0, 2.0) * curvature * 5.0;
+    return { x: (ux / 2.0) + 0.5, y: (uy / 2.0) + 0.5 };
+  };
+
   const terminalMouseCell = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, terminal: Terminal) => {
     const output = outputRef.current;
     const source = sourceRef.current;
     if (!output || !source) return null;
     const rect = output.getBoundingClientRect();
     const padding = terminalPadding(source.width, source.height);
-    const x = (event.clientX - rect.left) * source.width / rect.width;
-    const y = (event.clientY - rect.top) * source.height / rect.height;
+    
+    let u = (event.clientX - rect.left) / rect.width;
+    let v = (event.clientY - rect.top) / rect.height;
+
+    if (settingsRef.current.crtEmulation) {
+      const uncurved = uncurve(u, v, settingsRef.current.curvature);
+      u = uncurved.x;
+      v = uncurved.y;
+    }
+
+    const x = u * source.width;
+    const y = v * source.height;
+    
     const cell = fontCellSize(settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     return {
       col: Math.max(1, Math.min(terminal.cols, Math.floor((x - padding) / cell.width) + 1)),
@@ -511,8 +534,8 @@ export default function App() {
   };
 
   const copyPoint = (terminal: Terminal, cell: { col: number; row: number }): CopyPoint => ({
-    row: Math.max(terminal.buffer.active.viewportY, terminal.buffer.active.viewportY + cell.row - 2),
-    column: Math.max(0, cell.col - 3),
+    row: Math.max(terminal.buffer.active.viewportY, terminal.buffer.active.viewportY + cell.row - 1),
+    column: Math.max(0, cell.col - 1),
   });
 
   const sendMouse = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => {
