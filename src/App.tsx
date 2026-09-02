@@ -118,7 +118,7 @@ function canvasFont(fontSize: number, family: string): string {
   return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number): void {
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number, selection: { start: number; end: number } | null): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
@@ -147,6 +147,10 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
         const left = Math.floor(x);
         const top = Math.floor(y - cellHeight / 2);
         ctx.fillRect(left, top, Math.ceil(x + cellWidth * current.getWidth()) - left, Math.ceil(y + cellHeight / 2) - top);
+      }
+      if (selection && ydisp + row >= Math.min(selection.start, selection.end) && ydisp + row <= Math.max(selection.start, selection.end)) {
+        ctx.fillStyle = 'rgba(125, 210, 255, 0.42)';
+        ctx.fillRect(Math.floor(x), Math.floor(y - cellHeight / 2), Math.ceil(cellWidth * current.getWidth()), Math.ceil(cellHeight));
       }
       const chars = current.getChars();
       if (chars && !current.isInvisible()) {
@@ -280,6 +284,7 @@ export default function App() {
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const copyModeRef = useRef(false);
   const copyStartRowRef = useRef<number | null>(null);
+  const copySelectionRef = useRef<{ start: number; end: number } | null>(null);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const resolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
@@ -416,12 +421,13 @@ export default function App() {
     const render = (now: number) => {
       const time = now / 1000;
       const settings = settingsRef.current;
-      const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}`;
+      const selection = copySelectionRef.current;
+      const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}|${selection?.start}:${selection?.end}`;
       const sourceSize = `${source.width}x${source.height}`;
       const cursorPhase = Math.floor(time * 2);
       if (sourceStyle !== lastSourceStyle || sourceSize !== lastSourceSize || cursorPhase !== lastCursorPhase) sourceDirty = true;
       if (terminalLiveRef.current && terminalRef.current) {
-        if (sourceDirty) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize);
+        if (sourceDirty) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize, selection);
       } else {
         drawMockTerminal(source, time, settings.consoleFont, settings.consoleFontSize);
         sourceDirty = true;
@@ -522,7 +528,10 @@ export default function App() {
     const terminal = terminalRef.current;
     if (terminal && copyStartRowRef.current !== null && event.buttons) {
       const cell = terminalMouseCell(event, terminal);
-      if (cell) terminal.selectLines(copyStartRowRef.current, terminal.buffer.active.viewportY + cell.row - 1);
+      if (cell) {
+        const end = terminal.buffer.active.viewportY + cell.row - 1;
+        copySelectionRef.current = { start: copyStartRowRef.current, end };
+      }
       return;
     }
     const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
@@ -539,7 +548,7 @@ export default function App() {
       if (cell) {
         event.preventDefault();
         copyStartRowRef.current = terminal.buffer.active.viewportY + cell.row - 1;
-        terminal.selectLines(copyStartRowRef.current, copyStartRowRef.current);
+        copySelectionRef.current = { start: copyStartRowRef.current, end: copyStartRowRef.current };
       }
       return;
     }
@@ -556,7 +565,11 @@ export default function App() {
       copyStartRowRef.current = null;
       copyModeRef.current = false;
       setCopyMode(false);
-      if (cell) void copyLines(terminal, start, terminal.buffer.active.viewportY + cell.row - 1).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
+      if (cell) {
+        const end = terminal.buffer.active.viewportY + cell.row - 1;
+        copySelectionRef.current = { start, end };
+        void copyLines(terminal, start, end).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
+      }
       return;
     }
     if (event.button <= 2) {
