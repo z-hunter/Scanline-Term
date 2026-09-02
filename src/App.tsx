@@ -512,7 +512,7 @@ export default function App() {
 
   const copyPoint = (terminal: Terminal, cell: { col: number; row: number }): CopyPoint => ({
     row: Math.max(terminal.buffer.active.viewportY, terminal.buffer.active.viewportY + cell.row - 2),
-    column: cell.col - 1,
+    column: Math.max(0, cell.col - 3),
   });
 
   const sendMouse = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => {
