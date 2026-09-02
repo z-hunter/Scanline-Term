@@ -6,8 +6,36 @@
     <link rel="icon" href="/icon.svg" />
     <title>Scanline Term</title>
   </head>
+  <style>
+    body {
+      background-color: #000;
+      margin: 0;
+      overflow: hidden;
+    }
+    #splash {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #000;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    #splash img {
+      width: 256px;
+      height: 256px;
+    }
+  </style>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="splash">
+        <img src="/splash.jpg" alt="Loading" />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

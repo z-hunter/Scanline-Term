@@ -1,0 +1,218 @@
+# 2 · Architecture
+
+[← Overview](./01-overview.md) · [Index](./README.md) · [Codebase Guide →](./03-codebase-guide.md)
+
+---
+
+## Layer Diagram
+
+```mermaid
+graph TB
+  subgraph "Windows OS"
+    ConPTY["ConPTY DLLs<br/>(bundled x64)"]
+    Shell["cmd.exe / PowerShell<br/>(child process)"]
+    GDI["Win32 GDI<br/>(font enumeration)"]
+  end
+
+  subgraph "Rust / Tauri Process"
+    Main["main.rs<br/>Tauri commands"]
+    TermState["TerminalState<br/>(Mutex&lt;Option&lt;TerminalSession&gt;&gt;)"]
+    Reader["Output reader thread<br/>(4 KiB buffer loop)"]
+    Writer["Input writer thread<br/>(mpsc channel receiver)"]
+  end
+
+  subgraph "WebView / Frontend (React + WebGL)"
+    AppTsx["App.tsx<br/>React root component"]
+    Xterm["@xterm/xterm<br/>headless VT parser"]
+    TermInput["terminal-input.ts<br/>VT key encoding"]
+    Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
+    TermMouse["terminal-mouse.ts<br/>mouse event encoding"]
+    ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
+    DrawTerminal["drawTerminal()<br/>Canvas 2D character grid"]
+    CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
+    Settings["settings.ts<br/>localStorage persistence"]
+    SourceCanvas["Source canvas<br/>(virtual resolution)"]
+    OutputCanvas["Output canvas<br/>(physical pixels)"]
+  end
+
+  Shell <--> ConPTY
+  ConPTY <--> Main
+  GDI --> Main
+  Main --> TermState
+  TermState --> Writer
+  Writer --> ConPTY
+  ConPTY --> Reader
+  Reader -->|"emit('terminal-output')"| AppTsx
+  Main -->|"emit('terminal-exit')"| AppTsx
+
+  AppTsx -->|"invoke('start_terminal')"| Main
+  AppTsx -->|"invoke('write_terminal')"| Main
+  AppTsx -->|"invoke('resize_terminal')"| Main
+  AppTsx -->|"invoke('list_monospace_fonts')"| Main
+
+  AppTsx --> Xterm
+  Xterm --> DrawTerminal
+  DrawTerminal --> SourceCanvas
+  SourceCanvas --> CRTFilter
+  CRTFilter --> OutputCanvas
+
+  AppTsx --> TermInput
+  AppTsx --> Win32Input
+  AppTsx --> TermMouse
+  AppTsx --> ColorProfiles
+  AppTsx --> Settings
+```
+
+## Execution Boundary
+
+| Executes in **WebView** (JavaScript/TypeScript) | Executes in **Rust** (native process) |
+|----|-----|
+| React UI, settings panel, all event handlers | Tauri command handlers |
+| xterm VT parsing and buffer management | ConPTY session lifecycle (spawn, I/O, kill) |
+| Keyboard → VT/Win32 encoding | PTY input writer (mpsc channel → ConPTY pipe) |
+| Mouse → SGR/X10 encoding | PTY output reader (pipe → Tauri event emission) |
+| Canvas 2D terminal drawing | PTY resize (`controller.resize()`) |
+| WebGL CRT shader rendering | Win32 GDI monospace font enumeration |
+| `localStorage` settings persistence | Bundled ConPTY DLL resolution |
+| Copy/paste via `navigator.clipboard` | — |
+
+## Data Flows
+
+### Console Output → Screen
+
+```mermaid
+sequenceDiagram
+    participant Shell as cmd.exe
+    participant ConPTY as ConPTY (Rust)
+    participant Reader as Reader Thread
+    participant Tauri as Tauri Event Bus
+    participant Xterm as @xterm/xterm
+    participant Canvas as Canvas 2D
+    participant CRT as CRTFilter (WebGL)
+    participant Screen as Output Canvas
+
+    Shell->>ConPTY: stdout bytes
+    ConPTY->>Reader: pipe read (4 KiB buffer)
+    Reader->>Tauri: emit("terminal-output", Vec<u8>)
+    Tauri->>Xterm: terminal.write(Uint8Array)
+    Note over Xterm: VT parse → update buffer cells
+    Xterm-->>Canvas: onWriteParsed → sourceDirty = true
+    Note over Canvas: requestAnimationFrame loop
+    Canvas->>Canvas: drawTerminal() — iterate rows/cols<br/>read cell colors from profile<br/>draw text on source canvas
+    Canvas->>CRT: filter.render(source, settings, sourceDirty)
+    Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
+    CRT->>Screen: WebGL draw to output canvas
+```
+
+### Keyboard Input → Console
+
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant DOM as window keydown/keyup
+    participant App as App.tsx handler
+    participant Encoder as terminal-input.ts<br/>or win32-input.ts
+    participant Invoke as invoke("write_terminal")
+    participant Writer as Writer Thread (Rust)
+    participant ConPTY as ConPTY
+    participant Shell as cmd.exe
+
+    User->>DOM: keydown event
+    DOM->>App: onKeyDown handler (capture phase)
+    App->>App: Check Menu-key shortcuts<br/>Check Alt+Enter fullscreen
+    App->>Encoder: win32InputModeRef ? win32InputKey() : terminalKey()
+    Encoder-->>App: VT/Win32 escape sequence string
+    App->>Invoke: invoke("write_terminal", { input })
+    Invoke->>Writer: mpsc channel send(bytes)
+    Writer->>ConPTY: pipe write + flush
+    ConPTY->>Shell: stdin delivery
+```
+
+### Mouse Input → Console
+
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant Canvas as Output Canvas
+    participant App as App.tsx mouse handlers
+    participant Mouse as terminal-mouse.ts
+    participant Invoke as invoke("write_terminal")
+
+    User->>Canvas: mousedown / mousemove / mouseup / wheel
+    Canvas->>App: React mouse event handler
+    App->>App: terminalMouseCell() — map pixel to cell coords
+    alt Copy Mode (Menu+C) or Middle Button
+        App->>App: Update copySelectionRef
+        App->>App: copySelection() → navigator.clipboard.writeText()
+    else Application Mouse Tracking Active
+        App->>Mouse: terminalMouse({ col, row, action, button, sgr, ... })
+        Mouse-->>App: SGR or X10 escape sequence
+        App->>Invoke: invoke("write_terminal", { input })
+    else Normal Mode (scrollback)
+        App->>App: terminal.scrollLines(±3)
+    end
+```
+
+### Window Resize → Console Resize
+
+```mermaid
+sequenceDiagram
+    participant Browser as Window / CSS Layout
+    participant Observer as ResizeObserver
+    participant App as App.tsx resize handler
+    participant Font as fontCellSize()
+    participant Xterm as terminal.resize()
+    participant Invoke as invoke("resize_terminal")
+    participant Rust as main.rs
+    participant ConPTY as controller.resize()
+
+    Browser->>Observer: Element size changed
+    Observer->>App: resize callback
+    App->>App: Update output canvas width/height<br/>(physical pixels × devicePixelRatio)
+    App->>App: Update source canvas (if physical mode)
+    App->>Font: fontCellSize(fontSize, fontFamily)
+    Note over Font: measureText("M") → cellWidth, cellHeight
+    App->>App: terminalDimensions() → cols, rows<br/>clamp [20..300] × [8..150]
+    App->>Xterm: terminal.resize(cols, rows)
+    App->>Invoke: invoke("resize_terminal", { cols, rows })
+    Invoke->>Rust: resize_terminal command
+    Rust->>Rust: pty_size() validation
+    Rust->>ConPTY: controller.resize(Size)
+```
+
+## Concurrency Model
+
+### Rust Side
+
+```
+┌─────────────────────────────────────┐
+│           Main Tauri Thread         │
+│  • Handles invoke commands          │
+│  • Manages TerminalState (Mutex)    │
+│  • start_terminal / write_terminal  │
+│    / resize_terminal /              │
+│    list_monospace_fonts             │
+└──────────┬──────────┬───────────────┘
+           │          │
+    ┌──────▼──────┐ ┌─▼─────────────┐
+    │Writer Thread│ │ Reader Thread  │
+    │ mpsc recv   │ │ pipe read loop │
+    │ → pipe write│ │ → emit event   │
+    └─────────────┘ └────────────────┘
+```
+
+- **`TerminalState`** is a `Mutex<Option<TerminalSession>>`, accessed by Tauri command handlers on the main thread.
+- **Writer thread**: receives `Vec<u8>` from an `mpsc::Sender`, writes to the ConPTY input pipe. Blocks on `recv()`, terminates when the sender is dropped or the pipe errors.
+- **Reader thread**: reads from the ConPTY output pipe in a `[0; 4096]` buffer loop. Emits `terminal-output` events to the WebView. On EOF or error, clears the session and emits `terminal-exit`.
+- **`Drop` for `TerminalState`**: kills the child process to prevent orphaned console hosts.
+
+### Frontend Side
+
+- All rendering runs on the **main JavaScript thread** inside a `requestAnimationFrame` loop.
+- The `sourceDirty` flag gates expensive `drawTerminal()` calls — only redraws when xterm's `onWriteParsed` or `onScroll` fires, or when settings/cursor-phase change.
+- `ResizeObserver` triggers canvas and ConPTY resizes synchronously on the main thread.
+- Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
+
+---
+
+*[Next: Codebase Guide →](./03-codebase-guide.md)*
