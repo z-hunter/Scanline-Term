@@ -650,6 +650,24 @@ export default function App() {
         }
         return;
       }
+      if (menuKeyDownRef.current && event.code === 'PageUp') {
+        event.preventDefault();
+        event.stopPropagation();
+        const terminal = terminalRef.current;
+        if (terminal && terminal.buffer.active === terminal.buffer.normal) {
+          terminal.scrollLines(-(terminal.rows - 1));
+        }
+        return;
+      }
+      if (menuKeyDownRef.current && event.code === 'PageDown') {
+        event.preventDefault();
+        event.stopPropagation();
+        const terminal = terminalRef.current;
+        if (terminal && terminal.buffer.active === terminal.buffer.normal) {
+          terminal.scrollLines(terminal.rows - 1);
+        }
+        return;
+      }
       if (event.altKey && event.key === 'Enter' && isTauri()) {
         event.preventDefault();
         event.stopPropagation();
