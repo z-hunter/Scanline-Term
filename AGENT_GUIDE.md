@@ -26,13 +26,13 @@ These files are complex, tightly coupled, and easy to break:
 | File | Risk | Why |
 |------|------|-----|
 | **`src/crt/CRTFilter.ts`** | 🔴 Critical | 1101 lines of WebGL + inline GLSL. Mistakes cause visual corruption, black screens, or WebGL errors. No automated visual tests. |
-| **`src/App.tsx`** | 🔴 Critical | 837 lines — single component with all state, effects, input handlers, rendering loop. Modifying one ref or effect can break unrelated behavior. |
+| **`src/terminal/TerminalSession.ts` / `TerminalRenderer.ts`** | 🔴 Critical | ConPTY/xterm lifecycle and source-canvas rendering; changes affect input, resize and display integrity. |
 | **`src-tauri/src/main.rs`** | 🟠 High | ConPTY lifecycle, thread management, process cleanup. Bugs can cause orphaned processes, deadlocks, or data loss. Requires Windows to test. |
 | **`src/win32-input.ts`** | 🟠 High | Virtual key code and scan code lookup tables. Errors cause incorrect key delivery to console apps. Hard to test without specific Windows apps. |
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
-| **`src/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
+| **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
 | **`src/terminal-color-profiles.ts`** | 🟢 Low | Self-contained palette data. Hard to break without deleting entries. |
-| **`src/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
+| **`src/terminal/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
 
 ---
 
@@ -42,7 +42,28 @@ These files are complex, tightly coupled, and easy to break:
 
 - **Never** reformat or restructure files you're not actively modifying.
 - The CRT shader strings in `CRTFilter.ts` use mixed line endings (`\r\n` and `\n`). Do not normalize them unless specifically asked.
-- `App.tsx` has a deliberate structure: types → controls definition → helpers → component. Maintain this order.
+- `App.tsx` is composition only; keep terminal, CRT lifecycle and settings UI in their dedicated modules.
+
+### Documentation Maintenance
+
+After completing a task that involves **significant architectural changes**, you **must** update the relevant documentation in `docs/` as a final step — after the code changes are working and validated.
+
+A change is "architecturally significant" if it does any of the following:
+- **Moves, renames, splits, or merges source files** (e.g., extracting parts of `App.tsx` into separate modules)
+- **Adds, removes, or renames a Tauri command or event**
+- **Changes data flow** between WebView and Rust, or between major frontend modules
+- **Adds a new rendering pass, shader program, or FBO** to the CRT pipeline
+- **Adds a new module or directory** to the project structure
+- **Changes concurrency model** (threads, channels, state ownership)
+
+**What to update:**
+1. [`docs/03-codebase-guide.md`](./docs/03-codebase-guide.md) — repository tree, file descriptions, public API surface
+2. [`docs/02-architecture.md`](./docs/02-architecture.md) — Mermaid diagrams, data flow sequences, execution boundary table
+3. [`docs/04-core-systems.md`](./docs/04-core-systems.md) — if core behavior (input, rendering, console) changed
+4. This file (`AGENT_GUIDE.md`) — high-risk files table, change impact map, line number references
+5. Any other `docs/` page that references moved/renamed code
+
+**Do not** update documentation for trivial changes (bug fixes, style tweaks, value adjustments) unless they contradict existing documentation.
 
 ### When Frontend-Only Validation Is Sufficient
 
@@ -72,7 +93,7 @@ You **must** test with `npm run tauri:dev` on Windows when:
 
 ### Console Compatibility
 
-- **Do not remove or alter the Win32 Input Mode CSI handlers** (lines 328–339 in App.tsx). These enable FAR Manager, PowerShell, and other Windows console apps.
+- **Do not remove or alter the Win32 Input Mode CSI handlers** in `TerminalSession.ts`. These enable FAR Manager, PowerShell, and other Windows console apps.
 - **Do not change the `pty_size()` validation ranges** without updating `terminalDimensions()` clamping to match, and vice versa.
 - **Do not remove the initial `\r` write** in `start_terminal()` — it triggers the shell prompt.
 
@@ -142,9 +163,9 @@ npm run tauri:build
 - Main component: [`src/App.tsx`](./src/App.tsx)
 - CRT shader: [`src/crt/CRTFilter.ts`](./src/crt/CRTFilter.ts)
 - Settings: [`src/crt/settings.ts`](./src/crt/settings.ts)
-- VT input: [`src/terminal-input.ts`](./src/terminal-input.ts)
+- VT input: [`src/terminal/terminal-input.ts`](./src/terminal/terminal-input.ts)
 - Win32 input: [`src/win32-input.ts`](./src/win32-input.ts)
-- Mouse: [`src/terminal-mouse.ts`](./src/terminal-mouse.ts)
+- Mouse: [`src/terminal/terminal-mouse.ts`](./src/terminal/terminal-mouse.ts)
 - Color profiles: [`src/terminal-color-profiles.ts`](./src/terminal-color-profiles.ts)
 - Rust backend: [`src-tauri/src/main.rs`](./src-tauri/src/main.rs)
 - Tauri config: [`src-tauri/tauri.conf.json`](./src-tauri/tauri.conf.json)

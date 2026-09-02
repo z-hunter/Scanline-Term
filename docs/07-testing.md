@@ -12,9 +12,9 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 
 | Test File | Area | Coverage |
 |-----------|------|----------|
-| [`terminal-input.test.ts`](../src/terminal-input.test.ts) | VT key encoding | F1–F24 with modifiers; Ctrl+C, Ctrl+Alt+C; cursor keys with DECCKM; numpad application mode |
+| [`terminal-input.test.ts`](../src/terminal/terminal-input.test.ts) | VT key encoding | F1–F24 with modifiers; Ctrl+C, Ctrl+Alt+C; cursor keys with DECCKM; numpad application mode |
 | [`win32-input.test.ts`](../src/win32-input.test.ts) | Win32 Input Mode | Modifier-only down/up; ContextMenu key; Ctrl+C; Enter; Backspace; ArrowUp; F1; virtual keys, scan codes, control state bitmask |
-| [`terminal-mouse.test.ts`](../src/terminal-mouse.test.ts) | Mouse encoding | SGR clicks, releases, wheel with Ctrl modifier; X10 legacy encoding; mouse move without button |
+| [`terminal-mouse.test.ts`](../src/terminal/terminal-mouse.test.ts) | Mouse encoding | SGR clicks, releases, wheel with Ctrl modifier; X10 legacy encoding; mouse move without button |
 | [`terminal-color-profiles.test.ts`](../src/terminal-color-profiles.test.ts) | Color profiles | Historical palette values; xterm extended table (256 colors); `remapLegacyRgb` for DOS VGA, Solarized, passthrough |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |

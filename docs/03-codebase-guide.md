@@ -20,16 +20,18 @@ ScanlineTerm/
 │   │   ├── CRTFilter.ts           # ★ WebGL CRT shader pipeline (1101 lines)
 │   │   ├── settings.ts            # CRT settings, resolutions, localStorage loader
 │   │   └── settings.test.ts       # Unit tests for settings validation
-│   ├── App.tsx                    # ★ Main React component (837 lines)
+│   ├── App.tsx                    # React composition root
+│   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
+│   ├── ui/                        # SettingsPanel and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
-│   ├── terminal-input.ts          # VT key encoding (standard terminal mode)
-│   ├── terminal-input.test.ts     # Unit tests for VT key encoding
+│   ├── terminal/terminal-input.ts # VT key encoding (standard terminal mode)
+│   ├── terminal/terminal-input.test.ts # Unit tests for VT key encoding
 │   ├── win32-input.ts             # Win32 Input Mode key encoding
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
-│   ├── terminal-mouse.ts          # Mouse event SGR/X10 encoding
-│   ├── terminal-mouse.test.ts     # Unit tests for mouse encoding
+│   ├── terminal/terminal-mouse.ts # Mouse event SGR/X10 encoding
+│   ├── terminal/terminal-mouse.test.ts # Unit tests for mouse encoding
 │   ├── terminal-color-profiles.ts # 8 color palette definitions + remapping
 │   ├── terminal-color-profiles.test.ts  # Unit tests for color profiles
 │   └── terminal-responses.test.ts # Test: xterm cursor-position report

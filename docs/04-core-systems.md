@@ -39,7 +39,7 @@ The ConPTY session produces VT100/VT220-compatible output. Console applications 
 When the console host (conhost/ConPTY) requests Win32 Input Mode, it sends `\x1b[?9001h`. The frontend detects this via an xterm CSI handler:
 
 ```typescript
-// In App.tsx — registerCsiHandler for ?h and ?l
+// In terminal/TerminalSession.ts — registerCsiHandler for ?h and ?l
 terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
   if (params.length !== 1 || params[0] !== 9001) return false;
   win32InputModeRef.current = true;
@@ -82,7 +82,7 @@ const input = win32InputModeRef.current
   : terminalKey(event, terminal.modes);
 ```
 
-### Standard VT Mode (`terminal-input.ts`)
+### Standard VT Mode (`terminal/terminal-input.ts`)
 
 | Key Category | Encoding |
 |---|---|

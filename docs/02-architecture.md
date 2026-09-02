@@ -22,11 +22,11 @@ graph TB
   end
 
   subgraph "WebView / Frontend (React + WebGL)"
-    AppTsx["App.tsx<br/>React root component"]
+    AppTsx["App.tsx<br/>React composition root"]
     Xterm["@xterm/xterm<br/>headless VT parser"]
-    TermInput["terminal-input.ts<br/>VT key encoding"]
+    TermInput["terminal/terminal-input.ts<br/>VT key encoding"]
     Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
-    TermMouse["terminal-mouse.ts<br/>mouse event encoding"]
+    TermMouse["terminal/terminal-mouse.ts<br/>mouse event encoding"]
     ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
     DrawTerminal["drawTerminal()<br/>Canvas 2D character grid"]
     CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
