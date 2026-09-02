@@ -8,14 +8,22 @@ export type Resolution = { id: string; width?: number; height?: number };
 export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
+const fontMetricsCache = new Map<string, { width: number; height: number }>();
+let measurementContext: CanvasRenderingContext2D | undefined;
+
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
 export function canvasFont(fontSize: number, family: string): string { return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`; }
 export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D): { width: number; height: number } {
-  context ??= document.createElement('canvas').getContext('2d') ?? undefined;
+  const key = `${fontSize}:${family}`;
+  const cached = fontMetricsCache.get(key);
+  if (cached) return cached;
+  context ??= (measurementContext ??= document.createElement('canvas').getContext('2d') ?? undefined);
   if (!context) return { width: Math.ceil(fontSize * 0.6), height: Math.ceil(fontSize * 1.2) };
   context.font = canvasFont(fontSize, family);
   const metrics = context.measureText('M');
-  return { width: Math.ceil(metrics.width), height: Math.ceil((metrics.fontBoundingBoxAscent || metrics.actualBoundingBoxAscent || fontSize) + (metrics.fontBoundingBoxDescent || metrics.actualBoundingBoxDescent || Math.ceil(fontSize * 0.2))) };
+  const size = { width: Math.ceil(metrics.width), height: Math.ceil((metrics.fontBoundingBoxAscent || metrics.actualBoundingBoxAscent || fontSize) + (metrics.fontBoundingBoxDescent || metrics.actualBoundingBoxDescent || Math.ceil(fontSize * 0.2))) };
+  fontMetricsCache.set(key, size);
+  return size;
 }
 export function terminalDimensions(width: number, height: number, fontSize: number, family: string) {
   const padding = terminalPadding(width, height); const cell = fontCellSize(fontSize, family);
@@ -44,8 +52,8 @@ export class TerminalRenderer {
     if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markTerminalDirty()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
-    const width = resolution.id === 'physical' ? output.width || 1 : resolution.width || 1;
-    const height = resolution.id === 'physical' ? output.height || 1 : resolution.height || 1;
+    const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;
+    const height = resolution.id.startsWith('physical') ? output.height || 1 : resolution.height || 1;
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
     this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.markDirty(); return true;
   }

@@ -134,7 +134,7 @@ A color profile defines a 16-color (or 256-color) palette for the terminal.
 
 ### Files to Modify
 
-- **App-level shortcut (like Menu+S):** [`src/App.tsx`](../src/App.tsx) — `onKeyDown` handler (lines 601–643)
+- **App-level shortcut (like Menu+S):** [`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts) — `down` handler in `useTerminal`
 - **Terminal-level key (VT mode):** [`src/terminal/terminal-input.ts`](../src/terminal/terminal-input.ts)
 - **Terminal-level key (Win32 mode):** [`src/win32-input.ts`](../src/win32-input.ts)
 

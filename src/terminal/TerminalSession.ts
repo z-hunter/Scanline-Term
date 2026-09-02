@@ -39,9 +39,15 @@ export class TerminalSession {
     );
     try {
       this.unlisten = await listen<number[]>('terminal-output', (event) => terminal.write(Uint8Array.from(event.payload)));
-      if (this.disposed) return;
+      if (this.disposed) {
+        this.unlisten();
+        return;
+      }
       await invoke('start_terminal', size);
-      if (this.disposed) return;
+      if (this.disposed) {
+        void invoke('write_terminal', { input: 'exit\r' });
+        return;
+      }
       this.live = true;
       this.size = size;
       this.onState(true, size);

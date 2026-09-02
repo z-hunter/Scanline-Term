@@ -25,8 +25,9 @@ select {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
-  min-height: 100vh;
+  height: 100vh;
   padding: 18px;
 }
 
@@ -37,6 +38,7 @@ select {
 .display-panel {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -44,13 +46,21 @@ select {
 
 .screen-frame {
   position: relative;
-  width: min(100%, calc((100vh - 36px) * 4 / 3));
-  aspect-ratio: 4 / 3;
+  width: min(100%, calc((100vh - 36px) * var(--screen-ratio, 1.3333333333)));
+  aspect-ratio: var(--screen-ratio, 1.3333333333);
   overflow: hidden;
   border: 12px solid #1d2822;
   border-radius: 20px;
   background: #030604;
   box-shadow: 0 0 0 2px #314238, 0 20px 80px #000, inset 0 0 28px #000;
+}
+
+.screen-frame.physical-window {
+  align-self: stretch;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
 }
 
 .screen-frame.bezel-hidden {
@@ -250,6 +260,9 @@ footer {
 @media (max-width: 850px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    height: auto;
+    min-height: 100vh;
   }
 
   .settings-panel {
@@ -257,6 +270,6 @@ footer {
   }
 
   .screen-frame {
-    width: min(100%, calc((100vw - 36px) * 4 / 3));
+    width: min(100%, calc((100vw - 36px) * var(--screen-ratio, 1.3333333333)));
   }
 }

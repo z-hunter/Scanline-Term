@@ -229,12 +229,7 @@ for each row (0..terminal.rows):
 cursor: blinking block/bar/underline at 2Hz
 ```
 
-**Dirty-driving:** The rAF loop checks `sourceDirty` before calling `drawTerminal()`. The flag is set by:
-- `terminal.onWriteParsed()` — new output was parsed
-- `terminal.onScroll()` — viewport scrolled
-- Cursor blink phase changed
-- Source canvas size changed
-- Settings (font, profile, selection) changed
+**Dirty-driving:** `onWriteParsed()` and cursor movement mark the terminal for comparison, not an automatic full repaint. The renderer snapshots every row's visible cell state and redraws only changed rows plus the old/new cursor row. A scroll, source resize, font/profile change, or selection change invalidates the whole source canvas.
 
 ### Color Remapping
 
@@ -289,6 +284,8 @@ Each blur pass uses a 5-tap Gaussian kernel (weights: 0.227027, 0.316216×2, 0.0
 
 ### Pass 3: Final CRT Fragment Shader
 
+The final shader is specialized when Trail, Bloom, or Glow are toggled, so disabled effects are removed at compile time. Persistence FBOs are cleared only when Trail transitions from enabled to disabled.
+
 The main fragment shader applies all visual effects in order:
 
 ```
@@ -313,7 +310,7 @@ The main fragment shader applies all visual effects in order:
 
 ### CRT Emulation Toggle
 
-When `crtEmulation` is `false`, the fragment shader skips all CRT effects and applies only brightness/contrast to the raw terminal image. This provides a "clean" terminal view.
+When `crtEmulation` is `false`, a separate pass-through shader applies only brightness/contrast to the raw terminal image; CRT, persistence, blur, and final CRT shader work do not run. This provides a "clean" terminal view.
 
 ### Color Modes
 

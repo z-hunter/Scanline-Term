@@ -23,12 +23,15 @@ graph TB
 
   subgraph "WebView / Frontend (React + WebGL)"
     AppTsx["App.tsx<br/>React composition root"]
+    UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
+    UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
+    TerminalSession["terminal/TerminalSession.ts<br/>PTY session coordinator"]
+    TerminalRenderer["terminal/TerminalRenderer.ts<br/>Canvas 2D character grid"]
     Xterm["@xterm/xterm<br/>headless VT parser"]
     TermInput["terminal/terminal-input.ts<br/>VT key encoding"]
     Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
     TermMouse["terminal/terminal-mouse.ts<br/>mouse event encoding"]
     ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
-    DrawTerminal["drawTerminal()<br/>Canvas 2D character grid"]
     CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
     Settings["settings.ts<br/>localStorage persistence"]
     SourceCanvas["Source canvas<br/>(virtual resolution)"]
@@ -42,25 +45,33 @@ graph TB
   TermState --> Writer
   Writer --> ConPTY
   ConPTY --> Reader
-  Reader -->|"emit('terminal-output')"| AppTsx
-  Main -->|"emit('terminal-exit')"| AppTsx
+  Reader -->|"emit('terminal-output')"| TerminalSession
+  Main -->|"emit('terminal-exit')"| TerminalSession
 
-  AppTsx -->|"invoke('start_terminal')"| Main
-  AppTsx -->|"invoke('write_terminal')"| Main
-  AppTsx -->|"invoke('resize_terminal')"| Main
-  AppTsx -->|"invoke('list_monospace_fonts')"| Main
+  TerminalSession -->|"invoke('start_terminal')"| Main
+  TerminalSession -->|"invoke('write_terminal')"| Main
+  TerminalSession -->|"invoke('resize_terminal')"| Main
+  UseTerminal -->|"invoke('list_monospace_fonts')"| Main
 
-  AppTsx --> Xterm
-  Xterm --> DrawTerminal
-  DrawTerminal --> SourceCanvas
+  AppTsx --> UseTerminal
+  AppTsx --> UseCRT
+  AppTsx --> Settings
+
+  UseTerminal --> TerminalSession
+  UseTerminal --> TerminalRenderer
+  UseTerminal --> TermInput
+  UseTerminal --> Win32Input
+  UseTerminal --> TermMouse
+  UseTerminal --> ColorProfiles
+
+  TerminalSession --> Xterm
+  TerminalRenderer --> Xterm
+  TerminalRenderer --> SourceCanvas
+
+  UseCRT --> TerminalRenderer
+  UseCRT --> CRTFilter
   SourceCanvas --> CRTFilter
   CRTFilter --> OutputCanvas
-
-  AppTsx --> TermInput
-  AppTsx --> Win32Input
-  AppTsx --> TermMouse
-  AppTsx --> ColorProfiles
-  AppTsx --> Settings
 ```
 
 ## Execution Boundary
@@ -96,9 +107,9 @@ sequenceDiagram
     Reader->>Tauri: emit("terminal-output", Vec<u8>)
     Tauri->>Xterm: terminal.write(Uint8Array)
     Note over Xterm: VT parse → update buffer cells
-    Xterm-->>Canvas: onWriteParsed → sourceDirty = true
+    Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
-    Canvas->>Canvas: drawTerminal() — iterate rows/cols<br/>read cell colors from profile<br/>draw text on source canvas
+    Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text on source canvas
     Canvas->>CRT: filter.render(source, settings, sourceDirty)
     Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
     CRT->>Screen: WebGL draw to output canvas
@@ -209,7 +220,7 @@ sequenceDiagram
 ### Frontend Side
 
 - All rendering runs on the **main JavaScript thread** inside a `requestAnimationFrame` loop.
-- The `sourceDirty` flag gates expensive `drawTerminal()` calls — only redraws when xterm's `onWriteParsed` or `onScroll` fires, or when settings/cursor-phase change.
+- xterm output is compared against cached row signatures. Only changed rows, plus the old/new cursor row, redraw; scroll, resize, settings, and selection redraw the whole source canvas.
 - `ResizeObserver` triggers canvas and ConPTY resizes synchronously on the main thread.
 - Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
 

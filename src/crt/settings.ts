@@ -29,11 +29,14 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
 });
 
 export const RESOLUTIONS = [
-  { id: 'physical', label: 'Physical — window pixels' },
-  { id: '320x240', label: 'QVGA — 320×240', width: 320, height: 240 },
-  { id: '640x480', label: 'VGA — 640×480', width: 640, height: 480 },
-  { id: '800x600', label: 'SVGA — 800×600', width: 800, height: 600 },
-  { id: '1024x768', label: 'XGA — 1024×768', width: 1024, height: 768 },
+  { id: 'physical', label: 'Physical Window — fill available space' },
+  { id: 'physical-4x3', label: 'Physical 4:3 — window pixels', width: 4, height: 3 },
+  { id: 'physical-8x5', label: 'Physical 8:5 — window pixels', width: 8, height: 5 },
+  { id: '420x300', label: 'VGA-X — 420×300 (14:10)', width: 420, height: 300 },
+  { id: '640x480', label: 'VGA — 640×480 (4:3)', width: 640, height: 480 },
+  { id: '800x600', label: 'SVGA — 800×600 (4:3)', width: 800, height: 600 },
+  { id: '1024x768', label: 'XGA — 1024×768 (4:3)', width: 1024, height: 768 },
+  { id: '1280x800', label: '1280×800 (16:10)', width: 1280, height: 800 },
 ] as const;
 
 export type ResolutionId = (typeof RESOLUTIONS)[number]['id'];

@@ -24,5 +24,5 @@ function code(event: MouseEventData): number {
 export function terminalMouse(event: MouseEventData): string {
   const button = code(event);
   if (event.sgr) return `\x1b[<${button};${event.col};${event.row}${event.action === 'release' ? 'm' : 'M'}`;
-  return `\x1b[M${String.fromCharCode(32 + button, 32 + event.col, 32 + event.row)}`;
+  return `\x1b[M${String.fromCharCode(32 + button, 32 + Math.min(223, event.col), 32 + event.row)}`;
 }

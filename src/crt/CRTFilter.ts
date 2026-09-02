@@ -3,6 +3,19 @@ import type { ColorProfileId } from '../terminal-color-profiles';
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 export type BloomAlgorithm = 'soft' | 'spiral';
 
+const PASSTHROUGH_FS = `
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform float u_imageBrightness;
+  uniform float u_imageContrast;
+  varying vec2 v_texCoord;
+  void main() {
+    vec3 color = texture2D(u_image, v_texCoord).rgb;
+    color = (color - 0.5) * u_imageContrast + 0.5;
+    gl_FragColor = vec4(clamp(color * u_imageBrightness, 0.0, 1.0), 1.0);
+  }
+`;
+
 export function persistenceDecay(persistence: number, elapsedSeconds: number): { decay: number; cutoff: number } {
   const base = 0.2 + (0.9915 - 0.2) * Math.min(1, Math.max(0, persistence));
   const halfLife = -Math.LN2 / (60.0 * Math.log(base));
@@ -37,6 +50,10 @@ export interface CRTSettings {
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
   colorMode: CRTColorMode;
+}
+
+export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow'>): number {
+  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0);
 }
 
 export class CRTFilter {
@@ -118,6 +135,10 @@ export class CRTFilter {
   glowWidth: number = 0;
   glowHeight: number = 0;
   glowResolutionScale: number = 0.5;
+  private crtVsSource = '';
+  private crtFsSource = '';
+  private crtEffectMask = Number.NaN;
+  private persistenceActive = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -233,6 +254,68 @@ export class CRTFilter {
     return program;
   }
 
+  private selectCRTProgram(effectMask: number): void {
+    if (!this.gl || this.crtEffectMask === effectMask) return;
+    const gl = this.gl;
+    const source = effectMask < 0 ? PASSTHROUGH_FS : this.crtFsSource
+      .replace('#define ENABLE_TRAIL 0', `#define ENABLE_TRAIL ${effectMask & 1}`)
+      .replace('#define ENABLE_BLOOM 0', `#define ENABLE_BLOOM ${(effectMask >> 1) & 1}`)
+      .replace('#define ENABLE_GLOW 0', `#define ENABLE_GLOW ${(effectMask >> 2) & 1}`);
+    const program = this.createProgram(gl, this.crtVsSource, source);
+    if (!program) return;
+    if (this.program) gl.deleteProgram(this.program);
+    this.program = program;
+    this.crtEffectMask = effectMask;
+    this.positionLocation = gl.getAttribLocation(program, 'a_position');
+    this.texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+    this.resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
+    this.timeLocation = gl.getUniformLocation(program, 'u_time');
+    this.scanlineCountLocation = gl.getUniformLocation(program, 'u_scanlineCount');
+    this.curvatureLocation = gl.getUniformLocation(program, 'u_curvature');
+    this.aberrationLocation = gl.getUniformLocation(program, 'u_aberration');
+    this.vignetteLocation = gl.getUniformLocation(program, 'u_vignette');
+    this.scanlineIntensityLocation = gl.getUniformLocation(program, 'u_scanlineIntensity');
+    this.phosphorLocation = gl.getUniformLocation(program, 'u_phosphor');
+    this.bezelGlowLocation = gl.getUniformLocation(program, 'u_bezelGlow');
+    this.bloomLocation = gl.getUniformLocation(program, 'u_bloom');
+    this.bloomAlgorithmLocation = gl.getUniformLocation(program, 'u_bloomAlgorithm');
+    this.glowLocation = gl.getUniformLocation(program, 'u_glow');
+    this.bloomTextureLocation = gl.getUniformLocation(program, 'u_bloomTexture');
+    this.glowTextureLocation = gl.getUniformLocation(program, 'u_glowTexture');
+    this.trailLocation = gl.getUniformLocation(program, 'u_trail');
+    this.persistenceLocation = gl.getUniformLocation(program, 'u_persistence');
+    this.persistenceIntensityLocation = gl.getUniformLocation(program, 'u_persistenceIntensity');
+    this.beamModulationLocation = gl.getUniformLocation(program, 'u_beamModulation');
+    this.breathingScaleLocation = gl.getUniformLocation(program, 'u_breathingScale');
+    this.sourceResolutionLocation = gl.getUniformLocation(program, 'u_sourceResolution');
+    this.antiAliasedPixelsLocation = gl.getUniformLocation(program, 'u_antiAliasedPixels');
+    this.colorModeLocation = gl.getUniformLocation(program, 'u_colorMode');
+    this.crtEmulationLocation = gl.getUniformLocation(program, 'u_crtEmulation');
+    this.imageBrightnessLocation = gl.getUniformLocation(program, 'u_imageBrightness');
+    this.imageContrastLocation = gl.getUniformLocation(program, 'u_imageContrast');
+    this.backgroundDesaturationLocation = gl.getUniformLocation(program, 'u_backgroundDesaturation');
+    this.imageLocation = gl.getUniformLocation(program, 'u_image');
+  }
+
+  private drawPassthrough(settings: CRTSettings): void {
+    if (!this.gl || !this.program || !this.buffer || !this.texture) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(this.program);
+    gl.enableVertexAttribArray(this.positionLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 16, 0);
+    gl.enableVertexAttribArray(this.texCoordLocation);
+    gl.vertexAttribPointer(this.texCoordLocation, 2, gl.FLOAT, false, 16, 8);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    if (this.imageLocation) gl.uniform1i(this.imageLocation, 0);
+    if (this.imageBrightnessLocation) gl.uniform1f(this.imageBrightnessLocation, settings.imageBrightness);
+    if (this.imageContrastLocation) gl.uniform1f(this.imageContrastLocation, settings.imageContrast);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
   init(): void {
     if (!this.gl) return;
     const gl = this.gl;
@@ -255,6 +338,9 @@ export class CRTFilter {
             #extension GL_OES_standard_derivatives : enable
             #endif
             precision mediump float;
+            #define ENABLE_TRAIL 0
+            #define ENABLE_BLOOM 0
+            #define ENABLE_GLOW 0
             uniform sampler2D u_image;
             uniform vec2 u_resolution;
             uniform float u_time;
@@ -442,13 +528,16 @@ export class CRTFilter {
                 vec3 imageColor = vec3(r, g, b);
 
                 // Phosphor Afterglow Trail (Soft, translucent trail overlay)
+                #if ENABLE_TRAIL
                 if (u_persistence > 0.0) {
                      vec3 trail = texture2D(u_trail, rasterUV).rgb;
                      float inBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0) * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
                      imageColor = max(imageColor, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
+                #endif
 
                 // BLOOM / HALATION (tight bright-pass blur, precomputed at half resolution)
+                #if ENABLE_BLOOM
                 if (u_bloom > 0.0) {
                      if (u_bloomAlgorithm > 0.5) {
                           float bloomRadius = 0.015;
@@ -476,6 +565,7 @@ export class CRTFilter {
                           imageColor /= 1.0 + u_bloom * 0.2;
                      }
                 }
+                #endif
 
                 // Background phosphor texture is kept separate from the displayed image.
                 vec3 backgroundColor = vec3(0.0);
@@ -526,6 +616,7 @@ export class CRTFilter {
                 backgroundColor *= scanline;
 
                 // CRT Ambient Screen Glow (wide blur of the complete screen image, like light through glass)
+                #if ENABLE_GLOW
                 if (u_glow > 0.0) {
                      vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
 
@@ -537,6 +628,7 @@ export class CRTFilter {
                      vec3 diffuseGlow = glowSum * u_glow * 0.5;
                      imageColor = 1.0 - (1.0 - imageColor) * (1.0 - diffuseGlow);
                 }
+                #endif
 
                 // Image-only final correction, before the two layers are color-converted and combined.
                 imageColor = (imageColor - 0.5) * u_imageContrast + 0.5;
@@ -562,39 +654,10 @@ export class CRTFilter {
             }
         `;
 
-    this.program = this.createProgram(gl, vsSource, fsSource);
+    this.crtVsSource = vsSource;
+    this.crtFsSource = fsSource;
+    this.selectCRTProgram(0);
     if (!this.program) return;
-
-    // Look up locations
-    this.positionLocation = gl.getAttribLocation(this.program, 'a_position');
-    this.texCoordLocation = gl.getAttribLocation(this.program, 'a_texCoord');
-    this.resolutionLocation = gl.getUniformLocation(this.program, 'u_resolution');
-    this.timeLocation = gl.getUniformLocation(this.program, 'u_time');
-    this.scanlineCountLocation = gl.getUniformLocation(this.program, 'u_scanlineCount');
-    this.curvatureLocation = gl.getUniformLocation(this.program, 'u_curvature');
-    this.aberrationLocation = gl.getUniformLocation(this.program, 'u_aberration');
-    this.vignetteLocation = gl.getUniformLocation(this.program, 'u_vignette');
-    this.scanlineIntensityLocation = gl.getUniformLocation(this.program, 'u_scanlineIntensity');
-    this.phosphorLocation = gl.getUniformLocation(this.program, 'u_phosphor');
-    this.bezelGlowLocation = gl.getUniformLocation(this.program, 'u_bezelGlow');
-    this.bloomLocation = gl.getUniformLocation(this.program, 'u_bloom');
-    this.bloomAlgorithmLocation = gl.getUniformLocation(this.program, 'u_bloomAlgorithm');
-    this.glowLocation = gl.getUniformLocation(this.program, 'u_glow');
-    this.bloomTextureLocation = gl.getUniformLocation(this.program, 'u_bloomTexture');
-    this.glowTextureLocation = gl.getUniformLocation(this.program, 'u_glowTexture');
-    this.trailLocation = gl.getUniformLocation(this.program, 'u_trail');
-    this.persistenceLocation = gl.getUniformLocation(this.program, 'u_persistence');
-    this.persistenceIntensityLocation = gl.getUniformLocation(this.program, 'u_persistenceIntensity');
-    this.beamModulationLocation = gl.getUniformLocation(this.program, 'u_beamModulation');
-    this.breathingScaleLocation = gl.getUniformLocation(this.program, 'u_breathingScale');
-    this.sourceResolutionLocation = gl.getUniformLocation(this.program, 'u_sourceResolution');
-    this.antiAliasedPixelsLocation = gl.getUniformLocation(this.program, 'u_antiAliasedPixels');
-    this.colorModeLocation = gl.getUniformLocation(this.program, 'u_colorMode');
-    this.crtEmulationLocation = gl.getUniformLocation(this.program, 'u_crtEmulation');
-    this.imageBrightnessLocation = gl.getUniformLocation(this.program, 'u_imageBrightness');
-    this.imageContrastLocation = gl.getUniformLocation(this.program, 'u_imageContrast');
-    this.backgroundDesaturationLocation = gl.getUniformLocation(this.program, 'u_backgroundDesaturation');
-    this.imageLocation = gl.getUniformLocation(this.program, 'u_image');
 
     // Create buffer for a quad (2 triangles)
     this.buffer = gl.createBuffer();
@@ -870,7 +933,7 @@ export class CRTFilter {
   }
 
   render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true): void {
-    if (!this.gl || !this.program || !this.buffer || !this.texture) return;
+    if (!this.gl || !this.buffer || !this.texture) return;
     const gl = this.gl;
 
     // 1. Upload source canvas to texture
@@ -882,10 +945,23 @@ export class CRTFilter {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     }
 
+    if (!settings.crtEmulation) {
+      if (this.persistenceActive) this.clearPersistence();
+      this.persistenceActive = false;
+      this.selectCRTProgram(-1);
+      this.drawPassthrough(settings);
+      return;
+    }
+
+    const persistence = settings.persistence || 0.0;
+    const bloom = settings.bloom || 0.0;
+    const glow = settings.glow || 0.0;
+    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow }));
+    if (!this.program) return;
+
     let activeInputTexture = this.texture;
 
     // 2. Accumulation Pass for Phosphor Persistence (if enabled)
-    const persistence = settings.crtEmulation ? settings.persistence || 0.0 : 0.0;
     if (persistence > 0.0 && this.accumProgram) {
       const now = performance.now();
       const elapsedSeconds = this.lastPersistenceTime ? (now - this.lastPersistenceTime) / 1000 : 1 / 60;
@@ -930,23 +1006,14 @@ export class CRTFilter {
       // Swap ping-pong
       this.fboCurrent = 1 - this.fboCurrent;
       if (targetTex) activeInputTexture = targetTex;
-    } else {
-      // If persistence was disabled, clear history FBOs to prevent stale trails from lingering
-      if (this.fboA && this.fboB) {
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboA);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboB);
-        gl.clearColor(0, 0, 0, 0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      }
+      this.persistenceActive = true;
+    } else if (this.persistenceActive) {
+      this.clearPersistence();
+      this.persistenceActive = false;
     }
 
     let bloomTexture = this.texture;
     let glowTexture = this.texture;
-    const bloom = settings.crtEmulation ? settings.bloom || 0.0 : 0.0;
-    const glow = settings.crtEmulation ? settings.glow || 0.0 : 0.0;
     const legacyBloom = settings.bloomAlgorithm === 'spiral';
     if (((bloom > 0.0 && !legacyBloom) || glow > 0.0) && this.blurProgram) {
       const width = Math.max(1, Math.floor(sourceCanvas.width * this.glowResolutionScale));

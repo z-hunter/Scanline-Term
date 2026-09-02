@@ -121,7 +121,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | Method | Purpose |
 |--------|---------|
 | `constructor(canvas)` | Acquires WebGL context, calls `init()` |
-| `init()` | Compiles 3 shader programs (CRT main, accumulation, blur), sets up vertex buffers, textures, uniform locations |
+| `init()` | Compiles the initial CRT variant plus accumulation and blur programs; the final shader is specialized when Trail, Bloom, or Glow are toggled |
 | `createShader(gl, type, source)` | Compiles a single GLSL shader |
 | `createProgram(gl, vsSource, fsSource)` | Links a vertex+fragment program |
 | `ensureFBO(width, height)` | Creates/resizes ping-pong FBOs for persistence |
@@ -129,14 +129,15 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `blur(input, w, h, target, dx, dy, threshold, spread)` | Runs one separable Gaussian blur pass |
 | `clearPersistence()` | Clears both persistence FBOs to black |
 | `isValid()` | Returns `true` if WebGL resources are available |
-| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — 3 passes (persistence → bloom/glow → final CRT) |
+| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise persistence → bloom/glow → specialized final CRT |
 | `dispose()` | Deletes all WebGL resources |
 
-**Three shader programs:**
+**Shader programs:**
 
 1. **CRT Main Fragment Shader** — curvature, anti-moiré pixels, chromatic aberration, persistence trail overlay, bloom/halation, phosphor grain, scanlines (Sinc-integrated Fourier), beam modulation, screen glow, color mode conversion, vignette, brightness/contrast, bezel glow
 2. **Accumulation Fragment Shader** — phosphor persistence: blends current frame with decayed history, desaturation, quantization cutoff
 3. **Blur Fragment Shader** — 5-tap separable Gaussian, configurable threshold (bright-pass) and spread
+4. **Pass-through Fragment Shader** — raw terminal image with brightness/contrast only when CRT emulation is off
 
 ---
 
@@ -145,7 +146,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | Export | Purpose |
 |--------|---------|
 | `DEFAULT_CRT_SETTINGS` | Frozen defaults for all CRT parameters |
-| `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'320x240'`, `'640x480'`, `'800x600'`, `'1024x768'` |
+| `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
 | `DEFAULT_RESOLUTION` | `'640x480'` |
 | `ResolutionId` | Union type of resolution identifiers |
 | `StoredSettings` | `{ version: 1, resolution, crt }` |

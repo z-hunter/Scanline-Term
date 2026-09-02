@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { persistenceDecay } from './CRTFilter';
+import { crtEffectMask, persistenceDecay } from './CRTFilter';
 import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
   it('decays phosphor history by elapsed time rather than render frames', () => {
     expect(persistenceDecay(1, 1 / 60).decay).toBeCloseTo(0.9915);
     expect(persistenceDecay(1, 1).decay).toBeLessThan(0.61);
+  });
+
+  it('compiles only the enabled heavy CRT effects', () => {
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0 })).toBe(0);
+    expect(crtEffectMask({ persistence: 1, bloom: 0, glow: 0 })).toBe(1);
+    expect(crtEffectMask({ persistence: 0, bloom: 1, glow: 0 })).toBe(2);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 1 })).toBe(4);
+    expect(crtEffectMask({ persistence: 1, bloom: 1, glow: 1 })).toBe(7);
   });
 
   it('keeps Quest defaults without the removed hum setting', () => {
@@ -35,6 +43,13 @@ describe('CRT settings', () => {
 
   it('accepts the physical display resolution', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: 'physical' })).resolution).toBe('physical');
+    expect(loadStoredSettings(JSON.stringify({ resolution: 'physical-4x3' })).resolution).toBe('physical-4x3');
+    expect(loadStoredSettings(JSON.stringify({ resolution: 'physical-8x5' })).resolution).toBe('physical-8x5');
+  });
+
+  it('accepts virtual screens in all supported aspect ratios', () => {
+    expect(loadStoredSettings(JSON.stringify({ resolution: '640x480' })).resolution).toBe('640x480');
+    expect(loadStoredSettings(JSON.stringify({ resolution: '1280x800' })).resolution).toBe('1280x800');
   });
 
   it('survives malformed JSON', () => {

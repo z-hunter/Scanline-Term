@@ -12,6 +12,7 @@ describe('terminal mouse encoding', () => {
 
   it('falls back to legacy X10 reporting', () => {
     expect(terminalMouse({ ...event, action: 'press', button: 2, sgr: false })).toBe('\x1b[M"*%');
+    expect(terminalMouse({ ...event, col: 300, action: 'press', button: 2, sgr: false })).toBe(`\x1b[M"${String.fromCharCode(32 + 223)}%`);
   });
 
   it('uses no button for mouse movement without a pressed button', () => {
