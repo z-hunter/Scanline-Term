@@ -263,7 +263,7 @@ export default function App() {
   const [terminalLive, setTerminalLive] = useState(false);
   const [monospaceFonts, setMonospaceFonts] = useState<string[]>(['Consolas']);
   const [settingsVisible, setSettingsVisible] = useState(true);
-  const [copyMode, setCopyMode] = useState(false);
+  const [, setCopyMode] = useState(false);
   const [terminalSize, setTerminalSize] = useState({ cols: 0, rows: 0 });
   const [fps, setFps] = useState(0);
   const resolution = RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
@@ -278,6 +278,7 @@ export default function App() {
   const menuKeyDownRef = useRef(false);
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
+  const copyModeRef = useRef(false);
   const copyStartRowRef = useRef<number | null>(null);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const resolutionRef = useRef(resolution);
@@ -488,9 +489,10 @@ export default function App() {
   };
 
   const copyLines = async (terminal: Terminal, start: number, end: number) => {
-    terminal.selectLines(Math.min(start, end), Math.max(start, end));
-    const text = terminal.getSelection();
-    terminal.clearSelection();
+    const buffer = terminal.buffer.active;
+    const first = Math.min(start, end);
+    const last = Math.max(start, end);
+    const text = Array.from({ length: last - first + 1 }, (_, index) => buffer.getLine(first + index)?.translateToString(true) ?? '').join('\r\n');
     if (text) await navigator.clipboard.writeText(text);
   };
 
@@ -532,7 +534,7 @@ export default function App() {
 
   const handleTerminalMouseDown = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     const terminal = terminalRef.current;
-    if (terminal && (copyMode || event.button === 1)) {
+    if (terminal && (copyModeRef.current || event.button === 1)) {
       const cell = terminalMouseCell(event, terminal);
       if (cell) {
         event.preventDefault();
@@ -552,6 +554,7 @@ export default function App() {
       const cell = terminalMouseCell(event, terminal);
       const start = copyStartRowRef.current;
       copyStartRowRef.current = null;
+      copyModeRef.current = false;
       setCopyMode(false);
       if (cell) void copyLines(terminal, start, terminal.buffer.active.viewportY + cell.row - 1).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
       return;
@@ -585,7 +588,10 @@ export default function App() {
       if (menuKeyDownRef.current && event.code === 'KeyC') {
         event.preventDefault();
         event.stopPropagation();
-        if (!event.repeat) setCopyMode(true);
+        if (!event.repeat) {
+          copyModeRef.current = true;
+          setCopyMode(true);
+        }
         return;
       }
       if (event.altKey && event.key === 'Enter' && isTauri()) {
