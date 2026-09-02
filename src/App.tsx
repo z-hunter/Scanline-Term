@@ -21,6 +21,8 @@ const STORAGE_KEY = 'scanline-term.settings.v1';
 
 type NumericKey = Exclude<keyof CRTSettings, 'crtEmulation' | 'colorProfile' | 'consoleFont' | 'bezelGlow' | 'showBezel' | 'antiAliasedPixels' | 'colorMode' | 'bloomAlgorithm'>;
 type Control = { key: NumericKey; label: string; min: number; max: number; step: number };
+type CopyPoint = { row: number; column: number };
+type CopySelection = { start: CopyPoint; end: CopyPoint };
 const controls: Record<string, Control[]> = {
   Geometry: [
     { key: 'curvature', label: 'Curvature', min: 0, max: 0.5, step: 0.01 },
@@ -118,7 +120,7 @@ function canvasFont(fontSize: number, family: string): string {
   return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number, selection: { start: number; end: number } | null): void {
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number, selection: CopySelection | null): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
@@ -148,7 +150,10 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
         const top = Math.floor(y - cellHeight / 2);
         ctx.fillRect(left, top, Math.ceil(x + cellWidth * current.getWidth()) - left, Math.ceil(y + cellHeight / 2) - top);
       }
-      if (selection && ydisp + row >= Math.min(selection.start, selection.end) && ydisp + row <= Math.max(selection.start, selection.end)) {
+      const position = (ydisp + row) * terminal.cols + column;
+      const selectionStart = selection ? selection.start.row * terminal.cols + selection.start.column : -1;
+      const selectionEnd = selection ? selection.end.row * terminal.cols + selection.end.column : -1;
+      if (selection && position >= Math.min(selectionStart, selectionEnd) && position <= Math.max(selectionStart, selectionEnd)) {
         ctx.fillStyle = 'rgba(125, 210, 255, 0.42)';
         ctx.fillRect(Math.floor(x), Math.floor(y - cellHeight / 2), Math.ceil(cellWidth * current.getWidth()), Math.ceil(cellHeight));
       }
@@ -283,8 +288,8 @@ export default function App() {
   const sgrMouseModeRef = useRef(false);
   const pressedMouseButtonsRef = useRef<Set<number>>(new Set());
   const copyModeRef = useRef(false);
-  const copyStartRowRef = useRef<number | null>(null);
-  const copySelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const copyStartRowRef = useRef<CopyPoint | null>(null);
+  const copySelectionRef = useRef<CopySelection | null>(null);
   const terminalSizeRef = useRef({ cols: 0, rows: 0 });
   const resolutionRef = useRef(resolution);
   const settingsRef = useRef(stored.crt);
@@ -422,7 +427,7 @@ export default function App() {
       const time = now / 1000;
       const settings = settingsRef.current;
       const selection = copySelectionRef.current;
-      const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}|${selection?.start}:${selection?.end}`;
+      const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}|${selection?.start.row}:${selection?.start.column}:${selection?.end.row}:${selection?.end.column}`;
       const sourceSize = `${source.width}x${source.height}`;
       const cursorPhase = Math.floor(time * 2);
       if (sourceStyle !== lastSourceStyle || sourceSize !== lastSourceSize || cursorPhase !== lastCursorPhase) sourceDirty = true;
@@ -494,11 +499,14 @@ export default function App() {
     };
   };
 
-  const copyLines = async (terminal: Terminal, start: number, end: number) => {
+  const copySelection = async (terminal: Terminal, start: CopyPoint, end: CopyPoint) => {
     const buffer = terminal.buffer.active;
-    const first = Math.min(start, end);
-    const last = Math.max(start, end);
-    const text = Array.from({ length: last - first + 1 }, (_, index) => buffer.getLine(first + index)?.translateToString(true) ?? '').join('\r\n');
+    const [first, last] = start.row < end.row || start.row === end.row && start.column <= end.column ? [start, end] : [end, start];
+    const text = Array.from({ length: last.row - first.row + 1 }, (_, index) => {
+      const row = first.row + index;
+      const line = buffer.getLine(row);
+      return line?.translateToString(index === last.row - first.row, row === first.row ? first.column : 0, row === last.row ? last.column + 1 : terminal.cols) ?? '';
+    }).join('\r\n');
     if (text) await navigator.clipboard.writeText(text);
   };
 
@@ -529,7 +537,7 @@ export default function App() {
     if (terminal && copyStartRowRef.current !== null && event.buttons) {
       const cell = terminalMouseCell(event, terminal);
       if (cell) {
-        const end = terminal.buffer.active.viewportY + cell.row - 1;
+        const end = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
         copySelectionRef.current = { start: copyStartRowRef.current, end };
       }
       return;
@@ -547,7 +555,7 @@ export default function App() {
       const cell = terminalMouseCell(event, terminal);
       if (cell) {
         event.preventDefault();
-        copyStartRowRef.current = terminal.buffer.active.viewportY + cell.row - 1;
+        copyStartRowRef.current = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
         copySelectionRef.current = { start: copyStartRowRef.current, end: copyStartRowRef.current };
       }
       return;
@@ -566,9 +574,10 @@ export default function App() {
       copyModeRef.current = false;
       setCopyMode(false);
       if (cell) {
-        const end = terminal.buffer.active.viewportY + cell.row - 1;
+        const end = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
         copySelectionRef.current = { start, end };
-        void copyLines(terminal, start, end).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
+        void copySelection(terminal, start, end).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
+        copySelectionRef.current = null;
       }
       return;
     }
