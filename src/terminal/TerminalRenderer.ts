@@ -5,6 +5,8 @@ import { colorProfile, profileColor, remapLegacyRgb, type TerminalColorProfile }
 export type CopyPoint = { row: number; column: number };
 export type CopySelection = { start: CopyPoint; end: CopyPoint };
 export type Resolution = { id: string; width?: number; height?: number };
+export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
+type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
 export function canvasFont(fontSize: number, family: string): string { return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`; }
@@ -31,11 +33,15 @@ export class TerminalRenderer {
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
   private dirty = true;
+  private fullDirty = true;
+  private rowSignatures: string[] = [];
+  private cursorRow: number | null = null;
   private disposables: { dispose(): void }[] = [];
+  private stats: RenderStats = { redraws: 0, canvasMs: 0, glyphs: 0 };
 
   bindTerminal(terminal: Terminal | null): void {
-    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.markDirty();
-    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markDirty()), terminal.onWriteParsed(() => this.markDirty()), terminal.onScroll(() => this.markDirty()));
+    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.markDirty();
+    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markTerminalDirty()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
     const width = resolution.id === 'physical' ? output.width || 1 : resolution.width || 1;
@@ -43,7 +49,9 @@ export class TerminalRenderer {
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
     this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.markDirty(); return true;
   }
-  markDirty(): void { this.dirty = true; }
+  markDirty(): void { this.dirty = true; this.fullDirty = true; }
+  private markTerminalDirty(): void { this.dirty = true; }
+  consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
   setSelection(selection: CopySelection | null): void { this.selection = selection; this.markDirty(); }
   cellAtPoint(clientX: number, clientY: number, output: HTMLCanvasElement, settings: CRTSettings) {
     const terminal = this.terminal; if (!terminal) return null;
@@ -59,13 +67,31 @@ export class TerminalRenderer {
     const cursorPhase = Math.floor(time * 2); if (!this.dirty && cursorPhase === Math.floor((time - .1) * 2)) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const padding = terminalPadding(source.width, source.height); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx);
-    ctx.fillStyle = profile.background; ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     const buffer = terminal.buffer.active; const cell = buffer.getNullCell();
-    for (let row = 0; row < terminal.rows; row += 1) { const line = buffer.getLine(buffer.viewportY + row); if (!line) continue; const y = padding + cellSize.height * (row + .5); for (let column = 0; column < terminal.cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = padding + cellSize.width * column; if (bg !== profile.background) { ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (buffer.viewportY + row) * terminal.cols + column; const start = this.selection ? this.selection.start.row * terminal.cols + this.selection.start.column : -1; const end = this.selection ? this.selection.end.row * terminal.cols + this.selection.end.column : -1; if (this.selection && point >= Math.min(start, end) && point <= Math.max(start, end)) { ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; ctx.fillText(chars, x, y); } } }
-    ctx.globalAlpha = 1; const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core; const cursor = buffer.viewportY === buffer.baseY && core?.coreService?.isCursorHidden !== true;
-    if (cursor && cursorPhase % 2 === 0) { const x = padding + cellSize.width * buffer.cursorX; const y = padding + cellSize.height * buffer.cursorY; ctx.fillStyle = profile.cursor ?? profile.foreground; if (terminal.options.cursorStyle === 'underline') ctx.fillRect(x, y + cellSize.height - 2, cellSize.width, 2); else if (terminal.options.cursorStyle === 'bar') ctx.fillRect(x, y, Math.max(2, Math.min(cellSize.width, terminal.options.cursorWidth ?? cellSize.width * .15)), Math.ceil(cellSize.height)); else ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height)); }
-    this.dirty = false; return true;
+    const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core; const cursorVisible = buffer.viewportY === buffer.baseY && core?.coreService?.isCursorHidden !== true && cursorPhase % 2 === 0;
+    const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
+    const changedRows = new Set<number>(); const nextSignatures: string[] = [];
+    if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
+    if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
+    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; return false; }
+    const started = performance.now(); let glyphs = 0;
+    ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, padding, cellSize);
+    if (nextCursorRow !== null) { const x = padding + cellSize.width * buffer.cursorX; const y = padding + cellSize.height * buffer.cursorY; ctx.fillStyle = profile.cursor ?? profile.foreground; if (terminal.options.cursorStyle === 'underline') ctx.fillRect(x, y + cellSize.height - 2, cellSize.width, 2); else if (terminal.options.cursorStyle === 'bar') ctx.fillRect(x, y, Math.max(2, Math.min(cellSize.width, terminal.options.cursorWidth ?? cellSize.width * .15)), Math.ceil(cellSize.height)); else ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height)); }
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
+  }
+  private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
+    if (!line) return '';
+    let signature = '';
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())};`; }
+    return signature;
+  }
+  private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, padding: number, cellSize: { width: number; height: number }): number {
+    const y = padding + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return 0;
+    const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1; let glyphs = 0;
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = padding + cellSize.width * column; if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { glyphs += 1; ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; ctx.fillText(chars, x, y); } }
+    return glyphs;
   }
   private drawMock(time: number, settings: CRTSettings): void { const ctx = this.sourceCanvas.getContext('2d'); if (!ctx) return; const { width, height } = this.sourceCanvas; const size = settings.consoleFontSize; const line = Math.floor(size * 1.5); ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height); ctx.font = canvasFont(size, settings.consoleFont); ctx.textBaseline = 'top'; ['SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', `virtual framebuffer ${width}×${height}`, '[ OK ] phosphor matrix online', '[ OK ] scanline generator synchronized', '[ OK ] WebGL fragment pipeline ready', '> rendering an ordinary terminal as an old monitor', '> browser preview uses a mock session', '', `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`].forEach((text, i) => { ctx.fillStyle = ['#7dffae','#4ecf83','#9affbd','#62db91','#78c9ff','#ffd166','#ff8a80'][i % 7]; ctx.fillText(text, size, size + line * i); }); }
-  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; }
+  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; }
 }
