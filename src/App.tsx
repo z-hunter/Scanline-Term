@@ -120,7 +120,7 @@ function canvasFont(fontSize: number, family: string): string {
   return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`;
 }
 
-function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: number, profile: TerminalColorProfile, fontFamily: string, fontSize: number, selection: CopySelection | null): void {
+function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, cursorBlinkState: boolean, profile: TerminalColorProfile, fontFamily: string, fontSize: number, selection: CopySelection | null): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const padding = terminalPadding(canvas.width, canvas.height);
@@ -170,7 +170,7 @@ function drawTerminal(canvas: HTMLCanvasElement, terminal: Terminal, time: numbe
   const cursorVisible = ydisp === buffer.baseY
     && core?.coreService?.isCursorHidden !== true
     && buffer.cursorX >= 0 && buffer.cursorX < terminal.cols && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows;
-  if (cursorVisible && Math.floor(time * 2) % 2 === 0) {
+  if (cursorVisible && cursorBlinkState) {
     const cursorX = padding + cellWidth * buffer.cursorX;
     const cursorY = padding + cellHeight * buffer.cursorY;
     ctx.fillStyle = profile.cursor ?? profile.foreground;
@@ -325,6 +325,7 @@ export default function App() {
     terminalRef.current = terminal;
     const pressedMouseButtons = pressedMouseButtonsRef.current;
     const terminalResponse = terminal.onData((data) => sendInputRef.current(data));
+    const terminalKey = terminal.onKey(() => terminal.scrollToBottom());
     const enableWin32Input = terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
       if (params.includes(1006)) sgrMouseModeRef.current = true;
       if (params.length !== 1 || params[0] !== 9001) return false;
@@ -360,6 +361,7 @@ export default function App() {
       terminalSizeRef.current = { cols: 0, rows: 0 };
       setTerminalSize({ cols: 0, rows: 0 });
       terminalResponse.dispose();
+      terminalKey.dispose();
       terminal.dispose();
       enableWin32Input.dispose();
       disableWin32Input.dispose();
@@ -395,7 +397,9 @@ export default function App() {
     let lastSourceStyle = '';
     let frameCount = 0;
     let fpsStarted = performance.now();
+    let lastCursorMoveTime = 0;
     const terminal = terminalRef.current;
+    const cursorMoved = terminal?.onCursorMove(() => { lastCursorMoveTime = performance.now() / 1000; sourceDirty = true; });
     const outputWritten = terminal?.onWriteParsed(() => { sourceDirty = true; });
     const scrolled = terminal?.onScroll(() => { sourceDirty = true; });
     const resize = () => {
@@ -429,10 +433,11 @@ export default function App() {
       const selection = copySelectionRef.current;
       const sourceStyle = `${settings.consoleFont}|${settings.consoleFontSize}|${settings.colorProfile}|${selection?.start.row}:${selection?.start.column}:${selection?.end.row}:${selection?.end.column}`;
       const sourceSize = `${source.width}x${source.height}`;
-      const cursorPhase = Math.floor(time * 2);
+      const phaseTime = time - lastCursorMoveTime;
+      const cursorPhase = phaseTime < 0.5 ? 0 : Math.floor(phaseTime * 2);
       if (sourceStyle !== lastSourceStyle || sourceSize !== lastSourceSize || cursorPhase !== lastCursorPhase) sourceDirty = true;
       if (terminalLiveRef.current && terminalRef.current) {
-        if (sourceDirty) drawTerminal(source, terminalRef.current, time, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize, selection);
+        if (sourceDirty) drawTerminal(source, terminalRef.current, cursorPhase % 2 === 0, activeColorProfile(settings), settings.consoleFont, settings.consoleFontSize, selection);
       } else {
         drawMockTerminal(source, time, settings.consoleFont, settings.consoleFontSize);
         sourceDirty = true;
@@ -458,6 +463,7 @@ export default function App() {
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      cursorMoved?.dispose();
       outputWritten?.dispose();
       scrolled?.dispose();
       filter.dispose();
@@ -662,7 +668,10 @@ export default function App() {
       const input = win32InputModeRef.current ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
       event.preventDefault();
       event.stopPropagation();
-      if (input) sendInputRef.current(input);
+      if (input) {
+        terminal.scrollToBottom();
+        sendInputRef.current(input);
+      }
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === 'ContextMenu') menuKeyDownRef.current = false;
@@ -706,6 +715,7 @@ export default function App() {
               const input = event.clipboardData.getData('text');
               if (!input) return;
               event.preventDefault();
+              terminalRef.current?.scrollToBottom();
               sendInput(input);
             }}
           />
