@@ -510,6 +510,11 @@ export default function App() {
     if (text) await navigator.clipboard.writeText(text);
   };
 
+  const copyPoint = (terminal: Terminal, cell: { col: number; row: number }): CopyPoint => ({
+    row: Math.max(terminal.buffer.active.viewportY, terminal.buffer.active.viewportY + cell.row - 2),
+    column: cell.col - 1,
+  });
+
   const sendMouse = (event: ReactMouseEvent<HTMLCanvasElement> | ReactWheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => {
     const terminal = terminalRef.current;
     const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined;
@@ -537,7 +542,7 @@ export default function App() {
     if (terminal && copyStartRowRef.current !== null && event.buttons) {
       const cell = terminalMouseCell(event, terminal);
       if (cell) {
-        const end = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
+        const end = copyPoint(terminal, cell);
         copySelectionRef.current = { start: copyStartRowRef.current, end };
       }
       return;
@@ -551,11 +556,11 @@ export default function App() {
 
   const handleTerminalMouseDown = (event: ReactMouseEvent<HTMLCanvasElement>) => {
     const terminal = terminalRef.current;
-    if (terminal && (copyModeRef.current || event.button === 1)) {
+    if (terminal && ((copyModeRef.current && event.button === 0) || event.button === 1)) {
       const cell = terminalMouseCell(event, terminal);
       if (cell) {
         event.preventDefault();
-        copyStartRowRef.current = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
+        copyStartRowRef.current = copyPoint(terminal, cell);
         copySelectionRef.current = { start: copyStartRowRef.current, end: copyStartRowRef.current };
       }
       return;
@@ -574,7 +579,7 @@ export default function App() {
       copyModeRef.current = false;
       setCopyMode(false);
       if (cell) {
-        const end = { row: terminal.buffer.active.viewportY + cell.row - 1, column: cell.col - 1 };
+        const end = copyPoint(terminal, cell);
         copySelectionRef.current = { start, end };
         void copySelection(terminal, start, end).catch((reason) => setError(`Clipboard copy failed: ${String(reason)}`));
         copySelectionRef.current = null;
