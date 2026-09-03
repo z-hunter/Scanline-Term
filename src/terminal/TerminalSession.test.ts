@@ -104,4 +104,20 @@ describe('TerminalSession', () => {
     expect(onProcessName).toHaveBeenCalledWith('pwsh.exe');
     session.dispose();
   });
+
+  it('preserves custom OSC title when child process changes', async () => {
+    const onProcessName = vi.fn();
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onProcessName);
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'active_terminal_process' ? 'cmd.exe' : 'cmd.exe'));
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b]2;Custom Work App\x07', resolve));
+    expect(session.title).toBe('Custom Work App');
+    onProcessName.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'active_terminal_process' ? 'pwsh.exe' : 'cmd.exe'));
+    Reflect.get(session, 'pollProcess').call(session);
+    await Promise.resolve();
+    expect(session.title).toBe('Custom Work App');
+    expect(onProcessName).not.toHaveBeenCalled();
+    session.dispose();
+  });
 });

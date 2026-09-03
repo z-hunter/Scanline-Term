@@ -296,4 +296,113 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove();
     vi.restoreAllMocks();
   });
+
+  it('marks tab as exited and preserves session buffer when terminal-exit fires', async () => {
+    mocked.invoke.mockResolvedValue('cmd.exe');
+    mocked.mockCloseWindow.mockReset();
+    mocked.handlers.clear();
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => {
+        hookResult = result;
+      });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(hookResult.tabs.length).toBe(1);
+    const sessionId = hookResult.tabs[0].id;
+    const closeSpy = vi.spyOn(TerminalSession.prototype, 'close');
+
+    await act(async () => {
+      mocked.handlers.get('terminal-exit')!({ payload: { sessionId } });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(hookResult.tabs.length).toBe(1);
+    expect(hookResult.tabs[0].status).toBe('exited');
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(hookResult.live).toBe(false);
+
+    await act(async () => {
+      await hookResult.closeSession(sessionId);
+    });
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('skips startup completion and error handling if initial launch effect cleanup runs first', async () => {
+    let rejectLaunch!: (err: Error) => void;
+    mocked.invoke.mockImplementation((command: string) => {
+      if (command === 'initial_terminal_launch') {
+        return new Promise((_, reject) => {
+          rejectLaunch = reject;
+        });
+      }
+      return Promise.resolve('cmd.exe');
+    });
+
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    await act(async () => {
+      rejectLaunch(new Error('Spawn failed after unmount'));
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('Could not read startup arguments'));
+
+    container.remove();
+    vi.restoreAllMocks();
+  });
 });

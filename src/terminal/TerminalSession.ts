@@ -96,7 +96,7 @@ export class TerminalSession {
   private pollProcess(): void {
     void invoke<string | null>('active_terminal_process', { sessionId: this.id }).then((name) => {
       if (this.disposed || name === this.processName) return;
-      if (this.processName !== null || this.title?.toLowerCase() === this.shellName?.toLowerCase()) this.title = null;
+      if (this.title?.toLowerCase() === this.shellName?.toLowerCase()) this.title = null;
       this.processName = name;
       if (!this.title && (name ?? this.shellName)) this.onProcessName(name ?? this.shellName!);
     }).catch((reason) => { if (!this.disposed && !this.exited) this.onError(`Terminal process lookup failed: ${String(reason)}`); });
