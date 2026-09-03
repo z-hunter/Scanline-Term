@@ -65,7 +65,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns the session map, active xterm buffer and input routing; `ui/TerminalTabs.tsx` renders the post-it tab strip; `TerminalRenderer` and `useCRT` remain single shared rendering instances for the active tab.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns the session map, active xterm buffer, input routing and throttled per-tab average color updates; `ui/TerminalTabs.tsx` renders the post-it tab strip; `TerminalRenderer` and `useCRT` remain single shared rendering instances for the active tab.
 
 ### Frontend Core
 

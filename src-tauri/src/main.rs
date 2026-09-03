@@ -4,7 +4,11 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{mpsc::{self, Sender}, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, Sender},
+        Mutex,
+    },
     thread,
 };
 
@@ -21,7 +25,10 @@ struct TerminalSession {
     child: Child,
     input: Sender<Vec<u8>>,
     controller: PtyController,
+    generation: u64,
 }
+
+static NEXT_SESSION_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 type SessionId = String;
 
@@ -154,6 +161,7 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
     let conpty_oxide::blocking::SessionParts { mut child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
     writer.write_all(b"\r").map_err(|error| error.to_string())?;
     writer.flush().map_err(|error| error.to_string())?;
+    let generation = NEXT_SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     let (input_sender, input_receiver) = mpsc::channel::<Vec<u8>>();
     {
         let mut sessions = state.0.lock().map_err(|_| "terminal state is unavailable")?;
@@ -161,7 +169,7 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
             let _ = child.kill();
             return Err("terminal session already exists".into());
         }
-        sessions.insert(session_id.clone(), TerminalSession { child, input: input_sender, controller });
+        sessions.insert(session_id.clone(), TerminalSession { child, input: input_sender, controller, generation });
     }
     thread::spawn(move || {
         while let Ok(input) = input_receiver.recv() {
@@ -171,6 +179,7 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
         }
     });
     let reader_session_id = session_id.clone();
+    let reader_generation = generation;
     thread::spawn(move || {
         let mut buffer = [0; 4096];
         while let Ok(count) = reader.read(&mut buffer) {
@@ -179,10 +188,16 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
             }
             let _ = app.emit("terminal-output", TerminalOutput { session_id: reader_session_id.clone(), data: buffer[..count].to_vec() });
         }
+        let mut exited = false;
         if let Ok(mut sessions) = app.state::<TerminalState>().0.lock() {
-            sessions.remove(&reader_session_id);
+            if sessions.get(&reader_session_id).map(|session| session.generation) == Some(reader_generation) {
+                sessions.remove(&reader_session_id);
+                exited = true;
+            }
         }
-        let _ = app.emit("terminal-exit", TerminalExit { session_id: reader_session_id });
+        if exited {
+            let _ = app.emit("terminal-exit", TerminalExit { session_id: reader_session_id });
+        }
     });
     Ok(shell_name)
 }

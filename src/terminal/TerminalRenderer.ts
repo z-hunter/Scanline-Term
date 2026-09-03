@@ -6,6 +6,7 @@ export type CopyPoint = { row: number; column: number };
 export type CopySelection = { start: CopyPoint; end: CopyPoint };
 export type Resolution = { id: string; width?: number; height?: number };
 export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
+export type TabColor = { background: string; foreground: string };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
@@ -34,6 +35,26 @@ function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColo
   if (foreground ? cell.isFgRGB() : cell.isBgRGB()) return remapLegacyRgb(profile, `#${value.toString(16).padStart(6, '0')}`);
   if (foreground ? cell.isFgPalette() : cell.isBgPalette()) return profileColor(profile, value);
   return foreground ? profile.foreground : profile.background;
+}
+
+function rgb(value: string): [number, number, number] {
+  return [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)];
+}
+
+export function terminalAverageColor(terminal: Terminal, profile: TerminalColorProfile): TabColor {
+  const buffer = terminal.buffer.active; const cell = buffer.getNullCell(); const total = [0, 0, 0]; let count = 0;
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const line = buffer.getLine(buffer.viewportY + row); if (!line) continue;
+    for (let column = 0; column < terminal.cols; column += 1) {
+      const current = line.getCell(column, cell); if (!current) continue;
+      const background = rgb(cellColor(current, false, profile)); const foreground = rgb(cellColor(current, true, profile)); const ink = current.getChars() ? .22 : 0;
+      for (let channel = 0; channel < 3; channel += 1) total[channel] += background[channel] * (1 - ink) + foreground[channel] * ink;
+      count += 1;
+    }
+  }
+  const average = total.map((channel) => Math.round(channel / Math.max(1, count))); const background = `#${average.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+  const luminance = (average[0] * 299 + average[1] * 587 + average[2] * 114) / 1000;
+  return { background, foreground: luminance > 145 ? '#101a14' : '#d7f5df' };
 }
 
 export class TerminalRenderer {

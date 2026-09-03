@@ -18,7 +18,7 @@ export class TerminalSession {
   private disposed = false;
   private exited = false;
 
-  constructor(readonly id: string, private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void, private readonly onExit: () => void) {}
+  constructor(readonly id: string, private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void, private readonly onExit: () => void, private readonly onOutput: () => void) {}
 
   async start(size: TerminalSize, profile: TerminalColorProfile): Promise<string | null> {
     if (!isTauri() || this.disposed || this.terminal) return null;
@@ -43,7 +43,7 @@ export class TerminalSession {
     );
     try {
       this.unlisten = await Promise.all([
-        listen<TerminalOutput>('terminal-output', (event) => { if (event.payload.sessionId === this.id) terminal.write(Uint8Array.from(event.payload.data)); }),
+        listen<TerminalOutput>('terminal-output', (event) => { if (event.payload.sessionId === this.id) terminal.write(Uint8Array.from(event.payload.data), this.onOutput); }),
         listen<TerminalExit>('terminal-exit', (event) => {
           if (event.payload.sessionId !== this.id || this.disposed) return;
           this.exited = true;
@@ -64,6 +64,9 @@ export class TerminalSession {
       return shellName;
     } catch (reason) {
       this.onError(`Windows console could not start: ${String(reason)}`);
+      const wasDisposed = this.disposed;
+      this.dispose();
+      this.disposed = wasDisposed;
       return null;
     }
   }
@@ -82,8 +85,11 @@ export class TerminalSession {
   }
 
   async close(): Promise<void> {
-    if (isTauri()) await invoke('close_terminal', { sessionId: this.id });
-    this.dispose();
+    try {
+      if (isTauri()) await invoke('close_terminal', { sessionId: this.id });
+    } finally {
+      this.dispose();
+    }
   }
 
   dispose(): void {

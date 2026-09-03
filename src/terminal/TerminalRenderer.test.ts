@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, TerminalRenderer } from './TerminalRenderer';
+import { fontCellSize, terminalAverageColor, TerminalRenderer } from './TerminalRenderer';
+import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
 afterEach(() => vi.restoreAllMocks());
@@ -42,5 +43,11 @@ describe('TerminalRenderer', () => {
     // Repeated call with same font should hit cache and not call measureText or createElement again
     expect(measureTextSpy).toHaveBeenCalledTimes(1);
     createElementSpy.mockRestore();
+  });
+
+  it('averages visible cell colors and chooses readable tab text', () => {
+    const cell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0xffffff, isFgRGB: () => false, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false };
+    const terminal = { cols: 2, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } } };
+    expect(terminalAverageColor(terminal as never, colorProfile('dos-vga'))).toEqual({ background: '#ffffff', foreground: '#101a14' });
   });
 });

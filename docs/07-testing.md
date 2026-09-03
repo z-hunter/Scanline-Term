@@ -18,6 +18,7 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-color-profiles.test.ts`](../src/terminal-color-profiles.test.ts) | Color profiles | Historical palette values; xterm extended table (256 colors); `remapLegacyRgb` for DOS VGA, Solarized, passthrough |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
+| [`terminal/TerminalRenderer.test.ts`](../src/terminal/TerminalRenderer.test.ts) | Tab colors | Visible-cell average color and readable foreground selection |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
 
 Run: `npm test`

@@ -30,6 +30,8 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 
 The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits its UUID with output and exit events, so every tab keeps an independent xterm scrollback buffer. The frontend reuses one source canvas and CRT filter: selecting a tab rebinds the renderer to that buffer and clears phosphor persistence, preventing a previous tab's afterglow from appearing on the next one. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent.
 
+Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
+
 ---
 
 ## ConPTY and Win32 Input Mode
@@ -78,10 +80,10 @@ This test writes a Win32 Input Mode F1 sequence (`\x1b[112;59;0;1;0;1_`) into a 
 
 ### Dual Mode
 
-The keyboard handler in `App.tsx` (lines 600–664) selects the encoding mode:
+The keyboard handler in `terminal/useTerminal.ts` selects the encoding mode:
 
 ```typescript
-const input = win32InputModeRef.current
+const input = session.win32InputMode
   ? win32InputKey(event, true)
   : terminalKey(event, terminal.modes);
 ```
@@ -124,14 +126,14 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 
 | Shortcut | Behavior | Location |
 |---|---|---|
-| **Alt+Enter** | Toggle fullscreen (Tauri only) | `onKeyDown`, lines 624–636 |
-| **Menu+S** | Toggle settings panel visibility | `onKeyDown`, lines 603–608 |
-| **Menu+V** | Paste from clipboard | `onKeyDown`, lines 609–613 |
-| **Menu+C** | Enter copy mode | `onKeyDown`, lines 615–623 |
+| **Alt+Enter** | Toggle fullscreen (Tauri only) | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+S** | Toggle settings panel visibility | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+V** | Paste from clipboard | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+C** | Enter copy mode | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
 
-The Menu key (Context Menu / Apps key) is tracked via `menuKeyDownRef`. While held, letter keys are intercepted before terminal input encoding.
+The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding.
 
 ### Key-Repeat Handling
 
