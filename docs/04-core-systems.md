@@ -32,6 +32,12 @@ The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits
 
 Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
 
+Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title sequence. xterm parses it in `TerminalSession`, and the tab keeps its ordinal prefix (for example, `2. FAR Manager`). When a shell does not set an OSC title (such as `pwsh` launched from `cmd.exe`), `TerminalSession` polls `active_terminal_process` every 500 ms and uses the direct child image name instead; OSC titles take priority.
+
+### Command-line launch
+
+`scanline-term [target] [-P <path>]` starts the first tab. An existing directory target opens the default shell there; a file path or executable name runs that command instead. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [-P <path>]` is routed to the existing application and opens the requested session in a new tab.
+
 ---
 
 ## ConPTY and Win32 Input Mode

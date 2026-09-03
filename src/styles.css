@@ -24,11 +24,11 @@ select {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) calc(320px * var(--settings-scale, 1));
   grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   height: 100vh;
-  padding: 18px;
+  padding: 0 18px 18px;
 }
 
 .app-shell.settings-hidden {
@@ -53,11 +53,48 @@ select {
 }
 
 .terminal-workspace-top {
+  position: relative;
   width: 100%;
   height: 100%;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+}
+
+.workspace-settings-button {
+  position: absolute;
+  z-index: 3;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #355840;
+  border-radius: 5px;
+  color: #b9d7c1;
+  background: #163321;
+  box-shadow: 1px 1px 4px #0008;
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.terminal-workspace-top .workspace-settings-button {
+  top: 0;
+  left: calc(50% + min(50%, calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+}
+
+.terminal-workspace-left .workspace-settings-button {
+  top: 8px;
+  left: calc(50% + min(calc(50% - var(--tab-space)), calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+}
+
+.terminal-workspace-left:has(.screen-frame.physical-window) .workspace-settings-button {
+  left: auto;
+  right: 8px;
+}
+
+.workspace-settings-button:hover {
+  color: #d7f5df;
+  background: #204b2d;
 }
 
 .terminal-workspace-left {
@@ -73,15 +110,22 @@ select {
 }
 
 .terminal-tabs-top {
+  position: relative;
   width: min(100%, 980px);
   align-items: end;
   gap: 6px;
 }
 
+.terminal-tabs-top .tabs-settings-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
 .terminal-tabs-left {
   position: absolute;
   top: 50%;
-  right: calc(50% + min(calc(50% - 22px), calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+  right: calc(50% + min(calc(50% - var(--tab-space)), calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
   align-self: auto;
   transform: translateY(-50%);
   flex-direction: column;
@@ -127,7 +171,7 @@ select {
 }
 
 .terminal-tabs-left .terminal-tab {
-  border: 1px solid #9c7e36;
+  border: 1px solid #355840;
   border-right: 0;
   border-radius: 5px 0 0 5px;
 }
@@ -207,6 +251,29 @@ select {
   background: #204b2d;
 }
 
+.tabs-settings-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #355840;
+  border-radius: 5px;
+  color: #b9d7c1;
+  background: #163321;
+  box-shadow: 1px 1px 4px #0008;
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.tabs-settings-button:hover {
+  color: #d7f5df;
+  background: #204b2d;
+}
+
+.terminal-tabs-left .tabs-settings-button {
+  order: -1;
+}
+
 .screen-frame {
   position: relative;
   width: min(100%, calc((100vh - 36px) * var(--screen-ratio, 1.3333333333)));
@@ -223,7 +290,7 @@ select {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  max-width: calc(100% - 44px);
+  max-width: min(calc(100% - 2 * var(--tab-space)), 100%);
 }
 
 .terminal-workspace-left .screen-frame.physical-window {
@@ -292,7 +359,11 @@ footer,
 }
 
 .settings-panel {
-  max-height: calc(100vh - 36px);
+  width: calc(100% / var(--settings-scale, 1));
+  height: calc((100vh - 36px) / var(--settings-scale, 1));
+  max-height: none;
+  transform: scale(var(--settings-scale, 1));
+  transform-origin: top left;
   overflow-y: auto;
   padding: 20px;
   border: 1px solid #263b2d;
@@ -455,6 +526,14 @@ footer {
   }
 
   .terminal-tabs-left {
-    right: calc(50% + min(calc(50% - 22px), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+    right: calc(50% + min(calc(50% - var(--tab-space)), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+  }
+
+  .terminal-workspace-top .workspace-settings-button {
+    left: calc(50% + min(50%, calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+  }
+
+  .terminal-workspace-left .workspace-settings-button {
+    left: calc(50% + min(calc(50% - var(--tab-space)), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
   }
 }

@@ -4,8 +4,14 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { colorProfile, type TerminalColorProfile } from '../terminal-color-profiles';
 
 export type TerminalSize = { cols: number; rows: number };
+export type TerminalLaunch = { command?: string | null; cwd?: string | null };
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
+
+function tabTitle(title: string): string {
+  const executable = title.match(/^[A-Za-z]:\\.*\\([^\\]+?\.(?:exe|com|bat|cmd))(?:\s.*)?$/i);
+  return executable?.[1] ?? title;
+}
 
 export class TerminalSession {
   terminal: Terminal | null = null;
@@ -13,14 +19,18 @@ export class TerminalSession {
   size: TerminalSize = { cols: 0, rows: 0 };
   win32InputMode = false;
   sgrMouseMode = false;
+  title: string | null = null;
+  private shellName: string | null = null;
+  private processName: string | null = null;
+  private processInterval: number | null = null;
   private unlisten: UnlistenFn[] = [];
   private disposables: { dispose(): void }[] = [];
   private disposed = false;
   private exited = false;
 
-  constructor(readonly id: string, private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void, private readonly onExit: () => void, private readonly onOutput: () => void) {}
+  constructor(readonly id: string, private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void, private readonly onExit: () => void, private readonly onOutput: () => void, private readonly onTitle: (title: string) => void, private readonly onProcessName: (name: string) => void) {}
 
-  async start(size: TerminalSize, profile: TerminalColorProfile): Promise<string | null> {
+  async start(size: TerminalSize, profile: TerminalColorProfile, launch?: TerminalLaunch): Promise<string | null> {
     if (!isTauri() || this.disposed || this.terminal) return null;
     const terminal = new Terminal({ cols: size.cols, rows: size.rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     this.terminal = terminal;
@@ -40,6 +50,7 @@ export class TerminalSession {
       }),
       terminal.onData((input) => this.sendInput(input)),
       terminal.onKey(() => terminal.scrollToBottom()),
+      terminal.onTitleChange((title) => { this.title = tabTitle(title); this.onTitle(this.title); }),
     );
     try {
       this.unlisten = await Promise.all([
@@ -52,12 +63,18 @@ export class TerminalSession {
           this.onExit();
         }),
       ]);
-      const shellName = await invoke<string>('start_terminal', { sessionId: this.id, ...size });
+      const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch)
+        ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null }
+        : undefined;
+      const shellName = await invoke<string>('start_terminal', { sessionId: this.id, ...size, ...(validLaunch && { launch: validLaunch }) });
       if (this.disposed) {
         void invoke('close_terminal', { sessionId: this.id });
         return null;
       }
       if (this.exited) return shellName;
+      this.shellName = shellName;
+      this.pollProcess();
+      this.processInterval = window.setInterval(() => this.pollProcess(), 500);
       this.live = true;
       this.size = size;
       this.onState(true, size);
@@ -74,6 +91,15 @@ export class TerminalSession {
   sendInput(input: string): void {
     if (!this.live || !input) return;
     void invoke('write_terminal', { sessionId: this.id, input }).catch((reason) => this.onError(`Terminal input failed: ${String(reason)}`));
+  }
+
+  private pollProcess(): void {
+    void invoke<string | null>('active_terminal_process', { sessionId: this.id }).then((name) => {
+      if (this.disposed || name === this.processName) return;
+      if (this.processName !== null || this.title?.toLowerCase() === this.shellName?.toLowerCase()) this.title = null;
+      this.processName = name;
+      if (!this.title && (name ?? this.shellName)) this.onProcessName(name ?? this.shellName!);
+    }).catch((reason) => { if (!this.disposed && !this.exited) this.onError(`Terminal process lookup failed: ${String(reason)}`); });
   }
 
   resize(size: TerminalSize): void {
@@ -104,6 +130,11 @@ export class TerminalSession {
     this.exited = false;
     this.win32InputMode = false;
     this.sgrMouseMode = false;
+    this.title = null;
+    this.shellName = null;
+    this.processName = null;
+    if (this.processInterval !== null) window.clearInterval(this.processInterval);
+    this.processInterval = null;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);
   }

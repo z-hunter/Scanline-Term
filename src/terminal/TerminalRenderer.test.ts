@@ -50,4 +50,13 @@ describe('TerminalRenderer', () => {
     const terminal = { cols: 2, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } } };
     expect(terminalAverageColor(terminal as never, colorProfile('dos-vga'))).toEqual({ background: '#ffffff', foreground: '#101a14' });
   });
+
+  it('swaps foreground and background for inverse cells when calculating average color', () => {
+    const normalCell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0xffffff, getBgColor: () => 0x000000, isFgRGB: () => true, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false };
+    const inverseCell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0xffffff, getBgColor: () => 0x000000, isFgRGB: () => true, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => true };
+    const normalTerminal = { cols: 1, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => normalCell, getLine: () => ({ getCell: () => normalCell }) } } };
+    const inverseTerminal = { cols: 1, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => inverseCell, getLine: () => ({ getCell: () => inverseCell }) } } };
+    expect(terminalAverageColor(normalTerminal as never, colorProfile('dos-vga')).background).toBe('#000000');
+    expect(terminalAverageColor(inverseTerminal as never, colorProfile('dos-vga')).background).toBe('#ffffff');
+  });
 });

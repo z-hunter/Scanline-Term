@@ -48,6 +48,8 @@ export type StoredSettings = {
   version: 1;
   resolution: ResolutionId;
   tabPlacement: TabPlacement;
+  hideTabsWhenSingleSession: boolean;
+  settingsScale: number;
   crt: CRTSettings;
 };
 
@@ -60,7 +62,7 @@ const numericRanges = {
   vignette: [0, 1],
   phosphor: [0, 1],
   bloom: [0, 1],
-  glow: [0, 1],
+  glow: [0, 2],
   persistence: [0, 1],
   persistenceIntensity: [0, 4],
   imageBrightness: [0.5, 1.5],
@@ -86,6 +88,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     version: 1,
     resolution: DEFAULT_RESOLUTION,
     tabPlacement: 'top',
+    hideTabsWhenSingleSession: false,
+    settingsScale: 1,
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -93,9 +97,11 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return result;
-    const value = parsed as { resolution?: unknown; tabPlacement?: unknown; crt?: Record<string, unknown> };
+    const value = parsed as { resolution?: unknown; tabPlacement?: unknown; hideTabsWhenSingleSession?: unknown; settingsScale?: unknown; crt?: Record<string, unknown> };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
+    if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsWhenSingleSession = value.hideTabsWhenSingleSession;
+    if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

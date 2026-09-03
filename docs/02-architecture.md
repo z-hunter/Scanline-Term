@@ -52,6 +52,7 @@ graph TB
   TerminalSession -->|"invoke('start_terminal')"| Main
   TerminalSession -->|"invoke('write_terminal')"| Main
   TerminalSession -->|"invoke('resize_terminal')"| Main
+  TerminalSession -->|"invoke('active_terminal_process')"| Main
   UseTerminal -->|"invoke('list_monospace_fonts')"| Main
 
   AppTsx --> UseTerminal
@@ -193,6 +194,10 @@ sequenceDiagram
     Rust->>ConPTY: controller.resize(Size)
 ```
 
+### Command Line → Terminal Session
+
+On first launch, Rust parses the positional target and `-P` into a terminal launch request. A directory becomes the shell working directory; a file or executable name becomes the command. The frontend reads that request with `initial_terminal_launch` before opening its first tab. A later `-T` invocation is intercepted by the single-instance plugin and emitted as `terminal-launch`, which opens one additional tab in the existing window.
+
 ## Concurrency Model
 
 ### Rust Side
@@ -203,7 +208,8 @@ sequenceDiagram
 │  • Handles invoke commands          │
 │  • Manages TerminalState (Mutex)    │
 │  • start_terminal / write_terminal  │
-│    / resize_terminal / close_terminal│
+│    / resize_terminal / active_terminal_process │
+│    / close_terminal                 │
 │    list_monospace_fonts             │
 └──────────┬──────────┬───────────────┘
            │          │

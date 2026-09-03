@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    mem::size_of,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -14,6 +15,11 @@ use std::{
 
 #[cfg(windows)]
 use std::collections::BTreeSet;
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+    System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
+};
 
 use conpty_oxide::{
     blocking::{Child, Command},
@@ -34,6 +40,15 @@ type SessionId = String;
 
 #[derive(Default)]
 struct TerminalState(Mutex<HashMap<SessionId, TerminalSession>>);
+
+#[derive(Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalLaunch {
+    command: Option<String>,
+    cwd: Option<String>,
+}
+
+struct LaunchState(TerminalLaunch);
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +81,34 @@ fn valid_session_id(session_id: &str) -> Result<(), String> {
     if valid { Ok(()) } else { Err("session id is invalid".into()) }
 }
 
+fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
+    let mut target = None;
+    let mut launch_in_tab = false;
+    let mut explicit_cwd = None;
+    let mut arguments = args.iter().skip(1);
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "-T" => launch_in_tab = true,
+            "-P" => explicit_cwd = arguments.next().cloned(),
+            _ if target.is_none() => target = Some(argument.clone()),
+            _ => {}
+        }
+    }
+    let target_path = target.as_deref().map(|target| {
+        let path = PathBuf::from(target);
+        if path.is_absolute() { path } else { Path::new(cwd).join(path) }
+    });
+    let command = target_path.as_ref().filter(|path| path.is_file())
+        .map(|path| path.to_string_lossy().into_owned())
+        .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())));
+    let cwd = explicit_cwd.or_else(|| target_path.filter(|path| path.is_dir()).map(|path| path.to_string_lossy().into_owned()));
+    (TerminalLaunch { command, cwd }, launch_in_tab)
+}
+
+fn valid_working_directory(cwd: Option<&str>) -> Result<(), String> {
+    if cwd.is_none_or(|cwd| Path::new(cwd).is_dir()) { Ok(()) } else { Err("terminal working directory does not exist".into()) }
+}
+
 fn pty_size(cols: u16, rows: u16) -> Result<Size, String> {
     if !(20..=300).contains(&cols) || !(8..=150).contains(&rows) {
         return Err("terminal size is out of range".into());
@@ -84,6 +127,34 @@ fn bundled_conpty_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn dev_conpty_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/conpty/x64")
+}
+
+fn child_process_name(parent_pid: u32) -> Option<String> {
+    #[cfg(windows)]
+    {
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut found = None;
+        let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+        while has_entry {
+            if entry.th32ParentProcessID == parent_pid {
+                let end = entry.szExeFile.iter().position(|&unit| unit == 0).unwrap_or(entry.szExeFile.len());
+                found = Some(String::from_utf16_lossy(&entry.szExeFile[..end]));
+                break;
+            }
+            has_entry = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+        }
+        unsafe { CloseHandle(snapshot) };
+        found
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = parent_pid;
+        None
+    }
 }
 
 #[cfg(windows)]
@@ -142,17 +213,26 @@ fn list_monospace_fonts() -> Vec<String> {
 }
 
 #[tauri::command]
-fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id: SessionId, cols: u16, rows: u16) -> Result<String, String> {
+fn initial_terminal_launch(state: State<LaunchState>) -> TerminalLaunch {
+    state.0.clone()
+}
+
+#[tauri::command]
+fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id: SessionId, cols: u16, rows: u16, launch: Option<TerminalLaunch>) -> Result<String, String> {
     valid_session_id(&session_id)?;
     let size = pty_size(cols, rows)?;
     if state.0.lock().map_err(|_| "terminal state is unavailable")?.contains_key(&session_id) {
         return Err("terminal session already exists".into());
     }
 
-    let shell = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+    let launch = launch.unwrap_or_default();
+    valid_working_directory(launch.cwd.as_deref())?;
+    let shell = launch.command.map(Into::into).unwrap_or_else(|| std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into()));
     let shell_name = Path::new(&shell).file_name().and_then(|name| name.to_str()).unwrap_or("cmd.exe").to_owned();
     let mut command = Command::new(&shell);
-    if let Some(home) = std::env::var_os("USERPROFILE") {
+    if let Some(cwd) = launch.cwd {
+        command.current_dir(cwd);
+    } else if let Some(home) = std::env::var_os("USERPROFILE") {
         command.current_dir(home);
     }
     let backend = ConPtyBackend::from_dir(bundled_conpty_dir(&app)?).map_err(|error| error.to_string())?;
@@ -220,6 +300,14 @@ fn resize_terminal(state: State<TerminalState>, session_id: SessionId, cols: u16
 }
 
 #[tauri::command]
+fn active_terminal_process(state: State<TerminalState>, session_id: SessionId) -> Result<Option<String>, String> {
+    valid_session_id(&session_id)?;
+    let process_id = state.0.lock().map_err(|_| "terminal state is unavailable")?
+        .get(&session_id).ok_or("terminal is not running")?.child.id();
+    Ok(child_process_name(process_id))
+}
+
+#[tauri::command]
 fn close_terminal(state: State<TerminalState>, session_id: SessionId) -> Result<(), String> {
     valid_session_id(&session_id)?;
     let session = state.0.lock().map_err(|_| "terminal state is unavailable")?.remove(&session_id);
@@ -230,16 +318,26 @@ fn close_terminal(state: State<TerminalState>, session_id: SessionId) -> Result<
 }
 
 fn main() {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let (launch, _) = terminal_launch(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
     tauri::Builder::default()
         .manage(TerminalState::default())
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, close_terminal, list_monospace_fonts])
+        .manage(LaunchState(launch))
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let (launch, launch_in_tab) = terminal_launch(&args, &cwd);
+            if launch_in_tab {
+                let _ = app.emit("terminal-launch", launch);
+            }
+            let _ = app.get_webview_window("main").map(|window| window.set_focus());
+        }))
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{dev_conpty_dir, pty_size, valid_session_id};
+    use super::{child_process_name, dev_conpty_dir, pty_size, terminal_launch, valid_session_id, valid_working_directory};
 
     #[test]
     fn limits_terminal_dimensions() {
@@ -252,6 +350,35 @@ mod tests {
     fn validates_frontend_session_ids() {
         assert!(valid_session_id("5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064").is_ok());
         assert!(valid_session_id("not-a-session-id").is_err());
+    }
+
+    #[test]
+    fn unrelated_process_has_no_child() {
+        assert_eq!(child_process_name(u32::MAX), None);
+    }
+
+    #[test]
+    fn parses_terminal_launch_arguments() {
+        let args = vec!["scanline-term".into(), "pwsh".into(), "-P".into(), "C:\\temp".into(), "-T".into()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        assert_eq!(launch.command.as_deref(), Some("pwsh"));
+        assert_eq!(launch.cwd.as_deref(), Some("C:\\temp"));
+        assert!(in_tab);
+    }
+
+    #[test]
+    fn treats_a_directory_as_shell_working_directory() {
+        let directory = std::env::temp_dir();
+        let args = vec!["scanline-term".into(), directory.to_string_lossy().into_owned()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        assert_eq!(launch.command, None);
+        assert_eq!(launch.cwd.as_deref(), directory.to_str());
+        assert!(!in_tab);
+    }
+
+    #[test]
+    fn rejects_a_missing_working_directory() {
+        assert!(valid_working_directory(Some("C:\\definitely-missing-scanline-term-directory")).is_err());
     }
 
     #[cfg(windows)]

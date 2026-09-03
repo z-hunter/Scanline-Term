@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 const mocked = vi.hoisted(() => ({
   invoke: vi.fn(),
   mockCloseWindow: vi.fn(),
+  handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -19,7 +20,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(async () => () => {}),
+  listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { mocked.handlers.set(name, handler); return () => mocked.handlers.delete(name); }),
 }));
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
@@ -45,6 +46,62 @@ describe('tabIdAtOrdinal', () => {
     expect(tabIdAtOrdinal(tabs, 2)).toBe('two');
     expect(tabIdAtOrdinal([tabs[0], tabs[2]], 3)).toBe('three');
     expect(tabIdAtOrdinal(tabs, 9)).toBeNull();
+  });
+});
+
+describe('terminal launch event', () => {
+  it('starts a new session with the command and working directory from -T', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({ settings: DEFAULT_CRT_SETTINGS, resolution: RESOLUTIONS[1], onError, onToggleSettings });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await act(async () => { mocked.handlers.get('terminal-launch')!({ payload: { command: 'pwsh', cwd: 'C:\\Windows' } }); await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(hookResult.tabs).toHaveLength(2);
+    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining({ launch: { command: 'pwsh', cwd: 'C:\\Windows' } }));
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
+  });
+
+  it('safely ignores DOM event arguments passed to openSession from onClick handlers', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({ settings: DEFAULT_CRT_SETTINGS, resolution: RESOLUTIONS[1], onError, onToggleSettings });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+
+    const circular: Record<string, unknown> = { nativeEvent: {} };
+    circular.self = circular;
+
+    await act(async () => {
+      hookResult.openSession(circular as never);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    const startTerminalCalls = mocked.invoke.mock.calls.filter((call) => call[0] === 'start_terminal');
+    expect(startTerminalCalls.length).toBe(2);
+    expect(startTerminalCalls[1][1]).toEqual(expect.not.objectContaining({ launch: circular }));
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
   });
 });
 
@@ -135,6 +192,107 @@ describe('useTerminal closeSession concurrent closures', () => {
     await act(async () => {
       root.unmount();
     });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('marks tab as failed and selects live replacement when session.close fails', async () => {
+    mocked.invoke.mockResolvedValue('cmd.exe');
+    mocked.mockCloseWindow.mockReset();
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => {
+        hookResult = result;
+      });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(hookResult.tabs.length).toBe(2);
+    const tab1Id = hookResult.tabs[0].id;
+    const tab2Id = hookResult.tabs[1].id;
+
+    // Make tab 2 close fail
+    vi.spyOn(TerminalSession.prototype, 'close').mockRejectedValueOnce(new Error('Kill process failed'));
+
+    await act(async () => {
+      await hookResult.closeSession(tab2Id);
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Kill process failed'));
+    expect(hookResult.tabs.find((t) => t.id === tab2Id)?.status).toBe('failed');
+    expect(hookResult.activeSessionId).toBe(tab1Id);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('reports errors through teardown-safe sink when session.close rejects during unmount', async () => {
+    mocked.invoke.mockResolvedValue('cmd.exe');
+    mocked.mockCloseWindow.mockReset();
+
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    vi.spyOn(TerminalSession.prototype, 'close').mockRejectedValueOnce(new Error('Teardown close failed'));
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Teardown close failed'));
     container.remove();
     vi.restoreAllMocks();
   });

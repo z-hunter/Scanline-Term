@@ -53,6 +53,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ tabPlacement: 'bottom' })).tabPlacement).toBe('top');
   });
 
+  it('defaults and validates single-session tab visibility', () => {
+    expect(loadStoredSettings(null).hideTabsWhenSingleSession).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: true })).hideTabsWhenSingleSession).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: 'yes' })).hideTabsWhenSingleSession).toBe(false);
+  });
+
   it('accepts virtual screens in all supported aspect ratios', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: '640x480' })).resolution).toBe('640x480');
     expect(loadStoredSettings(JSON.stringify({ resolution: '1280x800' })).resolution).toBe('1280x800');
@@ -65,6 +71,11 @@ describe('CRT settings', () => {
   it('accepts the expanded trail intensity range', () => {
     const loaded = loadStoredSettings(JSON.stringify({ crt: { persistenceIntensity: 4 } }));
     expect(loaded.crt.persistenceIntensity).toBe(4);
+  });
+
+  it('accepts the expanded glow intensity range', () => {
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { glow: 2 } }));
+    expect(loaded.crt.glow).toBe(2);
   });
 
   it('accepts a phosphor color mode', () => {

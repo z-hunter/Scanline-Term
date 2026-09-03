@@ -47,8 +47,10 @@ export function terminalAverageColor(terminal: Terminal, profile: TerminalColorP
     const line = buffer.getLine(buffer.viewportY + row); if (!line) continue;
     for (let column = 0; column < terminal.cols; column += 1) {
       const current = line.getCell(column, cell); if (!current) continue;
-      const background = rgb(cellColor(current, false, profile)); const foreground = rgb(cellColor(current, true, profile)); const ink = current.getChars() ? .22 : 0;
-      for (let channel = 0; channel < 3; channel += 1) total[channel] += background[channel] * (1 - ink) + foreground[channel] * ink;
+      let bg = rgb(cellColor(current, false, profile)); let fg = rgb(cellColor(current, true, profile));
+      if (current.isInverse && current.isInverse()) [bg, fg] = [fg, bg];
+      const ink = current.getChars() ? .22 : 0;
+      for (let channel = 0; channel < 3; channel += 1) total[channel] += bg[channel] * (1 - ink) + fg[channel] * ink;
       count += 1;
     }
   }

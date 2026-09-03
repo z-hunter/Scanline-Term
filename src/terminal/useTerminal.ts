@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { CRTSettings } from '../crt/CRTFilter';
 import type { Resolution } from './TerminalRenderer';
 import { TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
-import { TerminalSession, initialProfile, type TerminalSize } from './TerminalSession';
+import { TerminalSession, initialProfile, type TerminalLaunch, type TerminalSize } from './TerminalSession';
 import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
@@ -25,8 +26,8 @@ export function tabIdAtOrdinal(tabs: TerminalTab[], ordinal: number): string | n
 export function useTerminal({ settings, resolution, onError, onToggleSettings }: { settings: CRTSettings; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void }) {
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<TerminalTab[]>([]); const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
-  const settingsRef = useRef(settings); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const tabsRef = useRef<TerminalTab[]>([]); const activeRef = useRef<string | null>(null); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const fullscreen = useRef(false); const closing = useRef(new Set<string>());
-  settingsRef.current = settings; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeSessionId;
+  const settingsRef = useRef(settings); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const tabsRef = useRef<TerminalTab[]>([]); const activeRef = useRef<string | null>(null); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const fullscreen = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const closeSessionRef = useRef<(id: string) => void>(() => {});
+  settingsRef.current = settings; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeSessionId; onErrorRef.current = onError;
   const updateTab = useCallback((id: string, update: (tab: TerminalTab) => TerminalTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const refreshTabColor = useCallback((id: string) => {
     if (colorFrames.current.has(id)) return;
@@ -43,30 +44,69 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings }:
     const record = sessions.current.get(id); if (!record) return;
     activeRef.current = id; setActiveSessionId(id); renderer.current!.bindTerminal(record.session.terminal); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
   }, []);
-  const openSession = useCallback(() => {
+  const openSession = useCallback((launch?: TerminalLaunch) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(settingsRef.current.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
-    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => updateTab(id, (current) => ({ ...current, status: 'exited' })), () => refreshTabColor(id));
+    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => closeSessionRef.current(id), () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...current, title: `${ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...current, title: `${ordinal}. ${name}` })));
     sessions.current.set(id, { tab, session }); setTabs((current) => [...current, tab]); selectSession(id);
     const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
-    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile)); renderer.current!.bindTerminal(session.terminal);
-    void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${ordinal}. ${shellName}`, status: 'running' } : { ...current, title: `${ordinal}. Failed`, status: 'failed' }));
+    const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
+    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), validLaunch); renderer.current!.bindTerminal(session.terminal);
+    void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${ordinal}. Failed`, status: 'failed' }));
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const closeSession = useCallback(async (id: string) => {
-    const record = sessions.current.get(id); if (!record || tabsRef.current.find((tab) => tab.id === id)?.status === 'starting' || closing.current.has(id)) return;
+    const record = sessions.current.get(id); if (!record || (tabsRef.current.find((tab) => tab.id === id)?.status === 'starting' && record.session.live) || closing.current.has(id)) return;
     closing.current.add(id);
-    const nextId = adjacentTabId(tabsRef.current, id);
-    try { await record.session.close(); } catch (reason) { closing.current.delete(id); onError(`Terminal close failed: ${String(reason)}`); return; }
+    try {
+      await record.session.close();
+    } catch (reason) {
+      closing.current.delete(id);
+      record.tab.status = 'failed';
+      updateTab(id, (current) => ({ ...current, status: 'failed' }));
+      if (activeRef.current === id) {
+        const surviving = tabsRef.current.filter((tab) => tab.id === id || (sessions.current.has(tab.id) && sessions.current.get(tab.id)?.tab.status !== 'failed'));
+        const replacementId = adjacentTabId(surviving, id) ?? Array.from(sessions.current.values()).find((r) => r.tab.id !== id && r.session.live)?.tab.id;
+        if (replacementId && sessions.current.has(replacementId)) selectSession(replacementId);
+      }
+      onError(`Terminal close failed: ${String(reason)}`);
+      return;
+    }
     closing.current.delete(id); sessions.current.delete(id); setTabs((current) => current.filter((tab) => tab.id !== id));
     if (sessions.current.size === 0) {
+      tabsRef.current = tabsRef.current.filter((tab) => tab.id !== id);
       try { await getCurrentWindow().close(); } catch (reason) { onError(`Could not close application: ${String(reason)}`); }
       return;
     }
-    if (activeRef.current === id && nextId) selectSession(nextId);
-  }, [onError, selectSession]);
+    if (activeRef.current === id) {
+      const surviving = tabsRef.current.filter((tab) => tab.id === id || sessions.current.has(tab.id));
+      const nextId = adjacentTabId(surviving, id);
+      tabsRef.current = tabsRef.current.filter((tab) => tab.id !== id);
+      const targetId = (nextId && sessions.current.has(nextId)) ? nextId : sessions.current.keys().next().value;
+      if (targetId) selectSession(targetId);
+    } else {
+      tabsRef.current = tabsRef.current.filter((tab) => tab.id !== id);
+    }
+  }, [onError, selectSession, updateTab]);
+  closeSessionRef.current = (id) => { void closeSession(id); };
   useEffect(() => { if (!isTauri()) return; void invoke<string[]>('list_monospace_fonts').then((items) => setFonts([...new Set(['Consolas', ...items])])).catch((reason) => onError(`Could not list system fonts: ${String(reason)}`)); }, [onError]);
   useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, settings.colorProfile]);
-  useEffect(() => { const activeSessions = sessions.current; const start = window.setTimeout(openSession); return () => { window.clearTimeout(start); for (const frame of colorFrames.current.values()) window.cancelAnimationFrame(frame); colorFrames.current.clear(); for (const { session } of activeSessions.values()) void session.close(); activeSessions.clear(); renderer.current!.dispose(); }; }, [openSession]);
+  useEffect(() => {
+    const activeSessions = sessions.current;
+    const start = window.setTimeout(() => { void invoke<TerminalLaunch>('initial_terminal_launch').then(openSession).catch((reason) => { onErrorRef.current(`Could not read startup arguments: ${String(reason)}`); openSession(); }); });
+    return () => {
+      window.clearTimeout(start);
+      for (const frame of colorFrames.current.values()) window.cancelAnimationFrame(frame);
+      colorFrames.current.clear();
+      for (const { session } of activeSessions.values()) void session.close().catch((reason) => onErrorRef.current(`Terminal close failed: ${String(reason)}`));
+      activeSessions.clear();
+      renderer.current!.dispose();
+    };
+  }, [openSession]);
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    void listen<TerminalLaunch>('terminal-launch', (event) => openSession(event.payload)).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive terminal launch: ${String(reason)}`));
+    return () => unlisten?.();
+  }, [onError, openSession]);
   const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, settings.consoleFont, settings.consoleFontSize, resolution]);
   useEffect(() => { renderer.current!.markDirty(); }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize]);

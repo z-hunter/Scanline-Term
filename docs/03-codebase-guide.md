@@ -240,9 +240,11 @@ Defines 8 terminal color profiles:
 | `bundled_conpty_dir(app)` | Resolves ConPTY DLL path: dev = `CARGO_MANIFEST_DIR/resources/conpty/x64`, release = Tauri resource `conpty/x64` |
 | `collect_monospace_font()` | Win32 `EnumFontFamiliesExW` callback; filters by `TMPF_FIXED_PITCH`, skips `@`-prefixed and empty names |
 | **`#[tauri::command] list_monospace_fonts()`** | Enumerates all system monospace fonts using GDI; returns `Vec<String>` sorted via `BTreeSet` |
-| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows)`** | Validates the UUID, spawns and registers a ConPTY session, then returns the shell filename |
+| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command and working directory, then returns the executable filename |
+| **`#[tauri::command] initial_terminal_launch()`** | Returns the parsed launch request for the first terminal tab |
 | **`#[tauri::command] write_terminal(state, session_id, input)`** | Clones the target session's `mpsc::Sender`, sends `input.into_bytes()` |
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
+| **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
 | **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
 | `main()` | Builds Tauri app with `TerminalState` managed state and 5 command handlers |
 | **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
@@ -253,9 +255,11 @@ Defines 8 terminal color profiles:
 
 | Command | Parameters | Returns | Called from |
 |---------|------------|---------|------------|
-| `start_terminal` | `sessionId, cols: u16, rows: u16` | shell filename | Create a terminal tab |
+| `start_terminal` | `sessionId, cols: u16, rows: u16, launch?` | executable filename | Create a terminal tab |
+| `initial_terminal_launch` | — | `{ command?, cwd? }` | First terminal tab |
 | `write_terminal` | `sessionId, input: String` | `Result<(), String>` | `sendInput()`, keyboard/mouse handlers |
 | `resize_terminal` | `sessionId, cols: u16, rows: u16` | `Result<(), String>` | Resize all live tabs after display changes |
+| `active_terminal_process` | `sessionId` | `Option<String>` | Poll active child process for the tab-title fallback |
 | `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
 
@@ -265,6 +269,7 @@ Defines 8 terminal color profiles:
 |-------|---------|----------|
 | `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
 | `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
+| `terminal-launch` | `{ command?, cwd? }` | Opens a new tab after a second `-T` invocation |
 
 ### Configuration
 

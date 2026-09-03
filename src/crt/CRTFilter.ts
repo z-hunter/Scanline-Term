@@ -40,7 +40,7 @@ export interface CRTSettings {
   showBezel: boolean;
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   bloomAlgorithm: BloomAlgorithm;
-  glow: number; // 0.0 to 1.0 (Ambient screen glow)
+  glow: number; // 0.0 to 2.0 (Ambient screen glow)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)
   persistenceIntensity: number; // 0.0 to 4.0 (Visible phosphor trail intensity)
   imageBrightness: number; // 0.5 to 1.5 (Image-only final correction)
