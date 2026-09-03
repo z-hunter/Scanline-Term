@@ -26,6 +26,10 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 
 **Shell selection:** `start_terminal()` reads `%ComSpec%` (typically `C:\Windows\System32\cmd.exe`), sets the working directory to `%USERPROFILE%`, and sends an initial `\r` to trigger the prompt.
 
+### Multiple sessions and tabs
+
+The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits its UUID with output and exit events, so every tab keeps an independent xterm scrollback buffer. The frontend reuses one source canvas and CRT filter: selecting a tab rebinds the renderer to that buffer and clears phosphor persistence, preventing a previous tab's afterglow from appearing on the next one. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent.
+
 ---
 
 ## ConPTY and Win32 Input Mode
@@ -124,6 +128,8 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+S** | Toggle settings panel visibility | `onKeyDown`, lines 603–608 |
 | **Menu+V** | Paste from clipboard | `onKeyDown`, lines 609–613 |
 | **Menu+C** | Enter copy mode | `onKeyDown`, lines 615–623 |
+| **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
 
 The Menu key (Context Menu / Apps key) is tracked via `menuKeyDownRef`. While held, letter keys are intercepted before terminal input encoding.
 

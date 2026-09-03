@@ -87,8 +87,8 @@
 | **x64 only** | Bundled ConPTY DLLs are in `resources/conpty/x64/`. ARM64 Windows is not supported without additional DLLs. |
 | **WebView2 required** | Tauri 2 uses WebView2 (Chromium-based). If WebView2 is missing, the app won't start. |
 | **WebGL required** | The CRT pipeline requires WebGL 1. Software-rendered WebView2 may work but with degraded performance. |
-| **Single window** | The app supports one main window. No multi-window or tabbed terminal. |
-| **Single shell session** | One ConPTY session per app instance. Closing the shell exits the session. |
+| **Single window** | The app supports one main window with multiple terminal tabs; it does not support multiple app windows. |
+| **Per-tab shell session** | Each tab owns one ConPTY session. Closing a shell leaves its exited tab and screen buffer available until the user closes it. |
 | **No text attributes** | Bold, underline, and strikethrough are not yet rendered (tracked in BACKLOG.md). `isDim()` is supported. |
 
 ---

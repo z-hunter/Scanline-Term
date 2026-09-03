@@ -4,6 +4,8 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { colorProfile, type TerminalColorProfile } from '../terminal-color-profiles';
 
 export type TerminalSize = { cols: number; rows: number };
+type TerminalOutput = { sessionId: string; data: number[] };
+type TerminalExit = { sessionId: string };
 
 export class TerminalSession {
   terminal: Terminal | null = null;
@@ -11,16 +13,18 @@ export class TerminalSession {
   size: TerminalSize = { cols: 0, rows: 0 };
   win32InputMode = false;
   sgrMouseMode = false;
-  private unlisten: UnlistenFn | undefined;
+  private unlisten: UnlistenFn[] = [];
   private disposables: { dispose(): void }[] = [];
   private disposed = false;
+  private exited = false;
 
-  constructor(private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void) {}
+  constructor(readonly id: string, private readonly onError: (message: string) => void, private readonly onState: (live: boolean, size: TerminalSize) => void, private readonly onExit: () => void) {}
 
-  async start(size: TerminalSize, profile: TerminalColorProfile): Promise<void> {
-    if (!isTauri() || this.disposed || this.terminal) return;
+  async start(size: TerminalSize, profile: TerminalColorProfile): Promise<string | null> {
+    if (!isTauri() || this.disposed || this.terminal) return null;
     const terminal = new Terminal({ cols: size.cols, rows: size.rows, scrollback: 1000, theme: { foreground: profile.foreground, background: profile.background } });
     this.terminal = terminal;
+    this.size = size;
     this.disposables.push(
       terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
         if (params.includes(1006)) this.sgrMouseMode = true;
@@ -38,27 +42,35 @@ export class TerminalSession {
       terminal.onKey(() => terminal.scrollToBottom()),
     );
     try {
-      this.unlisten = await listen<number[]>('terminal-output', (event) => terminal.write(Uint8Array.from(event.payload)));
+      this.unlisten = await Promise.all([
+        listen<TerminalOutput>('terminal-output', (event) => { if (event.payload.sessionId === this.id) terminal.write(Uint8Array.from(event.payload.data)); }),
+        listen<TerminalExit>('terminal-exit', (event) => {
+          if (event.payload.sessionId !== this.id || this.disposed) return;
+          this.exited = true;
+          this.live = false;
+          this.onState(false, this.size);
+          this.onExit();
+        }),
+      ]);
+      const shellName = await invoke<string>('start_terminal', { sessionId: this.id, ...size });
       if (this.disposed) {
-        this.unlisten();
-        return;
+        void invoke('close_terminal', { sessionId: this.id });
+        return null;
       }
-      await invoke('start_terminal', size);
-      if (this.disposed) {
-        void invoke('write_terminal', { input: 'exit\r' });
-        return;
-      }
+      if (this.exited) return shellName;
       this.live = true;
       this.size = size;
       this.onState(true, size);
+      return shellName;
     } catch (reason) {
       this.onError(`Windows console could not start: ${String(reason)}`);
+      return null;
     }
   }
 
   sendInput(input: string): void {
     if (!this.live || !input) return;
-    void invoke('write_terminal', { input }).catch((reason) => this.onError(`Terminal input failed: ${String(reason)}`));
+    void invoke('write_terminal', { sessionId: this.id, input }).catch((reason) => this.onError(`Terminal input failed: ${String(reason)}`));
   }
 
   resize(size: TerminalSize): void {
@@ -66,17 +78,24 @@ export class TerminalSession {
     this.size = size;
     this.terminal.resize(size.cols, size.rows);
     this.onState(true, size);
-    void invoke('resize_terminal', size).catch((reason) => this.onError(`Terminal resize failed: ${String(reason)}`));
+    void invoke('resize_terminal', { sessionId: this.id, ...size }).catch((reason) => this.onError(`Terminal resize failed: ${String(reason)}`));
+  }
+
+  async close(): Promise<void> {
+    if (isTauri()) await invoke('close_terminal', { sessionId: this.id });
+    this.dispose();
   }
 
   dispose(): void {
     this.disposed = true;
-    this.unlisten?.();
+    this.unlisten.forEach((unlisten) => unlisten());
+    this.unlisten = [];
     this.disposables.forEach((item) => item.dispose());
     this.disposables = [];
     this.terminal?.dispose();
     this.terminal = null;
     this.live = false;
+    this.exited = false;
     this.win32InputMode = false;
     this.sgrMouseMode = false;
     this.size = { cols: 0, rows: 0 };

@@ -44,7 +44,7 @@ Starts Vite dev server at `http://localhost:5173`. Shows the mock terminal with 
 npm run tauri:dev
 ```
 
-Starts Vite dev server + compiles Rust backend + opens Tauri window with live ConPTY session. Hot-reloads frontend changes; Rust changes require restart.
+Starts Vite dev server + compiles Rust backend + opens Tauri window with live ConPTY tabs. Hot-reloads frontend changes; Rust changes require restart.
 
 ### Run Tests
 

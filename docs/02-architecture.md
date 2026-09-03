@@ -16,13 +16,14 @@ graph TB
 
   subgraph "Rust / Tauri Process"
     Main["main.rs<br/>Tauri commands"]
-    TermState["TerminalState<br/>(Mutex&lt;Option&lt;TerminalSession&gt;&gt;)"]
+    TermState["TerminalState<br/>(Mutex&lt;HashMap&lt;SessionId, TerminalSession&gt;&gt;)"]
     Reader["Output reader thread<br/>(4 KiB buffer loop)"]
     Writer["Input writer thread<br/>(mpsc channel receiver)"]
   end
 
   subgraph "WebView / Frontend (React + WebGL)"
     AppTsx["App.tsx<br/>React composition root"]
+    TabsUi["ui/TerminalTabs.tsx<br/>tab strip"]
     UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
     UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
     TerminalSession["terminal/TerminalSession.ts<br/>PTY session coordinator"]
@@ -54,6 +55,7 @@ graph TB
   UseTerminal -->|"invoke('list_monospace_fonts')"| Main
 
   AppTsx --> UseTerminal
+  AppTsx --> TabsUi
   AppTsx --> UseCRT
   AppTsx --> Settings
 
@@ -104,8 +106,8 @@ sequenceDiagram
 
     Shell->>ConPTY: stdout bytes
     ConPTY->>Reader: pipe read (4 KiB buffer)
-    Reader->>Tauri: emit("terminal-output", Vec<u8>)
-    Tauri->>Xterm: terminal.write(Uint8Array)
+    Reader->>Tauri: emit("terminal-output", { sessionId, data })
+    Tauri->>Xterm: matching session terminal.write(Uint8Array)
     Note over Xterm: VT parse → update buffer cells
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
@@ -201,7 +203,7 @@ sequenceDiagram
 │  • Handles invoke commands          │
 │  • Manages TerminalState (Mutex)    │
 │  • start_terminal / write_terminal  │
-│    / resize_terminal /              │
+│    / resize_terminal / close_terminal│
 │    list_monospace_fonts             │
 └──────────┬──────────┬───────────────┘
            │          │
@@ -212,9 +214,9 @@ sequenceDiagram
     └─────────────┘ └────────────────┘
 ```
 
-- **`TerminalState`** is a `Mutex<Option<TerminalSession>>`, accessed by Tauri command handlers on the main thread.
+- **`TerminalState`** is a `Mutex<HashMap<SessionId, TerminalSession>>`, accessed by Tauri command handlers on the main thread. Each command carries the frontend-generated UUID for its target session.
 - **Writer thread**: receives `Vec<u8>` from an `mpsc::Sender`, writes to the ConPTY input pipe. Blocks on `recv()`, terminates when the sender is dropped or the pipe errors.
-- **Reader thread**: reads from the ConPTY output pipe in a `[0; 4096]` buffer loop. Emits `terminal-output` events to the WebView. On EOF or error, clears the session and emits `terminal-exit`.
+- **Reader thread**: each session reads its ConPTY output pipe in a `[0; 4096]` buffer loop. Events carry `sessionId`, so the frontend routes them to the matching xterm buffer. On EOF or error, the reader removes only its own entry and emits `terminal-exit`.
 - **`Drop` for `TerminalState`**: kills the child process to prevent orphaned console hosts.
 
 ### Frontend Side

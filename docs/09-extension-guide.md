@@ -265,6 +265,8 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Menu+S | Toggle settings panel | `setSettingsVisible()` |
 | Menu+V | Paste from clipboard | `navigator.clipboard.readText()` → `sendInput()` |
 | Menu+C | Enter copy mode | `copyModeRef.current = true` |
+| Menu+N | Create a new terminal tab | `openSession()` |
+| Menu+1…9 | Select a numbered terminal tab | `selectSession()` |
 
 ### Validation
 

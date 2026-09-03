@@ -21,9 +21,9 @@ describe('TerminalRenderer', () => {
     const rows = [[cell('A'), cell('B')], [cell('C'), cell('D')]]; let parsed = () => {};
     const terminal = { cols: 2, rows: 2, options: {}, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell(''), getLine: (row: number) => ({ getCell: (column: number) => rows[row]?.[column] }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
     const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
-    expect(renderer.draw(0, DEFAULT_CRT_SETTINGS, true)).toBe(true); context.fillText.mockClear();
+    expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true); context.fillText.mockClear();
     rows[0][0] = cell('X'); parsed();
-    expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS, true)).toBe(true);
+    expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
     expect(context.fillText).toHaveBeenCalledTimes(2);
   });
 

@@ -65,6 +65,8 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns the session map, active xterm buffer and input routing; `ui/TerminalTabs.tsx` renders the post-it tab strip; `TerminalRenderer` and `useCRT` remain single shared rendering instances for the active tab.
+
 ### Frontend Core
 
 #### [`src/App.tsx`](../src/App.tsx)
@@ -233,16 +235,17 @@ Defines 8 terminal color profiles:
 | Item | Purpose |
 |------|---------|
 | `TerminalSession` | Holds `Child`, `Sender<Vec<u8>>` (input channel), `PtyController` |
-| `TerminalState` | `Mutex<Option<TerminalSession>>` with `Drop` that kills the child |
+| `TerminalState` | `Mutex<HashMap<SessionId, TerminalSession>>` with `Drop` that kills every child |
 | `pty_size(cols, rows)` | Validates dimensions: cols ∈ [20, 300], rows ∈ [8, 150] |
 | `bundled_conpty_dir(app)` | Resolves ConPTY DLL path: dev = `CARGO_MANIFEST_DIR/resources/conpty/x64`, release = Tauri resource `conpty/x64` |
 | `collect_monospace_font()` | Win32 `EnumFontFamiliesExW` callback; filters by `TMPF_FIXED_PITCH`, skips `@`-prefixed and empty names |
 | **`#[tauri::command] list_monospace_fonts()`** | Enumerates all system monospace fonts using GDI; returns `Vec<String>` sorted via `BTreeSet` |
-| **`#[tauri::command] start_terminal(app, state, cols, rows)`** | Spawns ConPTY session: resolves shell from `%ComSpec%`, sets CWD to `%USERPROFILE%`, loads bundled ConPTY backend, spawns child, writes initial `\r`, starts writer thread (mpsc channel) and reader thread (emit loop) |
-| **`#[tauri::command] write_terminal(state, input)`** | Clones the `mpsc::Sender` from the session, sends `input.into_bytes()` |
-| **`#[tauri::command] resize_terminal(state, cols, rows)`** | Validates with `pty_size()`, calls `controller.resize()` |
-| `main()` | Builds Tauri app with `TerminalState` managed state and 4 command handlers |
-| **Tests** | `limits_terminal_dimensions`, `bundled_conpty_streams_win32_input_request`, `win32_input_mode_delivers_function_key` |
+| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows)`** | Validates the UUID, spawns and registers a ConPTY session, then returns the shell filename |
+| **`#[tauri::command] write_terminal(state, session_id, input)`** | Clones the target session's `mpsc::Sender`, sends `input.into_bytes()` |
+| **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
+| **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
+| `main()` | Builds Tauri app with `TerminalState` managed state and 5 command handlers |
+| **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
 
 ### Tauri Commands and Events
 
@@ -250,17 +253,18 @@ Defines 8 terminal color profiles:
 
 | Command | Parameters | Returns | Called from |
 |---------|------------|---------|------------|
-| `start_terminal` | `cols: u16, rows: u16` | `Result<(), String>` | Terminal init effect |
-| `write_terminal` | `input: String` | `Result<(), String>` | `sendInput()`, keyboard/mouse handlers |
-| `resize_terminal` | `cols: u16, rows: u16` | `Result<(), String>` | Resize handler, settings changes |
+| `start_terminal` | `sessionId, cols: u16, rows: u16` | shell filename | Create a terminal tab |
+| `write_terminal` | `sessionId, input: String` | `Result<(), String>` | `sendInput()`, keyboard/mouse handlers |
+| `resize_terminal` | `sessionId, cols: u16, rows: u16` | `Result<(), String>` | Resize all live tabs after display changes |
+| `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
 
 #### Events (Rust → frontend)
 
 | Event | Payload | Listener |
 |-------|---------|----------|
-| `terminal-output` | `Vec<u8>` (raw VT bytes) | `listen('terminal-output', ...)` → `terminal.write()` |
-| `terminal-exit` | `()` | Not currently handled in UI (session cleanup only) |
+| `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
+| `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
 
 ### Configuration
 

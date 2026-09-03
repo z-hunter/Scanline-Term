@@ -47,6 +47,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: 'physical-8x5' })).resolution).toBe('physical-8x5');
   });
 
+  it('defaults tab placement to top and accepts only supported placements', () => {
+    expect(loadStoredSettings(null).tabPlacement).toBe('top');
+    expect(loadStoredSettings(JSON.stringify({ tabPlacement: 'left' })).tabPlacement).toBe('left');
+    expect(loadStoredSettings(JSON.stringify({ tabPlacement: 'bottom' })).tabPlacement).toBe('top');
+  });
+
   it('accepts virtual screens in all supported aspect ratios', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: '640x480' })).resolution).toBe('640x480');
     expect(loadStoredSettings(JSON.stringify({ resolution: '1280x800' })).resolution).toBe('1280x800');

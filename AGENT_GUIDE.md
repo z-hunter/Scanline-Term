@@ -128,7 +128,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add a new resolution** | `settings.ts` (RESOLUTIONS) | `settings.ts` | `npm test`, visual in dev |
 | **Change persistence behavior** | `CRTFilter.ts` (accum shader, persistenceDecay), `settings.ts` | Both | `npm test`, visual in dev |
 | **Add window chrome / system tray** | `tauri.conf.json`, `main.rs`, `App.tsx` | All | `tauri:dev` |
-| **Add multi-tab / split** | `App.tsx`, `main.rs`, `tauri.conf.json` | Major refactor | `tauri:dev` |
+| **Add multi-tab / split** | `App.tsx`, `terminal/useTerminal.ts`, `main.rs`, settings and styles | Major refactor | `cargo test`, `npm test`, `tauri:dev` |
 | **Change CSP** | `tauri.conf.json` | `tauri.conf.json` | `tauri:dev` |
 | **Add a new Tauri event** | `main.rs`, `App.tsx` | Both | `tauri:dev` |
 | **Change bloom algorithm** | `CRTFilter.ts` (shader + render) | `CRTFilter.ts` | Visual in dev |

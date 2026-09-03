@@ -40,12 +40,14 @@ export const RESOLUTIONS = [
 ] as const;
 
 export type ResolutionId = (typeof RESOLUTIONS)[number]['id'];
+export type TabPlacement = 'top' | 'left';
 
 export const DEFAULT_RESOLUTION: ResolutionId = '640x480';
 
 export type StoredSettings = {
   version: 1;
   resolution: ResolutionId;
+  tabPlacement: TabPlacement;
   crt: CRTSettings;
 };
 
@@ -83,6 +85,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
   const result: StoredSettings = {
     version: 1,
     resolution: DEFAULT_RESOLUTION,
+    tabPlacement: 'top',
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -90,8 +93,9 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return result;
-    const value = parsed as { resolution?: unknown; crt?: Record<string, unknown> };
+    const value = parsed as { resolution?: unknown; tabPlacement?: unknown; crt?: Record<string, unknown> };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
+    if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

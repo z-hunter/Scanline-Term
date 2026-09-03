@@ -2553,6 +2553,7 @@ name = "scanline_term"
 version = "0.1.0"
 dependencies = [
  "conpty-oxide",
+ "serde",
  "tauri",
  "tauri-build",
  "windows-sys 0.61.2",

@@ -17,6 +17,7 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-mouse.test.ts`](../src/terminal/terminal-mouse.test.ts) | Mouse encoding | SGR clicks, releases, wheel with Ctrl modifier; X10 legacy encoding; mouse move without button |
 | [`terminal-color-profiles.test.ts`](../src/terminal-color-profiles.test.ts) | Color profiles | Historical palette values; xterm extended table (256 colors); `remapLegacyRgb` for DOS VGA, Solarized, passthrough |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
+| [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
 
 Run: `npm test`
@@ -59,6 +60,7 @@ Run: `cd src-tauri && cargo test`
 - [ ] Menu+S toggles settings panel
 - [ ] Menu+V pastes from clipboard
 - [ ] Menu+C enters copy mode (verify visual feedback)
+- [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab
 - [ ] Numpad keys work in application keypad mode (if applicable)
 
 ### After Changes to Mouse Input

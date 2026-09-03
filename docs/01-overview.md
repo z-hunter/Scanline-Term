@@ -6,7 +6,7 @@
 
 ## Purpose
 
-**Scanline Term** is a Windows desktop terminal emulator that renders a live ConPTY console session through a real-time WebGL CRT post-processing pipeline. It turns an ordinary Windows shell (`cmd.exe` by default) into a visually authentic cathode-ray tube display, complete with curvature, scanlines, phosphor persistence, bloom, chromatic aberration, and multiple phosphor color modes.
+**Scanline Term** is a Windows desktop terminal emulator that renders live ConPTY console sessions through a real-time WebGL CRT post-processing pipeline. Each terminal tab keeps its own shell buffer while sharing the active CRT display, turning ordinary Windows shells (`cmd.exe` by default) into a visually authentic cathode-ray tube display.
 
 The project originated in the **Quest/Scanline** game engine. The [`CRTFilter`](../src/crt/CRTFilter.ts) module was extracted from that engine and is maintained here as an independent, framework-free WebGL class.
 

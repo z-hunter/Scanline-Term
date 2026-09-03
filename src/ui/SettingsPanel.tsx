@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { CRTColorMode, CRTSettings } from '../crt/CRTFilter';
-import { RESOLUTIONS, type ResolutionId, type StoredSettings } from '../crt/settings';
+import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
 import type { RenderStats } from '../terminal/TerminalRenderer';
@@ -14,6 +14,7 @@ export function SettingsPanel({ stored, setStored, monospaceFonts, terminalSize,
   const averageCanvasMs = renderStats.redraws ? renderStats.canvasMs / renderStats.redraws : 0;
   return <aside className="settings-panel"><header><p className="eyebrow">SCANLINE TERM</p><h1>CRT display lab</h1><p className="display-status">CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows} · FPS: {fps}{SHOW_TELEMETRY && <><br />REDRAWS: {renderStats.redraws * 2}/s · CANVAS: {averageCanvasMs.toFixed(1)} ms · GLYPHS: {renderStats.glyphs * 2}/s</>}</p></header>
     <label className="resolution-control">Virtual resolution<select value={stored.resolution} data-testid="resolution-select" onChange={(event) => setStored((current) => ({ ...current, resolution: event.target.value as ResolutionId }))}>{RESOLUTIONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+    <label className="resolution-control">Tab placement<select value={stored.tabPlacement} onChange={(event) => setStored((current) => ({ ...current, tabPlacement: event.target.value as TabPlacement }))}><option value="top">Above monitor</option><option value="left">Left of monitor</option></select></label>
     <label className="resolution-control">Color mode<select value={stored.crt.colorMode} data-testid="color-mode-select" onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, colorMode: event.target.value as CRTColorMode } }))}><option value="color">Color</option><option value="bw">B&amp;W</option><option value="green">Green</option><option value="amber">Amber</option><option value="blue">Phosphor Blue</option></select></label>
     <label className="resolution-control">Color profile<select value={stored.crt.colorProfile} data-testid="color-profile-select" onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] } }))}>{COLOR_PROFILES.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}</select></label>
     <label className="resolution-control">Bloom algorithm<select value={stored.crt.bloomAlgorithm} onChange={(event) => setStored((current) => ({ ...current, crt: { ...current.crt, bloomAlgorithm: event.target.value as CRTSettings['bloomAlgorithm'] } }))}><option value="soft">Soft blur</option><option value="spiral">Spiral (legacy)</option></select></label>

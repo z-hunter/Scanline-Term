@@ -69,9 +69,9 @@ export class TerminalRenderer {
     const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont); const padding = terminalPadding(this.sourceCanvas.width, this.sourceCanvas.height);
     return { col: Math.max(1, Math.min(terminal.cols, Math.floor((u * this.sourceCanvas.width - padding) / cell.width) + 1)), row: Math.max(1, Math.min(terminal.rows, Math.floor((v * this.sourceCanvas.height - padding) / cell.height) + 1)) };
   }
-  draw(time: number, settings: CRTSettings, live: boolean): boolean {
+  draw(time: number, settings: CRTSettings): boolean {
     const source = this.sourceCanvas; const terminal = this.terminal;
-    if (!live || !terminal) { this.drawMock(time, settings); return true; }
+    if (!terminal) { this.drawMock(time, settings); return true; }
     const cursorPhase = Math.floor(time * 2); if (!this.dirty && cursorPhase === Math.floor((time - .1) * 2)) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const padding = terminalPadding(source.width, source.height); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx);
