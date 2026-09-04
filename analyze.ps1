@@ -6,6 +6,12 @@ param(
 Add-Type -AssemblyName System.Drawing
 $img = New-Object System.Drawing.Bitmap (Resolve-Path -LiteralPath $ImagePath -ErrorAction Stop).Path
 
+if ($img.Width -le 700) {
+    $width = $img.Width
+    $img.Dispose()
+    throw "Image width ($width) must be greater than 700."
+}
+
 $minX = 9999; $maxX = -1; $minY = 9999; $maxY = -1
 for ($y = 0; $y -lt $img.Height; $y++) {
     for ($x = 0; $x -lt [Math]::Min(700, $img.Width); $x++) {

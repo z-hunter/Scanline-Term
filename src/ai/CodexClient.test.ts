@@ -21,13 +21,21 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { CodexClient } from "./CodexClient";
 
 describe("CodexClient", () => {
+  let client: CodexClient;
+  let receive: (event: { generation: number; message: unknown }) => void;
+
   beforeEach(() => {
     mocked.invoke.mockReset();
     mocked.handlers.clear();
+    client = new CodexClient();
+    receive = (
+      client as unknown as {
+        receive: (event: { generation: number; message: unknown }) => void;
+      }
+    ).receive.bind(client);
   });
 
   it("removes the pending id when invoke('codex_send') rejects", async () => {
-    const client = new CodexClient();
     mocked.invoke.mockRejectedValue(new Error("IPC transmission error"));
 
     await expect(client.request("test_method", { foo: "bar" })).rejects.toThrow(
@@ -42,7 +50,6 @@ describe("CodexClient", () => {
   });
 
   it("preserves reply-promise behavior for successful sends", async () => {
-    const client = new CodexClient();
     mocked.invoke.mockResolvedValue(undefined);
 
     const promise = client.request("test_method", { hello: "world" });
@@ -53,12 +60,6 @@ describe("CodexClient", () => {
     expect(pendingMap.size).toBe(1);
 
     // Simulate response arriving
-    const receive = (
-      client as unknown as {
-        receive: (event: { generation: number; message: unknown }) => void;
-      }
-    ).receive.bind(client);
-
     receive({
       generation: 0,
       message: {
@@ -74,9 +75,7 @@ describe("CodexClient", () => {
   });
 
   it("loads every visible page of the model catalog", async () => {
-    const client = new CodexClient();
     mocked.invoke.mockResolvedValue(undefined);
-    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
 
     const models = client.listModels();
     receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: { data: [{ id: "luna", model: "luna", displayName: "Luna", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }] }], nextCursor: "next" } } });
@@ -89,9 +88,7 @@ describe("CodexClient", () => {
   });
 
   it("rejects an invalid model-list response", async () => {
-    const client = new CodexClient();
     mocked.invoke.mockResolvedValue(undefined);
-    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
 
     const models = client.listModels();
     receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: null } });
@@ -100,9 +97,7 @@ describe("CodexClient", () => {
   });
 
   it("rejects a repeated model-list cursor", async () => {
-    const client = new CodexClient();
     mocked.invoke.mockResolvedValue(undefined);
-    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
 
     const models = client.listModels();
     receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: { data: [], nextCursor: "again" } } });
