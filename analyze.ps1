@@ -1,9 +1,14 @@
+param(
+    [Parameter(Mandatory = $true, Position = 0)]
+    [string]$ImagePath
+)
+
 Add-Type -AssemblyName System.Drawing
-$img = New-Object System.Drawing.Bitmap 'C:\Users\Professional\.gemini\antigravity-ide\brain\fc1dd73e-f749-4036-b434-fd54d180259e\.user_uploaded\media_1788546670455.png'
+$img = New-Object System.Drawing.Bitmap (Resolve-Path -LiteralPath $ImagePath -ErrorAction Stop).Path
 
 $minX = 9999; $maxX = -1; $minY = 9999; $maxY = -1
 for ($y = 0; $y -lt $img.Height; $y++) {
-    for ($x = 0; $x -lt 700; $x++) {
+    for ($x = 0; $x -lt [Math]::Min(700, $img.Width); $x++) {
         $c = $img.GetPixel($x, $y)
         if ($c.G -gt 30 -and $y -gt 40) {
             if ($x -lt $minX) { $minX = $x }

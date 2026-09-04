@@ -18,7 +18,7 @@ export const AI_PANEL_WIDTH = 360;
 export const SETTINGS_PANEL_BASE_WIDTH = 320;
 export const APP_SHELL_GAP = 18;
 export const APP_SHELL_PADDING_H = 36; // 18px left + 18px right
-export const APP_SHELL_PADDING_V = 36; // 100vh - 36px vertical constraint
+export const APP_SHELL_PADDING_V = 18; // 100vh - 18px bottom padding constraint
 
 /**
  * Determines whether opening side panels (AI Assist and/or Settings) can fit in the

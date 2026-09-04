@@ -616,6 +616,10 @@ footer {
     grid-row: auto;
   }
 
+  .app-shell.panels-fit .ai-panel {
+    height: auto;
+  }
+
   .settings-panel {
     max-height: none;
   }

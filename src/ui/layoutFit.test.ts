@@ -47,11 +47,11 @@ describe('canPanelsFitWithoutShift', () => {
 
   it('returns true when window is wide enough for settings panel without shifting terminal', () => {
     // Ultrawide window: 2560x1080, 4:3 resolution
-    // availableHeight = 1044, naturalWidth = 1044 * 4/3 = 1392
-    // contentWidth = 2524, undisturbedWidth = 1392
-    // spaceRight = (2524 - 1392) / 2 = 566px
+    // availableHeight = 1026, naturalWidth = 1026 * 4/3 = 1368
+    // contentWidth = 2524, undisturbedWidth = 1368
+    // spaceRight = (2524 - 1368) / 2 = 578px
     // neededSpace for Settings = 320px
-    // 566 >= 320 -> true
+    // 578 >= 320 -> true
     expect(
       canPanelsFitWithoutShift({
         windowWidth: 2560,
@@ -68,10 +68,10 @@ describe('canPanelsFitWithoutShift', () => {
 
   it('returns false when window is too narrow for settings panel to fit without shifting', () => {
     // 1440x960, 4:3 resolution
-    // availableHeight = 924, naturalWidth = 1232
-    // contentWidth = 1404, spaceRight = (1404 - 1232) / 2 = 86px
+    // availableHeight = 906, naturalWidth = 1208
+    // contentWidth = 1404, spaceRight = (1404 - 1208) / 2 = 98px
     // neededSpace for Settings = 320px
-    // 86 < 320 -> false
+    // 98 < 320 -> false
     expect(
       canPanelsFitWithoutShift({
         windowWidth: 1440,
@@ -88,10 +88,10 @@ describe('canPanelsFitWithoutShift', () => {
 
   it('correctly handles both AI and Settings panels open simultaneously', () => {
     // Window 3440x1440:
-    // availableHeight = 1404, naturalWidth = 1404 * 4/3 = 1872
-    // contentWidth = 3404, spaceRight = (3404 - 1872) / 2 = 766px
+    // availableHeight = 1386, naturalWidth = 1386 * 4/3 = 1848
+    // contentWidth = 3404, spaceRight = (3404 - 1848) / 2 = 778px
     // neededSpace for both = 360 + 18 + 320 = 698px
-    // 766 >= 698 -> true
+    // 778 >= 698 -> true
     expect(
       canPanelsFitWithoutShift({
         windowWidth: 3440,
@@ -123,7 +123,7 @@ describe('canPanelsFitWithoutShift', () => {
   });
 
   it('respects settingsScale when computing required panel width', () => {
-    // Window 2560x1080: spaceRight is 566px
+    // Window 2560x1080: spaceRight is 578px
     // With settingsScale = 1: neededSpace is 320px -> fits
     expect(
       canPanelsFitWithoutShift({
@@ -140,7 +140,7 @@ describe('canPanelsFitWithoutShift', () => {
     ).toBe(true);
 
     // With settingsScale = 2: neededSpace is 320 * 2 = 640px
-    // 566 < 640 -> does not fit
+    // 578 < 640 -> does not fit
     expect(
       canPanelsFitWithoutShift({
         windowWidth: 2560,

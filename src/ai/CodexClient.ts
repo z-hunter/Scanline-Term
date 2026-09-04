@@ -60,15 +60,23 @@ export class CodexClient {
   async listModels(): Promise<CodexModel[]> {
     const models: CodexModel[] = [];
     let cursor: string | null | undefined;
+    const seenCursors = new Set<string>();
     do {
-      const result = (await this.request("model/list", {
+      const result = await this.request("model/list", {
         limit: 100,
         includeHidden: false,
         ...(cursor ? { cursor } : {}),
-      })) as unknown as CodexModelList;
-      if (!Array.isArray(result.data)) throw new Error("Codex returned an invalid model list");
-      models.push(...result.data.filter((model) => !model.hidden));
-      cursor = result.nextCursor;
+      });
+      if (!result || typeof result !== "object" || Array.isArray(result))
+        throw new Error("Codex returned an invalid model list");
+      const { data, nextCursor } = result as CodexModelList;
+      if (!Array.isArray(data) || (nextCursor !== null && nextCursor !== undefined && typeof nextCursor !== "string"))
+        throw new Error("Codex returned an invalid model list");
+      if (nextCursor && seenCursors.has(nextCursor))
+        throw new Error("Codex returned a repeated model cursor");
+      if (nextCursor) seenCursors.add(nextCursor);
+      models.push(...data.filter((model) => !model.hidden));
+      cursor = nextCursor;
     } while (cursor);
     return models;
   }

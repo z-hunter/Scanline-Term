@@ -87,4 +87,28 @@ describe("CodexClient", () => {
     expect(mocked.invoke).toHaveBeenNthCalledWith(1, "codex_send", expect.objectContaining({ message: expect.objectContaining({ method: "model/list", params: { limit: 100, includeHidden: false } }) }));
     expect(mocked.invoke).toHaveBeenNthCalledWith(2, "codex_send", expect.objectContaining({ message: expect.objectContaining({ method: "model/list", params: { limit: 100, includeHidden: false, cursor: "next" } }) }));
   });
+
+  it("rejects an invalid model-list response", async () => {
+    const client = new CodexClient();
+    mocked.invoke.mockResolvedValue(undefined);
+    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
+
+    const models = client.listModels();
+    receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: null } });
+
+    await expect(models).rejects.toThrow("Codex returned an invalid model list");
+  });
+
+  it("rejects a repeated model-list cursor", async () => {
+    const client = new CodexClient();
+    mocked.invoke.mockResolvedValue(undefined);
+    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
+
+    const models = client.listModels();
+    receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: { data: [], nextCursor: "again" } } });
+    await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledTimes(2));
+    receive({ generation: 0, message: { jsonrpc: "2.0", id: 2, result: { data: [], nextCursor: "again" } } });
+
+    await expect(models).rejects.toThrow("Codex returned a repeated model cursor");
+  });
 });

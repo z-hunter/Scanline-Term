@@ -35,8 +35,6 @@ import { terminalSession } from "./terminal/TerminalSession";
 import "./styles.css";
 
 const STORAGE_KEY = "scanline-term.settings.v1";
-const seenStreamDeltas = new Set<string>();
-
 function terminalAssistantInstructions(operatingSystem: string): string {
   return `You are the AI assistant for Scanline Term, a terminal application running on the user's ${operatingSystem} computer.
 
@@ -96,6 +94,7 @@ export default function App() {
   const threads = useRef(new Map<string, string>());
   const activeTurns = useRef(new Map<string, string>());
   const interruptedTurns = useRef(new Set<string>());
+  const seenStreamDeltas = useRef(new Map<string, Set<string>>());
   const reportError = useCallback((message: string) => setError(message), []);
   const toggleSettings = useCallback(
     () =>
@@ -332,7 +331,11 @@ export default function App() {
             ) {
               const action = call.arguments.action;
               const normalized =
-                action.kind === "text" || action.type === "text" || typeof action.text === "string"
+                action.kind !== "key" &&
+                action.type !== "key" &&
+                (action.kind === "text" ||
+                  action.type === "text" ||
+                  typeof action.text === "string")
                   ? {
                       kind: "text" as const,
                       text: action.text ?? "",
@@ -372,8 +375,10 @@ export default function App() {
         const deltaIndex = params.deltaIndex ?? params.index;
         if (itemId !== undefined && deltaIndex !== undefined) {
           const identity = `${itemId}:${deltaIndex}`;
-          if (seenStreamDeltas.has(identity)) return;
-          seenStreamDeltas.add(identity);
+          const seen = seenStreamDeltas.current.get(targetSession) ?? new Set<string>();
+          if (seen.has(identity)) return;
+          seen.add(identity);
+          seenStreamDeltas.current.set(targetSession, seen);
         }
         setChats((value) => ({
           ...value,
@@ -411,6 +416,7 @@ export default function App() {
           activeTurns.current.delete(targetSession);
           interruptedTurns.current.delete(turnId);
         }
+        seenStreamDeltas.current.delete(targetSession);
         setRunningSessions((current) => {
           if (!current[targetSession]) return current;
           const remaining = { ...current };
@@ -459,6 +465,9 @@ export default function App() {
     });
     threads.current.forEach((_, id) => {
       if (!activeIds.has(id)) threads.current.delete(id);
+    });
+    seenStreamDeltas.current.forEach((_, id) => {
+      if (!activeIds.has(id)) seenStreamDeltas.current.delete(id);
     });
   }, [terminal.tabs]);
   useEffect(() => {
