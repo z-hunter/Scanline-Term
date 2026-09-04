@@ -48,7 +48,12 @@ export class CodexClient {
     );
     const message = { jsonrpc: "2.0" as const, id, method, params };
     this.debug(`→ ${JSON.stringify(message)}`);
-    await invoke("codex_send", { message });
+    try {
+      await invoke("codex_send", { message });
+    } catch (error) {
+      this.pending.delete(id);
+      throw error;
+    }
     return reply;
   }
   notify(method: string, params: Json = {}) {

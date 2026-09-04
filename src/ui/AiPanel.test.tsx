@@ -84,8 +84,6 @@ describe('AiPanel', () => {
     const textarea = container.querySelector('textarea')!;
     const sendButton = container.querySelector<HTMLButtonElement>('.ai-composer button')!;
 
-    expect(sendButton.disabled).toBe(false);
-
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -98,6 +96,8 @@ describe('AiPanel', () => {
       }
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     });
+
+    expect(sendButton.disabled).toBe(false);
 
     await act(async () => {
       textarea.dispatchEvent(
