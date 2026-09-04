@@ -77,7 +77,7 @@
 
 **Known caveats:**
 - The `copyPoint()` function contains hardcoded offsets (`cell.row - 2`, `cell.col - 3`) that compensate for coordinate mapping discrepancies. These may need recalibration if padding, font metrics, or cell size calculations change.
-- CRT curvature means the visual position of pixels on screen differs from their logical position. The current selection maps click coordinates using the uncurved source canvas coordinates. The BACKLOG notes "inverse curvature mapping" as a planned improvement.
+- `cellAtPoint()` must stay synchronized with the shader's `curve()` formula so selection and terminal mouse input continue to map the curved display back to source-canvas coordinates.
 
 ---
 

@@ -49,6 +49,7 @@ export type StoredSettings = {
   resolution: ResolutionId;
   tabPlacement: TabPlacement;
   hideTabsWhenSingleSession: boolean;
+  globalHotkeyEnabled: boolean;
   settingsScale: number;
   showSettingsPanel: boolean;
   showAiPanel: boolean;
@@ -91,6 +92,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     resolution: DEFAULT_RESOLUTION,
     tabPlacement: 'top',
     hideTabsWhenSingleSession: false,
+    globalHotkeyEnabled: false,
     settingsScale: 1,
     showSettingsPanel: false,
     showAiPanel: false,
@@ -105,6 +107,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       resolution?: unknown;
       tabPlacement?: unknown;
       hideTabsWhenSingleSession?: unknown;
+      globalHotkeyEnabled?: unknown;
       settingsScale?: unknown;
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
@@ -113,6 +116,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (isResolution(value.resolution)) result.resolution = value.resolution;
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
     if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsWhenSingleSession = value.hideTabsWhenSingleSession;
+    if (typeof value.globalHotkeyEnabled === 'boolean') result.globalHotkeyEnabled = value.globalHotkeyEnabled;
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;

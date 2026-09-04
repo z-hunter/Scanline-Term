@@ -84,7 +84,7 @@
 | Symptom | Probable Cause | Diagnostic | Fix |
 |---------|---------------|------------|-----|
 | Selection highlights wrong cells | `copyPoint()` coordinate offsets | Check hardcoded offsets (`row - 2`, `col - 3`) in `copyPoint()` | These offsets are calibration-specific; adjust if font/padding changed |
-| Mouse clicks offset with curvature | Curvature warps display but not input coordinates | This is a known limitation | Inverse curvature mapping is planned (see BACKLOG.md) |
+| Mouse clicks offset with curvature | `cellAtPoint()` no longer matches the shader's `curve()` formula | Compare both formulas and the active curvature value | Keep the TypeScript coordinate mapping synchronized with the GLSL implementation |
 | Copy pastes wrong text | `translateToString()` range errors | Log `start` and `end` CopyPoint values | Verify viewport offset (`viewportY`) is correctly included |
 
 ---

@@ -121,6 +121,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add a color profile** | `terminal-color-profiles.ts`, `settings.ts` | `terminal-color-profiles.ts` | `npm test`, visual in dev |
 | **Add a CRT effect** | `CRTFilter.ts`, `settings.ts`, `App.tsx` | All three | `npm test`, visual in dev |
 | **Add a keyboard shortcut** | `terminal/useTerminal.ts`, `terminal/terminal-input.ts` | `terminal/useTerminal.ts` | `npm test`, `tauri:dev` manual test |
+| **Add a global hotkey** | `main.rs`, `App.tsx`, `settings.ts`, `SettingsPanel.tsx` | Rust registration + persisted UI setting | `cargo test`, `npm test`, `tauri:dev`: enable, hide, restore, conflict |
 | **Add a Tauri command** | `main.rs`, `App.tsx` | Both | `cargo test`, `tauri:dev` |
 | **Change font handling** | `App.tsx` (fontCellSize, terminalDimensions), `main.rs` (list_monospace_fonts) | Varies | `tauri:dev`, resize test |
 | **Change console shell** | `main.rs` (start_terminal, %ComSpec%) | `main.rs` | `tauri:dev`, `cargo test` |

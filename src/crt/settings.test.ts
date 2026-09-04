@@ -59,6 +59,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: 'yes' })).hideTabsWhenSingleSession).toBe(false);
   });
 
+  it('defaults and validates the global hotkey switch', () => {
+    expect(loadStoredSettings(null).globalHotkeyEnabled).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: true })).globalHotkeyEnabled).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: 'yes' })).globalHotkeyEnabled).toBe(false);
+  });
+
   it('defaults and validates settings and AI panel visibility', () => {
     const initial = loadStoredSettings(null);
     expect(initial.showSettingsPanel).toBe(false);

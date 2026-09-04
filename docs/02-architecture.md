@@ -91,7 +91,7 @@ The desktop process owns one hidden `codex app-server --stdio` child. It launche
 | Mouse → SGR/X10 encoding | PTY output reader (pipe → Tauri event emission) |
 | Canvas 2D terminal drawing | PTY resize (`controller.resize()`) |
 | WebGL CRT shader rendering | Win32 GDI monospace font enumeration |
-| `localStorage` settings persistence | Bundled ConPTY DLL resolution |
+| `localStorage` settings persistence | Bundled ConPTY DLL resolution; global `Win+~` registration and window show/hide |
 | Copy/paste via `navigator.clipboard` | — |
 
 ## Data Flows
@@ -158,7 +158,7 @@ sequenceDiagram
 
     User->>Canvas: mousedown / mousemove / mouseup / wheel
     Canvas->>App: React mouse event handler
-    App->>App: terminalMouseCell() — map pixel to cell coords
+    App->>App: TerminalRenderer.cellAtPoint() — apply CRT curve and map to cell coords
     alt Copy Mode (Menu+C) or Middle Button
         App->>App: Update copySelectionRef
         App->>App: copySelection() → navigator.clipboard.writeText()

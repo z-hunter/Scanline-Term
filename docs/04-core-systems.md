@@ -189,17 +189,25 @@ The SGR mode (`?1006h`) affects the encoding format (SGR vs X10 legacy).
 
 ### Cell Coordinate Mapping
 
-`terminalMouseCell()` (App.tsx, lines 487–500) maps pixel coordinates to terminal cells:
+`TerminalRenderer.cellAtPoint()` maps output-canvas coordinates through the CRT curve and then into terminal cells:
 
 ```typescript
-const x = (event.clientX - rect.left) * source.width / rect.width;
-const y = (event.clientY - rect.top) * source.height / rect.height;
+let u = (clientX - rect.left) / rect.width;
+let v = (clientY - rect.top) / rect.height;
+if (settings.crtEmulation && settings.curvature > 0) {
+  let x = (u - 0.5) * 2 * (1 + settings.curvature * 0.1);
+  let y = (v - 0.5) * 2 * (1 + settings.curvature * 0.1);
+  x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5;
+  y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5;
+  u = x / 2 + 0.5;
+  v = y / 2 + 0.5;
+}
 const cell = fontCellSize(...);
-col = Math.floor((x - padding) / cell.width) + 1;  // 1-based
-row = Math.floor((y - padding) / cell.height) + 1;  // 1-based
+col = Math.floor((u * source.width - padding) / cell.width) + 1;
+row = Math.floor((v * source.height - padding) / cell.height) + 1;
 ```
 
-**Coordinate caveat:** This mapping uses the source canvas (virtual resolution) dimensions and font cell size. It does **not** account for CRT curvature distortion. If curvature is non-zero, the rendered pixels are warped by the fragment shader, but mouse coordinates use the pre-warp linear mapping. The [BACKLOG.md](../BACKLOG.md) notes "Add inverse curvature mapping for selection and mouse-mode terminal input" as a planned improvement.
+The inline TypeScript mapping matches the shader's `curve()` formula. Selection and terminal mouse input therefore follow the visible curvature back into source-canvas coordinates.
 
 ### Scrollback
 
@@ -366,6 +374,10 @@ The `list_monospace_fonts` Tauri command uses Win32 GDI:
 5. Collects into `BTreeSet<String>` for sorted, deduplicated output
 
 The frontend prepends `"Consolas"` to ensure a fallback is always available.
+
+### Global Summon Hotkey
+
+The persisted `globalHotkeyEnabled` setting invokes `set_global_hotkey_enabled`. When enabled, the Rust-side `tauri-plugin-global-shortcut` registers `Win+~` (`SUPER+Backquote`) with Windows. Pressing it hides Scanline Term only when it is already focused; otherwise it shows and focuses the main window. A registration failure, such as an OS-reserved or already claimed shortcut, is reported to the UI and resets the setting to disabled.
 
 ### Font Size and Cell Measurement
 

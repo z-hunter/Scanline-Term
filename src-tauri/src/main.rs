@@ -26,6 +26,7 @@ use conpty_oxide::{
     ConPtyBackend, PtyController, SessionOptions, Size,
 };
 use tauri::{path::BaseDirectory, Emitter, Manager, State};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 mod codex;
 
 struct TerminalSession {
@@ -225,6 +226,33 @@ fn operating_system() -> String {
         .filter(|version| !version.is_empty()).unwrap_or_else(|| std::env::consts::OS.to_owned())
 }
 
+fn summon_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::SUPER), Code::Backquote)
+}
+
+#[tauri::command]
+fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let shortcut = summon_shortcut();
+    let shortcuts = app.global_shortcut();
+    if enabled && !shortcuts.is_registered(shortcut) {
+        shortcuts.on_shortcut(shortcut, |app, _, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            let Some(window) = app.get_webview_window("main") else { return };
+            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                let _ = window.hide();
+            } else {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }).map_err(|error| error.to_string())?;
+    } else if !enabled && shortcuts.is_registered(shortcut) {
+        shortcuts.unregister(shortcut).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id: SessionId, cols: u16, rows: u16, launch: Option<TerminalLaunch>) -> Result<String, String> {
     valid_session_id(&session_id)?;
@@ -333,6 +361,7 @@ fn main() {
         .manage(codex::CodexState::default())
         .manage(LaunchState(launch))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let (launch, launch_in_tab) = terminal_launch(&args, &cwd);
             if launch_in_tab {
@@ -340,14 +369,19 @@ fn main() {
             }
             let _ = app.get_webview_window("main").map(|window| window.set_focus());
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, set_global_hotkey_enabled, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{child_process_name, dev_conpty_dir, pty_size, terminal_launch, valid_session_id, valid_working_directory};
+    use super::{child_process_name, dev_conpty_dir, pty_size, summon_shortcut, terminal_launch, valid_session_id, valid_working_directory};
+
+    #[test]
+    fn uses_win_backquote_for_global_summon() {
+        assert_eq!(summon_shortcut().into_string(), "super+Backquote");
+    }
 
     #[test]
     fn limits_terminal_dimensions() {

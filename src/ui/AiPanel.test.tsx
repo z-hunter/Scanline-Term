@@ -32,7 +32,21 @@ describe('AiPanel', () => {
     // Send button should be disabled
     expect(sendButton.disabled).toBe(true);
 
-    // Pressing enter should not submit
+    // Enter non-whitespace text into composer
+    await act(async () => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(textarea, 'help me with terminal');
+      } else {
+        textarea.value = 'help me with terminal';
+      }
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    // Pressing enter should not submit when not signed in
     await act(async () => {
       textarea.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
@@ -40,6 +54,58 @@ describe('AiPanel', () => {
     });
 
     expect(onSend).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('sends input when Enter is pressed and signedIn is true', async () => {
+    const onSend = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(AiPanel, {
+          messages: [],
+          status: 'idle',
+          signedIn: true,
+          onSend,
+          onStop: vi.fn(),
+          onLogin: vi.fn(),
+          debug: [],
+        }),
+      );
+    });
+
+    const textarea = container.querySelector('textarea')!;
+    const sendButton = container.querySelector<HTMLButtonElement>('.ai-composer button')!;
+
+    expect(sendButton.disabled).toBe(false);
+
+    await act(async () => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(textarea, 'help me with terminal');
+      } else {
+        textarea.value = 'help me with terminal';
+      }
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSend).toHaveBeenCalledWith('help me with terminal');
 
     await act(async () => {
       root.unmount();

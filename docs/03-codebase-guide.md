@@ -265,7 +265,8 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
 | **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
 | **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
-| `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener plugins and command handlers |
+| **`#[tauri::command] set_global_hotkey_enabled(app, enabled)`** | Registers or unregisters global `Win+~`; its callback hides the focused window or shows and focuses it |
+| `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener/global-shortcut plugins and command handlers |
 | **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
 
 ### Tauri Commands and Events
@@ -282,6 +283,7 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
+| `set_global_hotkey_enabled` | `enabled: boolean` | `Result<(), String>` | Persisted global-hotkey setting effect |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
 | `codex_send` | JSON-RPC object | `Result<(), String>` | `CodexClient` requests, notifications and tool responses |
 | `codex_stop` | — | `Result<(), String>` | App-server shutdown |

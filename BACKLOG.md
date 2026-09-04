@@ -4,7 +4,6 @@
 ## Physical screen model
 
 - Add an SDF bezel with rounded screen corners, material noise, ambient glass reflection and frame shine.
-- Add inverse curvature mapping for selection and mouse-mode terminal input.
 
 ## Deferred product work
 

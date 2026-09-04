@@ -129,6 +129,13 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
   }, [stored]);
   useEffect(() => {
+    if (!isTauri()) return;
+    void invoke("set_global_hotkey_enabled", { enabled: stored.globalHotkeyEnabled }).catch((reason) => {
+      reportError(`Global Win+~ hotkey ${stored.globalHotkeyEnabled ? "registration" : "removal"} failed: ${String(reason)}`);
+      if (stored.globalHotkeyEnabled) setStored((current) => ({ ...current, globalHotkeyEnabled: false }));
+    });
+  }, [reportError, stored.globalHotkeyEnabled]);
+  useEffect(() => {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
   }, []);
@@ -355,6 +362,7 @@ export default function App() {
       resolution: DEFAULT_RESOLUTION,
       tabPlacement: "top",
       hideTabsWhenSingleSession: false,
+      globalHotkeyEnabled: false,
       settingsScale: 1,
       showSettingsPanel: false,
       showAiPanel: false,
