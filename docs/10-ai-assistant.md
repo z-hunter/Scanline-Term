@@ -41,6 +41,7 @@ sequenceDiagram
 | Protocol client | [`src/ai/CodexClient.ts`](../src/ai/CodexClient.ts) | Initializes app-server, assigns monotonic JSON-RPC IDs, resolves responses and routes server notifications. |
 | Application integration | [`src/App.tsx`](../src/App.tsx) | Maps `threadId` to terminal tab, starts threads/turns, supplies snapshots, handles tool calls and streams chat messages. |
 | Protocol subset | [`src/ai/protocol.ts`](../src/ai/protocol.ts) | Minimal JSON-RPC types used by the application; generated Codex protocol types are deliberately not imported. |
+| Model selection | [`src/ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Chooses the per-tab Codex model and supported reasoning effort, including the Luna/medium default and safe fallback. |
 | Terminal bridge | [`src/terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | Builds snapshots, waits for xterm output, and encodes/enqueues automation input. |
 | UI | [`src/ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Per-active-tab chat view, composer, login button and developer debug console. |
 
@@ -59,6 +60,8 @@ This prevents a repository `AGENTS.md`, personal Codex plugin, hook or MCP confi
 
 The client sends `initialize` with `experimentalApi: true`, then `initialized`, then `account/read`. For browser sign-in it calls `account/login/start`; the returned HTTPS URL is opened through `@tauri-apps/plugin-opener`, not `window.open`. `account/login/completed` triggers a fresh `account/read` and updates the panel.
 
+After authentication the client calls `model/list` (following its cursor until exhausted) and shows only the account-visible models and their supported reasoning efforts. A new terminal tab prefers `gpt-5.6-luna` with `medium` effort. If that combination is unavailable, it uses the app-server default model and effort, then the first returned model as a last resort. The selection is local to the terminal tab and lasts until that tab closes; it is not persisted across app restarts.
+
 The opener capability permits only `https://**` URLs in [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json).
 
 ## Thread and turn lifecycle
@@ -76,6 +79,21 @@ Thread configuration is:
 | `baseInstructions` and `developerInstructions` | Terminal-assistant policy | Directs the model to use the terminal tools, observe output and ask before destructive work. |
 
 The first turn includes the full xterm history; later turns include the latest 200 lines. Both are placed in the turn as explicitly untrusted terminal data. The full preserved scrollback remains available through `observe_terminal`.
+
+The selected `model` is supplied when the thread is created and both `model` and `effort` are supplied on every `turn/start`. A selection change therefore affects the next turn in that tab without recreating the ephemeral thread. The active turn is never modified.
+
+## Model commands
+
+The composer accepts four local slash commands; none creates a Codex turn by itself:
+
+| Command | Result |
+|---|---|
+| `/model` | Opens the account-visible model picker. |
+| `/effort` | Opens the effort picker for the selected model. |
+| `/status` | Adds a local message with connection, selection and thread state. |
+| `/help` | Adds a local command reference. |
+
+Typing `/` opens the same compact command palette used by the small model/effort indicator below the composer. Enter submits normal messages; there is intentionally no Send button. Opening the panel focuses the composer, while closing it returns focus to the active terminal. Unknown commands remain local and show a `/help` hint; they are never sent to the agent or terminal. The picker obtains its labels and effort descriptions from app-server rather than a hard-coded model list.
 
 Agent-message deltas are accumulated into a single assistant chat message. The panel's debug console retains the latest 200 inbound/outbound JSON-RPC lines; it is diagnostic data and must not be treated as a user-facing audit log.
 
@@ -135,11 +153,11 @@ This is an experiment, not a general security boundary: the terminal session its
 The following are not implemented yet and must not be documented as guarantees:
 
 - The status is currently application-level rather than a fully independent running/error indicator for each tab.
-- The Stop button only changes UI state; it does not yet send `turn/interrupt` or suppress late tool calls.
+- Stop sends `turn/interrupt` for the active thread turn and rejects any tool call that arrives for that interrupted turn. It does not terminate a program already running in the terminal; the user can still send Ctrl+C when that is desired.
 - `inputLocked` exists in terminal state but is not wired to block human keyboard input while a turn runs.
 - Closing a terminal tab does not yet interrupt and explicitly delete/archive its Codex thread.
 - Debug output contains JSON-RPC messages only; `codex-stderr` is not currently subscribed in `CodexClient`.
-- There is no provider abstraction, chat persistence, model selector, MCP bridge, mouse automation or policy engine.
+- There is no provider abstraction, chat persistence, MCP bridge, mouse automation or policy engine. Model and effort choices are ephemeral, per-tab controls only.
 
 When implementing any item above, update this document, [`docs/02-architecture.md`](./02-architecture.md), [`docs/04-core-systems.md`](./04-core-systems.md), [`docs/07-testing.md`](./07-testing.md), and the root [`AGENT_GUIDE.md`](../AGENT_GUIDE.md).
 

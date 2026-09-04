@@ -16,6 +16,7 @@ ScanlineTerm/
 ├── src/
 │   ├── ai/
 │   │   ├── CodexClient.ts         # app-server JSON-RPC client
+│   │   ├── modelSelection.ts      # per-tab model/effort defaults and fallback
 │   │   └── protocol.ts            # minimal protocol subset
 │   ├── assets/
 │   │   └── scanline-term-mini.png  # Logo asset
@@ -25,7 +26,7 @@ ScanlineTerm/
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── ui/                        # SettingsPanel, AiPanel and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel, TerminalTabs, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -77,9 +78,10 @@ ScanlineTerm/
 
 | File | Public responsibility |
 |---|---|
-| [`ai/CodexClient.ts`](../src/ai/CodexClient.ts) | One app-server client: initialization, pending-request table, generation filtering, notifications and debug stream. |
+| [`ai/CodexClient.ts`](../src/ai/CodexClient.ts) | One app-server client: initialization, paged visible-model catalog, pending-request table, generation filtering, notifications and debug stream. |
+| [`ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Pure Luna/medium preference and model-effort fallback logic for each terminal tab. |
 | [`ai/protocol.ts`](../src/ai/protocol.ts) | Small JSON-RPC `Json`, `Rpc` and event types used at the integration boundary. |
-| [`ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Renders the active session's local messages, composer, sign-in action and debug console. |
+| [`ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Renders the active session's local messages, slash-command palette, model/effort picker, sign-in action and debug console. |
 | [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools. |
 
 ### Frontend Core

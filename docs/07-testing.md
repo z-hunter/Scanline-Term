@@ -19,6 +19,9 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
 | [`terminal/TerminalRenderer.test.ts`](../src/terminal/TerminalRenderer.test.ts) | Tab colors | Visible-cell average color and readable foreground selection |
+| [`ai/CodexClient.test.ts`](../src/ai/CodexClient.test.ts) | Codex protocol client | Pending-request cleanup and paged visible-model catalog loading |
+| [`ai/modelSelection.test.ts`](../src/ai/modelSelection.test.ts) | Model defaults | Luna/medium preference and server-default fallback |
+| [`ui/AiPanel.test.tsx`](../src/ui/AiPanel.test.tsx) | AI composer | Signed-in submission, slash commands and model picker interaction |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
 
 Run: `npm test`
@@ -61,6 +64,9 @@ Run: `cd src-tauri && cargo test`
 - [ ] Ask the assistant to inspect the terminal, run a short text command and verify output is observed
 - [ ] Verify text submission and Arrow/Escape/Ctrl+C actions in both ordinary and Win32 Input Mode terminal sessions
 - [ ] Open two tabs, start conversations, switch tabs and verify each tool call reaches its own terminal
+- [ ] Confirm a new tab shows Luna · medium when that account exposes it; otherwise it shows the returned server default
+- [ ] Change model and effort in one tab, then verify the next `turn/start` in Debug console contains those fields while another tab retains its own selection
+- [ ] Verify `/model`, `/effort`, `/status` and `/help` remain local UI actions until a normal message is sent
 
 ### After Changes to Keyboard Input
 
@@ -151,7 +157,7 @@ Run: `cd src-tauri && cargo test`
 | Resize + font sizing | ❌ | Visual verification at multiple sizes |
 | Performance | ❌ | FPS counter, profiling tools |
 | Window lifecycle | ❌ | Open/close/fullscreen/minimize/restore |
-| Codex login and dynamic terminal tools | ❌ | Browser login, isolation, tool routing and terminal observation |
+| Codex login, model selection and dynamic terminal tools | ✅ Vitest (protocol/UI defaults) | Browser login, catalog availability, isolation, tool routing and terminal observation |
 
 ---
 

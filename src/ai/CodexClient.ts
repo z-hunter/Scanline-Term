@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { CodexEvent, Json, Rpc } from "./protocol";
+import type { CodexEvent, CodexModel, CodexModelList, Json, Rpc } from "./protocol";
 
 type Listener = (message: Rpc) => void;
 type DebugListener = (line: string) => void;
@@ -55,6 +55,21 @@ export class CodexClient {
       throw error;
     }
     return reply;
+  }
+  async listModels(): Promise<CodexModel[]> {
+    const models: CodexModel[] = [];
+    let cursor: string | null | undefined;
+    do {
+      const result = (await this.request("model/list", {
+        limit: 100,
+        includeHidden: false,
+        ...(cursor ? { cursor } : {}),
+      })) as unknown as CodexModelList;
+      if (!Array.isArray(result.data)) throw new Error("Codex returned an invalid model list");
+      models.push(...result.data.filter((model) => !model.hidden));
+      cursor = result.nextCursor;
+    } while (cursor);
+    return models;
   }
   notify(method: string, params: Json = {}) {
     const message = { jsonrpc: "2.0" as const, method, params };

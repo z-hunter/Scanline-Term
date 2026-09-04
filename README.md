@@ -1,8 +1,10 @@
 # Scanline Term
 
-WebGL CRT terminal for Windows, built with React, Vite, and Tauri 2.
+A native Windows terminal with a physically-inspired CRT display.
+Each terminal session can optionally have its own AI operator (currently supported Codex CLI host).
 
-The demo renders an animated mock terminal into a virtual framebuffer and applies the CRT filter extracted from our Quest/Scanline engine:
+Built with React, Vite, and Tauri 2.
+The CRT filter extracted from our Quest/Scanline engine:
 
 ```text
 ConPTY (`cmd.exe`) ↔ Tauri commands/events ↔ VT screen buffer → canvas → CRTFilter → WebGL output canvas

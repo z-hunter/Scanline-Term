@@ -43,13 +43,38 @@ select {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.ai-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #263b2d; border-radius: 12px; background: #101a14; }
+.app-shell.panels-fit .display-panel {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.app-shell.panels-fit .ai-panel {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 2;
+}
+
+.app-shell.panels-fit .settings-panel {
+  grid-column: 3;
+  grid-row: 1;
+  z-index: 2;
+}
+
+.app-shell.panels-fit.ai-hidden .settings-panel {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 2;
+}
+
+.ai-panel { display: flex; min-width: 0; min-height: 0; height: calc(100vh - 18px); flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #263b2d; border-radius: 12px; background: #101a14; }
 .ai-panel header { display: flex; justify-content: space-between; color: #7dffae; }
 .ai-panel header span { color: #6b9178; font-size: 11px; text-transform: uppercase; }
 .ai-messages { min-height: 0; flex: 1; overflow-y: auto; font-size: 13px; white-space: pre-wrap; }
 .ai-messages p { margin: 0 0 10px; padding: 8px; border-radius: 6px; }
 .ai-user { background: #163321; }.ai-assistant { background: #0b130e; }.ai-action { color: #79d897; }
-.ai-composer { display: grid; grid-template-columns: 1fr auto; gap: 6px; }.ai-composer textarea { min-height: 56px; resize: vertical; color: #d7f5df; background: #0b130e; border: 1px solid #355840; border-radius: 5px; padding: 6px; }.ai-composer button { color: #d7f5df; background: #163321; border: 1px solid #355840; border-radius: 5px; cursor: pointer; }
+.ai-composer { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 6px; }.ai-composer textarea { min-height: 56px; resize: vertical; color: #d7f5df; background: #0b130e; border: 1px solid #355840; border-radius: 5px; padding: 6px; }.ai-composer button { color: #d7f5df; background: #163321; border: 1px solid #355840; border-radius: 5px; cursor: pointer; }.ai-composer button:disabled, .ai-model-control button:disabled { cursor: default; opacity: .55; }
+.ai-command-palette, .ai-model-picker { position: absolute; z-index: 5; border: 1px solid #497556; border-radius: 6px; background: #0b130e; box-shadow: 0 8px 18px #0009; }.ai-command-palette { right: 0; bottom: calc(100% + 6px); left: 0; padding: 4px; }.ai-command-palette button, .ai-model-picker > button { display: block; width: 100%; padding: 7px; border: 0; border-radius: 4px; color: #d7f5df; background: transparent; text-align: left; cursor: pointer; }.ai-command-palette button.active, .ai-command-palette button:hover, .ai-model-picker > button.active, .ai-model-picker > button:hover, .ai-picker-tabs button.active { background: #204b2d; }.ai-command-palette span { color: #9ccca9; }
+.ai-model-control { position: relative; }.ai-model-indicator { padding: 0; border: 0; color: #79d897; background: transparent; font: 11px/1.2 ui-monospace, Consolas, monospace; cursor: pointer; }.ai-model-indicator:hover:not(:disabled), .ai-model-indicator:focus-visible { color: #d7f5df; text-decoration: underline; }.ai-model-picker { right: 0; bottom: calc(100% + 6px); left: 0; padding: 5px; }.ai-picker-tabs { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px; margin-bottom: 4px; }.ai-picker-tabs button { padding: 5px; }.ai-picker-error { margin: 5px; color: #ff9b9b; font-size: 12px; }
 .ai-debug { max-height: 180px; overflow: auto; border-top: 1px solid #294433; color: #9ccca9; font: 10px/1.35 ui-monospace, Consolas, monospace; }.ai-debug summary { cursor: pointer; padding: 6px 0; }.ai-debug pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 .display-panel {
@@ -423,7 +448,7 @@ footer,
 
 .settings-panel {
   width: calc(100% / var(--settings-scale, 1));
-  height: calc((100vh - 36px) / var(--settings-scale, 1));
+  height: calc((100vh - 18px) / var(--settings-scale, 1));
   max-height: none;
   transform: scale(var(--settings-scale, 1));
   transform-origin: top left;
@@ -574,6 +599,17 @@ footer {
     grid-template-rows: auto;
     height: auto;
     min-height: 100vh;
+  }
+
+  .app-shell.panels-fit .display-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .app-shell.panels-fit .ai-panel,
+  .app-shell.panels-fit .settings-panel {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .settings-panel {

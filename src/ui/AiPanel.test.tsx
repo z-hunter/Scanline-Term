@@ -27,10 +27,7 @@ describe('AiPanel', () => {
     });
 
     const textarea = container.querySelector('textarea')!;
-    const sendButton = container.querySelector<HTMLButtonElement>('.ai-composer button')!;
-
-    // Send button should be disabled
-    expect(sendButton.disabled).toBe(true);
+    expect(container.querySelector('.ai-composer button')).toBeNull();
 
     // Enter non-whitespace text into composer
     await act(async () => {
@@ -82,7 +79,7 @@ describe('AiPanel', () => {
     });
 
     const textarea = container.querySelector('textarea')!;
-    const sendButton = container.querySelector<HTMLButtonElement>('.ai-composer button')!;
+    expect(document.activeElement).toBe(textarea);
 
     await act(async () => {
       const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -97,8 +94,6 @@ describe('AiPanel', () => {
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    expect(sendButton.disabled).toBe(false);
-
     await act(async () => {
       textarea.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
@@ -110,6 +105,39 @@ describe('AiPanel', () => {
     await act(async () => {
       root.unmount();
     });
+    container.remove();
+  });
+
+  it('handles slash commands locally and opens the model picker', async () => {
+    const onCommand = vi.fn();
+    const onSelectModel = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const models = [
+      { id: 'gpt-5.6-luna', model: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna', defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }] },
+      { id: 'gpt-5.6-terra', model: 'gpt-5.6-terra', displayName: 'GPT-5.6-Terra', defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'high' }] },
+    ];
+    await act(async () => {
+      root.render(createElement(AiPanel, { messages: [], status: 'idle', signedIn: true, onSend: vi.fn(), onCommand, onStop: vi.fn(), onLogin: vi.fn(), models, selection: { model: 'gpt-5.6-luna', effort: 'medium' }, modelCatalogError: null, onSelectModel, onSelectEffort: vi.fn(), debug: [] }));
+    });
+    const textarea = container.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set?.call(textarea, '/help');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(onCommand).toHaveBeenCalledWith('help');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set?.call(textarea, '/model');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    expect(container.querySelector('[aria-label="Codex model settings"]')).not.toBeNull();
+    const terra = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('GPT-5.6-Terra'))!;
+    await act(async () => terra.click());
+    expect(onSelectModel).toHaveBeenCalledWith('gpt-5.6-terra');
+    await act(async () => root.unmount());
     container.remove();
   });
 });

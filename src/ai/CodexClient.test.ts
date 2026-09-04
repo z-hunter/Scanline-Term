@@ -72,4 +72,19 @@ describe("CodexClient", () => {
     expect(result).toEqual({ status: "ok" });
     expect(pendingMap.size).toBe(0);
   });
+
+  it("loads every visible page of the model catalog", async () => {
+    const client = new CodexClient();
+    mocked.invoke.mockResolvedValue(undefined);
+    const receive = (client as unknown as { receive: (event: { generation: number; message: unknown }) => void }).receive.bind(client);
+
+    const models = client.listModels();
+    receive({ generation: 0, message: { jsonrpc: "2.0", id: 1, result: { data: [{ id: "luna", model: "luna", displayName: "Luna", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }] }], nextCursor: "next" } } });
+    await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledTimes(2));
+    receive({ generation: 0, message: { jsonrpc: "2.0", id: 2, result: { data: [{ id: "hidden", model: "hidden", displayName: "Hidden", hidden: true, defaultReasoningEffort: "low", supportedReasoningEfforts: [] }, { id: "terra", model: "terra", displayName: "Terra", defaultReasoningEffort: "high", supportedReasoningEfforts: [{ reasoningEffort: "high" }] }], nextCursor: null } } });
+
+    await expect(models).resolves.toMatchObject([{ id: "luna" }, { id: "terra" }]);
+    expect(mocked.invoke).toHaveBeenNthCalledWith(1, "codex_send", expect.objectContaining({ message: expect.objectContaining({ method: "model/list", params: { limit: 100, includeHidden: false } }) }));
+    expect(mocked.invoke).toHaveBeenNthCalledWith(2, "codex_send", expect.objectContaining({ message: expect.objectContaining({ method: "model/list", params: { limit: 100, includeHidden: false, cursor: "next" } }) }));
+  });
 });
