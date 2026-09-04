@@ -24,11 +24,21 @@ import "./styles.css";
 
 const STORAGE_KEY = "scanline-term.settings.v1";
 
-function appendStream(current: string, delta: string): string {
-  if (current.endsWith(delta)) return current;
-  for (let size = Math.min(current.length, delta.length); size > 0; size -= 1) {
-    if (current.endsWith(delta.slice(0, size)))
-      return current + delta.slice(size);
+const seenStreamDeltas = new Set<string>();
+
+function appendStream(
+  current: string,
+  delta: string,
+  itemId?: string,
+  deltaIndex?: number,
+): string {
+  const identity =
+    itemId !== undefined && deltaIndex !== undefined
+      ? `${itemId}:${deltaIndex}`
+      : itemId;
+  if (identity) {
+    if (seenStreamDeltas.has(identity)) return current;
+    seenStreamDeltas.add(identity);
   }
   return current + delta;
 }
@@ -64,7 +74,8 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [settingsVisible, setSettingsVisible] = useState(true);
+  const settingsVisible = stored.showSettingsPanel;
+  const aiVisible = stored.showAiPanel;
   const client = useRef<CodexClient | null>(null);
   const [aiStatus, setAiStatus] = useState<
     "idle" | "running" | "disconnected" | "error"
@@ -76,7 +87,19 @@ export default function App() {
   const threads = useRef(new Map<string, string>());
   const reportError = useCallback((message: string) => setError(message), []);
   const toggleSettings = useCallback(
-    () => setSettingsVisible((visible) => !visible),
+    () =>
+      setStored((current) => ({
+        ...current,
+        showSettingsPanel: !current.showSettingsPanel,
+      })),
+    [],
+  );
+  const toggleAi = useCallback(
+    () =>
+      setStored((current) => ({
+        ...current,
+        showAiPanel: !current.showAiPanel,
+      })),
     [],
   );
   const resolution =
@@ -92,6 +115,7 @@ export default function App() {
     resolution,
     onError: reportError,
     onToggleSettings: toggleSettings,
+    onToggleAi: toggleAi,
   });
   const crt = useCRT({
     settings: stored.crt,
@@ -122,7 +146,9 @@ export default function App() {
         setAiStatus("disconnected");
         reportError(`Codex unavailable: ${String(reason)}`);
       });
-    return undefined;
+    return () => {
+      void codex.stop();
+    };
   }, [reportError]);
   useEffect(() => {
     const codex = client.current;
@@ -146,7 +172,14 @@ export default function App() {
         return;
       }
       const params = message.params as
-        | { threadId?: string; delta: string }
+        | {
+            threadId?: string;
+            itemId?: string;
+            id?: string;
+            deltaIndex?: number;
+            index?: number;
+            delta?: string;
+          }
         | undefined;
       const session = params?.threadId
         ? [...threads.current].find(
@@ -177,14 +210,23 @@ export default function App() {
           };
         };
         const term = terminalSession(targetSession);
-        if (
-          !term ||
-          (call.namespace !== null && call.namespace !== undefined)
-        ) {
+        if (!term) {
           void codex.respond(message.id, {
             success: false,
             contentItems: [
               { type: "inputText", text: "Terminal session is unavailable." },
+            ],
+          });
+          return;
+        }
+        if (call.namespace !== null && call.namespace !== undefined) {
+          void codex.respond(message.id, {
+            success: false,
+            contentItems: [
+              {
+                type: "inputText",
+                text: `Unexpected tool namespace: ${call.namespace}`,
+              },
             ],
           });
           return;
@@ -255,15 +297,27 @@ export default function App() {
         })();
         return;
       }
-      if (message.method === "item/agentMessage/delta" && params?.delta)
+      if (message.method === "item/agentMessage/delta" && params?.delta) {
+        const delta = params.delta;
         setChats((value) => {
           const chat = [...(value[targetSession] ?? [])];
           const last = chat.at(-1);
+          const itemId = params.itemId ?? params.id;
+          const deltaIndex = params.deltaIndex ?? params.index;
           if (last?.role === "assistant")
-            last.text = appendStream(last.text, params.delta);
-          else chat.push({ role: "assistant", text: params.delta });
+            last.text = appendStream(
+              last.text,
+              delta,
+              itemId,
+              deltaIndex,
+            );
+          else {
+            const text = appendStream("", delta, itemId, deltaIndex);
+            if (text) chat.push({ role: "assistant", text });
+          }
           return { ...value, [targetSession]: chat };
         });
+      }
       if (
         message.method === "turn/completed" &&
         targetSession === terminal.activeSessionId
@@ -302,6 +356,8 @@ export default function App() {
       tabPlacement: "top",
       hideTabsWhenSingleSession: false,
       settingsScale: 1,
+      showSettingsPanel: false,
+      showAiPanel: false,
       crt: { ...DEFAULT_CRT_SETTINGS },
     });
     clearPersistence();
@@ -409,7 +465,7 @@ export default function App() {
       style={
         { "--settings-scale": String(stored.settingsScale) } as CSSProperties
       }
-      className={`app-shell${settingsVisible ? "" : " settings-hidden"}`}
+      className={`app-shell${settingsVisible ? "" : " settings-hidden"}${aiVisible ? "" : " ai-hidden"}`}
     >
       <section className="display-panel" aria-label="CRT display">
         <div
@@ -430,6 +486,9 @@ export default function App() {
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}
               onToggleSettings={toggleSettings}
+              onToggleAi={toggleAi}
+              settingsVisible={settingsVisible}
+              aiVisible={aiVisible}
             />
           )}
           <div
@@ -456,15 +515,17 @@ export default function App() {
           </p>
         )}
       </section>
-      <AiPanel
-        messages={sessionId ? (chats[sessionId] ?? []) : []}
-        status={aiStatus}
-        signedIn={signedIn}
-        onSend={(text) => void sendAi(text)}
-        onStop={() => setAiStatus("idle")}
-        onLogin={() => void login()}
-        debug={debug}
-      />
+      {aiVisible && (
+        <AiPanel
+          messages={sessionId ? (chats[sessionId] ?? []) : []}
+          status={aiStatus}
+          signedIn={signedIn}
+          onSend={(text) => void sendAi(text)}
+          onStop={() => setAiStatus("idle")}
+          onLogin={() => void login()}
+          debug={debug}
+        />
+      )}
       {settingsVisible && (
         <SettingsPanel
           stored={stored}

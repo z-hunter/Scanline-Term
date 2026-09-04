@@ -236,8 +236,8 @@ export class TerminalSession {
     history: "recent" | "full" = "recent",
   ): Promise<TerminalObservation> {
     if (!this.live) return Promise.reject(new Error("terminal is not running"));
-    const quiet = Math.max(0, Math.min(5_000, quietMs));
-    const timeout = Math.max(1, Math.min(60_000, timeoutMs));
+    const quiet = Math.max(0, Math.min(5_000, Number.isFinite(quietMs) ? quietMs : 400));
+    const timeout = Math.max(1, Math.min(60_000, Number.isFinite(timeoutMs) ? timeoutMs : 60_000));
     const started = Date.now();
     let changedAt: number | null =
       this.sequence > afterSequence ? Date.now() : null;

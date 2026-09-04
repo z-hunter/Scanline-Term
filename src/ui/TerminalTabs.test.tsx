@@ -97,4 +97,49 @@ describe('TerminalTabs', () => {
     });
     container.remove();
   });
+
+  it('renders AI assistant button and toggles it on click', async () => {
+    const onToggleAi = vi.fn();
+    const onToggleSettings = vi.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(TerminalTabs, {
+          tabs: testTabs,
+          activeId: 'tab-1',
+          placement: 'top',
+          onSelect: vi.fn(),
+          onClose: vi.fn(),
+          onNew: vi.fn(),
+          onToggleSettings,
+          onToggleAi,
+          aiVisible: true,
+          settingsVisible: false,
+        }),
+      );
+    });
+
+    const aiBtn = container.querySelector<HTMLButtonElement>('.tabs-ai-button');
+    expect(aiBtn).not.toBeNull();
+    expect(aiBtn?.querySelector('.tabs-ai-icon')).not.toBeNull();
+    expect(aiBtn?.classList.contains('active')).toBe(true);
+    expect(aiBtn?.getAttribute('aria-pressed')).toBe('true');
+
+    const settingsBtn = container.querySelector<HTMLButtonElement>('.tabs-settings-button');
+    expect(settingsBtn).not.toBeNull();
+    expect(settingsBtn?.classList.contains('active')).toBe(false);
+    expect(settingsBtn?.getAttribute('aria-pressed')).toBe('false');
+
+    aiBtn?.click();
+    expect(onToggleAi).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

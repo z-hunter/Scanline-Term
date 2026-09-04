@@ -120,4 +120,21 @@ describe('TerminalSession', () => {
     expect(onProcessName).not.toHaveBeenCalled();
     session.dispose();
   });
+
+  it('normalizes non-finite quietMs and timeoutMs in waitForOutput', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+
+      const waitPromise = session.waitForOutput(0, NaN, NaN);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await waitPromise;
+      expect(result.timedOut).toBe(true);
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

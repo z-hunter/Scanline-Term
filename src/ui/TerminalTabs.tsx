@@ -2,7 +2,33 @@ import type { CSSProperties, KeyboardEvent, Ref } from 'react';
 import type { TabPlacement } from '../crt/settings';
 import type { TerminalTab } from '../terminal/useTerminal';
 
-export function TerminalTabs({ tabs, activeId, placement, onSelect, onClose, onNew, onToggleSettings, panelRef, hideTabList = false }: { tabs: TerminalTab[]; activeId: string | null; placement: TabPlacement; onSelect: (id: string) => void; onClose: (id: string) => void; onNew: () => void; onToggleSettings: () => void; panelRef?: Ref<HTMLDivElement>; hideTabList?: boolean }) {
+export function TerminalTabs({
+  tabs,
+  activeId,
+  placement,
+  onSelect,
+  onClose,
+  onNew,
+  onToggleSettings,
+  onToggleAi,
+  settingsVisible = false,
+  aiVisible = false,
+  panelRef,
+  hideTabList = false,
+}: {
+  tabs: TerminalTab[];
+  activeId: string | null;
+  placement: TabPlacement;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+  onNew: () => void;
+  onToggleSettings: () => void;
+  onToggleAi?: () => void;
+  settingsVisible?: boolean;
+  aiVisible?: boolean;
+  panelRef?: Ref<HTMLDivElement>;
+  hideTabList?: boolean;
+}) {
   const selectByKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const previous = placement === 'top' ? 'ArrowLeft' : 'ArrowUp'; const next = placement === 'top' ? 'ArrowRight' : 'ArrowDown';
     let target = index;
@@ -19,6 +45,27 @@ export function TerminalTabs({ tabs, activeId, placement, onSelect, onClose, onN
       <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} disabled={tab.status === 'starting'} onClick={() => onClose(tab.id)}>×</button>
     </div>)}</div>}
     <button type="button" className="new-tab-button" aria-label="New terminal tab" onClick={() => onNew()}>+</button>
-    <button type="button" className="tabs-settings-button" aria-label="Toggle settings" onClick={onToggleSettings}>⚙</button>
+    <div className="tabs-actions">
+      <button
+        type="button"
+        className={`tabs-ai-button${aiVisible ? ' active' : ''}`}
+        aria-label="Toggle AI assistant"
+        title="Toggle AI assistant"
+        aria-pressed={aiVisible}
+        onClick={onToggleAi}
+      >
+        <span className="tabs-ai-icon" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`tabs-settings-button${settingsVisible ? ' active' : ''}`}
+        aria-label="Toggle settings"
+        title="Toggle settings"
+        aria-pressed={settingsVisible}
+        onClick={onToggleSettings}
+      >
+        ⚙
+      </button>
+    </div>
   </div>;
 }

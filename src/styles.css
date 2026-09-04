@@ -35,6 +35,14 @@ select {
   grid-template-columns: minmax(0, 1fr) 360px;
 }
 
+.app-shell.ai-hidden {
+  grid-template-columns: minmax(0, 1fr) calc(320px * var(--settings-scale, 1));
+}
+
+.app-shell.ai-hidden.settings-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ai-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #263b2d; border-radius: 12px; background: #101a14; }
 .ai-panel header { display: flex; justify-content: space-between; color: #7dffae; }
 .ai-panel header span { color: #6b9178; font-size: 11px; text-transform: uppercase; }
@@ -123,12 +131,15 @@ select {
   width: min(100%, 980px);
   align-items: end;
   gap: 6px;
+  padding-right: 68px;
 }
 
-.terminal-tabs-top .tabs-settings-button {
+.terminal-tabs-top .tabs-actions {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  gap: 6px;
 }
 
 .terminal-tabs-left {
@@ -260,10 +271,21 @@ select {
   background: #204b2d;
 }
 
+.tabs-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tabs-ai-button,
 .tabs-settings-button {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #355840;
   border-radius: 5px;
   color: #b9d7c1;
@@ -274,13 +296,45 @@ select {
   cursor: pointer;
 }
 
+.tabs-ai-button:hover,
 .tabs-settings-button:hover {
   color: #d7f5df;
   background: #204b2d;
 }
 
-.terminal-tabs-left .tabs-settings-button {
+.tabs-ai-button.active,
+.tabs-settings-button.active {
+  color: #7dffae;
+  background: #204b2d;
+  border-color: #497556;
+}
+
+.tabs-ai-button:focus-visible,
+.tabs-settings-button:focus-visible {
+  outline: 2px solid #d7f5df;
+  outline-offset: 2px;
+}
+
+.tabs-ai-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask-image: url('./assets/ai-icon.png');
+  -webkit-mask-image: url('./assets/ai-icon.png');
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-position: center;
+}
+
+.terminal-tabs-left .tabs-actions {
   order: -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .screen-frame {

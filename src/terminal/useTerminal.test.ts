@@ -405,4 +405,47 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove();
     vi.restoreAllMocks();
   });
+
+  it('triggers onToggleAi on <menu-A> shortcut', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation(() => Promise.resolve('cmd.exe'));
+
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    const onToggleAi = vi.fn();
+
+    function TestComponent() {
+      useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+        onToggleAi,
+      });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+
+    expect(onToggleAi).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
 });

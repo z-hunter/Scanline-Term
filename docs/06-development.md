@@ -111,7 +111,11 @@ The [`capabilities/default.json`](../src-tauri/capabilities/default.json) grants
   "permissions": [
     "core:event:allow-listen",
     "core:window:allow-is-fullscreen",
-    "core:window:allow-set-fullscreen"
+    "core:window:allow-set-fullscreen",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://**" }]
+    }
   ]
 }
 ```

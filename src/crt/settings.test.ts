@@ -59,6 +59,24 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: 'yes' })).hideTabsWhenSingleSession).toBe(false);
   });
 
+  it('defaults and validates settings and AI panel visibility', () => {
+    const initial = loadStoredSettings(null);
+    expect(initial.showSettingsPanel).toBe(false);
+    expect(initial.showAiPanel).toBe(false);
+
+    const loaded = loadStoredSettings(
+      JSON.stringify({ showSettingsPanel: true, showAiPanel: true }),
+    );
+    expect(loaded.showSettingsPanel).toBe(true);
+    expect(loaded.showAiPanel).toBe(true);
+
+    const invalid = loadStoredSettings(
+      JSON.stringify({ showSettingsPanel: 'open', showAiPanel: 1 }),
+    );
+    expect(invalid.showSettingsPanel).toBe(false);
+    expect(invalid.showAiPanel).toBe(false);
+  });
+
   it('accepts virtual screens in all supported aspect ratios', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: '640x480' })).resolution).toBe('640x480');
     expect(loadStoredSettings(JSON.stringify({ resolution: '1280x800' })).resolution).toBe('1280x800');
