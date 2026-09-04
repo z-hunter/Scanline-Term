@@ -11,6 +11,7 @@ export interface LayoutFitParams {
   settingsScale?: number;
   aiVisible: boolean;
   settingsVisible: boolean;
+  measuredTerminalWidth?: number;
 }
 
 export const AI_PANEL_WIDTH = 360;
@@ -35,6 +36,7 @@ export function canPanelsFitWithoutShift({
   settingsScale = 1,
   aiVisible,
   settingsVisible,
+  measuredTerminalWidth,
 }: LayoutFitParams): boolean {
   if (!aiVisible && !settingsVisible) return false;
   if (resolutionId === 'physical') return false;
@@ -52,34 +54,35 @@ export function canPanelsFitWithoutShift({
 
   if (totalPanelsWidth <= 0) return false;
 
-  const neededSpace = totalPanelsWidth + APP_SHELL_GAP;
   const contentWidth = Math.max(0, windowWidth - APP_SHELL_PADDING_H);
-  const availableHeight = Math.max(0, windowHeight - APP_SHELL_PADDING_V);
 
-  const ratio =
-    resolutionWidth && resolutionHeight
-      ? resolutionWidth / resolutionHeight
-      : 4 / 3;
+  let terminalWidth: number;
+  if (measuredTerminalWidth && measuredTerminalWidth > 0) {
+    terminalWidth = measuredTerminalWidth;
+  } else {
+    const tabHeight = tabPlacement === 'top' ? (tabSpace || 36) : 0;
+    const availableHeight = Math.max(0, windowHeight - APP_SHELL_PADDING_V - tabHeight);
+    const ratio =
+      resolutionWidth && resolutionHeight
+        ? resolutionWidth / resolutionHeight
+        : 4 / 3;
 
-  const naturalWidth = Math.round(availableHeight * ratio);
-  const maxAllowedWidth =
-    tabPlacement === 'left'
-      ? Math.max(0, contentWidth - 2 * tabSpace)
-      : contentWidth;
+    const naturalWidth = Math.round(availableHeight * ratio);
+    const maxAllowedWidth =
+      tabPlacement === 'left'
+        ? Math.max(0, contentWidth - 2 * tabSpace)
+        : contentWidth;
 
-  const undisturbedTerminalWidth = Math.max(
-    0,
-    Math.min(contentWidth, naturalWidth, maxAllowedWidth),
-  );
+    terminalWidth = Math.max(
+      0,
+      Math.min(contentWidth, naturalWidth, maxAllowedWidth),
+    );
+  }
 
-  const spaceRight = (contentWidth - undisturbedTerminalWidth) / 2;
+  // Actual space between centered terminal right edge and the right edge of the window
+  const spaceRight = (windowWidth - terminalWidth) / 2;
 
-  const tabsSpaceRight =
-    tabPlacement === 'top'
-      ? (contentWidth - Math.min(contentWidth, 980)) / 2
-      : spaceRight;
-
-  const effectiveSpaceRight = Math.min(spaceRight, tabsSpaceRight);
-
-  return effectiveSpaceRight >= neededSpace;
+  // The panel fits without shifting the terminal if the available space
+  // on the right side of the centered terminal is at least the width of the panels.
+  return spaceRight >= totalPanelsWidth;
 }

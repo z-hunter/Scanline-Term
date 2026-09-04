@@ -140,4 +140,57 @@ describe('AiPanel', () => {
     await act(async () => root.unmount());
     container.remove();
   });
+
+  it('shows typing only for the running tab and removes it when complete', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = {
+      messages: [{ role: 'assistant' as const, text: 'Checking' }],
+      status: 'idle' as const,
+      isProcessing: true,
+      signedIn: true,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+      onLogin: vi.fn(),
+      debug: [],
+    };
+    await act(async () => root.render(createElement(AiPanel, props)));
+    expect(container.querySelector('.ai-typing')).not.toBeNull();
+    await act(async () => root.render(createElement(AiPanel, { ...props, isProcessing: false })));
+    expect(container.querySelector('.ai-typing')).toBeNull();
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it('scrolls a submitted request into view without overriding a manual scroll', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = {
+      messages: [{ role: 'user' as const, text: 'First' }],
+      status: 'idle' as const,
+      signedIn: true,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+      onLogin: vi.fn(),
+      debug: [],
+      sessionId: 'tab-1',
+    };
+    await act(async () => root.render(createElement(AiPanel, props)));
+    const messages = container.querySelector<HTMLDivElement>('.ai-messages')!;
+    const scrollRequest = { sessionId: 'tab-1', id: 1 };
+    Object.defineProperties(messages, {
+      scrollHeight: { configurable: true, value: 100 },
+      clientHeight: { configurable: true, value: 10 },
+    });
+    await act(async () => root.render(createElement(AiPanel, { ...props, scrollRequest })));
+    expect(messages.scrollTop).toBe(100);
+    messages.scrollTop = 0;
+    await act(async () => messages.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => root.render(createElement(AiPanel, { ...props, messages: [...props.messages, { role: 'assistant' as const, text: 'Reply' }], scrollRequest })));
+    expect(messages.scrollTop).toBe(0);
+    await act(async () => root.unmount());
+    container.remove();
+  });
 });

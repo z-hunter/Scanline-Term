@@ -21,7 +21,8 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal/TerminalRenderer.test.ts`](../src/terminal/TerminalRenderer.test.ts) | Tab colors | Visible-cell average color and readable foreground selection |
 | [`ai/CodexClient.test.ts`](../src/ai/CodexClient.test.ts) | Codex protocol client | Pending-request cleanup and paged visible-model catalog loading |
 | [`ai/modelSelection.test.ts`](../src/ai/modelSelection.test.ts) | Model defaults | Luna/medium preference and server-default fallback |
-| [`ui/AiPanel.test.tsx`](../src/ui/AiPanel.test.tsx) | AI composer | Signed-in submission, slash commands and model picker interaction |
+| [`ui/AiPanel.test.tsx`](../src/ui/AiPanel.test.tsx) | AI composer | Signed-in submission, slash commands, model picker, typing state and scroll-follow behaviour |
+| [`ai/chatMessages.test.ts`](../src/ai/chatMessages.test.ts) | AI message stream | Item-scoped delta accumulation and preservation of commentary before final output |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
 
 Run: `npm test`
@@ -67,6 +68,8 @@ Run: `cd src-tauri && cargo test`
 - [ ] Confirm a new tab shows Luna · medium when that account exposes it; otherwise it shows the returned server default
 - [ ] Change model and effort in one tab, then verify the next `turn/start` in Debug console contains those fields while another tab retains its own selection
 - [ ] Verify `/model`, `/effort`, `/status` and `/help` remain local UI actions until a normal message is sent
+- [ ] Send a request, scroll the chat upward while the assistant streams, and confirm later output does not pull the reader back to the bottom
+- [ ] Confirm a turn in one tab shows typing and Stop only in that tab; switch tabs and verify the other chat remains idle
 
 ### After Changes to Keyboard Input
 

@@ -1,7 +1,13 @@
-import { useState, type KeyboardEvent } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import type { CodexModel } from "../ai/protocol";
+import type { AiMessage } from "../ai/chatMessages";
 
-export type AiMessage = { role: "user" | "assistant" | "action"; text: string };
+export type { AiMessage } from "../ai/chatMessages";
 type AiStatus = "idle" | "running" | "disconnected" | "error";
 type AiSelection = { model: string; effort: string } | undefined;
 
@@ -15,6 +21,9 @@ const commands = [
 export function AiPanel({
   messages,
   status,
+  isProcessing = status === "running",
+  sessionId,
+  scrollRequest,
   signedIn,
   onSend,
   onCommand = () => undefined,
@@ -29,6 +38,9 @@ export function AiPanel({
 }: {
   messages: AiMessage[];
   status: AiStatus;
+  isProcessing?: boolean;
+  sessionId?: string;
+  scrollRequest?: { sessionId: string; id: number };
   signedIn: boolean;
   onSend: (text: string) => void;
   onCommand?: (command: "status" | "help" | "unknown", raw?: string) => void;
@@ -45,6 +57,35 @@ export function AiPanel({
   const [picker, setPicker] = useState<"model" | "effort" | null>(null);
   const [commandIndex, setCommandIndex] = useState(0);
   const selectedModel = models.find((model) => model.id === selection?.model);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const positions = useRef(new Map<string, number>());
+  const followLive = useRef(true);
+  const scrollToEnd = () => {
+    const node = messagesRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  };
+  const isAtBottom = (node: HTMLDivElement) =>
+    node.scrollHeight - node.scrollTop - node.clientHeight <= 8;
+  useLayoutEffect(() => {
+    const node = messagesRef.current;
+    if (!node || !sessionId) return;
+    const saved = positions.current.get(sessionId);
+    if (saved === undefined) {
+      followLive.current = true;
+      scrollToEnd();
+    } else {
+      node.scrollTop = saved;
+      followLive.current = isAtBottom(node);
+    }
+  }, [sessionId]);
+  useLayoutEffect(() => {
+    if (scrollRequest?.sessionId !== sessionId) return;
+    followLive.current = true;
+    scrollToEnd();
+  }, [scrollRequest, sessionId]);
+  useLayoutEffect(() => {
+    if (followLive.current) scrollToEnd();
+  }, [messages]);
   const commandMatches = commands.filter((command) =>
     command.name.startsWith(text.trim().toLowerCase()),
   );
@@ -114,12 +155,24 @@ export function AiPanel({
           Sign in with ChatGPT
         </button>
       )}
-      <div className="ai-messages">
+      <div
+        ref={messagesRef}
+        className="ai-messages"
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          followLive.current = isAtBottom(node);
+          if (sessionId) positions.current.set(sessionId, node.scrollTop);
+        }}
+      >
         {messages.map((message, index) => (
           <p key={index} className={`ai-${message.role}`}>
             {message.text}
+            {isProcessing && index === messages.length - 1 && message.role === "assistant" && (
+              <TypingIndicator />
+            )}
           </p>
         ))}
+        {isProcessing && messages.at(-1)?.role !== "assistant" && <TypingIndicator />}
       </div>
       <div className="ai-composer">
         {paletteVisible && (
@@ -149,7 +202,7 @@ export function AiPanel({
           onKeyDown={onComposerKeyDown}
           placeholder="Ask Codex to work in this terminal"
         />
-        {status === "running" && (
+        {isProcessing && (
           <button type="button" onClick={onStop}>
             Stop
           </button>
@@ -195,5 +248,15 @@ export function AiPanel({
         <pre>{debug.join("\n")}</pre>
       </details>
     </aside>
+  );
+}
+
+function TypingIndicator() {
+  return (
+    <span className="ai-typing" role="status" aria-label="Codex is working">
+      <span aria-hidden="true">.</span>
+      <span aria-hidden="true">.</span>
+      <span aria-hidden="true">.</span>
+    </span>
   );
 }

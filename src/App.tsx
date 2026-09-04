@@ -17,7 +17,12 @@ import { useCRT } from "./crt/useCRT";
 import { useTerminal } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
-import { AiPanel, type AiMessage } from "./ui/AiPanel";
+import { AiPanel } from "./ui/AiPanel";
+import {
+  appendAgentDelta,
+  completeAgentMessage,
+  type AiMessage,
+} from "./ai/chatMessages";
 import { canPanelsFitWithoutShift } from "./ui/layoutFit";
 import { CodexClient } from "./ai/CodexClient";
 import type { CodexModel } from "./ai/protocol";
@@ -31,10 +36,6 @@ import "./styles.css";
 
 const STORAGE_KEY = "scanline-term.settings.v1";
 const seenStreamDeltas = new Set<string>();
-
-function appendStream(current: string, delta: string): string {
-  return current + delta;
-}
 
 function terminalAssistantInstructions(operatingSystem: string): string {
   return `You are the AI assistant for Scanline Term, a terminal application running on the user's ${operatingSystem} computer.
@@ -72,6 +73,9 @@ export default function App() {
     height: typeof window !== "undefined" ? window.innerHeight : 960,
   }));
   const [tabSpace, setTabSpace] = useState(36);
+  const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
+  const lastUndisturbedWidth = useRef(0);
+  const canFitWithoutShiftRef = useRef(false);
   const settingsVisible = stored.showSettingsPanel;
   const aiVisible = stored.showAiPanel;
   const client = useRef<CodexClient | null>(null);
@@ -80,6 +84,8 @@ export default function App() {
   >("disconnected");
   const [signedIn, setSignedIn] = useState(false);
   const [chats, setChats] = useState<Record<string, AiMessage[]>>({});
+  const [runningSessions, setRunningSessions] = useState<Record<string, true>>({});
+  const [scrollRequest, setScrollRequest] = useState<{ sessionId: string; id: number }>();
   const [modelCatalog, setModelCatalog] = useState<CodexModel[]>([]);
   const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const [modelSelections, setModelSelections] = useState<
@@ -188,6 +194,14 @@ export default function App() {
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
+    return codex.onDisconnect(() => {
+      setAiStatus("disconnected");
+      setRunningSessions({});
+    });
+  }, []);
+  useEffect(() => {
+    const codex = client.current;
+    if (!codex) return;
     return codex.onDebug((line) =>
       setDebug((items) => [...items.slice(-199), line]),
     );
@@ -220,6 +234,7 @@ export default function App() {
             turn?: {
               id?: string;
               items?: Array<{
+                id?: string;
                 type?: string;
                 phase?: string;
                 text?: string;
@@ -360,47 +375,48 @@ export default function App() {
           if (seenStreamDeltas.has(identity)) return;
           seenStreamDeltas.add(identity);
         }
-        setChats((value) => {
-          const chat = [...(value[targetSession] ?? [])];
-          const last = chat.at(-1);
-          if (last?.role === "assistant")
-            chat[chat.length - 1] = {
-              ...last,
-              text: appendStream(last.text, delta),
-            };
-          else {
-            const text = appendStream("", delta);
-            if (text) chat.push({ role: "assistant", text });
-          }
-          return { ...value, [targetSession]: chat };
-        });
+        setChats((value) => ({
+          ...value,
+          [targetSession]: appendAgentDelta(
+            value[targetSession] ?? [],
+            itemId ?? "stream",
+            delta,
+          ),
+        }));
       }
-      if (message.method === "turn/started" && params?.turn?.id)
+      if (message.method === "turn/started" && params?.turn?.id) {
         activeTurns.current.set(targetSession, params.turn.id);
+        setRunningSessions((current) => ({ ...current, [targetSession]: true }));
+      }
       if (message.method === "turn/completed") {
-        const finalText = params?.turn?.items
+        const finalMessage = params?.turn?.items
           ?.find(
             (item) =>
               item.type === "agentMessage" &&
               item.phase === "final_answer" &&
               typeof item.text === "string",
-          )
-          ?.text;
-        if (finalText?.trim()) {
-          setChats((value) => {
-            const chat = [...(value[targetSession] ?? [])];
-            const last = chat.at(-1);
-            if (last?.role === "assistant")
-              chat[chat.length - 1] = { ...last, text: finalText };
-            else chat.push({ role: "assistant", text: finalText });
-            return { ...value, [targetSession]: chat };
-          });
+          );
+        if (finalMessage?.text?.trim()) {
+          setChats((value) => ({
+            ...value,
+            [targetSession]: completeAgentMessage(
+              value[targetSession] ?? [],
+              finalMessage.id ?? `final:${params?.turn?.id ?? params?.turnId ?? "unknown"}`,
+              finalMessage.text!,
+            ),
+          }));
         }
         const turnId = params?.turn?.id ?? params?.turnId;
         if (turnId) {
           activeTurns.current.delete(targetSession);
           interruptedTurns.current.delete(turnId);
         }
+        setRunningSessions((current) => {
+          if (!current[targetSession]) return current;
+          const remaining = { ...current };
+          delete remaining[targetSession];
+          return remaining;
+        });
       }
       if (
         message.method === "turn/completed" &&
@@ -428,6 +444,11 @@ export default function App() {
         ? current
         : remaining;
     });
+    setRunningSessions((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => activeIds.has(id)),
+      ) as Record<string, true>,
+    );
     setModelSelections((current) => {
       const remaining = Object.fromEntries(
         Object.entries(current).filter(([id]) => activeIds.has(id)),
@@ -461,6 +482,23 @@ export default function App() {
     stored.hideTabsWhenSingleSession,
     terminal.tabs.length,
   ]);
+  useEffect(() => {
+    const display = outputRef.current?.parentElement;
+    if (!display) return;
+    const update = () => {
+      const w = display.getBoundingClientRect().width;
+      if (w > 0) {
+        if (!settingsVisible && !aiVisible || canFitWithoutShiftRef.current) {
+          lastUndisturbedWidth.current = w;
+        }
+        setMeasuredTerminalWidth(w);
+      }
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(display);
+    return () => observer.disconnect();
+  }, [settingsVisible, aiVisible, outputRef]);
   const reset = () => {
     localStorage.removeItem(STORAGE_KEY);
     setStored({
@@ -532,8 +570,13 @@ export default function App() {
       ...value,
       [sessionId]: [...(value[sessionId] ?? []), { role: "user", text }],
     }));
+    setScrollRequest((current) => ({
+      sessionId,
+      id: (current?.id ?? 0) + 1,
+    }));
     try {
       setAiStatus("running");
+      setRunningSessions((current) => ({ ...current, [sessionId]: true }));
       let threadId = threads.current.get(sessionId);
       const firstTurn = !threadId;
       if (!threadId) {
@@ -604,6 +647,11 @@ export default function App() {
       if (started.turn?.id) activeTurns.current.set(sessionId, started.turn.id);
     } catch (reason) {
       setAiStatus("error");
+      setRunningSessions((current) => {
+        const remaining = { ...current };
+        delete remaining[sessionId];
+        return remaining;
+      });
       setChats((value) => ({
         ...value,
         [sessionId]: [
@@ -637,12 +685,23 @@ export default function App() {
     } catch (reason) {
       interruptedTurns.current.delete(turnId);
       setAiStatus("error");
+      setRunningSessions((current) => {
+        const remaining = { ...current };
+        delete remaining[sessionId];
+        return remaining;
+      });
       addAction(`Could not stop Codex: ${String(reason)}`);
     }
   };
+  const currentWindowWidth =
+    typeof window !== "undefined" ? window.innerWidth : windowSize.width;
+  const currentWindowHeight =
+    typeof window !== "undefined" ? window.innerHeight : windowSize.height;
+  const undisturbedWidth =
+    lastUndisturbedWidth.current || measuredTerminalWidth;
   const canFitWithoutShift = canPanelsFitWithoutShift({
-    windowWidth: windowSize.width,
-    windowHeight: windowSize.height,
+    windowWidth: currentWindowWidth,
+    windowHeight: currentWindowHeight,
     resolutionId: resolution.id,
     resolutionWidth: "width" in resolution ? resolution.width : undefined,
     resolutionHeight: "height" in resolution ? resolution.height : undefined,
@@ -651,11 +710,31 @@ export default function App() {
     settingsScale: stored.settingsScale,
     aiVisible,
     settingsVisible,
+    measuredTerminalWidth: undisturbedWidth,
   });
+  canFitWithoutShiftRef.current = canFitWithoutShift;
+  const totalPanelsWidth =
+    aiVisible && settingsVisible
+      ? 360 + 18 + 320 * stored.settingsScale
+      : aiVisible
+        ? 360
+        : 320 * stored.settingsScale;
+  const freeSpaceRight = Math.max(
+    0,
+    (currentWindowWidth - (undisturbedWidth || currentWindowWidth * 0.7)) / 2,
+  );
+  const panelsFitRightPad = Math.max(
+    0,
+    Math.min(18, Math.floor(freeSpaceRight - totalPanelsWidth)),
+  );
+  const panelsFitMarginRight = panelsFitRightPad - 18;
   return (
     <main
       style={
-        { "--settings-scale": String(stored.settingsScale) } as CSSProperties
+        {
+          "--settings-scale": String(stored.settingsScale),
+          "--panels-fit-margin-right": `${panelsFitMarginRight}px`,
+        } as CSSProperties
       }
       className={`app-shell${settingsVisible ? "" : " settings-hidden"}${aiVisible ? "" : " ai-hidden"}${canFitWithoutShift ? " panels-fit" : ""}`}
     >
@@ -710,7 +789,10 @@ export default function App() {
       {aiVisible && (
         <AiPanel
           messages={sessionId ? (chats[sessionId] ?? []) : []}
-          status={aiStatus}
+          status={sessionId && runningSessions[sessionId] ? "running" : aiStatus === "running" ? "idle" : aiStatus}
+          isProcessing={Boolean(sessionId && runningSessions[sessionId])}
+          sessionId={sessionId ?? undefined}
+          scrollRequest={scrollRequest}
           signedIn={signedIn}
           onSend={(text) => void sendAi(text)}
           onCommand={handleAiCommand}

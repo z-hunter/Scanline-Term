@@ -12,6 +12,7 @@ export class CodexClient {
     { resolve: (result: Json) => void; reject: (reason: Error) => void }
   >();
   private listeners = new Set<Listener>();
+  private disconnectListeners = new Set<() => void>();
   private debugListeners = new Set<DebugListener>();
   private unlisten: UnlistenFn[] = [];
   workspace = "";
@@ -93,8 +94,14 @@ export class CodexClient {
       this.debugListeners.delete(listener);
     };
   }
+  onDisconnect(listener: () => void) {
+    this.disconnectListeners.add(listener);
+    return () => {
+      this.disconnectListeners.delete(listener);
+    };
+  }
   async stop() {
-    this.fail(new Error("Codex stopped"));
+    this.fail(new Error("Codex stopped"), false);
     this.unlisten.splice(0).forEach((item) => item());
     await invoke("codex_stop");
   }
@@ -113,9 +120,10 @@ export class CodexClient {
       else pending.resolve(message.result ?? null);
     }
   }
-  private fail(error: Error) {
+  private fail(error: Error, disconnected = true) {
     this.pending.forEach(({ reject }) => reject(error));
     this.pending.clear();
+    if (disconnected) this.disconnectListeners.forEach((listener) => listener());
   }
   private debug(line: string) {
     this.debugListeners.forEach((listener) => listener(line));

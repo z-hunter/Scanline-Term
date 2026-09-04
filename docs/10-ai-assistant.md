@@ -95,7 +95,7 @@ The composer accepts four local slash commands; none creates a Codex turn by its
 
 Typing `/` opens the same compact command palette used by the small model/effort indicator below the composer. Enter submits normal messages; there is intentionally no Send button. Opening the panel focuses the composer, while closing it returns focus to the active terminal. Unknown commands remain local and show a `/help` hint; they are never sent to the agent or terminal. The picker obtains its labels and effort descriptions from app-server rather than a hard-coded model list.
 
-Agent-message deltas are accumulated into a single assistant chat message. The panel's debug console retains the latest 200 inbound/outbound JSON-RPC lines; it is diagnostic data and must not be treated as a user-facing audit log.
+Agent-message deltas are accumulated only while they belong to the same app-server `itemId`. A later agent message, including one sent after a terminal action, is rendered as a separate assistant bubble. The active tab shows an animated working indicator until its own turn completes; a background turn never marks another tab as working. Sending a user message scrolls its chat to the end, while subsequent manual scrolling upward is preserved during streaming. The panel's debug console retains the latest 200 inbound/outbound JSON-RPC lines; it is diagnostic data and must not be treated as a user-facing audit log.
 
 ## Dynamic terminal tools
 
@@ -152,7 +152,6 @@ This is an experiment, not a general security boundary: the terminal session its
 
 The following are not implemented yet and must not be documented as guarantees:
 
-- The status is currently application-level rather than a fully independent running/error indicator for each tab.
 - Stop sends `turn/interrupt` for the active thread turn and rejects any tool call that arrives for that interrupted turn. It does not terminate a program already running in the terminal; the user can still send Ctrl+C when that is desired.
 - `inputLocked` exists in terminal state but is not wired to block human keyboard input while a turn runs.
 - Closing a terminal tab does not yet interrupt and explicitly delete/archive its Codex thread.
