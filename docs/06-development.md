@@ -13,6 +13,7 @@
 | **Microsoft C++ Build Tools** | MSVC linker and Windows SDK | Visual Studio Build Tools or full VS |
 | **WebView2 Runtime** | Tauri 2 rendering engine | Pre-installed on Windows 10/11; [download](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
 | **ConPTY DLLs** | Bundled in `src-tauri/resources/conpty/x64/` | Included in repository |
+| **Codex CLI** (`>= 0.152.1`) | Optional AI assistant app-server | Install Codex and ensure `codex` is on `PATH` |
 
 ### Windows-Specific Notes
 
@@ -117,6 +118,7 @@ The [`capabilities/default.json`](../src-tauri/capabilities/default.json) grants
 
 - **`core:event:allow-listen`**: Required for `terminal-output` and `terminal-exit` events. Without this, the frontend cannot receive ConPTY output.
 - **`core:window:allow-is-fullscreen`** / **`core:window:allow-set-fullscreen`**: Required for Alt+Enter fullscreen toggle.
+- **`opener:allow-open-url`** (`https://**` only): Opens the ChatGPT login URL in the system browser.
 
 > **Important:** If you add a new Tauri event that the frontend needs to `listen()` to, no additional capability is needed — `core:event:allow-listen` is a blanket permission for all event listening. However, if you add an `invoke()` command, no additional capability is typically needed for commands (Tauri 2 allows commands by default unless explicitly restricted).
 

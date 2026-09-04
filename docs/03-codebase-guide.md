@@ -14,6 +14,9 @@ ScanlineTerm/
 │   ├── scanline-term-eye.png     # Product artwork
 │   └── splash.jpg                # Splash screen image (256×256)
 ├── src/
+│   ├── ai/
+│   │   ├── CodexClient.ts         # app-server JSON-RPC client
+│   │   └── protocol.ts            # minimal protocol subset
 │   ├── assets/
 │   │   └── scanline-term-mini.png  # Logo asset
 │   ├── crt/
@@ -22,7 +25,7 @@ ScanlineTerm/
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── ui/                        # SettingsPanel and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -37,6 +40,7 @@ ScanlineTerm/
 │   └── terminal-responses.test.ts # Test: xterm cursor-position report
 ├── src-tauri/
 │   ├── src/
+│   │   ├── codex.rs              # Codex app-server lifecycle and JSONL bridge
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
@@ -66,6 +70,17 @@ ScanlineTerm/
 ## File-by-File Guide
 
 > **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns the session map, active xterm buffer, input routing and throttled per-tab average color updates; `ui/TerminalTabs.tsx` renders the post-it tab strip; `TerminalRenderer` and `useCRT` remain single shared rendering instances for the active tab.
+
+`App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
+
+### AI assistant
+
+| File | Public responsibility |
+|---|---|
+| [`ai/CodexClient.ts`](../src/ai/CodexClient.ts) | One app-server client: initialization, pending-request table, generation filtering, notifications and debug stream. |
+| [`ai/protocol.ts`](../src/ai/protocol.ts) | Small JSON-RPC `Json`, `Rpc` and event types used at the integration boundary. |
+| [`ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Renders the active session's local messages, composer, sign-in action and debug console. |
+| [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools. |
 
 ### Frontend Core
 
@@ -230,6 +245,10 @@ Defines 8 terminal color profiles:
 
 ### Rust Backend
 
+#### [`src-tauri/src/codex.rs`](../src-tauri/src/codex.rs)
+
+Owns the singleton hidden `codex app-server --stdio` process. It validates the CLI version, creates an app-local isolated `CODEX_HOME` and workspace, converts JSON-RPC messages to JSONL, emits `codex-message` / `codex-stderr` / `codex-exit`, and kills the known process tree on shutdown.
+
 #### [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
 
 | Item | Purpose |
@@ -246,7 +265,7 @@ Defines 8 terminal color profiles:
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
 | **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
 | **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
-| `main()` | Builds Tauri app with `TerminalState` managed state and 5 command handlers |
+| `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener plugins and command handlers |
 | **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
 
 ### Tauri Commands and Events
@@ -262,6 +281,10 @@ Defines 8 terminal color profiles:
 | `active_terminal_process` | `sessionId` | `Option<String>` | Poll active child process for the tab-title fallback |
 | `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
+| `operating_system` | — | OS/version string | Terminal-assistant instructions |
+| `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
+| `codex_send` | JSON-RPC object | `Result<(), String>` | `CodexClient` requests, notifications and tool responses |
+| `codex_stop` | — | `Result<(), String>` | App-server shutdown |
 
 #### Events (Rust → frontend)
 
@@ -270,6 +293,9 @@ Defines 8 terminal color profiles:
 | `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
 | `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
 | `terminal-launch` | `{ command?, cwd? }` | Opens a new tab after a second `-T` invocation |
+| `codex-message` | `{ generation, message }` | `CodexClient` JSON-RPC router |
+| `codex-stderr` | `{ generation, text }` | Available diagnostic event; not yet subscribed by the frontend |
+| `codex-exit` | `{ generation, text }` | Fails pending Codex requests for the active generation |
 
 ### Configuration
 
@@ -291,6 +317,7 @@ Grants to `main` window:
 - `core:event:allow-listen` — Required for `terminal-output` and `terminal-exit` events
 - `core:window:allow-is-fullscreen` — Alt+Enter fullscreen check
 - `core:window:allow-set-fullscreen` — Alt+Enter fullscreen toggle
+- `opener:allow-open-url` (`https://**`) — ChatGPT browser login URL only
 
 ---
 

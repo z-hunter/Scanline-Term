@@ -12,7 +12,7 @@ import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
 
 export type TerminalTab = { id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
-type SessionRecord = { tab: TerminalTab; session: TerminalSession };
+type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean };
 
 export function adjacentTabId(tabs: TerminalTab[], id: string): string | null {
   const index = tabs.findIndex((tab) => tab.id === id);
@@ -48,7 +48,7 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings }:
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(settingsRef.current.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...current, status: 'exited' })); }, () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...current, title: `${ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...current, title: `${ordinal}. ${name}` })));
-    sessions.current.set(id, { tab, session }); setTabs((current) => [...current, tab]); selectSession(id);
+    sessions.current.set(id, { tab, session, inputLocked: false }); setTabs((current) => [...current, tab]); selectSession(id);
     const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), validLaunch); renderer.current!.bindTerminal(session.terminal);
@@ -122,7 +122,7 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings }:
   const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, settings.consoleFont, settings.consoleFontSize, resolution]);
   useEffect(() => { renderer.current!.markDirty(); }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize]);
-  const activeSession = () => activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
+  const activeSession = () => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
   const cell = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => renderer.current!.cellAtPoint(event.clientX, event.clientY, event.currentTarget, settingsRef.current);
   const copyPoint = (point: { col: number; row: number }): CopyPoint => { const terminal = activeSession()?.terminal; if (!terminal) return { row: 0, column: 0 }; return { row: Math.max(terminal.buffer.active.viewportY, terminal.buffer.active.viewportY + point.row - 1), column: Math.max(0, point.col - 1) }; };
   const sendMouse = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>, action: Parameters<typeof terminalMouse>[0]['action'], button?: 0 | 1 | 2) => { const session = activeSession(); const terminal = session?.terminal; const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined; if (!session || !terminal || !tracking || tracking === 'none' || (tracking === 'x10' && (action !== 'press' || event.ctrlKey || event.altKey || event.shiftKey)) || (tracking === 'vt200' && action === 'move')) return false; const point = cell(event); if (!point) return false; event.preventDefault(); session.sendInput(terminalMouse({ ...point, action, button, sgr: session.sgrMouseMode, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: event.shiftKey })); return true; };

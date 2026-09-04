@@ -28,6 +28,9 @@ Run: `npm test`
 | Test | Area | Coverage |
 |------|------|----------|
 | `limits_terminal_dimensions` | PTY validation | Valid size (80×30), invalid cols (0), invalid rows (151) |
+| `validates_frontend_session_ids` | Terminal command boundary | UUID-shaped session IDs are accepted and malformed IDs are rejected |
+| `parses_terminal_launch_arguments` / `treats_a_directory_as_shell_working_directory` / `rejects_a_missing_working_directory` | Launch parsing | Command, directory and invalid working-directory cases |
+| `unrelated_process_has_no_child` | Process lookup | Nonexistent process returns no child |
 | `bundled_conpty_streams_win32_input_request` | ConPTY integration | Spawns cmd.exe with bundled ConPTY, verifies `\x1b[?9001h` appears in output |
 | `win32_input_mode_delivers_function_key` | ConPTY + Win32 Input | Sends F1 Win32 input sequence to PowerShell `ReadKey`, verifies "F1" output |
 
@@ -41,12 +44,23 @@ Run: `cd src-tauri && cargo test`
 
 ### After Changes to Rust / Native Console Code
 
-- [ ] `cargo test` passes (all 3 tests)
+- [ ] `cargo test` passes
 - [ ] `npm run tauri:dev` starts without errors
 - [ ] Console session starts (cmd.exe prompt appears)
 - [ ] Type a command (e.g., `dir`) — output appears correctly
 - [ ] Terminal resize: drag window, verify grid updates, no artifacts
 - [ ] Close and reopen — ConPTY session cleans up without orphaned processes
+
+### After Changes to Codex Assistant
+
+- [ ] `npm test`, `npm run lint`, `npm run build`, and `cd src-tauri && cargo test` pass
+- [ ] `npm run tauri:dev`: with Codex missing or older than 0.152.1, the panel has a recoverable error
+- [ ] The sign-in button opens the system browser and successful login changes the panel to `idle`
+- [ ] Debug `initialize` shows an app-local `codexHome`, not `%USERPROFILE%\\.codex`
+- [ ] A new `thread/start` reports the neutral app workspace and no external instruction source
+- [ ] Ask the assistant to inspect the terminal, run a short text command and verify output is observed
+- [ ] Verify text submission and Arrow/Escape/Ctrl+C actions in both ordinary and Win32 Input Mode terminal sessions
+- [ ] Open two tabs, start conversations, switch tabs and verify each tool call reaches its own terminal
 
 ### After Changes to Keyboard Input
 
@@ -137,6 +151,7 @@ Run: `cd src-tauri && cargo test`
 | Resize + font sizing | ❌ | Visual verification at multiple sizes |
 | Performance | ❌ | FPS counter, profiling tools |
 | Window lifecycle | ❌ | Open/close/fullscreen/minimize/restore |
+| Codex login and dynamic terminal tools | ❌ | Browser login, isolation, tool routing and terminal observation |
 
 ---
 

@@ -28,6 +28,7 @@ These files are complex, tightly coupled, and easy to break:
 | **`src/crt/CRTFilter.ts`** | 🔴 Critical | 1101 lines of WebGL + inline GLSL. Mistakes cause visual corruption, black screens, or WebGL errors. No automated visual tests. |
 | **`src/terminal/TerminalSession.ts` / `TerminalRenderer.ts`** | 🔴 Critical | ConPTY/xterm lifecycle and source-canvas rendering; changes affect input, resize and display integrity. |
 | **`src-tauri/src/main.rs`** | 🟠 High | ConPTY lifecycle, thread management, process cleanup. Bugs can cause orphaned processes, deadlocks, or data loss. Requires Windows to test. |
+| **`src-tauri/src/codex.rs` / `src/ai/CodexClient.ts` / `src/App.tsx`** | 🟠 High | Codex process isolation, JSON-RPC lifecycle and thread-to-terminal routing. A mistake can execute in the wrong session or inherit developer instructions. |
 | **`src/win32-input.ts`** | 🟠 High | Virtual key code and scan code lookup tables. Errors cause incorrect key delivery to console apps. Hard to test without specific Windows apps. |
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
 | **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
@@ -134,6 +135,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add a new Tauri event** | `main.rs`, `App.tsx` | Both | `tauri:dev` |
 | **Change bloom algorithm** | `CRTFilter.ts` (shader + render) | `CRTFilter.ts` | Visual in dev |
 | **Fix copy/paste** | `App.tsx` (clipboard handlers) | `App.tsx` | `tauri:dev` manual test |
+| **Change Codex assistant or tools** | `docs/10-ai-assistant.md`, `App.tsx`, `ai/CodexClient.ts`, `terminal/TerminalSession.ts`, `src-tauri/src/codex.rs` | Varies | `npm test`, `cargo test`, `tauri:dev`: sign-in, isolation, two-tab routing, VT/Win32 input |
 
 ---
 

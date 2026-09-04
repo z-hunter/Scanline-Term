@@ -1,0 +1,7 @@
+import { useState } from 'react';
+
+export type AiMessage = { role: 'user' | 'assistant' | 'action'; text: string };
+export function AiPanel({ messages, status, signedIn, onSend, onStop, onLogin, debug }: { messages: AiMessage[]; status: 'idle' | 'running' | 'disconnected' | 'error'; signedIn: boolean; onSend: (text: string) => void; onStop: () => void; onLogin: () => void; debug: string[] }) {
+  const [text, setText] = useState(''); const submit = () => { if (!text.trim()) return; onSend(text); setText(''); };
+  return <aside className="ai-panel" aria-label="Codex assistant"><header><strong>Codex</strong><span>{status}</span></header>{!signedIn && <button type="button" onClick={onLogin}>Sign in with ChatGPT</button>}<div className="ai-messages">{messages.map((message, index) => <p key={index} className={`ai-${message.role}`}>{message.text}</p>)}</div><div className="ai-composer"><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Ask Codex to work in this terminal" /><button type="button" onClick={submit} disabled={!signedIn}>Send</button>{status === 'running' && <button type="button" onClick={onStop}>Stop</button>}</div><details className="ai-debug"><summary>Debug console ({debug.length})</summary><pre>{debug.join('\n')}</pre></details></aside>;
+}

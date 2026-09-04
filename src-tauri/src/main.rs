@@ -26,6 +26,7 @@ use conpty_oxide::{
     ConPtyBackend, PtyController, SessionOptions, Size,
 };
 use tauri::{path::BaseDirectory, Emitter, Manager, State};
+mod codex;
 
 struct TerminalSession {
     child: Child,
@@ -218,6 +219,13 @@ fn initial_terminal_launch(state: State<LaunchState>) -> TerminalLaunch {
 }
 
 #[tauri::command]
+fn operating_system() -> String {
+    std::process::Command::new("cmd.exe").args(["/d", "/s", "/c", "ver"]).output()
+        .ok().map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|version| !version.is_empty()).unwrap_or_else(|| std::env::consts::OS.to_owned())
+}
+
+#[tauri::command]
 fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id: SessionId, cols: u16, rows: u16, launch: Option<TerminalLaunch>) -> Result<String, String> {
     valid_session_id(&session_id)?;
     let size = pty_size(cols, rows)?;
@@ -322,7 +330,9 @@ fn main() {
     let (launch, _) = terminal_launch(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
     tauri::Builder::default()
         .manage(TerminalState::default())
+        .manage(codex::CodexState::default())
         .manage(LaunchState(launch))
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let (launch, launch_in_tab) = terminal_launch(&args, &cwd);
             if launch_in_tab {
@@ -330,7 +340,7 @@ fn main() {
             }
             let _ = app.get_webview_window("main").map(|window| window.set_focus());
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }

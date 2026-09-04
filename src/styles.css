@@ -24,7 +24,7 @@ select {
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) calc(320px * var(--settings-scale, 1));
+  grid-template-columns: minmax(0, 1fr) 360px calc(320px * var(--settings-scale, 1));
   grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   height: 100vh;
@@ -32,8 +32,17 @@ select {
 }
 
 .app-shell.settings-hidden {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 360px;
 }
+
+.ai-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #263b2d; border-radius: 12px; background: #101a14; }
+.ai-panel header { display: flex; justify-content: space-between; color: #7dffae; }
+.ai-panel header span { color: #6b9178; font-size: 11px; text-transform: uppercase; }
+.ai-messages { min-height: 0; flex: 1; overflow-y: auto; font-size: 13px; white-space: pre-wrap; }
+.ai-messages p { margin: 0 0 10px; padding: 8px; border-radius: 6px; }
+.ai-user { background: #163321; }.ai-assistant { background: #0b130e; }.ai-action { color: #79d897; }
+.ai-composer { display: grid; grid-template-columns: 1fr auto; gap: 6px; }.ai-composer textarea { min-height: 56px; resize: vertical; color: #d7f5df; background: #0b130e; border: 1px solid #355840; border-radius: 5px; padding: 6px; }.ai-composer button { color: #d7f5df; background: #163321; border: 1px solid #355840; border-radius: 5px; cursor: pointer; }
+.ai-debug { max-height: 180px; overflow: auto; border-top: 1px solid #294433; color: #9ccca9; font: 10px/1.35 ui-monospace, Consolas, monospace; }.ai-debug summary { cursor: pointer; padding: 6px 0; }.ai-debug pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 .display-panel {
   display: flex;

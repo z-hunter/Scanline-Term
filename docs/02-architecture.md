@@ -79,6 +79,10 @@ graph TB
 
 ## Execution Boundary
 
+### Codex app-server experiment
+
+The desktop process owns one hidden `codex app-server --stdio` child. It launches with an isolated app-local `CODEX_HOME` and neutral workspace, so personal Codex instructions, plugins, hooks and MCP configuration cannot affect terminal threads. `codex_start`, `codex_send`, and `codex_stop` carry JSON-RPC JSONL between it and the WebView; stdout, stderr, and exit are emitted with a process generation so stale events are ignored after restart. The WebView's `CodexClient` is the single protocol owner and initializes the experimental API before it creates ephemeral threads. Each thread explicitly uses the neutral workspace, disables project instruction discovery and rejects a creation response that reports instruction sources. ChatGPT authentication is stored in the isolated app profile and is initiated through the panel when needed. See [Codex Terminal Assistant](./10-ai-assistant.md) for the protocol and safety boundary.
+
 | Executes in **WebView** (JavaScript/TypeScript) | Executes in **Rust** (native process) |
 |----|-----|
 | React UI, settings panel, all event handlers | Tauri command handlers |

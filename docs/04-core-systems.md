@@ -40,6 +40,14 @@ Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title 
 
 ---
 
+## Codex terminal automation
+
+The AI assistant does not own a second shell. `TerminalSession` exposes its parsed xterm state and uses the same per-session `write_terminal` path as normal input, which keeps agent input attached to one existing ConPTY tab. It supplies immediate snapshots or bounded output waits, and reuses the standard VT/Win32 key encoders for named key actions.
+
+One isolated `codex app-server` process serves the app. The WebView maps each ephemeral Codex thread to a terminal session before dispatching dynamic tool calls, so a tool call cannot choose another tab. The detailed lifecycle, authentication flow, protocol contracts and current limitations are in [Codex Terminal Assistant](./10-ai-assistant.md).
+
+---
+
 ## ConPTY and Win32 Input Mode
 
 ### ConPTY Basics

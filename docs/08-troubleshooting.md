@@ -35,6 +35,16 @@
 | Menu+key shortcuts not working | Menu key (`ContextMenu`) not recognized on some keyboards | Check if `event.key === 'ContextMenu'` fires | Verify keyboard layout; some keyboards lack a dedicated Menu key |
 | Keys go to settings panel instead of terminal | A settings control has focus | Click the canvas to return focus | This is expected behavior — settings controls capture keyboard |
 
+### Codex Assistant
+
+| Symptom | Probable Cause | Diagnostic | Fix |
+|---------|---------------|------------|-----|
+| `Codex CLI was not found on PATH` | Codex is not installed or invisible to the Tauri process | Run `codex --version` from a new terminal | Install Codex or repair `PATH`; version must be at least 0.152.1 |
+| Sign-in button does nothing | External opener plugin/capability is missing | Debug has `authUrl`, but no browser opens | Ensure `tauri-plugin-opener` is registered and capability permits `https://**`; restart Tauri |
+| `Login cancelled` | Browser login was closed or callback could not complete | `account/login/completed` in Debug console | Start a new login; do not reuse the old URL |
+| `Unexpected external Codex instructions were loaded` | Isolation no longer applies | Inspect `thread/start` result | Restore app-local `CODEX_HOME`, neutral `cwd` and `project_doc_max_bytes: 0` |
+| Assistant observes the wrong tab | Thread/session routing regression | Compare `threadId` and active terminal output in Debug console | Inspect the `threadId → sessionId` map in `App.tsx`; never add session ID to tool arguments |
+
 ### Buffer Size and Resize
 
 | Symptom | Probable Cause | Diagnostic | Fix |

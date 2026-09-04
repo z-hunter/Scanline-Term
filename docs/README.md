@@ -15,7 +15,8 @@
 | [Testing & Validation](./07-testing.md) | Developers/QA | Test layout, validation checklists, manual vs automated |
 | [Troubleshooting](./08-troubleshooting.md) | Developers/Ops | Symptoms, causes, diagnostics, fixes, known limitations |
 | [Extension Guide](./09-extension-guide.md) | Developers | Recipes for adding profiles, settings, shortcuts, commands |
-| [Agent Guide](./AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
+| [Codex Terminal Assistant](./10-ai-assistant.md) | Developers/QA | Architecture, isolation, app-server protocol, tools, safety boundary and validation |
+| [Agent Guide](../AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
 
 ## Quick Links
 
