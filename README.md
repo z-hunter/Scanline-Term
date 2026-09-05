@@ -1,37 +1,166 @@
-# Scanline Term
+# 📺 Scanline Term
 
-A native Windows terminal with a physically-inspired CRT display.
-Each terminal session can optionally have its own AI operator (currently supported Codex CLI host).
+[![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
+[![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Built with React, Vite, and Tauri 2.
-The CRT filter extracted from our Quest/Scanline engine:
+**Scanline Term** is a high-performance Windows terminal emulator that renders live Windows console sessions through an authentic, physically-inspired WebGL CRT simulation pipeline. 
+
+Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY management, an embedded keyboard-centric web browser, a Quake-style global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+
+---
+
+## ⚡ Unique Selling Propositions (Why Scanline Term?)
+
+### 1. 🖵 Authentic CRT Physics (Not a Cheap CSS Overlay)
+Scanline Term features a custom multi-pass WebGL shader pipeline extracted from the *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
+* **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
+* **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
+* **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
+* **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
+* **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
+
+### 2. ⌨️ Keyboard-First Multitasking & Embedded WebView Browser
+Keep your hands on the keyboard and stay in the zone:
+* **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI).
+* **Isolated Native Keyboard Bridge**: Application shortcuts are intercepted and bridged across the native boundary, preventing remote web pages from trapping your navigation hotkeys.
+* **Lightning-Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
+
+### 3. 🪟 Native Windows ConPTY Engine
+Built specifically for Windows with Rust and native APIs:
+* **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries — compatible with PowerShell, CMD, FAR Manager, WSL, and native terminal apps.
+* **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys F1–F24, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
+* **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
+
+### 4. 🚀 Quake-Style Global Hotkey (`Win + ~`)
+Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
+
+### 5. 🤖 Context-Aware AI Terminal Assistant
+Connect any terminal session to an embedded Codex AI assistant. The operator inspects live terminal screen snapshots and can safely execute commands in your tab with human-in-the-loop confirmation.
+
+### 6. 🪶 Ultra-Lightweight & Fast
+Unlike bloated Electron-based retro terminals that consume gigabytes of RAM, Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays whisper-quiet on system resources.
+
+---
+
+## 🎨 Display Profiles & Virtual Resolutions
+
+Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
+
+* **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Apple II, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
+* **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
+  - **QVGA** (320 × 240)
+  - **VGA** (640 × 480)
+  - **SVGA** (800 × 600)
+  - **XGA** (1024 × 768)
+  - **Native** (Full resolution)
+
+---
+
+## ⌨️ Keyboard Shortcuts Cheat Sheet
+
+> **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
+
+| Shortcut | Action | Description |
+|---|---|---|
+| **`Win + ~`** | Global Show/Hide | Summon or minimize Scanline Term from any Windows application |
+| **`Alt + Enter`** | Fullscreen Toggle | Toggle distraction-free full-screen CRT mode |
+| **`Menu + S`** | Settings Panel | Open / close the real-time CRT shader lab and display controls |
+| **`Menu + A`** | AI Assistant Panel | Open / close the Codex AI assistant panel |
+| **`Menu + N`** | New Terminal Tab | Spawn a new independent ConPTY shell session |
+| **`Menu + B`** | New Browser Tab | Open a new embedded WebView2 browser tab and focus address bar |
+| **`Menu + W`** | Close Tab | Close the active terminal session or browser tab |
+| **`Menu + 1...9`** | Switch Tab | Switch directly to tab 1 through 9 |
+| **`Menu + V`** | Paste | Paste clipboard text into the active shell |
+| **`Menu + C`** | Copy Mode | Activate rectangular screen selection and copy mode |
+| **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
+
+---
+
+## 📥 Installation
+
+Download the latest pre-compiled Windows Installer (**MSI**) from the Releases page:
+
+👉 **[Download Scanline Term (Latest Release)](https://github.com/z-hunter/Scanline-Term/releases/latest)**
+
+Run `Scanline.Term_0.1.0_x64_en-US.msi` to install. System requirements:
+* Windows 10 (version 1809+) or Windows 11 (64-bit)
+* [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
+
+---
+
+## 🏗️ Architecture
 
 ```text
-ConPTY (`cmd.exe`) ↔ Tauri commands/events ↔ VT screen buffer → canvas → CRTFilter → WebGL output canvas
+┌─────────────────────────────────────────────────────────────┐
+│                       Windows Desktop                       │
+│     Global Hotkey (Win+~) ─── Native Child WebViews (URL)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│                    Rust Backend (Tauri 2)                   │
+│   ConPTY Lifecycle (conpty-oxide) ── Codex App-Server IPC   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Tauri Commands & Events
+┌──────────────────────────────▼──────────────────────────────┐
+│                  Frontend UI (React 19)                     │
+│  Tab Manager ── Headless xterm Buffer ── UI Controls        │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ Canvas 2D Text Grid
+┌──────────────────────────────▼──────────────────────────────┐
+│                  CRTFilter (WebGL 1 Engine)                 │
+│  Beam Modulation ── Scanlines ── Phosphor Persistence FBOs  │
+│  Bloom Passes ── Screen Curvature ── Final Display Canvas   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Included
+For in-depth architectural details, check our comprehensive documentation in [`docs/`](./docs/README.md):
+- [Architecture & Data Flow](./docs/02-architecture.md)
+- [Core Systems & Shaders](./docs/04-core-systems.md)
+- [Design Decisions](./docs/05-design-decisions.md)
+- [Codex Terminal Assistant Guide](./docs/10-ai-assistant.md)
 
-- Curvature, vignette, bezel glow, scanlines, beam modulation, RGB split, bloom, screen glow, phosphor grain, persistence duration and trail intensity (0–4), HV breathing and anti-moiré pixels.
-- Color output modes: Color, B&W (~6500K white phosphor), Green, Amber and Phosphor Blue.
-- Separate image brightness/contrast controls and monochrome-only background desaturation; phosphor grain/static and scanlines are composited as an independent surface layer.
-- Virtual modes: QVGA 320×240, VGA 640×480, SVGA 800×600 and XGA 1024×768.
-- Native controls with validated `localStorage` settings and reset-to-defaults.
-- In the Tauri app, each terminal tab runs an independent native Windows ConPTY `cmd.exe` session; its default `#ccc` on `#0c0c0c` and ANSI 16/256/RGB colors are composited into the shared CRT canvas, then recolored by the shader. The character grid resizes with the virtual resolution and display area. Click the screen to type or paste; Ctrl combinations, navigation, numpad application mode and F1–F24 are serialized as VT input. Browser/Vite preview keeps using the mock session.
+---
 
-## Development
+## 🛠️ Building from Source
 
-Install Rust with the MSVC toolchain, Microsoft C++ Build Tools and WebView2 on Windows, then run:
+### Prerequisites
+1. [Rust](https://rustup.rs/) (stable `x86_64-pc-windows-msvc` toolchain)
+2. [Node.js](https://nodejs.org/) (v20+ recommended)
+3. Visual Studio C++ Build Tools
+
+### Development Workflow
 
 ```sh
+# Clone the repository
+git clone https://github.com/z-hunter/Scanline-Term.git
+cd Scanline-Term
+
+# Install frontend dependencies
 npm install
+
+# Start development in browser-only mode (simulated mock session for shader testing)
 npm run dev
+
+# Launch full native Tauri app with live ConPTY sessions
 npm run tauri:dev
+
+# Run frontend & backend test suites
 npm test
-npm run build
-npm run tauri:build
+cd src-tauri && cargo test
+
+# Build production MSI installer
+npm run tauri:build -- --bundles msi
 ```
 
-The project is MIT licensed. `CRTFilter.ts` originated in our Quest/Scanline project and is maintained here as an independent, framework-free module.
+---
 
-See [BACKLOG.md](BACKLOG.md) for the next persistence and physical-screen improvements.
+## 📜 License
+
+This project is licensed under the [MIT License](LICENSE).  
+The WebGL `CRTFilter` originated in our *Quest/Scanline* project and is maintained here as a standalone module.
+
+---
+
+*Enjoy retro terminal computing! PRs, suggestions, and feedback are always welcome.*
