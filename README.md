@@ -57,8 +57,7 @@ Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The
 
 ### 6. Ultra-Lightweight & Fast
 
-Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays lightweight on system resources.
-Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays lightweight on system resources.
+Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~9 MB**, launches instantly, and stays lightweight on system resources.
 
 ---
 
@@ -110,6 +109,53 @@ Embedded WebView2 browser tabs feature a keyboard-first, Vim-inspired navigation
 | **`i`** | Pass/Insert Mode | Enter pass-through mode to interact directly with web page keys |
 | **`Esc`** | Normal Mode | Exit hints, address bar, or pass/insert mode back to normal navigation |
 | **`Menu + ...`** | App Shortcuts | All main app shortcuts (`Menu + W`, `Menu + 1...9`, `Menu + B`, etc.) remain fully accessible within browser tabs |
+
+---
+
+## Command-Line Usage
+
+Scanline Term can be invoked from the command prompt, PowerShell, terminal scripts, or Windows shortcuts with custom arguments:
+
+```sh
+scanline-term [options] [target]
+```
+
+### Command line Arguments
+
+| Flag | Parameter | Description |
+| --- | --- | --- |
+| **`-T`** | *None* | Open target in a new tab if an instance of Scanline Term is already running |
+| **`-P`** | `<path>` | Set explicit working directory (`cwd`) for the launched terminal session |
+
+### Target Arguments
+
+The optional `[target]` argument is automatically detected and routed:
+
+* **Directory Path** (`.` or `C:\path\to\dir`): Launches the default shell in the specified directory.
+* **Command or Executable** (`pwsh`, `cmd.exe`, `C:\tools\app.exe`): Launches the given command or console program directly.
+* **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded retro WebView2 browser tab.
+
+### Practical Examples
+
+```sh
+# Launch default shell in the current working directory
+scanline-term .
+
+# Launch default shell in a specific project folder
+scanline-term C:\Projects\MyProject
+
+# Launch PowerShell with an explicit working directory
+scanline-term -P C:\Projects\MyProject pwsh
+
+# Open a new tab in an existing Scanline Term window
+scanline-term -T pwsh
+
+# Open a new tab with working directory set
+scanline-term -T -P C:\Projects\MyProject
+
+# Open documentation directly in the built-in CRT browser
+scanline-term https://docs.rs
+```
 
 ---
 
