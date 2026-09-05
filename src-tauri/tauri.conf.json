@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "msi"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": {
       "resources/conpty/": "conpty/"
