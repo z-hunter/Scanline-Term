@@ -51,6 +51,8 @@ Summon Scanline Term from anywhere in Windows with a single keystroke. When you'
 
 Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can see the terminal session and safely execute commands in your tab with human-in-the-loop confirmation.
 
+![Scanline Term](public/Screenshot_24.png)
+
 > **Note**: To use the AI Terminal Assistant, [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) must be installed on your system and available on your `PATH`.
 
 ### 6. Ultra-Lightweight & Fast
