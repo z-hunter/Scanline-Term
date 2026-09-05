@@ -5,16 +5,16 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Scanline Term** is a high-performance Windows terminal emulator that renders live Windows console sessions through an authentic, physically-inspired WebGL CRT simulation pipeline. 
+**Scanline Term** is a "retro-futuristic" Windows terminal emulator that renders live console sessions through a physically-modelled WebGL CRT simulation pipeline. 
 
-Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY management, an embedded keyboard-centric web browser, a Quake-style global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
 ---
 
-## Unique Selling Propositions (Why Scanline Term?)
+## Why Scanline Term?
 
-### 1. Authentic CRT Physics (Not a Cheap CSS Overlay)
-Scanline Term features a custom multi-pass WebGL shader pipeline extracted from the *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
+### 1. Authentic CRT Physics
+Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
 * **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
 * **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
 * **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
@@ -29,18 +29,20 @@ Keep your hands on the keyboard and stay in the zone:
 
 ### 3. Native Windows ConPTY Engine
 Built specifically for Windows with Rust and native APIs:
-* **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries — compatible with PowerShell, CMD, FAR Manager, WSL, and native terminal apps.
+* **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys F1–F24, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
 ### 4. Quake-Style Global Hotkey (`Win + ~`)
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
-### 5. Context-Aware AI Terminal Assistant
-Connect any terminal session to an embedded Codex AI assistant. The operator inspects live terminal screen snapshots and can safely execute commands in your tab with human-in-the-loop confirmation.
+### 5. AI Terminal Assistant
+Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can inspect the terminal session and safely execute commands in your active tab with human-in-the-loop confirmation.
+
+> **Note**: To use the AI Terminal Assistant, [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) must be installed on your system and available on your `PATH`. The assistant runs as an isolated local child process communicating over JSON-RPC.
 
 ### 6. Ultra-Lightweight & Fast
-Unlike bloated Electron-based retro terminals that consume gigabytes of RAM, Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays whisper-quiet on system resources.
+Unlike bloated Electron-based terminals, Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays lightweight on system resources.
 
 ---
 
@@ -50,7 +52,6 @@ Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S
 
 * **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Apple II, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
 * **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
-  - **QVGA** (320 × 240)
   - **VGA** (640 × 480)
   - **SVGA** (800 × 600)
   - **XGA** (1024 × 768)
@@ -87,6 +88,7 @@ Download the latest pre-compiled Windows Installer (**MSI**) from the Releases p
 Run `Scanline.Term_0.1.0_x64_en-US.msi` to install. System requirements:
 * Windows 10 (version 1809+) or Windows 11 (64-bit)
 * [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
+* *(Optional)* [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) on `PATH` if using the AI Terminal Assistant.
 
 ---
 
