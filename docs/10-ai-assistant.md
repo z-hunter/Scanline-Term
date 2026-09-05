@@ -47,7 +47,7 @@ sequenceDiagram
 
 ## Startup, authentication and isolation
 
-`codex_start` accepts only Codex CLI version `0.152.1` or later. It is idempotent while the existing child remains alive. It starts the server through `cmd.exe` and communicates over newline-delimited JSON-RPC on stdin/stdout. `taskkill /PID … /T /F` terminates its known process tree when the app stops.
+`codex_start` accepts only Codex CLI version `0.152.1` or later. It is idempotent while the existing child remains alive. It starts the server through a hidden `cmd.exe` wrapper and communicates over newline-delimited JSON-RPC on stdin/stdout. `taskkill /PID … /T /F` terminates its known process tree when the app stops.
 
 The child does not inherit the developer's normal Codex workspace:
 

@@ -18,11 +18,15 @@ describe('CRT settings', () => {
 
   it('keeps default CRT parameters without the removed hum setting', () => {
     expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.13);
-    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(330);
-    expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(4);
+    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(120);
+    expect(DEFAULT_CRT_SETTINGS.scanlineIntensity).toBe(0.5);
+    expect(DEFAULT_CRT_SETTINGS.beamModulation).toBe(0.5);
+    expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
+    expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(1.8);
     expect(DEFAULT_CRT_SETTINGS.imageBrightness).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
-    expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0.7);
+    expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('spiral');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);

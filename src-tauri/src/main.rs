@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::{
     collections::HashMap,
@@ -25,7 +25,7 @@ use conpty_oxide::{
     blocking::{Child, Command},
     ConPtyBackend, PtyController, SessionOptions, Size,
 };
-use tauri::{path::BaseDirectory, Emitter, Manager, State};
+use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 mod codex;
 mod browser;
@@ -423,6 +423,11 @@ fn main() {
         .manage(LaunchState(launch))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .setup(|app| {
+            let icon = Image::from_bytes(include_bytes!("../icons/32x32 - Copy.png"))?;
+            app.get_webview_window("main").ok_or("main window is unavailable")?.set_icon(icon)?;
+            Ok(())
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let (launch, launch_in_tab) = launch_request(&args, &cwd);
             match launch { LaunchRequest::Browser { .. } => { let _ = app.emit("browser-launch", launch); }, LaunchRequest::Terminal { command, cwd } if launch_in_tab => { let _ = app.emit("terminal-launch", TerminalLaunch { command, cwd }); }, _ => {} }

@@ -1,4 +1,6 @@
 use std::{fs, io::{BufRead, BufReader, Write}, path::PathBuf, process::{Child, ChildStdin, Command, Stdio}, sync::{atomic::{AtomicU64, Ordering}, Mutex}, thread};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -16,8 +18,16 @@ struct TextPayload { generation: u64, text: String }
 #[derive(Serialize)] #[serde(rename_all = "camelCase")]
 pub struct Started { pub generation: u64, pub version: String, pub workspace: String }
 
+fn codex_command(command: &str) -> Command {
+    let mut process = Command::new("cmd.exe");
+    process.args(["/d", "/s", "/c", command]);
+    #[cfg(windows)]
+    process.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    process
+}
+
 fn version() -> Result<String, String> {
-    let output = Command::new("cmd.exe").args(["/d", "/s", "/c", "codex --version"]).output().map_err(|_| "Codex CLI was not found on PATH".to_owned())?;
+    let output = codex_command("codex --version").output().map_err(|_| "Codex CLI was not found on PATH".to_owned())?;
     let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     let version = text.strip_prefix("codex-cli ").ok_or("Could not parse Codex CLI version")?;
     let parsed: Vec<u32> = version.split('.').map(str::parse).collect::<Result<_, _>>().map_err(|_| "Could not parse Codex CLI version")?;
@@ -43,7 +53,7 @@ pub fn codex_start(app: tauri::AppHandle, state: State<CodexState>) -> Result<St
         *state = None;
     }
     let version = version()?;
-    let mut child = Command::new("cmd.exe").args(["/d", "/s", "/c", "codex app-server --stdio"]).env("CODEX_HOME", home).current_dir(&workspace).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|error| format!("Could not start Codex: {error}"))?;
+    let mut child = codex_command("codex app-server --stdio").env("CODEX_HOME", home).current_dir(&workspace).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|error| format!("Could not start Codex: {error}"))?;
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
     let stdin = child.stdin.take().ok_or("Codex stdin is unavailable")?;
     let stdout = child.stdout.take().ok_or("Codex stdout is unavailable")?;
