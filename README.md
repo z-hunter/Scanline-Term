@@ -42,7 +42,7 @@ Built specifically for Windows with Rust and native APIs:
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
-![Scanline Term](public/Screenshot_22.png)
+![Scanline Term](public/Screenshot_23.png)
 
 ### 4. Quake-Style Global Hotkey
 
