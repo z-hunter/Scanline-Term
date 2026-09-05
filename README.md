@@ -5,6 +5,8 @@
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Scanline Term](assets/screenshot.png)
+
 **Scanline Term** is a "retro-futuristic" Windows terminal emulator that renders live console sessions through a physically-modelled WebGL CRT simulation pipeline.
 
 Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
@@ -15,7 +17,7 @@ Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power
 
 ### 1. Authentic CRT Physics
 
-Scanline Term features a custom multi-pass WebGL shader pipeline extracted from the our *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
+Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
 
 * **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
 * **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
