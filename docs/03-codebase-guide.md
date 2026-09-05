@@ -70,7 +70,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns the session map, active xterm buffer, input routing and throttled per-tab average color updates; `ui/TerminalTabs.tsx` renders the post-it tab strip; `TerminalRenderer` and `useCRT` remain single shared rendering instances for the active tab.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Terminals share one `TerminalRenderer` and CRT filter; browser tabs are native child WebViews and deliberately bypass the CRT pipeline.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 

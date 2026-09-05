@@ -12,6 +12,7 @@ export interface LayoutFitParams {
   aiVisible: boolean;
   settingsVisible: boolean;
   measuredTerminalWidth?: number;
+  tabsHidden?: boolean;
 }
 
 export const AI_PANEL_WIDTH = 360;
@@ -37,6 +38,7 @@ export function canPanelsFitWithoutShift({
   aiVisible,
   settingsVisible,
   measuredTerminalWidth,
+  tabsHidden = false,
 }: LayoutFitParams): boolean {
   if (!aiVisible && !settingsVisible) return false;
   if (resolutionId === 'physical') return false;
@@ -60,7 +62,7 @@ export function canPanelsFitWithoutShift({
   if (measuredTerminalWidth && measuredTerminalWidth > 0) {
     terminalWidth = measuredTerminalWidth;
   } else {
-    const tabHeight = tabPlacement === 'top' ? (tabSpace || 36) : 0;
+    const tabHeight = tabPlacement === 'top' && !tabsHidden ? (tabSpace || 36) : 0;
     const availableHeight = Math.max(0, windowHeight - APP_SHELL_PADDING_V - tabHeight);
     const ratio =
       resolutionWidth && resolutionHeight
@@ -69,7 +71,7 @@ export function canPanelsFitWithoutShift({
 
     const naturalWidth = Math.round(availableHeight * ratio);
     const maxAllowedWidth =
-      tabPlacement === 'left'
+      tabPlacement === 'left' && !tabsHidden
         ? Math.max(0, contentWidth - 2 * tabSpace)
         : contentWidth;
 

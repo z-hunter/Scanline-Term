@@ -6,6 +6,7 @@ import {
   type CSSProperties,
 } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   DEFAULT_CRT_SETTINGS,
@@ -64,6 +65,8 @@ export default function App() {
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [windowSize, setWindowSize] = useState(() => ({
@@ -127,14 +130,42 @@ export default function App() {
     onToggleSettings: toggleSettings,
     onToggleAi: toggleAi,
   });
+  const activeBrowser = terminal.tabs.find((tab) => tab.id === terminal.activeTabId && tab.kind === "browser");
+  const activeBrowserId = activeBrowser?.id;
   const crt = useCRT({
     settings: stored.crt,
     resolution,
     renderer: terminal.renderer,
     onError: reportError,
     onResizeSource: terminal.resizeSource,
+    enabled: !activeBrowser,
   });
   const { clearPersistence, outputRef, fps, renderStats } = crt;
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen("browser-trace", (event) => console.info("[browser]", event.payload)).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten?.();
+  }, []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const update = () => {
+      const rect = screenRef.current?.getBoundingClientRect();
+      const payload = {
+        sessionId: activeBrowserId && terminal.addressTabId !== activeBrowserId ? activeBrowserId : null,
+        bounds: activeBrowserId && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
+      };
+      console.info("[browser] set-active request", payload);
+      void invoke("set_active_browser", payload).catch((reason) => { console.error("[browser] set-active failed", reason); reportError(`Could not position browser: ${String(reason)}`); });
+    };
+    const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
+    return () => observer.disconnect();
+  }, [activeBrowserId, activeBrowser?.status, reportError, stored.tabPlacement, stored.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
+  useEffect(() => {
+    if (!terminal.addressTabId) return;
+    const frame = requestAnimationFrame(() => { addressRef.current?.focus(); addressRef.current?.select(); });
+    return () => cancelAnimationFrame(frame);
+  }, [terminal.addressTabId]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     try {
       const models = await codex.listModels();
@@ -470,11 +501,14 @@ export default function App() {
       if (!activeIds.has(id)) seenStreamDeltas.current.delete(id);
     });
   }, [terminal.tabs]);
+  const tabsHidden =
+    stored.hideTabsWhenSingleSession && terminal.tabs.length <= 1;
+  const hideTopTabs = stored.tabPlacement === "top" && tabsHidden;
   useEffect(() => {
     const workspace = workspaceRef.current;
     const tabs = tabsRef.current;
-    if (!workspace || !tabs || stored.tabPlacement !== "left") {
-      setTabSpace(36);
+    if (!workspace || !tabs || stored.tabPlacement !== "left" || tabsHidden) {
+      setTabSpace(tabsHidden ? 0 : 36);
       return;
     }
     const resize = () => {
@@ -490,6 +524,7 @@ export default function App() {
     stored.tabPlacement,
     stored.hideTabsWhenSingleSession,
     terminal.tabs.length,
+    tabsHidden,
   ]);
   useEffect(() => {
     const display = outputRef.current?.parentElement;
@@ -715,11 +750,12 @@ export default function App() {
     resolutionWidth: "width" in resolution ? resolution.width : undefined,
     resolutionHeight: "height" in resolution ? resolution.height : undefined,
     tabPlacement: stored.tabPlacement,
-    tabSpace,
+    tabSpace: tabsHidden && stored.tabPlacement === "top" ? 0 : tabSpace,
     settingsScale: stored.settingsScale,
     aiVisible,
     settingsVisible,
     measuredTerminalWidth: undisturbedWidth,
+    tabsHidden,
   });
   canFitWithoutShiftRef.current = canFitWithoutShift;
   const totalPanelsWidth =
@@ -750,18 +786,16 @@ export default function App() {
       <section className="display-panel" aria-label="CRT display">
         <div
           ref={workspaceRef}
-          style={{ "--tab-space": "36px" } as CSSProperties}
-          className={`terminal-workspace terminal-workspace-${stored.tabPlacement}`}
+          style={{ "--tab-space": `${tabsHidden && stored.tabPlacement === "left" ? 0 : tabSpace}px` } as CSSProperties}
+          className={`terminal-workspace terminal-workspace-${stored.tabPlacement}${tabsHidden ? " tabs-hidden" : ""}`}
         >
-          {isTauri() && (
+          {isTauri() && !hideTopTabs && (
             <TerminalTabs
               panelRef={tabsRef}
               tabs={terminal.tabs}
-              activeId={terminal.activeSessionId}
+              activeId={terminal.activeTabId}
               placement={stored.tabPlacement}
-              hideTabList={
-                stored.hideTabsWhenSingleSession && terminal.tabs.length <= 1
-              }
+              hideTabList={tabsHidden}
               onSelect={terminal.selectSession}
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}
@@ -773,12 +807,13 @@ export default function App() {
           )}
           <div
             id="terminal-display"
+            ref={screenRef}
             className={`screen-frame${physicalWindow ? " physical-window" : ""}${stored.crt.showBezel ? "" : " bezel-hidden"}`}
             style={screenStyle}
           >
             <canvas
               ref={outputRef}
-              className="output-canvas"
+              className={`output-canvas${activeBrowser ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
               tabIndex={terminal.live ? 0 : -1}
               aria-label={terminal.live ? "Windows console" : "CRT display"}
@@ -787,6 +822,12 @@ export default function App() {
             <span className="frame-status">
               {terminal.size.cols} × {terminal.size.rows}
             </span>
+            {terminal.addressTabId && (
+              <form className="browser-address" onSubmit={(event) => { event.preventDefault(); const value = new FormData(event.currentTarget).get("url"); if (typeof value === "string") terminal.navigateBrowser(terminal.addressTabId!, value); }}>
+                <input ref={addressRef} name="url" type="text" inputMode="url" placeholder="https://example.com" aria-label="Browser address" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); terminal.closeAddress(); } }} />
+                <button type="submit">Open</button>
+              </form>
+            )}
           </div>
         </div>
         {error && (
@@ -796,7 +837,7 @@ export default function App() {
         )}
       </section>
       {aiVisible && (
-        <AiPanel
+        activeBrowser ? <aside className="ai-panel" aria-label="AI assistant">The AI assistant is available only for terminal tabs.</aside> : <AiPanel
           messages={sessionId ? (chats[sessionId] ?? []) : []}
           status={sessionId && runningSessions[sessionId] ? "running" : aiStatus === "running" ? "idle" : aiStatus}
           isProcessing={Boolean(sessionId && runningSessions[sessionId])}

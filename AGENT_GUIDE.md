@@ -96,7 +96,6 @@ You **must** test with `npm run tauri:dev` on Windows when:
 
 - **Do not remove or alter the Win32 Input Mode CSI handlers** in `TerminalSession.ts`. These enable FAR Manager, PowerShell, and other Windows console apps.
 - **Do not change the `pty_size()` validation ranges** without updating `terminalDimensions()` clamping to match, and vice versa.
-- **Do not remove the initial `\r` write** in `start_terminal()` — it triggers the shell prompt.
 
 ### Input Latency
 

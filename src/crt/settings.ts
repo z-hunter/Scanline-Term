@@ -9,7 +9,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   curvature: 0.16,
   scanlineCount: 200,
   scanlineIntensity: 0.4,
-  aberration: 0.2,
+  aberration: 0,
   vignette: 0.9,
   phosphor: 1,
   bezelGlow: true,

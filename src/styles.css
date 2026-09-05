@@ -105,6 +105,12 @@ select {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
+  --workspace-screen-height: calc(100vh - 54px);
+}
+
+.terminal-workspace-top.tabs-hidden {
+  justify-content: center;
+  --workspace-screen-height: calc(100vh - 18px);
 }
 
 .workspace-settings-button {
@@ -125,12 +131,12 @@ select {
 
 .terminal-workspace-top .workspace-settings-button {
   top: 0;
-  left: calc(50% + min(50%, calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+  left: calc(50% + min(50%, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
 }
 
 .terminal-workspace-left .workspace-settings-button {
   top: 8px;
-  left: calc(50% + min(calc(50% - var(--tab-space)), calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+  left: calc(50% + min(calc(50% - var(--tab-space)), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
 }
 
 .terminal-workspace-left:has(.screen-frame.physical-window) .workspace-settings-button {
@@ -148,6 +154,7 @@ select {
   display: block;
   width: 100%;
   height: 100%;
+  --workspace-screen-height: calc(100vh - 18px);
 }
 
 .terminal-tabs {
@@ -174,7 +181,7 @@ select {
 .terminal-tabs-left {
   position: absolute;
   top: 50%;
-  right: calc(50% + min(calc(50% - var(--tab-space)), calc((100vh - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+  right: calc(50% + min(calc(50% - var(--tab-space)), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
   align-self: auto;
   transform: translateY(-50%);
   flex-direction: column;
@@ -368,7 +375,7 @@ select {
 
 .screen-frame {
   position: relative;
-  width: min(100%, calc((100vh - 36px) * var(--screen-ratio, 1.3333333333)));
+  width: min(100%, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333)));
   aspect-ratio: var(--screen-ratio, 1.3333333333);
   overflow: hidden;
   border: 12px solid #1d2822;
@@ -410,6 +417,25 @@ select {
   width: 100%;
   height: 100%;
 }
+
+.output-canvas.browser-hidden { visibility: hidden; }
+
+.browser-address {
+  position: absolute;
+  z-index: 3;
+  inset: 50% auto auto 50%;
+  display: flex;
+  gap: 8px;
+  width: min(80%, 520px);
+  padding: 10px;
+  transform: translate(-50%, -50%);
+  background: #0b130f;
+  border: 1px solid #547764;
+  box-shadow: 0 8px 28px #000;
+}
+
+.browser-address input { min-width: 0; flex: 1; background: #020604; color: #d7f4dc; border: 1px solid #547764; padding: 7px; }
+.browser-address button { background: #294435; color: #d7f4dc; border: 1px solid #6d9e7a; padding: 7px 10px; }
 
 .frame-status {
   display: none;
@@ -575,6 +601,208 @@ output {
 .check-control input {
   margin-right: 8px;
   accent-color: #65d58a;
+}
+
+.switch-control {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0;
+  color: #b9d7c1;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-control.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.switch-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.switch-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  width: 36px;
+  height: 20px;
+  background: #0b130e;
+  border: 1px solid #355840;
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a875d;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.switch-toggle input:checked + .switch-track {
+  background: #163321;
+  border-color: #65d58a;
+  box-shadow: 0 0 6px rgba(101, 213, 138, 0.35);
+}
+
+.switch-toggle input:checked + .switch-track .switch-thumb {
+  transform: translateX(16px);
+  background: #7dffae;
+  box-shadow: 0 0 4px #7dffae;
+}
+
+.switch-toggle input:focus-visible + .switch-track {
+  outline: 2px solid #7dffae;
+  outline-offset: 2px;
+}
+
+.segmented-control {
+  display: flex;
+  background: #0b130e;
+  border: 1px solid #355840;
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+  user-select: none;
+}
+
+.segmented-control.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.segmented-control-item {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #8fb899;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.segmented-control-item:hover:not(:disabled) {
+  color: #d7f5df;
+  background: rgba(41, 68, 51, 0.3);
+}
+
+.segmented-control-item.active {
+  background: #1d3d27;
+  border-color: #4a875d;
+  color: #7dffae;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.segmented-control-item:focus-visible {
+  outline: 2px solid #7dffae;
+  outline-offset: 1px;
+}
+
+.bloom-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 56, 38, 0.3);
+  border: 1px solid #2d4f37;
+  border-radius: 6px;
+  padding: 4px 4px 6px;
+  gap: 6px;
+}
+
+.bloom-card .slider-control {
+  margin: 0;
+  width: 100%;
+}
+
+.bloom-card .segmented-control {
+  width: 100%;
+}
+
+.bloom-card .segmented-control-item {
+  padding: 3px 2px;
+  font-size: 10px;
+}
+
+.knob-group > .slider-control {
+  align-self: start;
+}
+
+.font-control-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.font-name-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.font-size-control {
+  width: 76px;
+  flex-shrink: 0;
+}
+
+.font-size-control input[type="number"] {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 4px 7px 8px;
+  border: 1px solid #355840;
+  border-radius: 5px;
+  color: #d7f5df;
+  background: #0b130e;
+  font-family: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+  height: 35px;
+}
+
+.font-size-control input[type="number"]:focus-visible {
+  outline: 2px solid #7dffae;
+  outline-offset: 1px;
+}
+
+.font-size-control input[type="number"]::-webkit-inner-spin-button,
+.font-size-control input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+.setting-block {
+  margin: 10px 0;
+}
+
+.setting-block .setting-label {
+  display: block;
+  color: #b9d7c1;
+  font-size: 13px;
+  margin-bottom: 6px;
 }
 
 .reset-button {

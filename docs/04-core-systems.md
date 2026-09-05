@@ -24,7 +24,7 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 
 **Why this approach:** Windows does not expose a traditional Unix PTY. ConPTY (Windows Pseudo Console API, introduced in Windows 10 1809) provides a pipe-based VT-compatible interface to Windows console applications. The `conpty-oxide` crate provides a Rust wrapper. The project bundles ConPTY DLLs (`resources/conpty/x64/`) rather than relying on the system's ConPTY, likely for version consistency and to support specific features like Win32 Input Mode.
 
-**Shell selection:** `start_terminal()` reads `%ComSpec%` (typically `C:\Windows\System32\cmd.exe`), sets the working directory to `%USERPROFILE%`, and sends an initial `\r` to trigger the prompt.
+**Shell selection:** `start_terminal()` reads `%ComSpec%` (typically `C:\Windows\System32\cmd.exe`), sets the working directory to `%USERPROFILE%`, and starts the process.
 
 ### Multiple sessions and tabs
 
@@ -145,9 +145,13 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+V** | Paste from clipboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+C** | Enter copy mode | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+B** | Create a browser tab and focus its address field | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+W** | Close the active terminal or browser tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding.
+
+In a native browser child WebView, every `Menu+key` combination is forwarded to that same application handler and is stopped before the page sees it; a lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
 
 ### Key-Repeat Handling
 

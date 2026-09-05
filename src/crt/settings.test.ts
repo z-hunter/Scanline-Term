@@ -26,6 +26,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('soft');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
+    expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
     expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
   });
 

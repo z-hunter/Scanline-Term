@@ -28,6 +28,7 @@ use conpty_oxide::{
 use tauri::{path::BaseDirectory, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 mod codex;
+mod browser;
 
 struct TerminalSession {
     child: Child,
@@ -50,7 +51,10 @@ struct TerminalLaunch {
     cwd: Option<String>,
 }
 
-struct LaunchState(TerminalLaunch);
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum LaunchRequest { Terminal { command: Option<String>, cwd: Option<String> }, Browser { url: String } }
+struct LaunchState(LaunchRequest);
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +109,14 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
         .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())));
     let cwd = explicit_cwd.or_else(|| target_path.filter(|path| path.is_dir()).map(|path| path.to_string_lossy().into_owned()));
     (TerminalLaunch { command, cwd }, launch_in_tab)
+}
+
+fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
+    let mut values = args.iter().skip(1);
+    let mut target = None;
+    while let Some(value) = values.next() { match value.as_str() { "-T" => {}, "-P" => { values.next(); }, _ if target.is_none() => target = Some(value), _ => {} } }
+    if let Some(value) = target.and_then(|value| browser::browser_url(value).ok()) { return (LaunchRequest::Browser { url: value.into() }, false); }
+    let (terminal, tab) = terminal_launch(args, cwd); (LaunchRequest::Terminal { command: terminal.command, cwd: terminal.cwd }, tab)
 }
 
 fn valid_working_directory(cwd: Option<&str>) -> Result<(), String> {
@@ -215,7 +227,7 @@ fn list_monospace_fonts() -> Vec<String> {
 }
 
 #[tauri::command]
-fn initial_terminal_launch(state: State<LaunchState>) -> TerminalLaunch {
+fn initial_terminal_launch(state: State<LaunchState>) -> LaunchRequest {
     state.0.clone()
 }
 
@@ -275,8 +287,6 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
     let options = SessionOptions::new().size(size).backend(backend);
     let conpty_session = command.spawn_with(options).map_err(|error| error.to_string())?;
     let conpty_oxide::blocking::SessionParts { mut child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
-    writer.write_all(b"\r").map_err(|error| error.to_string())?;
-    writer.flush().map_err(|error| error.to_string())?;
     let generation = NEXT_SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     let (input_sender, input_receiver) = mpsc::channel::<Vec<u8>>();
     {
@@ -355,21 +365,20 @@ fn close_terminal(state: State<TerminalState>, session_id: SessionId) -> Result<
 
 fn main() {
     let cwd = std::env::current_dir().unwrap_or_default();
-    let (launch, _) = terminal_launch(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
+    let (launch, _) = launch_request(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
     tauri::Builder::default()
         .manage(TerminalState::default())
+        .manage(browser::BrowserState::default())
         .manage(codex::CodexState::default())
         .manage(LaunchState(launch))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            let (launch, launch_in_tab) = terminal_launch(&args, &cwd);
-            if launch_in_tab {
-                let _ = app.emit("terminal-launch", launch);
-            }
+            let (launch, launch_in_tab) = launch_request(&args, &cwd);
+            match launch { LaunchRequest::Browser { .. } => { let _ = app.emit("browser-launch", launch); }, LaunchRequest::Terminal { command, cwd } if launch_in_tab => { let _ = app.emit("terminal-launch", TerminalLaunch { command, cwd }); }, _ => {} }
             let _ = app.get_webview_window("main").map(|window| window.set_focus());
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, set_global_hotkey_enabled, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }

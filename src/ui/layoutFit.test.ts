@@ -212,4 +212,27 @@ describe('canPanelsFitWithoutShift', () => {
       }),
     ).toBe(false);
   });
+
+  it('correctly calculates available height when tabsHidden is true', () => {
+    // When tabs are at the top and tabsHidden is true:
+    // tabHeight is 0 instead of 36.
+    // availableHeight = 1080 - 18 = 1062 (vs 1026 when tabs visible)
+    // naturalWidth = round(1062 * 4/3) = 1416 (vs 1368)
+    // contentWidth = 2524
+    // spaceRight = (2524 - 1416) / 2 = 554px
+    // 554 >= 320 -> true
+    expect(
+      canPanelsFitWithoutShift({
+        windowWidth: 2560,
+        windowHeight: 1080,
+        resolutionId: '640x480',
+        resolutionWidth: 640,
+        resolutionHeight: 480,
+        tabPlacement: 'top',
+        aiVisible: false,
+        settingsVisible: true,
+        tabsHidden: true,
+      }),
+    ).toBe(true);
+  });
 });

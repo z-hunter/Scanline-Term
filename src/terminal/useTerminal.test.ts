@@ -25,7 +25,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { TerminalSession } from './TerminalSession';
-import { adjacentTabId, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 
 const tabs: TerminalTab[] = [
   { id: 'one', ordinal: 1, title: '1. cmd.exe', status: 'running', background: '#000000', foreground: '#ffffff' },
@@ -49,6 +49,17 @@ describe('tabIdAtOrdinal', () => {
   });
 });
 
+describe('renumberTabs', () => {
+  it('reassigns ordinals and title prefixes after a tab is removed', () => {
+    const remaining = renumberTabs([tabs[1], tabs[2]]);
+
+    expect(remaining.map((tab) => ({ id: tab.id, ordinal: tab.ordinal, title: tab.title }))).toEqual([
+      { id: 'two', ordinal: 1, title: '1. cmd.exe' },
+      { id: 'three', ordinal: 2, title: '2. cmd.exe' },
+    ]);
+  });
+});
+
 describe('terminal launch event', () => {
   it('starts a new session with the command and working directory from -T', async () => {
     mocked.handlers.clear();
@@ -68,6 +79,8 @@ describe('terminal launch event', () => {
     await act(async () => { mocked.handlers.get('terminal-launch')!({ payload: { command: 'pwsh', cwd: 'C:\\Windows' } }); await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(hookResult.tabs).toHaveLength(2);
     expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining({ launch: { command: 'pwsh', cwd: 'C:\\Windows' } }));
+    await act(async () => { await hookResult.closeSession(hookResult.tabs[0].id); });
+    expect(hookResult.tabs[0]).toMatchObject({ ordinal: 1, title: '1. cmd.exe' });
     await act(async () => { root.unmount(); });
     container.remove(); vi.restoreAllMocks();
   });
@@ -106,6 +119,29 @@ describe('terminal launch event', () => {
 });
 
 describe('useTerminal closeSession concurrent closures', () => {
+  it('removes the address modal when an unvisited browser tab closes', async () => {
+    mocked.invoke.mockResolvedValue('cmd.exe');
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({ settings: DEFAULT_CRT_SETTINGS, resolution: RESOLUTIONS[1], onError, onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await act(async () => { hookResult.openBrowser(); });
+    const browserId = hookResult.activeTabId!;
+    expect(hookResult.addressTabId).toBe(browserId);
+    await act(async () => { await hookResult.closeSession(browserId); });
+    expect(hookResult.addressTabId).toBeNull();
+    expect(hookResult.tabs).toHaveLength(1);
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
+  });
+
   it('serializes final-session decision when two tabs close before either session.close resolves', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     mocked.mockCloseWindow.mockReset();
