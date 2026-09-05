@@ -11,6 +11,8 @@
 
 Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
+![Scanline Term](assets/screenshot.png)
+
 ---
 
 ## Why Scanline Term?
@@ -24,6 +26,8 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 * **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
 * **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
 * **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
+
+![Scanline Term](public/Screenshot_23.png)
 
 ### 2. Keyboard-First Multitasking & Embedded WebView Browser
 
