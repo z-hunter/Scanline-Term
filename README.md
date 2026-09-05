@@ -1,44 +1,50 @@
-# Scanline Term
+# Scanline Terminal
 
 [![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-![Scanline Term](assets/screenshot.png)
+![Scanline Term](public/splash.jpg)
 
-**Scanline Term** is a "retro-futuristic" Windows terminal emulator that renders live console sessions through a physically-modelled WebGL CRT simulation pipeline.
+**Scanline Terminal** is a *retro-futuristic terminal emulator for Windows* that renders live console sessions through a physically-modelled WebGL CRT simulation.
 
-Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a global console toggle hotkey, and a context-aware AI terminal assistant — Scanline Term brings the classic computing era into your modern developer workflow.
+
+*Prefer a clean, modern look?* All CRT effects are completely optional and can be switched off at any time (`Menu + S`), allowing Scanline Terminal to function as a crisp, distraction-free native Windows terminal with tabs, AI assistance, and an embedded browser.
 
 ---
 
-## Why Scanline Term?
+## Why Scanline Terminal?
 
 ### 1. Authentic CRT Physics
 
-Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
+Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our [*Scanline* game engine](https://github.com/z-hunter/Quest). It accurately simulates physical CRT phenomena:
 
 * **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
 * **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
 * **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
 * **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
 * **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
+* **Emulation of different types of color and monochrome screens**.
+* **Optional & toggleable effects**: Easily toggle CRT emulation off in settings (`Menu + S`) to run as a clean, pixel-sharp terminal with zero visual distortion.
 
-### 2. Keyboard-First Multitasking & Embedded WebView Browser
+![Scanline Term](assets/screenshot.png)
+
+### 2. Keyboard workflow & Embedded WebView Browser
 
 Keep your hands on the keyboard and stay in the zone:
 
 * **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI).
 * **Isolated Native Keyboard Bridge**: Application shortcuts are intercepted and bridged across the native boundary, preventing remote web pages from trapping your navigation hotkeys.
-* **Lightning-Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
+* **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
 
 ### 3. Native Windows ConPTY Engine
 
 Built specifically for Windows with Rust and native APIs:
 
 * **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
-* **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys F1–F24, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
+* **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
 ### 4. Quake-Style Global Hotkey (`Win + ~`)
@@ -62,6 +68,7 @@ Unlike bloated Electron-based terminals, Scanline Term is built on **Tauri 2 + R
 Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
 
 * **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Apple II, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
+* **CRT Emulation Toggle**: Switch on the fly between vintage CRT physical simulation and clean, zero-distortion native rendering.
 * **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
   * **VGA** (640 × 480)
   * **SVGA** (800 × 600)
