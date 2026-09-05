@@ -47,13 +47,17 @@ Built specifically for Windows with Rust and native APIs:
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
+![Scanline Term](public/Screenshot_22.jpg)
+
 ### 4. Quake-Style Global Hotkey (`Win + ~`)
 
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
 ### 5. AI Terminal Assistant
 
-Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can see the terminal session and safely execute commands in your tab with human-in-the-loop confirmation.
+Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can see the terminal session and safely execute commands in your tab.
+
+![Scanline Term](public/Screenshot_24.jpg)
 
 > **Note**: To use the AI Terminal Assistant, [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) must be installed on your system and available on your `PATH`.
 
