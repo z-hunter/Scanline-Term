@@ -44,7 +44,7 @@ Built specifically for Windows with Rust and native APIs:
 
 ![Scanline Term](public/Screenshot_22.png)
 
-### 4. Quake-Style Global Hotkey (`Win + ~`)
+### 4. Quake-Style Global Hotkey
 
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
