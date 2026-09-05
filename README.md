@@ -1,4 +1,4 @@
-# 📺 Scanline Term
+# Scanline Term
 
 [![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
@@ -11,9 +11,9 @@ Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power
 
 ---
 
-## ⚡ Unique Selling Propositions (Why Scanline Term?)
+## Unique Selling Propositions (Why Scanline Term?)
 
-### 1. 🖵 Authentic CRT Physics (Not a Cheap CSS Overlay)
+### 1. Authentic CRT Physics (Not a Cheap CSS Overlay)
 Scanline Term features a custom multi-pass WebGL shader pipeline extracted from the *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
 * **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
 * **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
@@ -21,30 +21,30 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 * **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
 * **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
 
-### 2. ⌨️ Keyboard-First Multitasking & Embedded WebView Browser
+### 2. Keyboard-First Multitasking & Embedded WebView Browser
 Keep your hands on the keyboard and stay in the zone:
 * **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI).
 * **Isolated Native Keyboard Bridge**: Application shortcuts are intercepted and bridged across the native boundary, preventing remote web pages from trapping your navigation hotkeys.
 * **Lightning-Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
 
-### 3. 🪟 Native Windows ConPTY Engine
+### 3. Native Windows ConPTY Engine
 Built specifically for Windows with Rust and native APIs:
 * **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries — compatible with PowerShell, CMD, FAR Manager, WSL, and native terminal apps.
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys F1–F24, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
-### 4. 🚀 Quake-Style Global Hotkey (`Win + ~`)
+### 4. Quake-Style Global Hotkey (`Win + ~`)
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
-### 5. 🤖 Context-Aware AI Terminal Assistant
+### 5. Context-Aware AI Terminal Assistant
 Connect any terminal session to an embedded Codex AI assistant. The operator inspects live terminal screen snapshots and can safely execute commands in your tab with human-in-the-loop confirmation.
 
-### 6. 🪶 Ultra-Lightweight & Fast
+### 6. Ultra-Lightweight & Fast
 Unlike bloated Electron-based retro terminals that consume gigabytes of RAM, Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays whisper-quiet on system resources.
 
 ---
 
-## 🎨 Display Profiles & Virtual Resolutions
+## Display Profiles & Virtual Resolutions
 
 Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
 
@@ -58,7 +58,7 @@ Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S
 
 ---
 
-## ⌨️ Keyboard Shortcuts Cheat Sheet
+## Keyboard Shortcuts Cheat Sheet
 
 > **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
 
@@ -78,11 +78,11 @@ Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S
 
 ---
 
-## 📥 Installation
+## Installation
 
 Download the latest pre-compiled Windows Installer (**MSI**) from the Releases page:
 
-👉 **[Download Scanline Term (Latest Release)](https://github.com/z-hunter/Scanline-Term/releases/latest)**
+**[Download Scanline Term (Latest Release)](https://github.com/z-hunter/Scanline-Term/releases/latest)**
 
 Run `Scanline.Term_0.1.0_x64_en-US.msi` to install. System requirements:
 * Windows 10 (version 1809+) or Windows 11 (64-bit)
@@ -90,7 +90,7 @@ Run `Scanline.Term_0.1.0_x64_en-US.msi` to install. System requirements:
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -123,7 +123,7 @@ For in-depth architectural details, check our comprehensive documentation in [`d
 
 ---
 
-## 🛠️ Building from Source
+## Building from Source
 
 ### Prerequisites
 1. [Rust](https://rustup.rs/) (stable `x86_64-pc-windows-msvc` toolchain)
@@ -156,7 +156,7 @@ npm run tauri:build -- --bundles msi
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).  
 The WebGL `CRTFilter` originated in our *Quest/Scanline* project and is maintained here as a standalone module.
