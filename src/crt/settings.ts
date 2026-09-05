@@ -5,25 +5,25 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   crtEmulation: true,
   colorProfile: DEFAULT_COLOR_PROFILE_ID,
   consoleFont: 'Consolas',
-  consoleFontSize: 9,
-  curvature: 0.16,
-  scanlineCount: 200,
-  scanlineIntensity: 0.4,
+  consoleFontSize: 16,
+  curvature: 0.13,
+  scanlineCount: 330,
+  scanlineIntensity: 0.9,
   aberration: 0,
-  vignette: 0.9,
+  vignette: 0.5,
   phosphor: 1,
   bezelGlow: true,
-  showBezel: true,
-  bloom: 0.05,
-  bloomAlgorithm: 'soft',
-  glow: 0.2,
-  persistence: 0,
-  persistenceIntensity: 1,
+  showBezel: false,
+  bloom: 0.1,
+  bloomAlgorithm: 'spiral',
+  glow: 1.1,
+  persistence: 0.85,
+  persistenceIntensity: 4,
   imageBrightness: 1,
   imageContrast: 1,
-  backgroundDesaturation: 0,
-  beamModulation: 0,
-  breathing: 0,
+  backgroundDesaturation: 0.7,
+  beamModulation: 0.8,
+  breathing: 1,
   antiAliasedPixels: true,
   colorMode: 'color',
 });
@@ -42,7 +42,7 @@ export const RESOLUTIONS = [
 export type ResolutionId = (typeof RESOLUTIONS)[number]['id'];
 export type TabPlacement = 'top' | 'left';
 
-export const DEFAULT_RESOLUTION: ResolutionId = '640x480';
+export const DEFAULT_RESOLUTION: ResolutionId = '1024x768';
 
 export type StoredSettings = {
   version: 1;
@@ -92,8 +92,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     resolution: DEFAULT_RESOLUTION,
     tabPlacement: 'top',
     hideTabsWhenSingleSession: false,
-    globalHotkeyEnabled: false,
-    settingsScale: 1,
+    globalHotkeyEnabled: true,
+    settingsScale: 0.9,
     showSettingsPanel: false,
     showAiPanel: false,
     crt: { ...DEFAULT_CRT_SETTINGS },

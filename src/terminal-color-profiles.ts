@@ -62,7 +62,7 @@ const profiles: TerminalColorProfile[] = [
   },
 ];
 
-export const DEFAULT_COLOR_PROFILE_ID: ColorProfileId = 'windows-legacy';
+export const DEFAULT_COLOR_PROFILE_ID: ColorProfileId = 'dos-vga';
 
 export const COLOR_PROFILES = profiles;
 

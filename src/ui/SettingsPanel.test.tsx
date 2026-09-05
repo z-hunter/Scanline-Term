@@ -117,6 +117,57 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
+  it('rejects decimal or non-integer input and retains stored font-size', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('.font-size-control input');
+    expect(input).not.toBeNull();
+    expect(input?.value).toBe('14');
+
+    // Type decimal value (e.g. "18.5")
+    await act(async () => {
+      setInputValue(input!, '18.5');
+    });
+    expect(input?.value).toBe('18.5');
+
+    // Blur should reject decimal and restore previous stored value (14)
+    await act(async () => {
+      blurInput(input!);
+    });
+    expect(input?.value).toBe('14');
+    expect(currentStored.crt.consoleFontSize).toBe(14);
+
+    // Type non-integer value (e.g. "20px") and submit via Enter
+    await act(async () => {
+      setInputValue(input!, '20px');
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(input?.value).toBe('14');
+    expect(currentStored.crt.consoleFontSize).toBe(14);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it('synchronizes displayed value when stored consoleFontSize changes externally', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

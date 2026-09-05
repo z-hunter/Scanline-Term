@@ -87,8 +87,21 @@ fn valid_session_id(session_id: &str) -> Result<(), String> {
     if valid { Ok(()) } else { Err("session id is invalid".into()) }
 }
 
+fn target_argument(args: &[String]) -> Option<&str> {
+    let mut arguments = args.iter().skip(1);
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "-T" => {}
+            "-P" => {
+                arguments.next();
+            }
+            _ => return Some(argument.as_str()),
+        }
+    }
+    None
+}
+
 fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
-    let mut target = None;
     let mut launch_in_tab = false;
     let mut explicit_cwd = None;
     let mut arguments = args.iter().skip(1);
@@ -96,27 +109,27 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
         match argument.as_str() {
             "-T" => launch_in_tab = true,
             "-P" => explicit_cwd = arguments.next().cloned(),
-            _ if target.is_none() => target = Some(argument.clone()),
             _ => {}
         }
     }
-    let target_path = target.as_deref().map(|target| {
+    let target = target_argument(args);
+    let target_path = target.map(|target| {
         let path = PathBuf::from(target);
         if path.is_absolute() { path } else { Path::new(cwd).join(path) }
     });
     let command = target_path.as_ref().filter(|path| path.is_file())
         .map(|path| path.to_string_lossy().into_owned())
-        .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())));
+        .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())).map(str::to_owned));
     let cwd = explicit_cwd.or_else(|| target_path.filter(|path| path.is_dir()).map(|path| path.to_string_lossy().into_owned()));
     (TerminalLaunch { command, cwd }, launch_in_tab)
 }
 
 fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
-    let mut values = args.iter().skip(1);
-    let mut target = None;
-    while let Some(value) = values.next() { match value.as_str() { "-T" => {}, "-P" => { values.next(); }, _ if target.is_none() => target = Some(value), _ => {} } }
-    if let Some(value) = target.and_then(|value| browser::browser_url(value).ok()) { return (LaunchRequest::Browser { url: value.into() }, false); }
-    let (terminal, tab) = terminal_launch(args, cwd); (LaunchRequest::Terminal { command: terminal.command, cwd: terminal.cwd }, tab)
+    if let Some(value) = target_argument(args).and_then(|value| browser::browser_url(value).ok()) {
+        return (LaunchRequest::Browser { url: value.into() }, false);
+    }
+    let (terminal, tab) = terminal_launch(args, cwd);
+    (LaunchRequest::Terminal { command: terminal.command, cwd: terminal.cwd }, tab)
 }
 
 fn valid_working_directory(cwd: Option<&str>) -> Result<(), String> {
@@ -422,7 +435,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{child_process_name, dev_conpty_dir, pty_size, summon_shortcut, terminal_launch, valid_session_id, valid_working_directory};
+    use super::{
+        child_process_name, dev_conpty_dir, launch_request, pty_size, summon_shortcut,
+        target_argument, terminal_launch, valid_session_id, valid_working_directory, LaunchRequest,
+    };
 
     #[test]
     fn uses_win_backquote_for_global_summon() {
@@ -445,6 +461,40 @@ mod tests {
     #[test]
     fn unrelated_process_has_no_child() {
         assert_eq!(child_process_name(u32::MAX), None);
+    }
+
+    #[test]
+    fn parses_target_argument_preserving_options() {
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), "C:\\temp".into(), "pwsh".into()];
+        assert_eq!(target_argument(&args), Some("pwsh"));
+
+        let args = vec!["scanline-term".into(), "-P".into(), "C:\\temp".into(), "-T".into()];
+        assert_eq!(target_argument(&args), None);
+
+        let args = vec!["scanline-term".into(), "https://example.com".into(), "-T".into()];
+        assert_eq!(target_argument(&args), Some("https://example.com"));
+    }
+
+    #[test]
+    fn routes_browser_and_terminal_launch_requests() {
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), "C:\\temp".into(), "https://example.com".into()];
+        let (request, in_tab) = launch_request(&args, "C:\\work");
+        assert!(!in_tab);
+        match request {
+            LaunchRequest::Browser { url } => assert_eq!(url, "https://example.com/"),
+            _ => panic!("expected browser launch request"),
+        }
+
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), "C:\\temp".into(), "pwsh".into()];
+        let (request, in_tab) = launch_request(&args, "C:\\work");
+        assert!(in_tab);
+        match request {
+            LaunchRequest::Terminal { command, cwd } => {
+                assert_eq!(command.as_deref(), Some("pwsh"));
+                assert_eq!(cwd.as_deref(), Some("C:\\temp"));
+            }
+            _ => panic!("expected terminal launch request"),
+        }
     }
 
     #[test]

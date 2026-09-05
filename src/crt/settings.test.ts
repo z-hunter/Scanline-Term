@@ -16,14 +16,14 @@ describe('CRT settings', () => {
     expect(crtEffectMask({ persistence: 1, bloom: 1, glow: 1 })).toBe(7);
   });
 
-  it('keeps Quest defaults without the removed hum setting', () => {
-    expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.16);
-    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(200);
-    expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(1);
+  it('keeps default CRT parameters without the removed hum setting', () => {
+    expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.13);
+    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(330);
+    expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(4);
     expect(DEFAULT_CRT_SETTINGS.imageBrightness).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
-    expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0);
-    expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('soft');
+    expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0.7);
+    expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('spiral');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
@@ -61,9 +61,9 @@ describe('CRT settings', () => {
   });
 
   it('defaults and validates the global hotkey switch', () => {
-    expect(loadStoredSettings(null).globalHotkeyEnabled).toBe(false);
-    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: true })).globalHotkeyEnabled).toBe(true);
-    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: 'yes' })).globalHotkeyEnabled).toBe(false);
+    expect(loadStoredSettings(null).globalHotkeyEnabled).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: false })).globalHotkeyEnabled).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: 'yes' })).globalHotkeyEnabled).toBe(true);
   });
 
   it('defaults and validates settings and AI panel visibility', () => {
@@ -94,8 +94,8 @@ describe('CRT settings', () => {
   });
 
   it('accepts the expanded trail intensity range', () => {
-    const loaded = loadStoredSettings(JSON.stringify({ crt: { persistenceIntensity: 4 } }));
-    expect(loaded.crt.persistenceIntensity).toBe(4);
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { persistenceIntensity: 2 } }));
+    expect(loaded.crt.persistenceIntensity).toBe(2);
   });
 
   it('accepts the expanded glow intensity range', () => {
@@ -107,8 +107,8 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
   });
 
-  it('accepts the legacy bloom algorithm', () => {
-    expect(loadStoredSettings(JSON.stringify({ crt: { bloomAlgorithm: 'spiral' } })).crt.bloomAlgorithm).toBe('spiral');
+  it('accepts alternate bloom algorithm', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { bloomAlgorithm: 'soft' } })).crt.bloomAlgorithm).toBe('soft');
   });
 
   it('accepts a color profile', () => {

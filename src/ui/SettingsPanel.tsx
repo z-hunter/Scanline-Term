@@ -140,7 +140,8 @@ export function SettingsPanel({
   }
 
   const commitFontSize = () => {
-    const parsed = parseInt(fontSizeInput, 10);
+    const trimmed = fontSizeInput.trim();
+    const parsed = /^[+-]?\d+$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
     const clamped = Number.isNaN(parsed)
       ? stored.crt.consoleFontSize
       : Math.max(6, Math.min(32, parsed));

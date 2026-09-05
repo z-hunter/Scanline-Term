@@ -145,6 +145,46 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove(); vi.restoreAllMocks();
   });
 
+  it('does not intercept KeyO in editable elements or host controls while allowing global F6', async () => {
+    mocked.invoke.mockResolvedValue('cmd.exe');
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({ settings: DEFAULT_CRT_SETTINGS, resolution: RESOLUTIONS[1], onError, onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await act(async () => { hookResult.openBrowser(); });
+    const browserId = hookResult.activeTabId!;
+    expect(hookResult.addressTabId).toBe(browserId);
+    await act(async () => { hookResult.closeAddress(); });
+    expect(hookResult.addressTabId).toBeNull();
+
+    const input = document.createElement('input');
+    container.appendChild(input);
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true })); });
+    expect(hookResult.addressTabId).toBeNull();
+
+    const hostControl = document.createElement('div');
+    hostControl.className = 'settings-panel';
+    const hostButton = document.createElement('button');
+    hostControl.appendChild(hostButton);
+    container.appendChild(hostControl);
+    await act(async () => { hostButton.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true })); });
+    expect(hookResult.addressTabId).toBeNull();
+
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', bubbles: true })); });
+    expect(hookResult.addressTabId).toBe(browserId);
+
+    await act(async () => { await hookResult.closeSession(browserId); });
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
+  });
+
   it('serializes final-session decision when two tabs close before either session.close resolves', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     mocked.mockCloseWindow.mockReset();

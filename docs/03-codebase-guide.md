@@ -166,7 +166,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 |--------|---------|
 | `DEFAULT_CRT_SETTINGS` | Frozen defaults for all CRT parameters |
 | `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
-| `DEFAULT_RESOLUTION` | `'640x480'` |
+| `DEFAULT_RESOLUTION` | `'1024x768'` |
 | `ResolutionId` | Union type of resolution identifiers |
 | `StoredSettings` | `{ version: 1, resolution, crt }` |
 | `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |

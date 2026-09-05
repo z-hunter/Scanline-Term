@@ -10,8 +10,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  DEFAULT_CRT_SETTINGS,
-  DEFAULT_RESOLUTION,
   loadStoredSettings,
   RESOLUTIONS,
 } from "./crt/settings";
@@ -603,17 +601,7 @@ export default function App() {
   }, [settingsVisible, aiVisible, outputRef]);
   const reset = () => {
     localStorage.removeItem(STORAGE_KEY);
-    setStored({
-      version: 1,
-      resolution: DEFAULT_RESOLUTION,
-      tabPlacement: "top",
-      hideTabsWhenSingleSession: false,
-      globalHotkeyEnabled: false,
-      settingsScale: 1,
-      showSettingsPanel: false,
-      showAiPanel: false,
-      crt: { ...DEFAULT_CRT_SETTINGS },
-    });
+    setStored(loadStoredSettings(null));
     clearPersistence();
   };
   const sessionId = terminal.activeSessionId;

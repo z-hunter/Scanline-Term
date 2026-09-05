@@ -153,7 +153,34 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings, o
   const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, settings.consoleFont, settings.consoleFontSize, resolution]);
   useEffect(() => { renderer.current!.markDirty(); }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize]);
-  useEffect(() => { const reopenAddress = (event: KeyboardEvent) => { const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser'); if (!addressTabId && tab && !browsers.current.has(tab.id) && (event.code === 'KeyO' || event.key === 'F6')) { event.preventDefault(); event.stopImmediatePropagation(); setAddressTabId(tab.id); } }; window.addEventListener('keydown', reopenAddress, true); return () => window.removeEventListener('keydown', reopenAddress, true); }, [addressTabId]);
+  useEffect(() => {
+    const reopenAddress = (event: KeyboardEvent) => {
+      const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');
+      if (!addressTabId && tab && !browsers.current.has(tab.id)) {
+        if (event.key === 'F6') {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setAddressTabId(tab.id);
+          return;
+        }
+        if (event.code === 'KeyO') {
+          const target = event.target instanceof Element ? event.target : (event.target as Node | null)?.parentElement;
+          if (
+            target &&
+            ((target as HTMLElement).isContentEditable ||
+              Boolean(target.closest('input, textarea, select, .settings-panel, .terminal-tabs, .new-tab-button, .browser-address')))
+          ) {
+            return;
+          }
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setAddressTabId(tab.id);
+        }
+      }
+    };
+    window.addEventListener('keydown', reopenAddress, true);
+    return () => window.removeEventListener('keydown', reopenAddress, true);
+  }, [addressTabId]);
   const activeSession = () => activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
   const keyboardSession = useCallback(() => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : activeSession(), []);
   const cell = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => renderer.current!.cellAtPoint(event.clientX, event.clientY, event.currentTarget, settingsRef.current);
