@@ -148,10 +148,13 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+B** | Create a browser tab and focus its address field | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+W** | Close the active terminal or browser tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+→ / Menu+>** | Select the next tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+← / Menu+<** | Select the previous tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+Tab** | Toggle to the previously active tab | `terminal/useTerminal.ts` keyboard handler |
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding.
 
-In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, and `Digit1` through `Digit9`; other key codes are rejected. A lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
+In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, `Digit1` through `Digit9`, `ArrowRight`, `ArrowLeft`, `Period`, `Comma`, and `Tab`; other key codes are rejected. A lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
 
 ### Key-Repeat Handling
 

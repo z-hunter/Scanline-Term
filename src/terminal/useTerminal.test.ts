@@ -25,7 +25,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { TerminalSession } from './TerminalSession';
-import { adjacentTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 
 const tabs: TerminalTab[] = [
   { id: 'one', ordinal: 1, title: '1. cmd.exe', status: 'running', background: '#000000', foreground: '#ffffff' },
@@ -38,6 +38,56 @@ describe('adjacentTabId', () => {
     expect(adjacentTabId(tabs, 'two')).toBe('three');
     expect(adjacentTabId(tabs, 'three')).toBe('two');
     expect(adjacentTabId([tabs[0]], 'one')).toBeNull();
+  });
+});
+
+describe('nextTabId', () => {
+  it('cycles to the next tab and wraps around from last to first', () => {
+    expect(nextTabId(tabs, 'one')).toBe('two');
+    expect(nextTabId(tabs, 'two')).toBe('three');
+    expect(nextTabId(tabs, 'three')).toBe('one');
+  });
+
+  it('returns null when there is only one tab or tabs are empty', () => {
+    expect(nextTabId([tabs[0]], 'one')).toBeNull();
+    expect(nextTabId([], 'one')).toBeNull();
+  });
+
+  it('returns null if active tab is not found', () => {
+    expect(nextTabId(tabs, 'unknown')).toBeNull();
+  });
+});
+
+describe('previousTabId', () => {
+  it('cycles to the previous tab and wraps around from first to last', () => {
+    expect(previousTabId(tabs, 'three')).toBe('two');
+    expect(previousTabId(tabs, 'two')).toBe('one');
+    expect(previousTabId(tabs, 'one')).toBe('three');
+  });
+
+  it('returns null when there is only one tab or tabs are empty', () => {
+    expect(previousTabId([tabs[0]], 'one')).toBeNull();
+    expect(previousTabId([], 'one')).toBeNull();
+  });
+
+  it('returns null if active tab is not found', () => {
+    expect(previousTabId(tabs, 'unknown')).toBeNull();
+  });
+});
+
+describe('previousActiveTabId', () => {
+  it('returns the most recently used previous tab', () => {
+    expect(previousActiveTabId(tabs, ['three', 'one', 'two'], 'three')).toBe('one');
+    expect(previousActiveTabId(tabs, ['one', 'three', 'two'], 'one')).toBe('three');
+  });
+
+  it('skips tabs that are no longer in tabs list', () => {
+    expect(previousActiveTabId([tabs[0], tabs[2]], ['three', 'two', 'one'], 'three')).toBe('one');
+  });
+
+  it('returns null if there is no previous tab in history', () => {
+    expect(previousActiveTabId(tabs, ['one'], 'one')).toBeNull();
+    expect(previousActiveTabId(tabs, [], 'one')).toBeNull();
   });
 });
 
@@ -520,6 +570,161 @@ describe('useTerminal closeSession concurrent closures', () => {
     });
 
     expect(onToggleAi).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('switches between tabs on Menu+ArrowRight and Menu+ArrowLeft shortcuts', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation(() => Promise.resolve('cmd.exe'));
+
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    let hookResult!: ReturnType<typeof useTerminal>;
+
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(hookResult.tabs).toHaveLength(2);
+    const tab1 = hookResult.tabs[0].id;
+    const tab2 = hookResult.tabs[1].id;
+    expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab1);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '>', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab1);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: '<', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('toggles between two tabs on Menu+Tab shortcut', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation(() => Promise.resolve('cmd.exe'));
+
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    let hookResult!: ReturnType<typeof useTerminal>;
+
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(hookResult.tabs.length).toBeGreaterThanOrEqual(2);
+    const tab1 = hookResult.tabs[0].id;
+    const tab2 = hookResult.tabs[1].id;
+
+    await act(async () => {
+      hookResult.selectSession(tab1);
+    });
+    expect(hookResult.activeTabId).toBe(tab1);
+
+    await act(async () => {
+      hookResult.selectSession(tab2);
+    });
+    expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab1);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab1);
 
     await act(async () => {
       root.unmount();

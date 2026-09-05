@@ -267,6 +267,9 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Menu+C | Enter copy mode | `copyModeRef.current = true` |
 | Menu+N | Create a new terminal tab | `openSession()` |
 | Menu+1…9 | Select a numbered terminal tab | `selectSession()` |
+| Menu+→ / Menu+> | Select next tab | `selectSession()` |
+| Menu+← / Menu+< | Select previous tab | `selectSession()` |
+| Menu+Tab | Toggle previous active tab | `selectSession()` |
 
 ### Validation
 

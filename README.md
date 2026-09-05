@@ -88,6 +88,9 @@ Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S
 | **`Menu + B`** | New Browser Tab | Open a new embedded WebView2 browser tab and focus address bar |
 | **`Menu + W`** | Close Tab | Close the active terminal session or browser tab |
 | **`Menu + 1...9`** | Switch Tab | Switch directly to tab 1 through 9 |
+| **`Menu + →`** / **`Menu + >`** | Next Tab | Switch to the next terminal or browser tab (cycles) |
+| **`Menu + ←`** / **`Menu + <`** | Previous Tab | Switch to the previous terminal or browser tab (cycles) |
+| **`Menu + Tab`** | Alternate Tab | Toggle back to the previously active tab |
 | **`Menu + V`** | Paste | Paste clipboard text into the active shell |
 | **`Menu + C`** | Copy Mode | Activate rectangular screen selection and copy mode |
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
