@@ -17,7 +17,7 @@ Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power
 
 ### 1. Authentic CRT Physics
 
-Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our *Quest/Scanline* game engine. It accurately simulates physical CRT phenomena:
+Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our [*Scanline* game engine](https://github.com/z-hunter/Quest). It accurately simulates physical CRT phenomena:
 
 * **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
 * **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
