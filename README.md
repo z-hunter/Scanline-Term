@@ -11,8 +11,6 @@
 
 Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
-![Scanline Term](assets/screenshot.png)
-
 ---
 
 ## Why Scanline Term?
@@ -27,7 +25,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 * **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
 * **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
 
-![Scanline Term](public/Screenshot_23.png)
+![Scanline Term](assets/screenshot.png)
 
 ### 2. Keyboard-First Multitasking & Embedded WebView Browser
 
@@ -42,6 +40,8 @@ Built specifically for Windows with Rust and native APIs:
 
 * **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
+
+![Scanline Term](public/Screenshot_23.png)
 
 ### 4. Quake-Style Global Hotkey
 
