@@ -164,7 +164,9 @@ select {
 
 .terminal-tabs-top {
   position: relative;
-  width: min(100%, 980px);
+  width: max-content;
+  max-width: min(100%, calc(var(--terminal-screen-width, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333))) - 24px));
+  min-width: min(980px, calc(var(--terminal-screen-width, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333))) - 24px), 100%);
   align-items: end;
   gap: 6px;
   padding-right: 68px;
@@ -178,6 +180,11 @@ select {
   gap: 6px;
 }
 
+.terminal-tabs-top .terminal-tab-list {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .terminal-tabs-left {
   position: absolute;
   top: 50%;
@@ -189,6 +196,8 @@ select {
   justify-content: center;
   gap: 6px;
   margin-right: 0;
+  height: fit-content;
+  max-height: min(100%, calc(var(--terminal-screen-height, var(--workspace-screen-height, calc(100vh - 18px))) - 24px));
 }
 
 .terminal-workspace-left:has(.screen-frame.physical-window) .terminal-tabs-left {
@@ -210,9 +219,12 @@ select {
 
 .terminal-tabs-left .terminal-tab-list {
   max-height: 100%;
+  flex: 0 1 auto;
+  min-height: 0;
   flex-direction: column;
   overflow-x: visible;
   overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .terminal-tab {

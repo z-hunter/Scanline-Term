@@ -7,6 +7,7 @@ import {
 } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   DEFAULT_CRT_SETTINGS,
@@ -144,7 +145,19 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
-    void listen("browser-trace", (event) => console.info("[browser]", event.payload)).then((cleanup) => { unlisten = cleanup; });
+    void listen("browser-trace", (event) => {
+      if (import.meta.env.DEV) {
+        console.info("[browser]", event.payload);
+      }
+    })
+      .then((cleanup) => {
+        unlisten = cleanup;
+      })
+      .catch((reason) => {
+        if (import.meta.env.DEV) {
+          console.error("[browser] trace listener failed", reason);
+        }
+      });
     return () => unlisten?.();
   }, []);
   useEffect(() => {
@@ -155,7 +168,9 @@ export default function App() {
         sessionId: activeBrowserId && terminal.addressTabId !== activeBrowserId ? activeBrowserId : null,
         bounds: activeBrowserId && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
       };
-      console.info("[browser] set-active request", payload);
+      if (import.meta.env.DEV) {
+        console.info("[browser] set-active request", payload);
+      }
       void invoke("set_active_browser", payload).catch((reason) => { console.error("[browser] set-active failed", reason); reportError(`Could not position browser: ${String(reason)}`); });
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
@@ -166,6 +181,43 @@ export default function App() {
     const frame = requestAnimationFrame(() => { addressRef.current?.focus(); addressRef.current?.select(); });
     return () => cancelAnimationFrame(frame);
   }, [terminal.addressTabId]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+
+    const enforceFocus = () => {
+      if (!settingsVisible && !aiVisible) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          window.focus();
+          window.requestAnimationFrame(() => {
+            if (terminal.addressTabId) {
+              addressRef.current?.blur();
+              addressRef.current?.focus();
+              addressRef.current?.select();
+            } else {
+              outputRef.current?.blur();
+              outputRef.current?.focus();
+            }
+          });
+          attempts++;
+          if (attempts > 10) clearInterval(interval);
+        }, 30);
+      }
+    };
+
+    void listen("window-summoned", enforceFocus).then((f) => { unlisten = f; });
+    
+    // Also keep onFocusChanged for alt-tabbing
+    const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) enforceFocus();
+    });
+
+    return () => { 
+      unlisten?.(); 
+      void unlistenFocus.then((f) => f()); 
+    };
+  }, [settingsVisible, aiVisible, terminal.addressTabId, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     try {
       const models = await codex.listModels();
@@ -530,12 +582,18 @@ export default function App() {
     const display = outputRef.current?.parentElement;
     if (!display) return;
     const update = () => {
-      const w = display.getBoundingClientRect().width;
+      const rect = display.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
       if (w > 0) {
         if (!settingsVisible && !aiVisible || canFitWithoutShiftRef.current) {
           lastUndisturbedWidth.current = w;
         }
         setMeasuredTerminalWidth(w);
+      }
+      if (workspaceRef.current) {
+        if (w > 0) workspaceRef.current.style.setProperty("--terminal-screen-width", `${w}px`);
+        if (h > 0) workspaceRef.current.style.setProperty("--terminal-screen-height", `${h}px`);
       }
     };
     update();
@@ -786,7 +844,17 @@ export default function App() {
       <section className="display-panel" aria-label="CRT display">
         <div
           ref={workspaceRef}
-          style={{ "--tab-space": `${tabsHidden && stored.tabPlacement === "left" ? 0 : tabSpace}px` } as CSSProperties}
+          style={
+            {
+              "--tab-space": `${tabsHidden && stored.tabPlacement === "left" ? 0 : tabSpace}px`,
+              ...(!physicalWindow && resolution.width && resolution.height
+                ? { "--screen-ratio": String(resolution.width / resolution.height) }
+                : {}),
+              ...(measuredTerminalWidth > 0
+                ? { "--terminal-screen-width": `${measuredTerminalWidth}px` }
+                : {}),
+            } as CSSProperties
+          }
           className={`terminal-workspace terminal-workspace-${stored.tabPlacement}${tabsHidden ? " tabs-hidden" : ""}`}
         >
           {isTauri() && !hideTopTabs && (

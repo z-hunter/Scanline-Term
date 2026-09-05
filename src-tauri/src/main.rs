@@ -242,6 +242,40 @@ fn summon_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::SUPER), Code::Backquote)
 }
 
+#[cfg(windows)]
+fn is_window_active(window: &tauri::WebviewWindow) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe { GetForegroundWindow() == hwnd.0 as _ }
+    } else {
+        false
+    }
+}
+
+#[cfg(windows)]
+fn focus_webview(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::EnumChildWindows;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+
+    unsafe extern "system" fn enum_child_proc(hwnd: HWND, _lparam: LPARAM) -> i32 {
+        unsafe { SetFocus(hwnd) };
+        0 // Stop enumerating
+    }
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe { EnumChildWindows(hwnd.0 as _, Some(enum_child_proc), 0) };
+    }
+}
+
+#[cfg(not(windows))]
+fn is_window_active(window: &tauri::WebviewWindow) -> bool {
+    window.is_focused().unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn focus_webview(window: &tauri::WebviewWindow) {}
+
 #[tauri::command]
 fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let shortcut = summon_shortcut();
@@ -252,11 +286,14 @@ fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(),
                 return;
             }
             let Some(window) = app.get_webview_window("main") else { return };
-            if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+            if window.is_visible().unwrap_or(false) && is_window_active(&window) {
                 let _ = window.hide();
             } else {
+                let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+                focus_webview(&window);
+                let _ = app.emit("window-summoned", ());
             }
         }).map_err(|error| error.to_string())?;
     } else if !enabled && shortcuts.is_registered(shortcut) {

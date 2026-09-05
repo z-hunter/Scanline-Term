@@ -135,6 +135,9 @@ describe('useTerminal closeSession concurrent closures', () => {
     await act(async () => { hookResult.openBrowser(); });
     const browserId = hookResult.activeTabId!;
     expect(hookResult.addressTabId).toBe(browserId);
+    await act(async () => { hookResult.closeAddress(); });
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true })); });
+    expect(hookResult.addressTabId).toBe(browserId);
     await act(async () => { await hookResult.closeSession(browserId); });
     expect(hookResult.addressTabId).toBeNull();
     expect(hookResult.tabs).toHaveLength(1);

@@ -151,7 +151,7 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding.
 
-In a native browser child WebView, every `Menu+key` combination is forwarded to that same application handler and is stopped before the page sees it; a lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
+In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, and `Digit1` through `Digit9`; other key codes are rejected. A lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
 
 ### Key-Repeat Handling
 

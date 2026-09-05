@@ -142,4 +142,86 @@ describe('TerminalTabs', () => {
     });
     container.remove();
   });
+
+  it('renders top placement with tabs, new-tab button, and tabs-actions in container', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const manyTabs: TerminalTab[] = Array.from({ length: 8 }, (_, i) => ({
+      id: `tab-${i + 1}`,
+      ordinal: i + 1,
+      title: `${i + 1}. shell-${i + 1}`,
+      status: 'running',
+      background: '#000000',
+      foreground: '#ffffff',
+    }));
+
+    await act(async () => {
+      root.render(
+        createElement(TerminalTabs, {
+          tabs: manyTabs,
+          activeId: 'tab-1',
+          placement: 'top',
+          onSelect: vi.fn(),
+          onClose: vi.fn(),
+          onNew: vi.fn(),
+          onToggleSettings: vi.fn(),
+        }),
+      );
+    });
+
+    const tabsTop = container.querySelector('.terminal-tabs-top');
+    expect(tabsTop).not.toBeNull();
+    expect(tabsTop?.querySelector('.terminal-tab-list')).not.toBeNull();
+    expect(tabsTop?.querySelectorAll('.terminal-tab').length).toBe(8);
+    expect(tabsTop?.querySelector('.new-tab-button')).not.toBeNull();
+    expect(tabsTop?.querySelector('.tabs-actions')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('renders left placement with tabs-actions, tabs list, and new-tab button', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const manyTabs: TerminalTab[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `tab-${i + 1}`,
+      ordinal: i + 1,
+      title: `${i + 1}. shell-${i + 1}`,
+      status: 'running',
+      background: '#000000',
+      foreground: '#ffffff',
+    }));
+
+    await act(async () => {
+      root.render(
+        createElement(TerminalTabs, {
+          tabs: manyTabs,
+          activeId: 'tab-1',
+          placement: 'left',
+          onSelect: vi.fn(),
+          onClose: vi.fn(),
+          onNew: vi.fn(),
+          onToggleSettings: vi.fn(),
+        }),
+      );
+    });
+
+    const tabsLeft = container.querySelector('.terminal-tabs-left');
+    expect(tabsLeft).not.toBeNull();
+    expect(tabsLeft?.querySelector('.terminal-tab-list')).not.toBeNull();
+    expect(tabsLeft?.querySelectorAll('.terminal-tab').length).toBe(12);
+    expect(tabsLeft?.querySelector('.new-tab-button')).not.toBeNull();
+    expect(tabsLeft?.querySelector('.tabs-actions')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

@@ -105,4 +105,15 @@
 
 ---
 
+## Why Global Hotkeys and Window Focus Are Managed in Rust
+
+**Decision:** The `Win-~` global hotkey toggle logic, including checking if the window is active and manually focusing the WebView child window, is implemented synchronously in `main.rs` using native Windows APIs (`GetForegroundWindow`, `EnumChildWindows`, `SetFocus`), rather than deferring to the React frontend.
+
+**Rationale:**
+- **OS Foreground Privileges:** When a global hotkey is pressed, Windows temporarily grants the handling thread the privilege to change the foreground window. If this event is forwarded to the frontend and the frontend responds with an asynchronous IPC command (`invoke("summon_window")`), this privilege is lost. The OS will block the background process from stealing focus, causing the app to flash in the taskbar instead of appearing.
+- **WebView2 Focus Bug:** In Tauri on Windows, calling `window.set_focus()` only focuses the top-level parent HWND. The nested WebView2 child window does not automatically receive keyboard input focus. We must use `EnumChildWindows` to find the child HWND and call `SetFocus` on it directly.
+- **Frontend Sync:** Even with the native window focused, the Chromium renderer may ignore JavaScript `.focus()` calls if it believes the element is already active (`document.activeElement`). To ensure the blinking cursor appears, the frontend listens for a `window-summoned` event and explicitly calls `.blur()` followed by `.focus()` on the terminal canvas with a short `setTimeout`.
+
+---
+
 *[Next: Development →](./06-development.md)*

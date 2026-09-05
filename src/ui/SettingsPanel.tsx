@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { CRTColorMode, CRTSettings } from '../crt/CRTFilter';
 import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
@@ -131,6 +131,28 @@ export function SettingsPanel({
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
   const averageCanvasMs = renderStats.redraws ? renderStats.canvasMs / renderStats.redraws : 0;
+  const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
+  const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
+
+  if (stored.crt.consoleFontSize !== prevFontSize) {
+    setPrevFontSize(stored.crt.consoleFontSize);
+    setFontSizeInput(String(stored.crt.consoleFontSize));
+  }
+
+  const commitFontSize = () => {
+    const parsed = parseInt(fontSizeInput, 10);
+    const clamped = Number.isNaN(parsed)
+      ? stored.crt.consoleFontSize
+      : Math.max(6, Math.min(32, parsed));
+    setStored((current) => ({
+      ...current,
+      crt: {
+        ...current.crt,
+        consoleFontSize: clamped,
+      },
+    }));
+    setFontSizeInput(String(clamped));
+  };
 
   return (
     <aside className="settings-panel">
@@ -232,17 +254,12 @@ export function SettingsPanel({
             min={6}
             max={32}
             step={1}
-            value={stored.crt.consoleFontSize}
-            onChange={(event) => {
-              const val = Number(event.target.value);
-              if (!Number.isNaN(val)) {
-                setStored((current) => ({
-                  ...current,
-                  crt: {
-                    ...current.crt,
-                    consoleFontSize: Math.max(6, Math.min(32, val)),
-                  },
-                }));
+            value={fontSizeInput}
+            onChange={(event) => setFontSizeInput(event.target.value)}
+            onBlur={commitFontSize}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                commitFontSize();
               }
             }}
           />
