@@ -7,11 +7,7 @@
 
 ![Scanline Term](public/splash.jpg)
 
-**Scanline Terminal** is a *retro-futuristic terminal emulator for Windows* that renders live console sessions through a physically-modelled WebGL CRT simulation.
-
-Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a global console toggle hotkey, and a context-aware AI terminal assistant — Scanline Term brings the classic computing era into your modern developer workflow.
-
-*Prefer a clean, modern look?* All CRT effects are completely optional and can be switched off at any time (`Menu + S`), allowing Scanline Terminal to function as a crisp, distraction-free native Windows terminal with tabs, AI assistance, and an embedded browser.
+Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab console sessions, an embedded keyboard-centric web browser, a global toggle hotkey, and a context-aware AI terminal assistant — Scanline Term brings the classic computing era into your modern developer workflow.
 
 ---
 
@@ -27,7 +23,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 * **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
 * **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
 * **Emulation of different types of color and monochrome screens**.
-* **Optional & toggleable effects**: Easily toggle CRT emulation off in settings (`Menu + S`) to run as a clean, pixel-sharp terminal with zero visual distortion.
+* **Optional & toggleable effects**: Easily toggle CRT emulation off in settings (`Menu + S`) to run as a clean terminal with zero visual distortion.
 
 ![Scanline Term](assets/screenshot.png)
 
@@ -36,8 +32,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 Keep your hands on the keyboard and stay in the zone:
 
 * **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI).
-* **Isolated Native Keyboard Bridge**: Application shortcuts are intercepted and bridged across the native boundary, preventing remote web pages from trapping your navigation hotkeys.
-* **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
+* Switch between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
 
 ### 3. Native Windows ConPTY Engine
 
@@ -47,7 +42,7 @@ Built specifically for Windows with Rust and native APIs:
 * **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 * **Native Font Enumeration**: Direct GDI font discovery supporting all installed monospace system fonts.
 
-![Scanline Term](public/Screenshot_22.jpg)
+![Scanline Term](public/Screenshot_22.png)
 
 ### 4. Quake-Style Global Hotkey (`Win + ~`)
 
@@ -57,13 +52,13 @@ Summon Scanline Term from anywhere in Windows with a single keystroke. When you'
 
 Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can see the terminal session and safely execute commands in your tab.
 
-![Scanline Term](public/Screenshot_24.jpg)
+![Scanline Term](public/Screenshot_24.png)
 
 > **Note**: To use the AI Terminal Assistant, [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) must be installed on your system and available on your `PATH`.
 
 ### 6. Ultra-Lightweight & Fast
 
-Unlike bloated Electron-based terminals, Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays lightweight on system resources.
+Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~5.4 MB**, launches instantly, and stays lightweight on system resources.
 
 ---
 
