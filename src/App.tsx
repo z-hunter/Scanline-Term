@@ -313,6 +313,7 @@ export default function App() {
             delta?: string;
             turn?: {
               id?: string;
+              error?: { message?: string };
               items?: Array<{
                 id?: string;
                 type?: string;
