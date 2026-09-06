@@ -2,6 +2,7 @@ export type AiMessage = {
   role: "user" | "assistant" | "action";
   text: string;
   itemId?: string;
+  error?: boolean;
 };
 
 export function appendAgentDelta(messages: AiMessage[], itemId: string, delta: string): AiMessage[] {

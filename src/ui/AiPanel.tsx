@@ -165,7 +165,7 @@ export function AiPanel({
         }}
       >
         {messages.map((message, index) => (
-          <p key={index} className={`ai-${message.role}`}>
+          <p key={index} className={`ai-${message.role}${message.error ? " ai-error" : ""}`}>
             {message.text}
             {isProcessing && index === messages.length - 1 && message.role === "assistant" && (
               <TypingIndicator />

@@ -491,6 +491,19 @@ export default function App() {
               finalMessage.text!,
             ),
           }));
+        } else if (params?.turn?.error?.message) {
+          setChats((value) => ({
+            ...value,
+            [targetSession]: [
+              ...(value[targetSession] ?? []),
+              {
+                role: "assistant",
+                text: params.turn.error.message,
+                itemId: `error:${params?.turn?.id ?? params?.turnId ?? "unknown"}`,
+                error: true,
+              },
+            ],
+          }));
         }
         const turnId = params?.turn?.id ?? params?.turnId;
         if (turnId) {
