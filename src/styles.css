@@ -98,6 +98,11 @@ select {
   max-height: 100%;
 }
 
+canvas:focus,
+.terminal-workspace:focus {
+  outline: none;
+}
+
 .terminal-workspace-top {
   position: relative;
   width: 100%;

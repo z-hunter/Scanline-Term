@@ -142,6 +142,8 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 |---|---|---|
 | **Alt+Enter** | Toggle fullscreen (Tauri only) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+S** | Toggle settings panel visibility | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+A** | Toggle AI assistant panel visibility | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+'** | Toggle keyboard focus between terminal and AI assistant | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+V** | Paste from clipboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+C** | Enter copy mode | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |

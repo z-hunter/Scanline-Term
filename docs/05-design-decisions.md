@@ -112,6 +112,7 @@
 **Rationale:**
 - **OS Foreground Privileges:** When a global hotkey is pressed, Windows temporarily grants the handling thread the privilege to change the foreground window. If this event is forwarded to the frontend and the frontend responds with an asynchronous IPC command (`invoke("summon_window")`), this privilege is lost. The OS will block the background process from stealing focus, causing the app to flash in the taskbar instead of appearing.
 - **WebView2 Focus Bug:** In Tauri on Windows, calling `window.set_focus()` only focuses the top-level parent HWND. The nested WebView2 child window does not automatically receive keyboard input focus. We must use `EnumChildWindows` to find the child HWND and call `SetFocus` on it directly.
+- **Alt-Tab and App Activation:** To ensure the terminal automatically regains focus when switching back to the app (e.g., via Alt-Tab or clicking the taskbar), we subclass the main window to intercept the `WM_SETFOCUS` message. When the main window receives focus, we wait for the default window procedure to run, and then forcibly refocus the nested WebView2 child.
 - **Frontend Sync:** Even with the native window focused, the Chromium renderer may ignore JavaScript `.focus()` calls if it believes the element is already active (`document.activeElement`). To ensure the blinking cursor appears, the frontend listens for a `window-summoned` event and explicitly calls `.blur()` followed by `.focus()` on the terminal canvas with a short `setTimeout`.
 
 ---

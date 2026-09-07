@@ -263,6 +263,8 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Chord | Action | Handler |
 |-------|--------|---------|
 | Menu+S | Toggle settings panel | `setSettingsVisible()` |
+| Menu+A | Toggle AI assistant panel | `onToggleAi()` |
+| Menu+' | Toggle terminal/AI focus | `focus()` |
 | Menu+V | Paste from clipboard | `navigator.clipboard.readText()` → `sendInput()` |
 | Menu+C | Enter copy mode | `copyModeRef.current = true` |
 | Menu+N | Create a new terminal tab | `openSession()` |

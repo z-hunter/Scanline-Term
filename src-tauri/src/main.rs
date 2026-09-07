@@ -289,6 +289,83 @@ fn is_window_active(window: &tauri::WebviewWindow) -> bool {
 #[cfg(not(windows))]
 fn focus_webview(window: &tauri::WebviewWindow) {}
 
+fn restore_and_focus_window(window: &tauri::WebviewWindow) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+    focus_webview(window);
+    let _ = window.app_handle().emit("window-summoned", ());
+    let window_clone = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        focus_webview(&window_clone);
+    });
+}
+
+#[cfg(windows)]
+static PREV_WNDPROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+#[cfg(windows)]
+static MAIN_WINDOW: std::sync::OnceLock<tauri::WebviewWindow> = std::sync::OnceLock::new();
+
+#[cfg(windows)]
+unsafe extern "system" fn window_subclass_proc(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows_sys::Win32::Foundation::WPARAM,
+    lparam: windows_sys::Win32::Foundation::LPARAM,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED, SIZE_MAXIMIZED,
+        WM_SYSCOMMAND, SC_MINIMIZE, WM_SETFOCUS,
+    };
+
+    static WAS_MINIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    if msg == WM_SYSCOMMAND && ((wparam & 0xFFF0) as u32) == SC_MINIMIZE {
+        WAS_MINIMIZED.store(true, std::sync::atomic::Ordering::SeqCst);
+    } else if msg == WM_SIZE {
+        if wparam == SIZE_MINIMIZED as usize {
+            WAS_MINIMIZED.store(true, std::sync::atomic::Ordering::SeqCst);
+        } else if (wparam == SIZE_RESTORED as usize || wparam == SIZE_MAXIMIZED as usize)
+            && WAS_MINIMIZED.swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            if let Some(window) = MAIN_WINDOW.get() {
+                restore_and_focus_window(window);
+            }
+        }
+    }
+
+    let prev = PREV_WNDPROC.load(std::sync::atomic::Ordering::SeqCst);
+    let result = CallWindowProcW(std::mem::transmute(prev), hwnd, msg, wparam, lparam);
+
+    if msg == WM_SETFOCUS {
+        if let Some(window) = MAIN_WINDOW.get() {
+            focus_webview(window);
+            let _ = window.app_handle().emit("window-summoned", ());
+            
+            let window_clone = window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                focus_webview(&window_clone);
+            });
+        }
+    }
+
+    result
+}
+
+#[cfg(windows)]
+fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_WNDPROC};
+    let _ = MAIN_WINDOW.set(window.clone());
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let prev = SetWindowLongPtrW(hwnd.0 as _, GWLP_WNDPROC, window_subclass_proc as *const () as usize as isize);
+            PREV_WNDPROC.store(prev, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
 #[tauri::command]
 fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let shortcut = summon_shortcut();
@@ -302,11 +379,7 @@ fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(),
             if window.is_visible().unwrap_or(false) && is_window_active(&window) {
                 let _ = window.hide();
             } else {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-                focus_webview(&window);
-                let _ = app.emit("window-summoned", ());
+                restore_and_focus_window(&window);
             }
         }).map_err(|error| error.to_string())?;
     } else if !enabled && shortcuts.is_registered(shortcut) {
@@ -425,13 +498,18 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let icon = Image::from_bytes(include_bytes!("../icons/32x32 - Copy.png"))?;
-            app.get_webview_window("main").ok_or("main window is unavailable")?.set_icon(icon)?;
+            let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
+            window.set_icon(icon)?;
+            #[cfg(windows)]
+            setup_window_restore_listener(&window);
             Ok(())
         })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let (launch, launch_in_tab) = launch_request(&args, &cwd);
             match launch { LaunchRequest::Browser { .. } => { let _ = app.emit("browser-launch", launch); }, LaunchRequest::Terminal { command, cwd } if launch_in_tab => { let _ = app.emit("terminal-launch", TerminalLaunch { command, cwd }); }, _ => {} }
-            let _ = app.get_webview_window("main").map(|window| window.set_focus());
+            if let Some(window) = app.get_webview_window("main") {
+                restore_and_focus_window(&window);
+            }
         }))
         .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())

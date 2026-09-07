@@ -82,6 +82,9 @@ Run: `cd src-tauri && cargo test`
 - [ ] Tab completion works in cmd/PowerShell
 - [ ] Alt+Enter toggles fullscreen
 - [ ] Menu+S toggles settings panel
+- [ ] Menu+A toggles AI assistant panel
+- [ ] Menu+' toggles keyboard focus between terminal and AI assistant
+- [ ] Terminal text cursor stops blinking (and remains solid) when canvas loses keyboard focus
 - [ ] Menu+V pastes from clipboard
 - [ ] Menu+C enters copy mode (verify visual feedback)
 - [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab

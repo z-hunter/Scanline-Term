@@ -65,6 +65,7 @@ export class TerminalRenderer {
   private selection: CopySelection | null = null;
   private dirty = true;
   private fullDirty = true;
+  private focused = true;
   private rowSignatures: string[] = [];
   private cursorRow: number | null = null;
   private disposables: { dispose(): void }[] = [];
@@ -80,6 +81,7 @@ export class TerminalRenderer {
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
     this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.markDirty(); return true;
   }
+  setFocused(focused: boolean): void { if (this.focused === focused) return; this.focused = focused; this.markDirty(); }
   markDirty(): void { this.dirty = true; this.fullDirty = true; }
   private markTerminalDirty(): void { this.dirty = true; }
   consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
@@ -99,7 +101,7 @@ export class TerminalRenderer {
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const padding = terminalPadding(source.width, source.height); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx);
     const buffer = terminal.buffer.active; const cell = buffer.getNullCell();
-    const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core; const cursorVisible = buffer.viewportY === buffer.baseY && core?.coreService?.isCursorHidden !== true && cursorPhase % 2 === 0;
+    const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core; const cursorVisible = buffer.viewportY === buffer.baseY && core?.coreService?.isCursorHidden !== true && (!this.focused || cursorPhase % 2 === 0);
     const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
     const changedRows = new Set<number>(); const nextSignatures: string[] = [];
     if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
