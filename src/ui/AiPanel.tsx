@@ -55,6 +55,7 @@ export function AiPanel({
 }) {
   const [text, setText] = useState("");
   const [picker, setPicker] = useState<"model" | "effort" | null>(null);
+  const [pickerIndex, setPickerIndex] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
   const selectedModel = models.find((model) => model.id === selection?.model);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -94,9 +95,15 @@ export function AiPanel({
 
   const runCommand = (name: (typeof commands)[number]["name"]) => {
     setText("");
-    if (name === "/model") setPicker("model");
-    else if (name === "/effort") setPicker("effort");
-    else onCommand(name.slice(1) as "status" | "help");
+    if (name === "/model") {
+      setPicker("model");
+      setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model)));
+    } else if (name === "/effort") {
+      setPicker("effort");
+      setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0));
+    } else {
+      onCommand(name.slice(1) as "status" | "help");
+    }
   };
   const submit = () => {
     if (!signedIn || !text.trim()) return;
@@ -118,6 +125,50 @@ export function AiPanel({
     setText("");
   };
   const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (picker) {
+      const listLength = picker === "model" ? models.length : (selectedModel?.supportedReasoningEfforts.length ?? 0);
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setPickerIndex((index) =>
+          (index + (event.key === "ArrowDown" ? 1 : listLength - 1)) % (listLength || 1),
+        );
+        return;
+      }
+      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        event.preventDefault();
+        if (picker === "model" && event.key === "ArrowRight") {
+          setPicker("effort");
+          setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0));
+        } else if (picker === "effort" && event.key === "ArrowLeft") {
+          setPicker("model");
+          setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model)));
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPicker(null);
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        if (picker === "model") {
+          const model = models[pickerIndex];
+          if (model) {
+            onSelectModel(model.id);
+            setPicker("effort");
+            setPickerIndex(Math.max(0, model.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort)));
+          }
+        } else if (picker === "effort") {
+          const option = selectedModel?.supportedReasoningEfforts[pickerIndex];
+          if (option) {
+            onSelectEffort(option.reasoningEffort);
+            setPicker(null);
+          }
+        }
+        return;
+      }
+    }
     if (paletteVisible) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -213,7 +264,10 @@ export function AiPanel({
           type="button"
           className="ai-model-indicator"
           disabled={!signedIn || !selection}
-          onClick={() => setPicker("model")}
+          onClick={() => {
+            setPicker("model");
+            setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model)));
+          }}
           aria-expanded={picker !== null}
         >
           {selection
@@ -225,19 +279,19 @@ export function AiPanel({
         {picker && (
           <div className="ai-model-picker" role="dialog" aria-label="Codex model settings">
             <div className="ai-picker-tabs">
-              <button type="button" className={picker === "model" ? "active" : ""} onClick={() => setPicker("model")}>Model</button>
-              <button type="button" className={picker === "effort" ? "active" : ""} onClick={() => setPicker("effort")}>Reasoning</button>
+              <button type="button" className={picker === "model" ? "active" : ""} onClick={() => { setPicker("model"); setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model))); }}>Model</button>
+              <button type="button" className={picker === "effort" ? "active" : ""} onClick={() => { setPicker("effort"); setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0)); }}>Reasoning</button>
               <button type="button" aria-label="Close model settings" onClick={() => setPicker(null)}>×</button>
             </div>
             {modelCatalogError && <p className="ai-picker-error">{modelCatalogError}</p>}
-            {picker === "model" && models.map((model) => (
-              <button key={model.id} type="button" className={model.id === selection?.model ? "active" : ""} onClick={() => { onSelectModel(model.id); setPicker("effort"); }}>
-                {model.displayName}{model.isDefault ? " (default)" : ""}
+            {picker === "model" && models.map((model, index) => (
+              <button key={model.id} type="button" className={index === pickerIndex ? "active" : ""} onMouseEnter={() => setPickerIndex(index)} onClick={() => { onSelectModel(model.id); setPicker("effort"); setPickerIndex(Math.max(0, model.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort))); }}>
+                {model.id === selection?.model ? "✓ " : ""}{model.displayName}{model.isDefault ? " (default)" : ""}
               </button>
             ))}
-            {picker === "effort" && selectedModel?.supportedReasoningEfforts.map((option) => (
-              <button key={option.reasoningEffort} type="button" className={option.reasoningEffort === selection?.effort ? "active" : ""} onClick={() => { onSelectEffort(option.reasoningEffort); setPicker(null); }}>
-                <strong>{option.reasoningEffort}</strong>{option.description ? ` — ${option.description}` : ""}
+            {picker === "effort" && selectedModel?.supportedReasoningEfforts.map((option, index) => (
+              <button key={option.reasoningEffort} type="button" className={index === pickerIndex ? "active" : ""} onMouseEnter={() => setPickerIndex(index)} onClick={() => { onSelectEffort(option.reasoningEffort); setPicker(null); }}>
+                {option.reasoningEffort === selection?.effort ? "✓ " : ""}<strong>{option.reasoningEffort}</strong>{option.description ? ` — ${option.description}` : ""}
               </button>
             ))}
           </div>

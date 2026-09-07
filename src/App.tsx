@@ -40,6 +40,19 @@ function terminalAssistantInstructions(operatingSystem: string): string {
 
 You are attached to one specific terminal session. You can observe its visible screen and scrollback history, enter text commands, and press keyboard keys, just as the user can. Your purpose is to help the user complete tasks in that terminal session.
 
+Scanline Term is a Windows terminal with CRT visual effects, configurable display and font settings, multiple terminal tabs, an optional browser tab, and this AI assistant panel (source code on github: https://github.com/z-hunter/Scanline-Term). You can explain these features and shortcuts when asked; do not claim a feature exists if it is not listed below.
+
+Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
+- Menu+S: show or hide display settings.
+- Menu+A: show or hide the AI assistant panel.
+- Menu+': switch keyboard focus between the terminal and AI panel.
+- Menu+N: create a terminal tab; Menu+B: create a browser tab; Menu+W: close the active tab.
+- Menu+1 through Menu+9: select that numbered tab; Menu+Right or Menu+>: next tab; Menu+Left or Menu+<: previous tab; Menu+Tab: return to the previously active tab.
+- Menu+V: paste clipboard text into the terminal. Menu+C: start copy mode, then drag to select and copy terminal text. Middle-click and drag also selects text.
+- Menu+PageUp or Menu+PageDown (or Menu+J / Menu+K): scroll terminal history by a page. Menu+J/K also scrolls the AI panel when it has focus.
+- Alt+Enter: toggle fullscreen in the desktop application.
+- Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.
+
 Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. For an ordinary shell command, send the complete command with submit: true in one send_terminal_input call; do not type the command and press Enter in separate calls. Use separate key calls only when interacting with a TUI, an interactive prompt, or terminal line editing.
 
 Work carefully and communicate clearly:
@@ -120,8 +133,8 @@ export default function App() {
   const screenStyle = physicalWindow
     ? undefined
     : ({
-        "--screen-ratio": String(resolution.width! / resolution.height!),
-      } as CSSProperties);
+      "--screen-ratio": String(resolution.width! / resolution.height!),
+    } as CSSProperties);
   const terminal = useTerminal({
     settings: stored.crt,
     resolution,
@@ -205,15 +218,15 @@ export default function App() {
     };
 
     void listen("window-summoned", enforceFocus).then((f) => { unlisten = f; });
-    
+
     // Also keep onFocusChanged for alt-tabbing
     const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) enforceFocus();
     });
 
-    return () => { 
-      unlisten?.(); 
-      void unlistenFocus.then((f) => f()); 
+    return () => {
+      unlisten?.();
+      void unlistenFocus.then((f) => f());
     };
   }, [settingsVisible, aiVisible, terminal.addressTabId, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
@@ -304,29 +317,29 @@ export default function App() {
       }
       const params = message.params as
         | {
-            threadId?: string;
-            turnId?: string;
-            itemId?: string;
+          threadId?: string;
+          turnId?: string;
+          itemId?: string;
+          id?: string;
+          deltaIndex?: number;
+          index?: number;
+          delta?: string;
+          turn?: {
             id?: string;
-            deltaIndex?: number;
-            index?: number;
-            delta?: string;
-            turn?: {
+            error?: { message?: string };
+            items?: Array<{
               id?: string;
-              error?: { message?: string };
-              items?: Array<{
-                id?: string;
-                type?: string;
-                phase?: string;
-                text?: string;
-              }>;
-            };
-          }
+              type?: string;
+              phase?: string;
+              text?: string;
+            }>;
+          };
+        }
         | undefined;
       const session = params?.threadId
         ? [...threads.current].find(
-            ([, thread]) => thread === params.threadId,
-          )?.[0]
+          ([, thread]) => thread === params.threadId,
+        )?.[0]
         : undefined;
       if (!session) return;
       const targetSession = session;
@@ -387,17 +400,17 @@ export default function App() {
               const observation =
                 typeof call.arguments?.afterSequence === "number"
                   ? await term.waitForOutput(
-                      call.arguments.afterSequence,
-                      call.arguments.quietMs,
-                      call.arguments.timeoutMs,
-                      call.arguments.history ?? "recent",
-                    )
+                    call.arguments.afterSequence,
+                    call.arguments.quietMs,
+                    call.arguments.timeoutMs,
+                    call.arguments.history ?? "recent",
+                  )
                   : {
-                      snapshot: term.snapshot(
-                        call.arguments?.history ?? "recent",
-                      ),
-                      timedOut: false,
-                    };
+                    snapshot: term.snapshot(
+                      call.arguments?.history ?? "recent",
+                    ),
+                    timedOut: false,
+                  };
               await codex.respond(message.id!, {
                 success: true,
                 contentItems: [
@@ -414,22 +427,22 @@ export default function App() {
               const action = call.arguments.action;
               const normalized =
                 action.kind !== "key" &&
-                action.type !== "key" &&
-                (action.kind === "text" ||
-                  action.type === "text" ||
-                  typeof action.text === "string")
+                  action.type !== "key" &&
+                  (action.kind === "text" ||
+                    action.type === "text" ||
+                    typeof action.text === "string")
                   ? {
-                      kind: "text" as const,
-                      text: action.text ?? "",
-                      submit: action.submit,
-                    }
+                    kind: "text" as const,
+                    text: action.text ?? "",
+                    submit: action.submit,
+                  }
                   : {
-                      kind: "key" as const,
-                      key: action.key ?? "",
-                      ctrl: action.ctrl,
-                      alt: action.alt,
-                      shift: action.shift,
-                    };
+                    kind: "key" as const,
+                    key: action.key ?? "",
+                    ctrl: action.ctrl,
+                    alt: action.alt,
+                    shift: action.shift,
+                  };
               await term.sendAutomationInput(normalized);
               await codex.respond(message.id!, {
                 success: true,
