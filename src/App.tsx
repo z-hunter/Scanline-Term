@@ -14,7 +14,7 @@ import {
   RESOLUTIONS,
 } from "./crt/settings";
 import { useCRT } from "./crt/useCRT";
-import { useTerminal } from "./terminal/useTerminal";
+import { useTerminal, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
@@ -76,6 +76,7 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const [shells, setShells] = useState<ShellInfo[]>([]);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
@@ -137,6 +138,7 @@ export default function App() {
     } as CSSProperties);
   const terminal = useTerminal({
     settings: stored.crt,
+    defaultShell: stored.defaultShell,
     resolution,
     onError: reportError,
     onToggleSettings: toggleSettings,
@@ -264,6 +266,10 @@ export default function App() {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
   }, []);
+  useEffect(() => {
+    if (isTauri())
+      void invoke<ShellInfo[]>("list_available_shells").then(setShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
+  }, [reportError]);
   useEffect(() => {
     const codex = new CodexClient();
     client.current = codex;
@@ -981,6 +987,7 @@ export default function App() {
           stored={stored}
           setStored={setStored}
           monospaceFonts={terminal.fonts}
+          shells={shells}
           terminalSize={terminal.size}
           fps={fps}
           renderStats={renderStats}

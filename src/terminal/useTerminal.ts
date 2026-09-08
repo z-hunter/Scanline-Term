@@ -13,6 +13,7 @@ import { win32InputKey } from '../win32-input';
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
 export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed' } & TabColor;
 export type WorkspaceTab = TerminalTab | BrowserTab;
+export type ShellInfo = { name: string; command: string };
 type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean };
 
 export function adjacentTabId(tabs: WorkspaceTab[], id: string): string | null {
@@ -52,11 +53,11 @@ export function renumberTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   });
 }
 
-export function useTerminal({ settings, resolution, onError, onToggleSettings, onToggleAi }: { settings: CRTSettings; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void }) {
+export function useTerminal({ settings, defaultShell = '', resolution, onError, onToggleSettings, onToggleAi }: { settings: CRTSettings; defaultShell?: string; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void }) {
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
-  const settingsRef = useRef(settings); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError);
-  settingsRef.current = settings; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError;
+  const settingsRef = useRef(settings); const defaultShellRef = useRef(defaultShell); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError);
+  settingsRef.current = settings; defaultShellRef.current = defaultShell; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const refreshTabColor = useCallback((id: string) => {
     if (colorFrames.current.has(id)) return;
@@ -82,7 +83,8 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings, o
     sessions.current.set(id, { tab, session, inputLocked: false }); setTabs((current) => [...current, tab]); selectSession(id);
     const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
-    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), validLaunch); renderer.current!.bindTerminal(session.terminal);
+    const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
+    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), effectiveLaunch); renderer.current!.bindTerminal(session.terminal);
     void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' }));
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const openBrowser = useCallback((url?: string) => {
@@ -200,6 +202,68 @@ export function useTerminal({ settings, resolution, onError, onToggleSettings, o
     window.addEventListener('keydown', reopenAddress, true);
     return () => window.removeEventListener('keydown', reopenAddress, true);
   }, [addressTabId]);
+  const getKeyboardSession = () => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : (activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined);
+  useEffect(() => {
+    let pending = false;
+    let sent = false;
+    const replay = () => {
+      const session = getKeyboardSession();
+      const terminal = session?.terminal;
+      if (!session?.live || !terminal) { pending = false; return; }
+      for (const event of pendingAlt.current) {
+        const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
+        if (input) session.sendInput(input);
+      }
+      pendingAlt.current = [];
+      pending = false;
+      sent = true;
+    };
+    const down = async (event: KeyboardEvent) => {
+      if (event.code === 'AltLeft' || event.code === 'AltRight') {
+        pendingAlt.current.push(event);
+        pending = true;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (pending && (event.code === 'Enter' || event.code === 'NumpadEnter') && event.altKey && isTauri()) {
+        pendingAlt.current = [];
+        pending = false;
+        suppressAlt.current = true;
+        fullscreen.current = true;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) try {
+          const window = getCurrentWindow();
+          await window.setFullscreen(!(await window.isFullscreen()));
+        } catch (reason) { onError(`Fullscreen toggle failed: ${String(reason)}`); }
+        return;
+      }
+      if (pending) replay();
+      if (fullscreen.current && (event.code === 'Enter' || event.code === 'NumpadEnter')) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code === 'AltLeft' || event.code === 'AltRight') {
+        if (suppressAlt.current) { suppressAlt.current = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
+        if (pending) replay();
+        if (sent) {
+          const session = getKeyboardSession();
+          if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
+          sent = false;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const blur = () => { pending = false; sent = false; pendingAlt.current = []; suppressAlt.current = false; };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    window.addEventListener('blur', blur);
+    return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); window.removeEventListener('blur', blur); };
+  }, [onError]);
   const activeSession = () => activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
   const keyboardSession = useCallback(() => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : activeSession(), []);
   const cell = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => renderer.current!.cellAtPoint(event.clientX, event.clientY, event.currentTarget, settingsRef.current);

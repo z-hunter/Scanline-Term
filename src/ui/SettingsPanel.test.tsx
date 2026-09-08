@@ -17,6 +17,7 @@ describe('SettingsPanel font-size editing flow', () => {
     },
     setStored: vi.fn(),
     monospaceFonts: ['Consolas', 'Lucida Console'],
+    shells: [],
     terminalSize: { cols: 80, rows: 24 },
     fps: 60,
     renderStats: { redraws: 0, canvasMs: 0, glyphs: 0 },

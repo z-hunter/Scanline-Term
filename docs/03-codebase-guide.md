@@ -261,7 +261,8 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `bundled_conpty_dir(app)` | Resolves ConPTY DLL path: dev = `CARGO_MANIFEST_DIR/resources/conpty/x64`, release = Tauri resource `conpty/x64` |
 | `collect_monospace_font()` | Win32 `EnumFontFamiliesExW` callback; filters by `TMPF_FIXED_PITCH`, skips `@`-prefixed and empty names |
 | **`#[tauri::command] list_monospace_fonts()`** | Enumerates all system monospace fonts using GDI; returns `Vec<String>` sorted via `BTreeSet` |
-| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command and working directory, then returns the executable filename |
+| **`#[tauri::command] list_available_shells()`** | Finds Command Prompt, Windows PowerShell, PowerShell and Git Bash from standard locations and `PATH`; returns display names and executable paths |
+| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command and working directory, falling back to `%ComSpec%` when the requested shell cannot start |
 | **`#[tauri::command] initial_terminal_launch()`** | Returns the parsed launch request for the first terminal tab |
 | **`#[tauri::command] write_terminal(state, session_id, input)`** | Clones the target session's `mpsc::Sender`, sends `input.into_bytes()` |
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
@@ -284,11 +285,12 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `active_terminal_process` | `sessionId` | `Option<String>` | Poll active child process for the tab-title fallback |
 | `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
+| `list_available_shells` | — | `{ name, command }[]` | Default-shell selector |
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
 | `set_global_hotkey_enabled` | `enabled: boolean` | `Result<(), String>` | Persisted global-hotkey setting effect |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
 | `codex_send` | `generation, JSON-RPC object` | `Result<(), String>` | `CodexClient` requests, notifications and tool responses; rejects stale generations |
-| `codex_stop` | `generation` | `Result<(), String>` | Generation-safe app-server shutdown |
+| `codex_stop` | `generation` | `Result<(), String>` | Generation-safe shutdown; stale generation is a no-op |
 
 #### Events (Rust → frontend)
 

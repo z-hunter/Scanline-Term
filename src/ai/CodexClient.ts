@@ -24,7 +24,10 @@ export class CodexClient {
     );
     this.generation = started.generation;
     this.workspace = started.workspace;
-    if (this.stopped) return;
+    if (this.stopped) {
+      await invoke("codex_stop", { generation: started.generation });
+      return;
+    }
     if (!this.unlisten.length)
       this.unlisten = await Promise.all([
         listen<CodexEvent>("codex-message", ({ payload }) =>
@@ -35,6 +38,11 @@ export class CodexClient {
             this.fail(new Error("Codex app-server disconnected"));
         }),
       ]);
+    if (this.stopped) {
+      this.removeListeners();
+      await invoke("codex_stop", { generation: started.generation });
+      return;
+    }
     try {
       await this.request("initialize", {
         clientInfo: { name: "scanline-term", version: "0.1.0" },
@@ -118,8 +126,11 @@ export class CodexClient {
     this.stopped = true;
     const generation = this.generation;
     this.fail(new Error("Codex stopped"), false);
-    this.unlisten.splice(0).forEach((item) => item());
+    this.removeListeners();
     await invoke("codex_stop", { generation });
+  }
+  private removeListeners() {
+    this.unlisten.splice(0).forEach((item) => item());
   }
   private receive({ generation, message }: CodexEvent) {
     if (generation !== this.generation) return;

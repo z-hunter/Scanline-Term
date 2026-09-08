@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    ffi::{OsStr, OsString},
     io::{Read, Write},
     mem::size_of,
     path::{Path, PathBuf},
@@ -49,6 +50,13 @@ struct TerminalState(Mutex<HashMap<SessionId, TerminalSession>>);
 struct TerminalLaunch {
     command: Option<String>,
     cwd: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShellInfo {
+    name: String,
+    command: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -143,6 +151,43 @@ fn pty_size(cols: u16, rows: u16) -> Result<Size, String> {
     Size::try_new(cols, rows).map_err(|error| error.to_string())
 }
 
+fn shell_on_path(name: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?).map(|directory| directory.join(name)).find(|path| path.is_file())
+}
+
+fn powershell_name(name: &str, path: &Path) -> String {
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+    let mut command = std::process::Command::new(path);
+    command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()"]);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let version = command.output().ok().and_then(|output| String::from_utf8(output.stdout).ok()).map(|output| output.trim().to_owned()).filter(|version| !version.is_empty());
+    version.map_or_else(|| name.to_owned(), |version| format!("{name} {version}"))
+}
+
+#[tauri::command]
+fn list_available_shells() -> Vec<ShellInfo> {
+    let mut shells = Vec::new();
+    let mut add = |name: String, path: Option<PathBuf>| {
+        if let Some(path) = path.filter(|path| path.is_file()) {
+            if !shells.iter().any(|shell: &ShellInfo| shell.command.eq_ignore_ascii_case(&path.to_string_lossy())) {
+                shells.push(ShellInfo { name, command: path.to_string_lossy().into_owned() });
+            }
+        }
+    };
+    add("Command Prompt".into(), std::env::var_os("ComSpec").map(PathBuf::from));
+    let windows_powershell = std::env::var_os("SystemRoot").map(|root| PathBuf::from(root).join("System32/WindowsPowerShell/v1.0/powershell.exe")).or_else(|| shell_on_path("powershell.exe"));
+    let powershell = shell_on_path("pwsh.exe");
+    add(windows_powershell.as_ref().map_or_else(|| "Windows PowerShell".into(), |path| powershell_name("Windows PowerShell", path)), windows_powershell);
+    add(powershell.as_ref().map_or_else(|| "PowerShell".into(), |path| powershell_name("PowerShell", path)), powershell);
+    let git_bash = [std::env::var_os("ProgramFiles"), std::env::var_os("ProgramFiles(x86)"), std::env::var_os("LocalAppData")]
+        .into_iter().flatten().map(PathBuf::from).map(|root| root.join("Git/bin/bash.exe"))
+        .find(|path| path.is_file()).or_else(|| shell_on_path("bash.exe"));
+    add("Git Bash".into(), git_bash);
+    shells
+}
+
 fn bundled_conpty_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if cfg!(debug_assertions) {
         return Ok(dev_conpty_dir());
@@ -154,6 +199,17 @@ fn bundled_conpty_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn dev_conpty_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/conpty/x64")
+}
+
+fn spawn_terminal(app: &tauri::AppHandle, shell: &OsStr, cwd: Option<&str>, size: Size) -> Result<conpty_oxide::blocking::Session, String> {
+    let mut command = Command::new(shell);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    } else if let Some(home) = std::env::var_os("USERPROFILE") {
+        command.current_dir(home);
+    }
+    let backend = ConPtyBackend::from_dir(bundled_conpty_dir(app)?).map_err(|error| error.to_string())?;
+    command.spawn_with(SessionOptions::new().size(size).backend(backend)).map_err(|error| error.to_string())
 }
 
 fn child_process_name(parent_pid: u32) -> Option<String> {
@@ -401,17 +457,14 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
 
     let launch = launch.unwrap_or_default();
     valid_working_directory(launch.cwd.as_deref())?;
-    let shell = launch.command.map(Into::into).unwrap_or_else(|| std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into()));
+    let fallback_shell = std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into());
+    let requested_shell = launch.command.map(OsString::from);
+    let (conpty_session, shell) = match spawn_terminal(&app, requested_shell.as_deref().unwrap_or(&fallback_shell), launch.cwd.as_deref(), size) {
+        Ok(session) => (session, requested_shell.unwrap_or(fallback_shell)),
+        Err(_) if requested_shell.is_some() => (spawn_terminal(&app, &fallback_shell, launch.cwd.as_deref(), size)?, fallback_shell),
+        Err(error) => return Err(error),
+    };
     let shell_name = Path::new(&shell).file_name().and_then(|name| name.to_str()).unwrap_or("cmd.exe").to_owned();
-    let mut command = Command::new(&shell);
-    if let Some(cwd) = launch.cwd {
-        command.current_dir(cwd);
-    } else if let Some(home) = std::env::var_os("USERPROFILE") {
-        command.current_dir(home);
-    }
-    let backend = ConPtyBackend::from_dir(bundled_conpty_dir(&app)?).map_err(|error| error.to_string())?;
-    let options = SessionOptions::new().size(size).backend(backend);
-    let conpty_session = command.spawn_with(options).map_err(|error| error.to_string())?;
     let conpty_oxide::blocking::SessionParts { mut child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
     let generation = NEXT_SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     let (input_sender, input_receiver) = mpsc::channel::<Vec<u8>>();
@@ -514,7 +567,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }

@@ -4,6 +4,7 @@ import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement 
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
 import type { RenderStats } from '../terminal/TerminalRenderer';
+import type { ShellInfo } from '../terminal/useTerminal';
 
 type NumericKey = Exclude<
   keyof CRTSettings,
@@ -115,6 +116,7 @@ export function SettingsPanel({
   stored,
   setStored,
   monospaceFonts,
+  shells,
   terminalSize,
   fps,
   renderStats,
@@ -123,6 +125,7 @@ export function SettingsPanel({
   stored: StoredSettings;
   setStored: Dispatch<SetStateAction<StoredSettings>>;
   monospaceFonts: string[];
+  shells: ShellInfo[];
   terminalSize: { cols: number; rows: number };
   fps: number;
   renderStats: RenderStats;
@@ -389,6 +392,18 @@ export function SettingsPanel({
                 {Math.round(scale * 100)}%
               </option>
             ))}
+          </select>
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>System</legend>
+        <label className="resolution-control">
+          Default shell
+          <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>
+            <option value="">Windows default (%ComSpec%)</option>
+            {stored.defaultShell && !shells.some((shell) => shell.command === stored.defaultShell) && <option value={stored.defaultShell}>{stored.defaultShell} (unavailable)</option>}
+            {shells.map((shell) => <option key={shell.command} value={shell.command}>{shell.name}</option>)}
           </select>
         </label>
       </fieldset>

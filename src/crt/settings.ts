@@ -53,6 +53,7 @@ export type StoredSettings = {
   settingsScale: number;
   showSettingsPanel: boolean;
   showAiPanel: boolean;
+  defaultShell: string;
   crt: CRTSettings;
 };
 
@@ -96,6 +97,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     settingsScale: 0.9,
     showSettingsPanel: false,
     showAiPanel: false,
+    defaultShell: '',
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -111,6 +113,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       settingsScale?: unknown;
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
+      defaultShell?: unknown;
       crt?: Record<string, unknown>;
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
@@ -120,6 +123,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
+    if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

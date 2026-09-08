@@ -780,11 +780,14 @@ describe('useTerminal closeSession concurrent closures', () => {
 
     const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
 
-    // Trigger Alt+Enter down to engage fullscreen guard
+    // Trigger Alt+Enter down to engage fullscreen guard; neither Alt event reaches Win32 input.
     await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true }));
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', altKey: true, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true }));
     });
     expect(mocked.mockSetFullscreen).toHaveBeenCalled();
+    expect(sendInputSpy).not.toHaveBeenCalled();
 
     // Trigger blur without a preceding Enter keyup (e.g. focus transition on fullscreen toggle)
     await act(async () => {

@@ -83,6 +83,8 @@ graph TB
 
 Outbound `codex_send` and `codex_stop` calls carry the process `generation`; stale clients are rejected before they can affect a newer app-server process.
 
+For a stale generation, `codex_send` returns an error, while `codex_stop` intentionally returns `Ok(())` without stopping the current process. A successful stale stop therefore does not confirm process termination.
+
 The desktop process owns one hidden `codex app-server --stdio` child. It launches with an isolated app-local `CODEX_HOME` and neutral workspace, so personal Codex instructions, plugins, hooks and MCP configuration cannot affect terminal threads. `codex_start`, `codex_send`, and `codex_stop` carry JSON-RPC JSONL between it and the WebView; stdout, stderr, and exit are emitted with a process generation so stale events are ignored after restart. The WebView's `CodexClient` is the single protocol owner, initializes the experimental API, loads the account-visible model catalog, and then creates ephemeral threads. Model, effort and running-turn state are kept per terminal session in the WebView; they never cross the thread-to-session tool routing boundary. Each thread explicitly uses the neutral workspace, disables project instruction discovery and rejects a creation response that reports instruction sources. ChatGPT authentication is stored in the isolated app profile and is initiated through the panel when needed. See [Codex Terminal Assistant](./10-ai-assistant.md) for the protocol and safety boundary.
 
 | Executes in **WebView** (JavaScript/TypeScript) | Executes in **Rust** (native process) |

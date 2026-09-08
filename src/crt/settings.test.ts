@@ -70,6 +70,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: 'yes' })).globalHotkeyEnabled).toBe(true);
   });
 
+  it('preserves the selected default shell', () => {
+    expect(loadStoredSettings(null).defaultShell).toBe('');
+    expect(loadStoredSettings(JSON.stringify({ defaultShell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' })).defaultShell).toContain('pwsh.exe');
+    expect(loadStoredSettings(JSON.stringify({ defaultShell: 7 })).defaultShell).toBe('');
+  });
+
   it('defaults and validates settings and AI panel visibility', () => {
     const initial = loadStoredSettings(null);
     expect(initial.showSettingsPanel).toBe(false);
