@@ -15,13 +15,16 @@ export class CodexClient {
   private disconnectListeners = new Set<() => void>();
   private debugListeners = new Set<DebugListener>();
   private unlisten: UnlistenFn[] = [];
+  private stopped = false;
   workspace = "";
   async start() {
+    this.stopped = false;
     const started = await invoke<{ generation: number; workspace: string }>(
       "codex_start",
     );
     this.generation = started.generation;
     this.workspace = started.workspace;
+    if (this.stopped) return;
     if (!this.unlisten.length)
       this.unlisten = await Promise.all([
         listen<CodexEvent>("codex-message", ({ payload }) =>
@@ -43,6 +46,7 @@ export class CodexClient {
     }
   }
   async request(method: string, params: Json = {}): Promise<Json> {
+    if (this.stopped) throw new Error("Codex client is stopped");
     const id = this.id++;
     const reply = new Promise<Json>((resolve, reject) =>
       this.pending.set(id, { resolve, reject }),
@@ -50,7 +54,7 @@ export class CodexClient {
     const message = { jsonrpc: "2.0" as const, id, method, params };
     this.debug(`→ ${JSON.stringify(message)}`);
     try {
-      await invoke("codex_send", { message });
+      await invoke("codex_send", { generation: this.generation, message });
     } catch (error) {
       this.pending.delete(id);
       throw error;
@@ -83,12 +87,14 @@ export class CodexClient {
   notify(method: string, params: Json = {}) {
     const message = { jsonrpc: "2.0" as const, method, params };
     this.debug(`→ ${JSON.stringify(message)}`);
-    return invoke("codex_send", { message });
+    if (this.stopped) return Promise.reject(new Error("Codex client is stopped"));
+    return invoke("codex_send", { generation: this.generation, message });
   }
   respond(id: number, result: Json) {
     const message = { jsonrpc: "2.0" as const, id, result };
     this.debug(`→ ${JSON.stringify(message)}`);
-    return invoke("codex_send", { message });
+    if (this.stopped) return Promise.reject(new Error("Codex client is stopped"));
+    return invoke("codex_send", { generation: this.generation, message });
   }
   on(listener: Listener) {
     this.listeners.add(listener);
@@ -109,9 +115,11 @@ export class CodexClient {
     };
   }
   async stop() {
+    this.stopped = true;
+    const generation = this.generation;
     this.fail(new Error("Codex stopped"), false);
     this.unlisten.splice(0).forEach((item) => item());
-    await invoke("codex_stop");
+    await invoke("codex_stop", { generation });
   }
   private receive({ generation, message }: CodexEvent) {
     if (generation !== this.generation) return;

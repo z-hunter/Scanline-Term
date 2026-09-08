@@ -287,8 +287,8 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
 | `set_global_hotkey_enabled` | `enabled: boolean` | `Result<(), String>` | Persisted global-hotkey setting effect |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
-| `codex_send` | JSON-RPC object | `Result<(), String>` | `CodexClient` requests, notifications and tool responses |
-| `codex_stop` | — | `Result<(), String>` | App-server shutdown |
+| `codex_send` | `generation, JSON-RPC object` | `Result<(), String>` | `CodexClient` requests, notifications and tool responses; rejects stale generations |
+| `codex_stop` | `generation` | `Result<(), String>` | Generation-safe app-server shutdown |
 
 #### Events (Rust → frontend)
 

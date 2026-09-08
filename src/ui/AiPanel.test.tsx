@@ -193,4 +193,18 @@ describe('AiPanel', () => {
     await act(async () => root.unmount());
     container.remove();
   });
+
+  it('copies the complete debug log', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(AiPanel, { messages: [], status: 'idle', signedIn: true, onSend: vi.fn(), onStop: vi.fn(), onLogin: vi.fn(), debug: ['first', 'second'] })));
+
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Copy all')!.click());
+    expect(writeText).toHaveBeenCalledWith('first\nsecond');
+    await act(async () => root.unmount());
+    container.remove();
+  });
 });

@@ -57,8 +57,11 @@ export function AiPanel({
   const [picker, setPicker] = useState<"model" | "effort" | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
   const [commandIndex, setCommandIndex] = useState(0);
+  const [debugCopyError, setDebugCopyError] = useState(false);
   const selectedModel = models.find((model) => model.id === selection?.model);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const positions = useRef(new Map<string, number>());
   const followLive = useRef(true);
   const scrollToEnd = () => {
@@ -84,6 +87,11 @@ export function AiPanel({
     followLive.current = true;
     scrollToEnd();
   }, [scrollRequest, sessionId]);
+  useLayoutEffect(() => {
+    if (picker) {
+      pickerRef.current?.focus();
+    }
+  }, [picker]);
   useLayoutEffect(() => {
     if (followLive.current) scrollToEnd();
   }, [messages]);
@@ -124,51 +132,59 @@ export function AiPanel({
     onSend(text);
     setText("");
   };
-  const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (picker) {
-      const listLength = picker === "model" ? models.length : (selectedModel?.supportedReasoningEfforts.length ?? 0);
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        setPickerIndex((index) =>
-          (index + (event.key === "ArrowDown" ? 1 : listLength - 1)) % (listLength || 1),
-        );
-        return;
-      }
-      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-        event.preventDefault();
-        if (picker === "model" && event.key === "ArrowRight") {
-          setPicker("effort");
-          setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0));
-        } else if (picker === "effort" && event.key === "ArrowLeft") {
-          setPicker("model");
-          setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model)));
-        }
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setPicker(null);
-        return;
-      }
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        if (picker === "model") {
-          const model = models[pickerIndex];
-          if (model) {
-            onSelectModel(model.id);
-            setPicker("effort");
-            setPickerIndex(Math.max(0, model.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort)));
-          }
-        } else if (picker === "effort") {
-          const option = selectedModel?.supportedReasoningEfforts[pickerIndex];
-          if (option) {
-            onSelectEffort(option.reasoningEffort);
-            setPicker(null);
-          }
-        }
-        return;
-      }
+  const copyDebug = () => {
+    void navigator.clipboard.writeText(debug.join("\n"))
+      .then(() => setDebugCopyError(false))
+      .catch(() => setDebugCopyError(true));
+  };
+  const onPickerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const listLength = picker === "model" ? models.length : (selectedModel?.supportedReasoningEfforts.length ?? 0);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setPickerIndex((index) =>
+        (index + (event.key === "ArrowDown" ? 1 : listLength - 1)) % (listLength || 1),
+      );
+      return;
     }
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      if (picker === "model" && event.key === "ArrowRight") {
+        setPicker("effort");
+        setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0));
+      } else if (picker === "effort" && event.key === "ArrowLeft") {
+        setPicker("model");
+        setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model)));
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setPicker(null);
+      composerRef.current?.focus();
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (picker === "model") {
+        const model = models[pickerIndex];
+        if (model) {
+          onSelectModel(model.id);
+          setPicker("effort");
+          setPickerIndex(Math.max(0, model.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort)));
+        }
+      } else if (picker === "effort") {
+        const option = selectedModel?.supportedReasoningEfforts[pickerIndex];
+        if (option) {
+          onSelectEffort(option.reasoningEffort);
+          setPicker(null);
+          composerRef.current?.focus();
+        }
+      }
+      return;
+    }
+  };
+
+  const onComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (paletteVisible) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -244,6 +260,7 @@ export function AiPanel({
           </div>
         )}
         <textarea
+          ref={composerRef}
           autoFocus
           value={text}
           onChange={(event) => {
@@ -277,11 +294,11 @@ export function AiPanel({
               : "Sign in to choose model"}
         </button>
         {picker && (
-          <div className="ai-model-picker" role="dialog" aria-label="Codex model settings">
+          <div ref={pickerRef} className="ai-model-picker" role="dialog" aria-label="Codex model settings" tabIndex={-1} onKeyDown={onPickerKeyDown}>
             <div className="ai-picker-tabs">
               <button type="button" className={picker === "model" ? "active" : ""} onClick={() => { setPicker("model"); setPickerIndex(Math.max(0, models.findIndex((m) => m.id === selection?.model))); }}>Model</button>
               <button type="button" className={picker === "effort" ? "active" : ""} onClick={() => { setPicker("effort"); setPickerIndex(Math.max(0, selectedModel?.supportedReasoningEfforts.findIndex((e) => e.reasoningEffort === selection?.effort) ?? 0)); }}>Reasoning</button>
-              <button type="button" aria-label="Close model settings" onClick={() => setPicker(null)}>×</button>
+              <button type="button" aria-label="Close model settings" onClick={() => { setPicker(null); composerRef.current?.focus(); }}>×</button>
             </div>
             {modelCatalogError && <p className="ai-picker-error">{modelCatalogError}</p>}
             {picker === "model" && models.map((model, index) => (
@@ -290,17 +307,23 @@ export function AiPanel({
               </button>
             ))}
             {picker === "effort" && selectedModel?.supportedReasoningEfforts.map((option, index) => (
-              <button key={option.reasoningEffort} type="button" className={index === pickerIndex ? "active" : ""} onMouseEnter={() => setPickerIndex(index)} onClick={() => { onSelectEffort(option.reasoningEffort); setPicker(null); }}>
+              <button key={option.reasoningEffort} type="button" className={index === pickerIndex ? "active" : ""} onMouseEnter={() => setPickerIndex(index)} onClick={() => { onSelectEffort(option.reasoningEffort); setPicker(null); composerRef.current?.focus(); }}>
                 {option.reasoningEffort === selection?.effort ? "✓ " : ""}<strong>{option.reasoningEffort}</strong>{option.description ? ` — ${option.description}` : ""}
               </button>
             ))}
           </div>
         )}
       </div>
-      <details className="ai-debug">
-        <summary>Debug console ({debug.length})</summary>
-        <pre>{debug.join("\n")}</pre>
-      </details>
+      <div className="ai-debug">
+        <details>
+          <summary>
+            <span>Debug console ({debug.length})</span>
+            <button type="button" disabled={!debug.length} onClick={(event) => { event.stopPropagation(); void copyDebug(); }}>Copy all</button>
+            {debugCopyError && <span role="alert">Copy failed</span>}
+          </summary>
+          <pre>{debug.join("\n")}</pre>
+        </details>
+      </div>
     </aside>
   );
 }

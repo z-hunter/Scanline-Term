@@ -30,6 +30,41 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('normalizes automation key aliases and rejects unsupported names', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    mocked.invoke.mockClear();
+
+    await session.sendAutomationInput({ kind: 'key', key: 'ESC' });
+    await session.sendAutomationInput({ kind: 'key', key: 'UP' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(1, 'write_terminal', { sessionId: session.id, input: '\x1b' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(2, 'write_terminal', { sessionId: session.id, input: '\x1b[A' });
+
+    session.win32InputMode = true;
+    await session.sendAutomationInput({ kind: 'key', key: 'ARROW_UP' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(3, 'write_terminal', { sessionId: session.id, input: '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_' });
+
+    await expect(session.sendAutomationInput({ kind: 'key', key: 'F25' })).rejects.toThrow('unsupported terminal key: F25');
+    expect(mocked.invoke).toHaveBeenCalledTimes(3);
+    session.dispose();
+  });
+
+  it('queues repeated automation keys as one write', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    mocked.invoke.mockClear();
+
+    await session.sendAutomationInput({ kind: 'key', key: 'ArrowDown', repeat: 3 });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[B\x1b[B\x1b[B' });
+
+    session.win32InputMode = true;
+    await session.sendAutomationInput({ kind: 'key', key: 'ArrowUp', repeat: 2 });
+    expect(mocked.invoke).toHaveBeenLastCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_' });
+
+    await expect(session.sendAutomationInput({ kind: 'key', key: 'ArrowDown', repeat: 0 })).rejects.toThrow('terminal key repeat must be an integer from 1 to 100');
+    session.dispose();
+  });
+
   it('does not report a process lookup failure after the session exits', async () => {
     const onError = vi.fn();
     let rejectLookup!: (reason: Error) => void;

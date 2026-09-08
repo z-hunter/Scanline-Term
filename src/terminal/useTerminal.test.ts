@@ -7,6 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 const mocked = vi.hoisted(() => ({
   invoke: vi.fn(),
   mockCloseWindow: vi.fn(),
+  mockSetFullscreen: vi.fn(),
+  mockIsFullscreen: vi.fn().mockResolvedValue(false),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }));
 
@@ -16,7 +18,11 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => ({ close: mocked.mockCloseWindow }),
+  getCurrentWindow: () => ({
+    close: mocked.mockCloseWindow,
+    setFullscreen: mocked.mockSetFullscreen,
+    isFullscreen: mocked.mockIsFullscreen,
+  }),
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -24,7 +30,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
-import { TerminalSession } from './TerminalSession';
+import { terminalSession, TerminalSession } from './TerminalSession';
 import { adjacentTabId, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 
 const tabs: TerminalTab[] = [
@@ -725,6 +731,75 @@ describe('useTerminal closeSession concurrent closures', () => {
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
     });
     expect(hookResult.activeTabId).toBe(tab1);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('resets fullscreen guard on window blur so later Enter keyup is not consumed', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+    mocked.mockIsFullscreen.mockResolvedValue(false);
+    mocked.mockSetFullscreen.mockResolvedValue(undefined);
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const activeId = hookResult.activeTabId!;
+    const session = terminalSession(activeId);
+    expect(session).toBeDefined();
+    if (session) {
+      session.win32InputMode = true;
+    }
+
+    const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
+
+    // Trigger Alt+Enter down to engage fullscreen guard
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', altKey: true, bubbles: true }));
+    });
+    expect(mocked.mockSetFullscreen).toHaveBeenCalled();
+
+    // Trigger blur without a preceding Enter keyup (e.g. focus transition on fullscreen toggle)
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    sendInputSpy.mockClear();
+
+    // Later, an Enter keyup event is received in the terminal
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', bubbles: true }));
+    });
+
+    // Fullscreen guard was cleared on blur, so the keyup event reaches the session instead of being consumed
+    expect(sendInputSpy).toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

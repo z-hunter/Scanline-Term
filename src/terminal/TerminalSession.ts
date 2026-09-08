@@ -18,6 +18,7 @@ export type TerminalInputAction =
       ctrl?: boolean;
       alt?: boolean;
       shift?: boolean;
+      repeat?: number;
     };
 export type TerminalSnapshot = {
   status: "running" | "exited";
@@ -40,6 +41,39 @@ type TerminalExit = { sessionId: string };
 
 const sessions = new Map<string, TerminalSession>();
 export const terminalSession = (id: string) => sessions.get(id);
+
+const automationKeyAliases: Record<string, string> = {
+  ESC: "Escape", ESCAPE: "Escape", TAB: "Tab", ENTER: "Enter", RETURN: "Enter",
+  BACKSPACE: "Backspace", BS: "Backspace", SPACE: "Space", INSERT: "Insert", INS: "Insert",
+  DELETE: "Delete", DEL: "Delete", HOME: "Home", END: "End", PAGEUP: "PageUp", PGUP: "PageUp",
+  PAGEDOWN: "PageDown", PGDN: "PageDown", UP: "ArrowUp", ARROWUP: "ArrowUp", ARROW_UP: "ArrowUp",
+  DOWN: "ArrowDown", ARROWDOWN: "ArrowDown", ARROW_DOWN: "ArrowDown", LEFT: "ArrowLeft", ARROWLEFT: "ArrowLeft", ARROW_LEFT: "ArrowLeft",
+  RIGHT: "ArrowRight", ARROWRIGHT: "ArrowRight", ARROW_RIGHT: "ArrowRight", PAUSE: "Pause",
+};
+const automationNamedKeys = new Set([
+  "Escape", "Tab", "Enter", "Backspace", "Space", "Insert", "Delete", "Home", "End",
+  "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Pause",
+]);
+
+function automationKeyEvent(action: Extract<TerminalInputAction, { kind: "key" }>): KeyboardEvent {
+  const name = action.key.length === 1
+    ? action.key
+    : automationKeyAliases[action.key.toUpperCase()] ?? action.key;
+  if (
+    name.length !== 1 &&
+    !automationNamedKeys.has(name) &&
+    !/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(name)
+  )
+    throw new Error(`unsupported terminal key: ${action.key}`);
+  return {
+    key: name === "Space" ? " " : name,
+    code: name === "Space" ? "Space" : name.length === 1 ? `Key${name.toUpperCase()}` : name,
+    ctrlKey: !!action.ctrl,
+    altKey: !!action.alt,
+    shiftKey: !!action.shift,
+    metaKey: false,
+  } as KeyboardEvent;
+}
 
 function tabTitle(title: string): string {
   const executable = title.match(
@@ -185,20 +219,14 @@ export class TerminalSession {
         throw new Error("terminal text input exceeds 64 KiB");
       input = action.text + (action.submit ? "\r" : "");
     } else {
-      const event = {
-        key: action.key,
-        code:
-          action.key.length === 1
-            ? `Key${action.key.toUpperCase()}`
-            : action.key,
-        ctrlKey: !!action.ctrl,
-        altKey: !!action.alt,
-        shiftKey: !!action.shift,
-        metaKey: false,
-      } as KeyboardEvent;
+      const repeat = action.repeat ?? 1;
+      if (!Number.isInteger(repeat) || repeat < 1 || repeat > 100)
+        throw new Error("terminal key repeat must be an integer from 1 to 100");
+      const event = automationKeyEvent(action);
       input = this.win32InputMode
         ? `${win32InputKey(event, true)}${win32InputKey(event, false)}`
         : terminalKey(event, this.terminal!.modes);
+      input = input?.repeat(repeat) ?? null;
     }
     if (input) await invoke("write_terminal", { sessionId: this.id, input });
   }

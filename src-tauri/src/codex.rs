@@ -65,18 +65,20 @@ pub fn codex_start(app: tauri::AppHandle, state: State<CodexState>) -> Result<St
 }
 
 #[tauri::command]
-pub fn codex_send(state: State<CodexState>, message: Value) -> Result<(), String> {
+pub fn codex_send(state: State<CodexState>, generation: u64, message: Value) -> Result<(), String> {
     if !message.is_object() { return Err("Codex JSON-RPC message must be an object".into()); }
     let line = serde_json::to_string(&message).map_err(|error| error.to_string())?;
     let process = state.0.lock().map_err(|_| "Codex state is unavailable")?;
     let process = process.as_ref().ok_or("Codex app-server is not running")?;
+    if process.generation != generation { return Err("Codex client generation is stale".into()); }
     let mut stdin = process.stdin.lock().map_err(|_| "Codex stdin is unavailable")?;
     stdin.write_all(line.as_bytes()).and_then(|_| stdin.write_all(b"\n")).and_then(|_| stdin.flush()).map_err(|_| "Codex app-server is not running".into())
 }
 
 #[tauri::command]
-pub fn codex_stop(state: State<CodexState>) -> Result<(), String> {
+pub fn codex_stop(state: State<CodexState>, generation: u64) -> Result<(), String> {
     let mut state = state.0.lock().map_err(|_| "Codex state is unavailable")?;
+    if state.as_ref().is_some_and(|process| process.generation != generation) { return Ok(()); }
     if let Some(mut process) = state.take() { // ponytail: taskkill tree is sufficient for the sandbox experiment; use a Job Object for production lifecycle guarantees.
         kill(&mut process.child);
     }

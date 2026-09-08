@@ -53,7 +53,7 @@ Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Alt+Enter: toggle fullscreen in the desktop application.
 - Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.
 
-Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. For an ordinary shell command, send the complete command with submit: true in one send_terminal_input call; do not type the command and press Enter in separate calls. Use separate key calls only when interacting with a TUI, an interactive prompt, or terminal line editing.
+Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. For an ordinary shell command, send the complete command with submit: true in one send_terminal_input call; do not type the command and press Enter in separate calls. Use separate key calls only when interacting with a TUI, an interactive prompt, or terminal line editing. For repeated identical navigation keys, use one key action with repeat (1 through 100), then observe; do not issue a linear series of identical calls.
 
 Work carefully and communicate clearly:
 - Briefly explain significant actions as you take them.
@@ -296,7 +296,7 @@ export default function App() {
     const codex = client.current;
     if (!codex) return;
     return codex.onDebug((line) =>
-      setDebug((items) => [...items.slice(-199), line]),
+      setDebug((items) => [...items.slice(-999), line]),
     );
   }, [terminal.activeSessionId, reportError]);
   useEffect(() => {
@@ -362,6 +362,7 @@ export default function App() {
               ctrl?: boolean;
               alt?: boolean;
               shift?: boolean;
+              repeat?: number;
             };
           };
         };
@@ -433,20 +434,21 @@ export default function App() {
                     typeof action.text === "string")
                   ? {
                     kind: "text" as const,
-                    text: action.text ?? "",
+                    text: typeof action.text === "string" ? action.text : "",
                     submit: action.submit,
                   }
                   : {
                     kind: "key" as const,
-                    key: action.key ?? "",
+                    key: typeof action.key === "string" ? action.key : "",
                     ctrl: action.ctrl,
                     alt: action.alt,
                     shift: action.shift,
+                    repeat: action.repeat,
                   };
               await term.sendAutomationInput(normalized);
               await codex.respond(message.id!, {
                 success: true,
-                contentItems: [{ type: "inputText", text: "Input queued." }],
+                contentItems: [{ type: "inputText", text: "Input encoded and queued." }],
               });
             } else
               await codex.respond(message.id!, {
@@ -489,6 +491,7 @@ export default function App() {
         setRunningSessions((current) => ({ ...current, [targetSession]: true }));
       }
       if (message.method === "turn/completed") {
+        const errorMessage = params?.turn?.error?.message;
         const finalMessage = params?.turn?.items
           ?.find(
             (item) =>
@@ -505,14 +508,14 @@ export default function App() {
               finalMessage.text!,
             ),
           }));
-        } else if (params?.turn?.error?.message) {
+        } else if (errorMessage) {
           setChats((value) => ({
             ...value,
             [targetSession]: [
               ...(value[targetSession] ?? []),
               {
                 role: "assistant",
-                text: params.turn.error.message,
+                text: errorMessage,
                 itemId: `error:${params?.turn?.id ?? params?.turnId ?? "unknown"}`,
                 error: true,
               },
@@ -724,10 +727,44 @@ export default function App() {
             },
             {
               name: "send_terminal_input",
-              description: "Send text or a named key to the terminal.",
+              description:
+                "Send text or a named key to the terminal. Key actions use canonical DOM names: Escape, Tab, Enter, Backspace, Space, Insert, Delete, Home, End, PageUp, PageDown, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Pause, or F1 through F24. Set repeat (1 through 100) to send that key multiple times in one input.",
               inputSchema: {
                 type: "object",
-                properties: { action: { type: "object" } },
+                properties: {
+                  action: {
+                    oneOf: [
+                      {
+                        type: "object",
+                        properties: {
+                          kind: { enum: ["text"] },
+                          text: { type: "string" },
+                          submit: { type: "boolean" },
+                        },
+                        required: ["kind", "text"],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          kind: { enum: ["key"] },
+                          key: {
+                            oneOf: [
+                              { type: "string", minLength: 1, maxLength: 1 },
+                              { enum: ["Escape", "Tab", "Enter", "Backspace", "Space", "Insert", "Delete", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Pause", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"] },
+                            ],
+                          },
+                          ctrl: { type: "boolean" },
+                          alt: { type: "boolean" },
+                          shift: { type: "boolean" },
+                          repeat: { type: "integer", minimum: 1, maximum: 100 },
+                        },
+                        required: ["kind", "key"],
+                        additionalProperties: false,
+                      },
+                    ],
+                  },
+                },
                 required: ["action"],
               },
             },

@@ -58,7 +58,7 @@ The child does not inherit the developer's normal Codex workspace:
 
 This prevents a repository `AGENTS.md`, personal Codex plugin, hook or MCP configuration from directing the terminal agent. It also means app authentication is separate from `%USERPROFILE%\\.codex`: the user signs in once through **Sign in with ChatGPT**.
 
-The client sends `initialize` with `experimentalApi: true`, then `initialized`, then `account/read`. For browser sign-in it calls `account/login/start`; the returned HTTPS URL is opened through `@tauri-apps/plugin-opener`, not `window.open`. `account/login/completed` triggers a fresh `account/read` and updates the panel.
+The client sends `initialize` with `experimentalApi: true`, then `initialized`, then `account/read`. For browser sign-in it calls `account/login/start`; the returned HTTPS URL is opened through `@tauri-apps/plugin-opener`, not `window.open`. `account/login/completed` triggers a fresh `account/read` and updates the panel. Each process has a monotonically increasing `generation`; send and stop commands include it, so a stale client cannot write to or terminate a newer app-server process.
 
 After authentication the client calls `model/list` (following its cursor until exhausted) and shows only the account-visible models and their supported reasoning efforts. A new terminal tab prefers `gpt-5.6-luna` with `medium` effort. If that combination is unavailable, it uses the app-server default model and effort, then the first returned model as a last resort. The selection is local to the terminal tab and lasts until that tab closes; it is not persisted across app restarts.
 
@@ -78,7 +78,7 @@ Thread configuration is:
 | `serviceName` | `scanline-term` | Identifies this client to app-server. |
 | `baseInstructions` and `developerInstructions` | Terminal-assistant policy | Directs the model to use the terminal tools, observe output and ask before destructive work. |
 
-The first turn includes the full xterm history; later turns include the latest 200 lines. Both are placed in the turn as explicitly untrusted terminal data. The full preserved scrollback remains available through `observe_terminal`.
+The first turn includes the full xterm history; later turns include the latest 200 lines. Both are placed in the turn as explicitly untrusted terminal data. The full preserved scrollback remains available through `observe_terminal`. The debug console is opened by clicking its `Debug console` summary and retains the latest 1,000 JSON-RPC lines; `Copy all` copies them without opening or closing the log.
 
 The selected `model` is supplied when the thread is created and both `model` and `effort` are supplied on every `turn/start`. A selection change therefore affects the next turn in that tab without recreating the ephemeral thread. The active turn is never modified.
 
@@ -95,7 +95,7 @@ The composer accepts four local slash commands; none creates a Codex turn by its
 
 Typing `/` opens the same compact command palette used by the small model/effort indicator below the composer. Enter submits normal messages; there is intentionally no Send button. Opening the panel focuses the composer, while closing it returns focus to the active terminal. Unknown commands remain local and show a `/help` hint; they are never sent to the agent or terminal. The picker obtains its labels and effort descriptions from app-server rather than a hard-coded model list.
 
-Agent-message deltas are accumulated only while they belong to the same app-server `itemId`. A later agent message, including one sent after a terminal action, is rendered as a separate assistant bubble. The active tab shows an animated working indicator until its own turn completes; a background turn never marks another tab as working. Sending a user message scrolls its chat to the end, while subsequent manual scrolling upward is preserved during streaming. The panel's debug console retains the latest 200 inbound/outbound JSON-RPC lines; it is diagnostic data and must not be treated as a user-facing audit log.
+Agent-message deltas are accumulated only while they belong to the same app-server `itemId`. A later agent message, including one sent after a terminal action, is rendered as a separate assistant bubble. The active tab shows an animated working indicator until its own turn completes; a background turn never marks another tab as working. Sending a user message scrolls its chat to the end, while subsequent manual scrolling upward is preserved during streaming. The panel's debug console retains the latest 1,000 inbound/outbound JSON-RPC lines and has a one-click **Copy all** button; it is diagnostic data and must not be treated as a user-facing audit log.
 
 ## Dynamic terminal tools
 
@@ -120,10 +120,10 @@ Accepted action forms:
 
 ```ts
 { kind: "text", text: string, submit?: boolean }
-{ kind: "key", key: string, ctrl?: boolean, alt?: boolean, shift?: boolean }
+{ kind: "key", key: KeyName | string, ctrl?: boolean, alt?: boolean, shift?: boolean, repeat?: number }
 ```
 
-Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write. A named key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
+Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write. A named key uses canonical DOM names: `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause`, or `F1` through `F24`; a one-character key is also accepted for modified shortcuts. Common model aliases such as `ESC`, `UP`, and `ARROW_UP` are normalized. `repeat` is an integer from 1 to 100 and queues that many complete keypresses in one write; use it for TUI navigation, then observe the result. An unsupported named key or invalid repeat fails the tool call rather than reporting a queued input. A valid key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
 
 ## Safety model
 
