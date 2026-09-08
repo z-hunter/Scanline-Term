@@ -21,6 +21,7 @@ describe('SettingsPanel font-size editing flow', () => {
     terminalSize: { cols: 80, rows: 24 },
     fps: 60,
     renderStats: { redraws: 0, canvasMs: 0, glyphs: 0 },
+    appVersion: '0.1.3',
     onReset: vi.fn(),
   };
 

@@ -310,12 +310,16 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | Key | Value | Notes |
 |-----|-------|-------|
 | `productName` | `"Scanline Term"` | Display name |
+| `mainBinaryName` | `"sterm"` | Bundled executable is `sterm.exe` |
 | `identifier` | `"com.zhunter.scanlineterm"` | Bundle identifier |
 | `app.windows[0].theme` | `"Dark"` | Forces dark title bar |
 | `app.windows[0].width/height` | 1440 × 960 | Default window size |
 | `app.security.csp` | `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Content Security Policy |
-| `bundle.targets` | `["nsis"]` | NSIS installer only |
+| `bundle.targets` | `["msi"]` | Windows MSI installer |
 | `bundle.resources` | `"resources/conpty/" → "conpty/"` | Bundles ConPTY DLLs |
+| `bundle.createUpdaterArtifacts` | `true` | Creates signed updater artifacts and signatures |
+| `plugins.updater` | GitHub Releases `latest.json` | Verifies and installs signed releases |
+| `bundle.windows.wix` | `wix/path.wxs` | Adds the installation directory to the system `PATH`; removed on uninstall |
 
 #### [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json)
 
@@ -324,6 +328,10 @@ Grants to `main` window:
 - `core:window:allow-is-fullscreen` — Alt+Enter fullscreen check
 - `core:window:allow-set-fullscreen` — Alt+Enter fullscreen toggle
 - `opener:allow-open-url` (`https://**`) — ChatGPT browser login URL only
+
+#### [`src-tauri/capabilities/desktop.json`](../src-tauri/capabilities/desktop.json)
+
+Grants `updater:default` to the desktop `main` window so it can check, download, and install signed updates.
 
 ---
 

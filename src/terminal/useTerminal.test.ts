@@ -1076,4 +1076,109 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove();
     vi.restoreAllMocks();
   });
+
+  it('preserves separate session associations for AltLeft and AltRight and releases appropriately on keyup and blur', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(hookResult.tabs).toHaveLength(2);
+    const tab1Id = hookResult.tabs[0].id;
+    const tab2Id = hookResult.tabs[1].id;
+
+    await act(async () => {
+      hookResult.selectSession(tab1Id);
+    });
+
+    const session1 = terminalSession(tab1Id);
+    const session2 = terminalSession(tab2Id);
+    expect(session1).toBeDefined();
+    expect(session2).toBeDefined();
+    if (session1) session1.win32InputMode = true;
+    if (session2) session2.win32InputMode = true;
+
+    const spy1 = vi.spyOn(session1!, 'sendInput');
+    const spy2 = vi.spyOn(session2!, 'sendInput');
+
+    const altLeft = new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+    const keyA = new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', altKey: true, bubbles: true, cancelable: true });
+
+    await act(async () => {
+      window.dispatchEvent(altLeft);
+      window.dispatchEvent(keyA);
+    });
+
+    expect(spy1).toHaveBeenCalledWith(win32InputKey(altLeft, true));
+
+    await act(async () => {
+      hookResult.selectSession(tab2Id);
+    });
+
+    const altRight = new KeyboardEvent('keydown', { code: 'AltRight', key: 'Alt', bubbles: true, cancelable: true });
+    const keyB = new KeyboardEvent('keydown', { code: 'KeyB', key: 'b', altKey: true, bubbles: true, cancelable: true });
+
+    await act(async () => {
+      window.dispatchEvent(altRight);
+      window.dispatchEvent(keyB);
+    });
+
+    expect(spy2).toHaveBeenCalledWith(win32InputKey(altRight, true));
+
+    spy1.mockClear();
+    spy2.mockClear();
+
+    const altLeftUp = new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+    await act(async () => {
+      window.dispatchEvent(altLeftUp);
+    });
+
+    expect(spy1).toHaveBeenCalledWith(win32InputKey(altLeftUp, false));
+    expect(spy2).not.toHaveBeenCalledWith(win32InputKey(altLeftUp, false));
+
+    spy1.mockClear();
+    spy2.mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    expect(spy2).toHaveBeenCalledWith(win32InputKey(altRight, false));
+    expect(spy1).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
 });

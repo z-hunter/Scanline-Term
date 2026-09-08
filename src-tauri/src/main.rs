@@ -611,6 +611,7 @@ fn main() {
     let cwd = std::env::current_dir().unwrap_or_default();
     let (launch, _) = launch_request(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(TerminalState::default())
         .manage(browser::BrowserState::default())
         .manage(codex::CodexState::default())

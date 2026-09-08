@@ -210,7 +210,7 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
   useEffect(() => {
     let pending = false;
     let sent = false;
-    let forwardedAlt: { event: KeyboardEvent; session: TerminalSession } | null = null;
+    const forwardedAlt = new Map<string, { event: KeyboardEvent; session: TerminalSession }>();
     const replay = () => {
       const session = getKeyboardSession();
       const terminal = session?.terminal;
@@ -219,7 +219,7 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
         const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
         if (input) {
           session.sendInput(input);
-          if (session.win32InputMode) forwardedAlt = { event, session };
+          if (session.win32InputMode) forwardedAlt.set(event.code, { event, session });
         }
       }
       pendingAlt.current = [];
@@ -261,23 +261,22 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
         if (!pending && !sent) return;
         if (pending) replay();
         if (sent) {
-          const targetSession = forwardedAlt?.session ?? getKeyboardSession();
+          const targetSession = forwardedAlt.get(event.code)?.session ?? getKeyboardSession();
           if (targetSession?.live && targetSession.win32InputMode) targetSession.sendInput(win32InputKey(event, false));
-          sent = false;
-          forwardedAlt = null;
+          forwardedAlt.delete(event.code);
+          if (forwardedAlt.size === 0) sent = false;
         }
         event.preventDefault();
         event.stopImmediatePropagation();
       }
     };
     const blur = () => {
-      if (sent && forwardedAlt) {
-        const { event, session } = forwardedAlt;
+      for (const { event, session } of forwardedAlt.values()) {
         if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
       }
       pending = false;
       sent = false;
-      forwardedAlt = null;
+      forwardedAlt.clear();
       pendingAlt.current = [];
       suppressAlt.current = false;
     };

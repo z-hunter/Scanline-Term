@@ -1,0 +1,17 @@
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+        <Component Id="ScanlineTermPath" Guid="55c52bf9-6608-4d1b-9019-3fd06596a91a" Win64="yes">
+          <CreateFolder />
+          <Environment
+          Id="AddScanlineTermToPath"
+          Name="PATH"
+          Value="[INSTALLDIR]"
+          Action="set"
+          Part="last"
+          System="yes"
+          Permanent="no" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

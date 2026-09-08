@@ -80,18 +80,21 @@ describe('CRT settings', () => {
     const initial = loadStoredSettings(null);
     expect(initial.showSettingsPanel).toBe(false);
     expect(initial.showAiPanel).toBe(false);
+    expect(initial.autoUpdateEnabled).toBe(true);
 
     const loaded = loadStoredSettings(
-      JSON.stringify({ showSettingsPanel: true, showAiPanel: true }),
+      JSON.stringify({ showSettingsPanel: true, showAiPanel: true, autoUpdateEnabled: false }),
     );
     expect(loaded.showSettingsPanel).toBe(true);
     expect(loaded.showAiPanel).toBe(true);
+    expect(loaded.autoUpdateEnabled).toBe(false);
 
     const invalid = loadStoredSettings(
-      JSON.stringify({ showSettingsPanel: 'open', showAiPanel: 1 }),
+      JSON.stringify({ showSettingsPanel: 'open', showAiPanel: 1, autoUpdateEnabled: 'yes' }),
     );
     expect(invalid.showSettingsPanel).toBe(false);
     expect(invalid.showAiPanel).toBe(false);
+    expect(invalid.autoUpdateEnabled).toBe(true);
   });
 
   it('accepts virtual screens in all supported aspect ratios', () => {

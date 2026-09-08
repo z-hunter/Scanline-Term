@@ -120,7 +120,7 @@ Embedded WebView2 browser tabs feature a keyboard-first, Vim-inspired navigation
 Scanline Term can be invoked from the command prompt, PowerShell, terminal scripts, or Windows shortcuts with custom arguments:
 
 ```sh
-scanline-term [options] [target]
+sterm [options] [target]
 ```
 
 ### Command line Arguments
@@ -142,22 +142,22 @@ The optional `[target]` argument is automatically detected and routed:
 
 ```sh
 # Launch default shell in the current working directory
-scanline-term .
+sterm .
 
 # Launch default shell in a specific project folder
-scanline-term C:\Projects\MyProject
+sterm C:\Projects\MyProject
 
 # Launch PowerShell with an explicit working directory
-scanline-term -P C:\Projects\MyProject pwsh
+sterm -P C:\Projects\MyProject pwsh
 
 # Open a new tab in an existing Scanline Term window
-scanline-term -T pwsh
+sterm -T pwsh
 
 # Open a new tab with working directory set
-scanline-term -T -P C:\Projects\MyProject
+sterm -T -P C:\Projects\MyProject
 
 # Open documentation directly in the built-in CRT browser
-scanline-term https://docs.rs
+sterm https://docs.rs
 ```
 
 ---
@@ -168,9 +168,9 @@ Download the latest pre-compiled Windows Installer (**MSI**) from the Releases p
 
 **[Download Scanline Term (Latest Release)](https://github.com/z-hunter/Scanline-Term/releases/latest)**
 
-Run `Scanline.Term_0.1.0_x64_en-US.msi` to install. System requirements:
+Run the `.msi` installer shown in the downloaded release assets. System requirements:
 
-* Windows 10 (version 1809+) or Windows 11 (64-bit)
+* Windows 10 (version 17763+) or Windows 11 (64-bit)
 * [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
 * *(Optional)* [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) on `PATH` if using the AI Terminal Assistant.
 

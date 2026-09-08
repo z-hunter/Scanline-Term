@@ -50,6 +50,7 @@ export type StoredSettings = {
   tabPlacement: TabPlacement;
   hideTabsWhenSingleSession: boolean;
   globalHotkeyEnabled: boolean;
+  autoUpdateEnabled: boolean;
   settingsScale: number;
   showSettingsPanel: boolean;
   showAiPanel: boolean;
@@ -94,6 +95,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     tabPlacement: 'top',
     hideTabsWhenSingleSession: false,
     globalHotkeyEnabled: true,
+    autoUpdateEnabled: true,
     settingsScale: 0.9,
     showSettingsPanel: false,
     showAiPanel: false,
@@ -110,6 +112,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       tabPlacement?: unknown;
       hideTabsWhenSingleSession?: unknown;
       globalHotkeyEnabled?: unknown;
+      autoUpdateEnabled?: unknown;
       settingsScale?: unknown;
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
@@ -120,6 +123,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
     if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsWhenSingleSession = value.hideTabsWhenSingleSession;
     if (typeof value.globalHotkeyEnabled === 'boolean') result.globalHotkeyEnabled = value.globalHotkeyEnabled;
+    if (typeof value.autoUpdateEnabled === 'boolean') result.autoUpdateEnabled = value.autoUpdateEnabled;
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;

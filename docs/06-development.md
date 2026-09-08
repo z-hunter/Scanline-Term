@@ -75,7 +75,14 @@ npm run build
 npm run tauri:build
 ```
 
-The Tauri build produces an NSIS installer in `src-tauri/target/release/bundle/nsis/`.
+The Tauri build produces an MSI installer. With `TAURI_SIGNING_PRIVATE_KEY` configured, it also produces the updater signature files used by GitHub Releases. The installer adds its directory to the system `PATH`, so a new terminal can run `sterm`.
+
+### Publishing an Update
+
+1. Update both `package.json` and `src-tauri/tauri.conf.json` to the same SemVer version, then commit the release changes.
+2. Add the contents of the local Tauri private signing key to the repository secret `TAURI_SIGNING_PRIVATE_KEY`; never commit that key.
+3. Push a matching tag, for example `v0.1.4`. The GitHub Actions release workflow runs tests, builds the signed Windows artifacts, and creates a draft release with `latest.json`.
+4. Inspect the draft assets and release notes, then publish the GitHub release. Published releases become available to the in-app updater.
 
 ### Preview Production Frontend
 

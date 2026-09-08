@@ -6,9 +6,12 @@ import {
   type CSSProperties,
 } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { check } from "@tauri-apps/plugin-updater";
+import packageInfo from "../package.json";
 import {
   loadStoredSettings,
   RESOLUTIONS,
@@ -76,6 +79,7 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -266,6 +270,15 @@ export default function App() {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
   }, []);
+  useEffect(() => {
+    if (isTauri()) void getVersion().then(setAppVersion);
+  }, []);
+  useEffect(() => {
+    if (!isTauri() || !stored.autoUpdateEnabled) return;
+    void check()
+      .then((update) => update?.downloadAndInstall())
+      .catch((reason) => console.warn("Update check failed:", reason));
+  }, [stored.autoUpdateEnabled]);
   useEffect(() => {
     if (isTauri())
       void invoke<ShellInfo[]>("list_available_shells").then(setShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
@@ -991,6 +1004,7 @@ export default function App() {
           terminalSize={terminal.size}
           fps={fps}
           renderStats={renderStats}
+          appVersion={appVersion}
           onReset={reset}
         />
       )}

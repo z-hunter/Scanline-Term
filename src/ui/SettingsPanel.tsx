@@ -120,6 +120,7 @@ export function SettingsPanel({
   terminalSize,
   fps,
   renderStats,
+  appVersion,
   onReset,
 }: {
   stored: StoredSettings;
@@ -129,6 +130,7 @@ export function SettingsPanel({
   terminalSize: { cols: number; rows: number };
   fps: number;
   renderStats: RenderStats;
+  appVersion: string;
   onReset: () => void;
 }) {
   const update = (key: NumericKey, value: number) =>
@@ -406,12 +408,19 @@ export function SettingsPanel({
             {shells.map((shell) => <option key={shell.command} value={shell.command}>{shell.name}</option>)}
           </select>
         </label>
+        <Switch
+          label="Check & install updates"
+          checked={stored.autoUpdateEnabled}
+          onChange={(checked) =>
+            setStored((current) => ({ ...current, autoUpdateEnabled: checked }))
+          }
+        />
       </fieldset>
 
       <button type="button" className="reset-button" onClick={onReset}>
         Reset defaults
       </button>
-      <footer>v.0.1a (c) Michael Voitovich, 2026</footer>
+      <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>
     </aside>
   );
 }
