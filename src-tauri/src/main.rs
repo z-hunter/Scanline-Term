@@ -162,7 +162,40 @@ fn powershell_name(name: &str, path: &Path) -> String {
     command.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()"]);
     #[cfg(windows)]
     command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    let version = command.output().ok().and_then(|output| String::from_utf8(output.stdout).ok()).map(|output| output.trim().to_owned()).filter(|version| !version.is_empty());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::null());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(_) => return name.to_owned(),
+    };
+    let mut stdout = child.stdout.take();
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut stream) = stdout.take() {
+            let _ = stream.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_millis(1500);
+    let mut exited = false;
+    while start.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                exited = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(25)),
+            Err(_) => break,
+        }
+    }
+    if !exited {
+        let _ = child.kill();
+        let _ = child.wait();
+        return name.to_owned();
+    }
+    let output = reader.join().unwrap_or_default();
+    let version = String::from_utf8(output).ok().map(|output| output.trim().to_owned()).filter(|version| !version.is_empty());
     version.map_or_else(|| name.to_owned(), |version| format!("{name} {version}"))
 }
 
@@ -607,9 +640,16 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        child_process_name, dev_conpty_dir, launch_request, pty_size, summon_shortcut,
-        target_argument, terminal_launch, valid_session_id, valid_working_directory, LaunchRequest,
+        child_process_name, dev_conpty_dir, launch_request, powershell_name, pty_size,
+        summon_shortcut, target_argument, terminal_launch, valid_session_id,
+        valid_working_directory, LaunchRequest,
     };
+
+    #[test]
+    fn powershell_name_resolves_or_falls_back_without_hanging() {
+        let non_existent = std::path::Path::new("C:\\definitely_not_a_powershell_executable_path.exe");
+        assert_eq!(powershell_name("PowerShell", non_existent), "PowerShell");
+    }
 
     #[test]
     fn uses_win_backquote_for_global_summon() {

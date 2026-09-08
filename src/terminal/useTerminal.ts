@@ -210,7 +210,7 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
   useEffect(() => {
     let pending = false;
     let sent = false;
-    let forwardedAlt: KeyboardEvent | null = null;
+    let forwardedAlt: { event: KeyboardEvent; session: TerminalSession } | null = null;
     const replay = () => {
       const session = getKeyboardSession();
       const terminal = session?.terminal;
@@ -219,7 +219,7 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
         const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
         if (input) {
           session.sendInput(input);
-          if (session.win32InputMode) forwardedAlt = event;
+          if (session.win32InputMode) forwardedAlt = { event, session };
         }
       }
       pendingAlt.current = [];
@@ -261,8 +261,8 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
         if (!pending && !sent) return;
         if (pending) replay();
         if (sent) {
-          const session = getKeyboardSession();
-          if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
+          const targetSession = forwardedAlt?.session ?? getKeyboardSession();
+          if (targetSession?.live && targetSession.win32InputMode) targetSession.sendInput(win32InputKey(event, false));
           sent = false;
           forwardedAlt = null;
         }
@@ -272,8 +272,8 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     };
     const blur = () => {
       if (sent && forwardedAlt) {
-        const session = getKeyboardSession();
-        if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(forwardedAlt, false));
+        const { event, session } = forwardedAlt;
+        if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
       }
       pending = false;
       sent = false;

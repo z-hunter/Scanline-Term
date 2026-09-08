@@ -9,7 +9,12 @@ export class CodexClient {
   private generation = 0;
   private pending = new Map<
     number,
-    { resolve: (result: Json) => void; reject: (reason: Error) => void }
+    {
+      resolve: (result: Json) => void;
+      reject: (reason: Error) => void;
+      token: number;
+      generation: number;
+    }
   >();
   private listeners = new Set<Listener>();
   private disconnectListeners = new Set<() => void>();
@@ -21,6 +26,7 @@ export class CodexClient {
   async start() {
     this.stopped = false;
     const token = ++this.startToken;
+    this.cancelStale(token);
     const started = await invoke<{ generation: number; workspace: string }>(
       "codex_start",
     );
@@ -48,21 +54,49 @@ export class CodexClient {
       return;
     }
     if (listeners) this.unlisten = listeners;
+    if (this.stopped || this.startToken !== token) {
+      await invoke("codex_stop", { generation: started.generation });
+      return;
+    }
     try {
       await this.request("initialize", {
         clientInfo: { name: "scanline-term", version: "0.1.0" },
         capabilities: { experimentalApi: true },
       });
+      if (this.stopped || this.startToken !== token) {
+        await invoke("codex_stop", { generation: started.generation });
+        return;
+      }
       await this.notify("initialized");
     } catch (reason) {
+      if (this.stopped || this.startToken !== token) return;
       if (!String(reason).includes("Already initialized")) throw reason;
+    }
+  }
+  private cancelStale(currentToken: number) {
+    const staleGenerations = new Set<number>();
+    for (const [id, entry] of this.pending.entries()) {
+      if (entry.token !== currentToken) {
+        this.pending.delete(id);
+        entry.reject(new Error("Codex start cancelled"));
+        if (entry.generation) staleGenerations.add(entry.generation);
+      }
+    }
+    if (this.generation) {
+      staleGenerations.add(this.generation);
+      this.generation = 0;
+    }
+    for (const generation of staleGenerations) {
+      void invoke("codex_stop", { generation });
     }
   }
   async request(method: string, params: Json = {}): Promise<Json> {
     if (this.stopped) throw new Error("Codex client is stopped");
     const id = this.id++;
+    const token = this.startToken;
+    const generation = this.generation;
     const reply = new Promise<Json>((resolve, reject) =>
-      this.pending.set(id, { resolve, reject }),
+      this.pending.set(id, { resolve, reject, token, generation }),
     );
     const message = { jsonrpc: "2.0" as const, id, method, params };
     this.debug(`→ ${JSON.stringify(message)}`);
@@ -138,7 +172,16 @@ export class CodexClient {
     this.unlisten.splice(0).forEach((item) => item());
   }
   private receive({ generation, message }: CodexEvent) {
-    if (generation !== this.generation) return;
+    if (generation !== this.generation) {
+      if (message.id !== undefined) {
+        const pending = this.pending.get(message.id);
+        if (pending && (pending.generation === generation || (pending.token !== undefined && pending.token !== this.startToken))) {
+          this.pending.delete(message.id);
+          pending.reject(new Error("Codex request cancelled"));
+        }
+      }
+      return;
+    }
     this.debug(`← ${JSON.stringify(message)}`);
     if (message.method) {
       this.listeners.forEach((listener) => listener(message));
@@ -148,6 +191,10 @@ export class CodexClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
+      if (pending.token !== undefined && pending.token !== this.startToken) {
+        pending.reject(new Error("Codex request cancelled"));
+        return;
+      }
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result ?? null);
     }

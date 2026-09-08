@@ -148,4 +148,54 @@ describe("CodexClient", () => {
     expect(client.workspace).toBe("/workspace/2");
     expect(mocked.invoke).toHaveBeenCalledWith("codex_stop", { generation: 1 });
   });
+
+  it("cancels and rejects stale initialize request and stops generation when start A sends initialize before start B becomes active", async () => {
+    let startACallCount = 0;
+    mocked.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "codex_start") {
+        startACallCount++;
+        if (startACallCount === 1) {
+          return Promise.resolve({ generation: 1, workspace: "/workspace/1" });
+        }
+        return Promise.resolve({ generation: 2, workspace: "/workspace/2" });
+      }
+      if (command === "codex_send") {
+        const payload = args as { generation?: number; message?: { id?: number; method?: string } };
+        if (payload?.generation === 1 && payload?.message?.method === "initialize") {
+          return Promise.resolve(undefined);
+        }
+        if (payload?.message?.id !== undefined) {
+          queueMicrotask(() => {
+            receive({
+              generation: payload.generation ?? 2,
+              message: { jsonrpc: "2.0", id: payload.message!.id, result: {} },
+            });
+          });
+        }
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const startA = client.start();
+    await vi.waitFor(() => {
+      expect(mocked.invoke).toHaveBeenCalledWith(
+        "codex_send",
+        expect.objectContaining({
+          generation: 1,
+          message: expect.objectContaining({ method: "initialize" }),
+        }),
+      );
+    });
+
+    const startB = client.start();
+    await startB;
+    await startA;
+
+    expect(mocked.invoke).toHaveBeenCalledWith("codex_stop", { generation: 1 });
+    expect(client.workspace).toBe("/workspace/2");
+
+    const pendingMap = (client as unknown as { pending: Map<number, unknown> }).pending;
+    expect(pendingMap.size).toBe(0);
+  });
 });
