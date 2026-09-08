@@ -952,6 +952,7 @@ export default function App() {
           >
             <canvas
               ref={outputRef}
+              key={stored.crt.crtEmulation ? "crt-on" : "crt-off"}
               className={`output-canvas${activeBrowser ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
               tabIndex={terminal.live ? 0 : -1}
