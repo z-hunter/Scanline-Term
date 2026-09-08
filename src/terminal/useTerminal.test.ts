@@ -32,6 +32,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { adjacentTabId, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { win32InputKey } from '../win32-input';
 
 const tabs: TerminalTab[] = [
   { id: 'one', ordinal: 1, title: '1. cmd.exe', status: 'running', background: '#000000', foreground: '#ffffff' },
@@ -803,6 +804,157 @@ describe('useTerminal closeSession concurrent closures', () => {
 
     // Fullscreen guard was cleared on blur, so the keyup event reaches the session instead of being consumed
     expect(sendInputSpy).toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('sends matching Win32 Alt keyup on blur when replayed Alt was forwarded', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const activeId = hookResult.activeTabId!;
+    const session = terminalSession(activeId);
+    expect(session).toBeDefined();
+    if (session) {
+      session.win32InputMode = true;
+    }
+
+    const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
+
+    const altDown = new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+    const keyA = new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', altKey: true, bubbles: true, cancelable: true });
+
+    // Press Alt (buffered), then press A (triggers replay of Alt, then forwards KeyA)
+    await act(async () => {
+      window.dispatchEvent(altDown);
+      window.dispatchEvent(keyA);
+    });
+
+    const expectedAltDown = win32InputKey(altDown, true);
+    expect(sendInputSpy).toHaveBeenCalledWith(expectedAltDown);
+
+    sendInputSpy.mockClear();
+
+    // Blur window before Alt keyup is received
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+
+    const expectedAltUp = win32InputKey(altDown, false);
+    expect(sendInputSpy).toHaveBeenCalledWith(expectedAltUp);
+
+    // Subsequent blur does not send another keyup
+    sendInputSpy.mockClear();
+    await act(async () => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    expect(sendInputSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
+  it('does not suppress Alt when focus is on application controls or when no terminal session is active', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Create an application control (e.g. .settings-panel input)
+    const settingsPanel = document.createElement('div');
+    settingsPanel.className = 'settings-panel';
+    const settingsInput = document.createElement('input');
+    settingsPanel.appendChild(settingsInput);
+    container.appendChild(settingsPanel);
+    settingsInput.focus();
+
+    const altDown1 = new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+    const altUp1 = new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+
+    await act(async () => {
+      settingsInput.dispatchEvent(altDown1);
+      settingsInput.dispatchEvent(altUp1);
+    });
+
+    expect(altDown1.defaultPrevented).toBe(false);
+    expect(altUp1.defaultPrevented).toBe(false);
+
+    // Open browser tab so no terminal session is active
+    await act(async () => {
+      hookResult.openBrowser('https://example.com');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Focus document body (terminal-eligible focus, but active tab is browser)
+    document.body.focus();
+
+    const altDown2 = new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+    const altUp2 = new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true });
+
+    await act(async () => {
+      window.dispatchEvent(altDown2);
+      window.dispatchEvent(altUp2);
+    });
+
+    expect(altDown2.defaultPrevented).toBe(false);
+    expect(altUp2.defaultPrevented).toBe(false);
 
     await act(async () => {
       root.unmount();

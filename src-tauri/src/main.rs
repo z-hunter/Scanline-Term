@@ -166,6 +166,35 @@ fn powershell_name(name: &str, path: &Path) -> String {
     version.map_or_else(|| name.to_owned(), |version| format!("{name} {version}"))
 }
 
+fn powershell_core_installations() -> Vec<PathBuf> {
+    let mut installations = Vec::new();
+    for root in [std::env::var_os("ProgramFiles"), std::env::var_os("ProgramFiles(x86)")]
+        .into_iter()
+        .flatten()
+        .map(PathBuf::from)
+    {
+        let ps_dir = root.join("PowerShell");
+        if let Ok(entries) = std::fs::read_dir(&ps_dir) {
+            let mut subdirs: Vec<PathBuf> = entries
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .collect();
+            subdirs.sort();
+            for subdir in subdirs {
+                let pwsh = subdir.join("pwsh.exe");
+                if pwsh.is_file() {
+                    installations.push(pwsh);
+                }
+            }
+        }
+        let direct = ps_dir.join("pwsh.exe");
+        if direct.is_file() {
+            installations.push(direct);
+        }
+    }
+    installations
+}
+
 #[tauri::command]
 fn list_available_shells() -> Vec<ShellInfo> {
     let mut shells = Vec::new();
@@ -178,8 +207,11 @@ fn list_available_shells() -> Vec<ShellInfo> {
     };
     add("Command Prompt".into(), std::env::var_os("ComSpec").map(PathBuf::from));
     let windows_powershell = std::env::var_os("SystemRoot").map(|root| PathBuf::from(root).join("System32/WindowsPowerShell/v1.0/powershell.exe")).or_else(|| shell_on_path("powershell.exe"));
-    let powershell = shell_on_path("pwsh.exe");
     add(windows_powershell.as_ref().map_or_else(|| "Windows PowerShell".into(), |path| powershell_name("Windows PowerShell", path)), windows_powershell);
+    for path in powershell_core_installations() {
+        add(powershell_name("PowerShell", &path), Some(path));
+    }
+    let powershell = shell_on_path("pwsh.exe");
     add(powershell.as_ref().map_or_else(|| "PowerShell".into(), |path| powershell_name("PowerShell", path)), powershell);
     let git_bash = [std::env::var_os("ProgramFiles"), std::env::var_os("ProgramFiles(x86)"), std::env::var_os("LocalAppData")]
         .into_iter().flatten().map(PathBuf::from).map(|root| root.join("Git/bin/bash.exe"))

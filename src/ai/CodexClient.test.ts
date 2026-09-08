@@ -106,4 +106,46 @@ describe("CodexClient", () => {
 
     await expect(models).rejects.toThrow("Codex returned a repeated model cursor");
   });
+
+  it("handles start(), pending codex_start, stop(), then start() without stale overwrite", async () => {
+    let resolveFirstStart!: (value: { generation: number; workspace: string }) => void;
+    let startCallCount = 0;
+    mocked.invoke.mockImplementation((command: string, args?: unknown) => {
+      if (command === "codex_start") {
+        startCallCount++;
+        if (startCallCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstStart = resolve;
+          });
+        }
+        return Promise.resolve({ generation: 2, workspace: "/workspace/2" });
+      }
+      if (command === "codex_send") {
+        const payload = args as { generation?: number; message?: { id?: number } };
+        if (payload?.message?.id !== undefined) {
+          queueMicrotask(() => {
+            receive({
+              generation: payload.generation ?? 2,
+              message: { jsonrpc: "2.0", id: payload.message!.id, result: {} },
+            });
+          });
+        }
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const firstStart = client.start();
+    await client.stop();
+    const secondStart = client.start();
+    await secondStart;
+
+    expect(client.workspace).toBe("/workspace/2");
+
+    resolveFirstStart({ generation: 1, workspace: "/workspace/1" });
+    await firstStart;
+
+    expect(client.workspace).toBe("/workspace/2");
+    expect(mocked.invoke).toHaveBeenCalledWith("codex_stop", { generation: 1 });
+  });
 });

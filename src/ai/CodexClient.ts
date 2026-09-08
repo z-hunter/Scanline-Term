@@ -16,20 +16,23 @@ export class CodexClient {
   private debugListeners = new Set<DebugListener>();
   private unlisten: UnlistenFn[] = [];
   private stopped = false;
+  private startToken = 0;
   workspace = "";
   async start() {
     this.stopped = false;
+    const token = ++this.startToken;
     const started = await invoke<{ generation: number; workspace: string }>(
       "codex_start",
     );
-    this.generation = started.generation;
-    this.workspace = started.workspace;
-    if (this.stopped) {
+    if (this.stopped || this.startToken !== token) {
       await invoke("codex_stop", { generation: started.generation });
       return;
     }
+    this.generation = started.generation;
+    this.workspace = started.workspace;
+    let listeners: UnlistenFn[] | undefined;
     if (!this.unlisten.length)
-      this.unlisten = await Promise.all([
+      listeners = await Promise.all([
         listen<CodexEvent>("codex-message", ({ payload }) =>
           this.receive(payload),
         ),
@@ -38,11 +41,13 @@ export class CodexClient {
             this.fail(new Error("Codex app-server disconnected"));
         }),
       ]);
-    if (this.stopped) {
-      this.removeListeners();
+    if (this.stopped || this.startToken !== token) {
+      listeners?.forEach((item) => item());
+      if (this.startToken === token) this.removeListeners();
       await invoke("codex_stop", { generation: started.generation });
       return;
     }
+    if (listeners) this.unlisten = listeners;
     try {
       await this.request("initialize", {
         clientInfo: { name: "scanline-term", version: "0.1.0" },

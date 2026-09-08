@@ -202,17 +202,25 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     window.addEventListener('keydown', reopenAddress, true);
     return () => window.removeEventListener('keydown', reopenAddress, true);
   }, [addressTabId]);
-  const getKeyboardSession = () => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : (activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined);
+  const getKeyboardSession = () =>
+    document.activeElement instanceof Element &&
+    document.activeElement.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address, .ai-panel')
+      ? undefined
+      : (activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined);
   useEffect(() => {
     let pending = false;
     let sent = false;
+    let forwardedAlt: KeyboardEvent | null = null;
     const replay = () => {
       const session = getKeyboardSession();
       const terminal = session?.terminal;
       if (!session?.live || !terminal) { pending = false; return; }
       for (const event of pendingAlt.current) {
         const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
-        if (input) session.sendInput(input);
+        if (input) {
+          session.sendInput(input);
+          if (session.win32InputMode) forwardedAlt = event;
+        }
       }
       pendingAlt.current = [];
       pending = false;
@@ -220,6 +228,8 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     };
     const down = async (event: KeyboardEvent) => {
       if (event.code === 'AltLeft' || event.code === 'AltRight') {
+        const session = getKeyboardSession();
+        if (!session) return;
         pendingAlt.current.push(event);
         pending = true;
         event.preventDefault();
@@ -248,17 +258,29 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     const up = (event: KeyboardEvent) => {
       if (event.code === 'AltLeft' || event.code === 'AltRight') {
         if (suppressAlt.current) { suppressAlt.current = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
+        if (!pending && !sent) return;
         if (pending) replay();
         if (sent) {
           const session = getKeyboardSession();
           if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
           sent = false;
+          forwardedAlt = null;
         }
         event.preventDefault();
         event.stopImmediatePropagation();
       }
     };
-    const blur = () => { pending = false; sent = false; pendingAlt.current = []; suppressAlt.current = false; };
+    const blur = () => {
+      if (sent && forwardedAlt) {
+        const session = getKeyboardSession();
+        if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(forwardedAlt, false));
+      }
+      pending = false;
+      sent = false;
+      forwardedAlt = null;
+      pendingAlt.current = [];
+      suppressAlt.current = false;
+    };
     window.addEventListener('keydown', down, true);
     window.addEventListener('keyup', up, true);
     window.addEventListener('blur', blur);
