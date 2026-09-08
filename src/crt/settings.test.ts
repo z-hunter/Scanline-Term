@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crtEffectMask, persistenceDecay } from './CRTFilter';
+import { averageCorrectedLuma, breathingExpansion, correctedImageLuma, crtEffectMask, persistenceDecay } from './CRTFilter';
 import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
@@ -14,6 +14,21 @@ describe('CRT settings', () => {
     expect(crtEffectMask({ persistence: 0, bloom: 1, glow: 0 })).toBe(2);
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 1 })).toBe(4);
     expect(crtEffectMask({ persistence: 1, bloom: 1, glow: 1 })).toBe(7);
+  });
+
+  it('uses final image brightness and contrast for HV breathing', () => {
+    expect(correctedImageLuma(0.5, 1.5, 1)).toBe(0.75);
+    expect(correctedImageLuma(0.5, 1, 0.5)).toBe(0.5);
+    expect(correctedImageLuma(1, 1.5, 1)).toBe(1);
+    expect(breathingExpansion(0.05, 1.5, 1, 1)).toBeGreaterThan(breathingExpansion(0.05, 0.5, 1, 1) + 0.04);
+  });
+
+  it('samples the whole image rather than one linear stripe', () => {
+    const pixels = new Uint8ClampedArray(16 * 16 * 4);
+    pixels[((15 * 16 + 15) * 4)] = 255;
+    pixels[((15 * 16 + 15) * 4) + 1] = 255;
+    pixels[((15 * 16 + 15) * 4) + 2] = 255;
+    expect(averageCorrectedLuma(pixels, 16, 16, 1, 1)).toBeGreaterThan(0);
   });
 
   it('keeps default CRT parameters without the removed hum setting', () => {
