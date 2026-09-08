@@ -113,7 +113,7 @@ const input = session.win32InputMode
 | Insert/Delete/PgUp/PgDn | `\x1b[2~`..`\x1b[6~` with optional modifier parameter |
 | Numpad (app mode) | `\x1bOp`..`\x1bOy` for 0–9, `\x1bOn` decimal, `\x1bOo` divide, etc. |
 | Tab | `\t` (plain) or `\x1b[Z` (shift) |
-| Enter | `\r` (plain) or `\x1b\r` (Alt+Enter, non-fullscreen) |
+| Enter | `\r` (plain); Alt+Enter is intercepted by the Tauri app for fullscreen before terminal encoding |
 | Backspace | `\x7f` |
 | Escape | `\x1b` |
 | Ctrl+letter | ASCII 1–26 (Ctrl+A=0x01, Ctrl+Z=0x1A) |
@@ -154,9 +154,19 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+← / Menu+<** | Select the previous tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+Tab** | Toggle to the previously active tab | `terminal/useTerminal.ts` keyboard handler |
 
-The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding.
+The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding. A lone Menu press is forwarded to the active Win32 Input Mode terminal as a deferred down/up pair when it is released; this preserves application shortcuts while allowing console applications to observe `VK_APPS`. Standard VT has no equivalent Menu sequence.
 
-In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, `Digit1` through `Digit9`, `ArrowRight`, `ArrowLeft`, `Period`, `Comma`, and `Tab`; other key codes are rejected. A lone Menu press and release remain normal page input. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
+`Alt+Enter` is reserved for fullscreen and is intercepted before terminal encoding. Do not rely on `KeyboardEvent.altKey` alone: on some Windows layouts Right Alt is exposed as AltGr and does not reliably set it. The handler tracks physical `AltLeft` and `AltRight` key events, and clears that state on window blur so a later plain Enter cannot toggle fullscreen.
+
+In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, `Digit1` through `Digit9`, `ArrowRight`, `ArrowLeft`, `Period`, `Comma`, and `Tab`; other key codes are rejected. A lone Menu press and release remain normal page input. The injected script suppresses only an orphan Menu keyup left by a terminal → browser Menu shortcut, preventing a spurious browser context menu. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
+
+### Native Browser Focus Handoff
+
+Each browser tab owns a separate WebView2 controller. Hiding a browser child does **not** automatically move controller focus back to the main terminal WebView, even when Windows reports the Tauri top-level window as focused. In that state the terminal canvas can be `document.activeElement` while normal physical key events never reach its JavaScript window.
+
+`browser::set_active_browser` handles the browser → terminal transition: hide the children, release `BrowserState`, and call `app.get_webview("main").set_focus()`. Keep this controller-focus call conditional on that transition; do not call it at startup or from the top-level `WM_SETFOCUS` callback, where it can re-enter native focus dispatch and hang the app. Window activation instead uses Win32 `SetFocus` on the first visible direct `WRY_WEBVIEW` child. Do not use recursive `EnumChildWindows`: hidden browser children may precede the terminal and steal focus.
+
+WebView2 does not preserve a held `Menu` modifier across the browser → terminal boundary. After that transition, the user must release and press Menu again before another Menu shortcut; do not synthesize modifier key state to hide this limitation.
 
 ### Key-Repeat Handling
 

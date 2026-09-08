@@ -70,7 +70,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Terminals share one `TerminalRenderer` and CRT filter; browser tabs are native child WebViews and deliberately bypass the CRT pipeline.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Terminals share one `TerminalRenderer` and CRT filter; browser tabs are native child WebViews and deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, and the explicit browser → main-WebView focus handoff; it must not treat top-level window focus as equivalent to terminal keyboard focus.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 

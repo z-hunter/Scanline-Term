@@ -80,15 +80,20 @@ Run: `cd src-tauri && cargo test`
 - [ ] Arrow keys navigate (cmd.exe history, or in a TUI app)
 - [ ] Function keys work in a console app (e.g., FAR Manager F1–F10)
 - [ ] Tab completion works in cmd/PowerShell
-- [ ] Alt+Enter toggles fullscreen
+- [ ] Left-Alt+Enter, Right-Alt+Enter, and Alt+NumpadEnter toggle fullscreen and send no input to the terminal
 - [ ] Menu+S toggles settings panel
 - [ ] Menu+A toggles AI assistant panel
 - [ ] Menu+' toggles keyboard focus between terminal and AI assistant
 - [ ] Terminal text cursor stops blinking (and remains solid) when canvas loses keyboard focus
 - [ ] Menu+V pastes from clipboard
 - [ ] Menu+C enters copy mode (verify visual feedback)
+- [ ] In a Win32 Input Mode console application, press and release Menu alone; verify it receives the Context Menu / Apps key, then verify Menu+S and Menu+arrow remain application shortcuts
 - [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab
 - [ ] Numpad keys work in application keypad mode (if applicable)
+- [ ] With one terminal tab and one native browser tab, use only `Menu+←` / `Menu+→` (or `Menu+<` / `Menu+>`) to switch browser → terminal; immediately type text and verify it reaches the terminal without a mouse click
+- [ ] Switch terminal → browser with the same shortcut; verify the browser does not open a context menu from the carried-over Menu key, then press Menu by itself and verify its normal browser context menu still opens
+- [ ] After browser → terminal while keeping Menu held, release and press Menu before issuing the next Menu shortcut; this is the supported native-WebView boundary behavior
+- [ ] With a browser tab present but a terminal tab active, minimize/restore the app and Alt+Tab away and back; immediately type in the terminal without clicking
 
 ### After Changes to Mouse Input
 

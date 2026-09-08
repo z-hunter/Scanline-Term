@@ -58,7 +58,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
     else if (e.key === '/') { e.preventDefault(); const text=prompt('Find'); if(text) window.find(text); }
     else if (e.key === 'r') { e.preventDefault(); location.reload(); }
   }, true);
-  addEventListener('keyup', e => { if (e.key === 'ContextMenu') { menu = false; return; } if (menu) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  addEventListener('keyup', e => { if (e.key === 'ContextMenu') { if (!menu) { e.preventDefault(); e.stopImmediatePropagation(); } menu = false; return; } if (menu) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 })()"#;
 
 fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<String> {
@@ -112,13 +112,21 @@ pub fn navigate_browser(app: tauri::AppHandle, state: State<BrowserState>, sessi
 #[tauri::command]
 pub fn set_active_browser(app: tauri::AppHandle, state: State<BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>) -> Result<(), String> {
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
-    let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
-    state.active = session_id.clone(); state.bounds = bounds.clone();
-    for (id, browser) in state.webviews.iter() {
-        if Some(id) == session_id.as_ref() {
-            if let Some(rect) = &bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
-            browser.show().map_err(|e| e.to_string())?; trace(&app, "show", id, bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
-        } else { let _ = browser.hide(); }
+    let return_to_terminal = {
+        let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
+        let return_to_terminal = state.active.is_some() && session_id.is_none();
+        state.active = session_id.clone(); state.bounds = bounds.clone();
+        for (id, browser) in state.webviews.iter() {
+            if Some(id) == session_id.as_ref() {
+                if let Some(rect) = &bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
+                browser.show().map_err(|e| e.to_string())?; trace(&app, "show", id, bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
+                let _ = browser.set_focus();
+            } else { let _ = browser.hide(); }
+        }
+        return_to_terminal
+    };
+    if return_to_terminal {
+        let _ = app.get_webview("main").ok_or("main webview is unavailable")?.set_focus();
     }
     Ok(())
 }

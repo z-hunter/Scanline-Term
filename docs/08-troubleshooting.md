@@ -31,7 +31,10 @@
 | Symptom | Probable Cause | Diagnostic | Fix |
 |---------|---------------|------------|-----|
 | Keyboard input not reaching terminal | Canvas doesn't have focus | Click the canvas; check `tabIndex` | Canvas gets `tabIndex={0}` when `terminalLive` is true |
+| Keyboard input is lost only after browser → terminal tab switching | Hidden browser child still owns WebView2 controller focus | Switch with `Menu+←` / `Menu+→`; if the app window is focused but terminal receives no text, inspect `browser::set_active_browser` | Hide browser children, release `BrowserState`, then focus `app.get_webview("main")`; do not call that controller-focus API from `WM_SETFOCUS` or unconditionally at startup |
+| Keyboard input is lost after minimize/restore or app switching | Window restore selected a hidden browser child | Inspect direct `WRY_WEBVIEW` children; browser children can precede the terminal | `focus_webview` must scan direct children and focus the first visible one, not recurse with `EnumChildWindows` |
 | Alt+Enter doesn't toggle fullscreen | Not running in Tauri | Check `isTauri()` | Only works in Tauri app, not browser preview |
+| Right-Alt+Enter reaches terminal or does not toggle fullscreen | Right Alt is reported as AltGr without reliable `event.altKey` | Check `event.code === 'AltRight'` | Track physical `AltLeft`/`AltRight` state; reset it on window blur and intercept Enter before terminal encoding |
 | Menu+key shortcuts not working | Menu key (`ContextMenu`) not recognized on some keyboards | Check if `event.key === 'ContextMenu'` fires | Verify keyboard layout; some keyboards lack a dedicated Menu key |
 | Keys go to settings panel instead of terminal | A settings control has focus | Click the canvas to return focus | This is expected behavior — settings controls capture keyboard |
 

@@ -267,17 +267,20 @@ fn is_window_active(window: &tauri::WebviewWindow) -> bool {
 
 #[cfg(windows)]
 fn focus_webview(window: &tauri::WebviewWindow) {
-    use windows_sys::Win32::Foundation::{HWND, LPARAM};
-    use windows_sys::Win32::UI::WindowsAndMessaging::EnumChildWindows;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindow, IsWindowVisible, GW_CHILD, GW_HWNDNEXT};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 
-    unsafe extern "system" fn enum_child_proc(hwnd: HWND, _lparam: LPARAM) -> i32 {
-        unsafe { SetFocus(hwnd) };
-        0 // Stop enumerating
-    }
-
     if let Ok(hwnd) = window.hwnd() {
-        unsafe { EnumChildWindows(hwnd.0 as _, Some(enum_child_proc), 0) };
+        unsafe {
+            let mut child = GetWindow(hwnd.0 as _, GW_CHILD);
+            while !child.is_null() {
+                if IsWindowVisible(child) != 0 {
+                    let _ = SetFocus(child);
+                    break;
+                }
+                child = GetWindow(child, GW_HWNDNEXT);
+            }
+        }
     }
 }
 

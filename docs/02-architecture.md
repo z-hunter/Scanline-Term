@@ -146,6 +146,28 @@ sequenceDiagram
     ConPTY->>Shell: stdin delivery
 ```
 
+### Native Browser Tab Switching and Keyboard Focus
+
+Browser tabs are separate native WebView2 child surfaces, not DOM elements in the terminal WebView. Consequently, a focused top-level Tauri window is not proof that the terminal WebView can receive keyboard events: WebView2 controller focus is a separate state.
+
+```mermaid
+sequenceDiagram
+    participant Browser as Browser child WebView2
+    participant Rust as browser.rs
+    participant Main as Main terminal WebView2
+
+    Browser->>Rust: browser-shortcut (Menu+arrow)
+    Rust->>Main: emit browser-shortcut
+    Main->>Rust: set_active_browser(None)
+    Rust->>Browser: hide child WebView2
+    Rust->>Rust: release BrowserState mutex
+    Rust->>Main: main WebView.set_focus()
+```
+
+`set_active_browser` must mirror its browser-entry focus call when it leaves a browser tab: after hiding children, and only after releasing `BrowserState`, it calls `app.get_webview("main").set_focus()`. Calling this controller-focus API unconditionally during startup or from a native `WM_SETFOCUS` handler can re-enter WebView2 focus processing and make the application unresponsive. The handoff is therefore guarded by a real active-browser → terminal transition. Window restoration uses Win32 `SetFocus` only on the first **visible direct** `WRY_WEBVIEW` child; recursive enumeration can select a hidden browser child created earlier.
+
+The browser injects a small page-local script that bridges allowed `Menu+…` shortcuts through a rejected `scanline-term://shortcut/...` navigation; remote pages never get Tauri IPC. A standalone `Menu` press remains native browser input. The script suppresses only an orphan `ContextMenu` keyup that can arrive after a terminal → browser `Menu+arrow` transition, so that the combination does not open the browser context menu. A held `Menu` is not synthesized across native WebView boundaries: after browser → terminal switching, release and press `Menu` again before using another Menu shortcut.
+
 ### Mouse Input → Console
 
 ```mermaid
