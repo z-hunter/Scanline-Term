@@ -110,7 +110,21 @@ export class TerminalRenderer {
     const started = performance.now(); let glyphs = 0;
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, padding, cellSize);
-    if (nextCursorRow !== null) { const x = padding + cellSize.width * buffer.cursorX; const y = padding + cellSize.height * buffer.cursorY; ctx.fillStyle = profile.cursor ?? profile.foreground; if (terminal.options.cursorStyle === 'underline') ctx.fillRect(x, y + cellSize.height - 2, cellSize.width, 2); else if (terminal.options.cursorStyle === 'bar') ctx.fillRect(x, y, Math.max(2, Math.min(cellSize.width, terminal.options.cursorWidth ?? cellSize.width * .15)), Math.ceil(cellSize.height)); else ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height)); }
+    if (nextCursorRow !== null) {
+      const x = padding + cellSize.width * buffer.cursorX;
+      const y = padding + cellSize.height * buffer.cursorY;
+      ctx.fillStyle = profile.cursor ?? profile.foreground;
+      const cursorStyle = settings.cursorStyle ?? terminal.options.cursorStyle ?? 'block';
+      if (cursorStyle === 'underline') {
+        const underlineHeight = Math.max(2, Math.round(cellSize.height * 0.1));
+        ctx.fillRect(x, y + cellSize.height - underlineHeight, cellSize.width, underlineHeight);
+      } else if (cursorStyle === 'bar') {
+        const barWidth = Math.max(2, Math.min(cellSize.width, terminal.options.cursorWidth ?? cellSize.width * 0.15));
+        ctx.fillRect(x, y, barWidth, Math.ceil(cellSize.height));
+      } else {
+        ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
+      }
+    }
     this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
   }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
@@ -125,6 +139,53 @@ export class TerminalRenderer {
     for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = padding + cellSize.width * column; if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { glyphs += 1; ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; ctx.fillText(chars, x, y); } }
     return glyphs;
   }
-  private drawMock(time: number, settings: CRTSettings): void { const ctx = this.sourceCanvas.getContext('2d'); if (!ctx) return; const { width, height } = this.sourceCanvas; const size = settings.consoleFontSize; const line = Math.floor(size * 1.5); ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height); ctx.font = canvasFont(size, settings.consoleFont); ctx.textBaseline = 'top'; ['SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', `virtual framebuffer ${width}×${height}`, '[ OK ] phosphor matrix online', '[ OK ] scanline generator synchronized', '[ OK ] WebGL fragment pipeline ready', '> rendering an ordinary terminal as an old monitor', '> browser preview uses a mock session', '', `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`].forEach((text, i) => { ctx.fillStyle = ['#7dffae','#4ecf83','#9affbd','#62db91','#78c9ff','#ffd166','#ff8a80'][i % 7]; ctx.fillText(text, size, size + line * i); }); }
+  private drawMock(time: number, settings: CRTSettings): void {
+    const ctx = this.sourceCanvas.getContext('2d');
+    if (!ctx) return;
+    const { width, height } = this.sourceCanvas;
+    const size = settings.consoleFontSize;
+    const line = Math.floor(size * 1.5);
+    const profile = colorProfile(settings.colorProfile);
+    ctx.fillStyle = '#050806';
+    ctx.fillRect(0, 0, width, height);
+    ctx.font = canvasFont(size, settings.consoleFont);
+    ctx.textBaseline = 'top';
+    const lines = [
+      'SCANLINE TERM // CRT DISPLAY DIAGNOSTIC',
+      `virtual framebuffer ${width}×${height}`,
+      '[ OK ] phosphor matrix online',
+      '[ OK ] scanline generator synchronized',
+      '[ OK ] WebGL fragment pipeline ready',
+      '> rendering an ordinary terminal as an old monitor',
+      '> browser preview uses a mock session',
+      '',
+      `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`,
+    ];
+    lines.forEach((text, i) => {
+      ctx.fillStyle = ['#7dffae','#4ecf83','#9affbd','#62db91','#78c9ff','#ffd166','#ff8a80'][i % 7];
+      ctx.fillText(text, size, size + line * i);
+    });
+    const promptY = size + line * lines.length;
+    const promptText = 'ready> ';
+    ctx.fillStyle = '#7dffae';
+    ctx.fillText(promptText, size, promptY);
+    const cursorPhase = Math.floor(time * 2);
+    if (cursorPhase % 2 === 0) {
+      const cursorX = size + ctx.measureText(promptText).width;
+      const cursorW = ctx.measureText('M').width;
+      const cursorH = size;
+      const cursorStyle = settings.cursorStyle ?? 'block';
+      ctx.fillStyle = profile.cursor ?? '#7dffae';
+      if (cursorStyle === 'underline') {
+        const h = Math.max(2, Math.round(cursorH * 0.12));
+        ctx.fillRect(cursorX, promptY + cursorH - h, cursorW, h);
+      } else if (cursorStyle === 'bar') {
+        const w = Math.max(2, Math.min(cursorW, cursorW * 0.2));
+        ctx.fillRect(cursorX, promptY, w, cursorH);
+      } else {
+        ctx.fillRect(cursorX, promptY, cursorW, cursorH);
+      }
+    }
+  }
   dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; }
 }

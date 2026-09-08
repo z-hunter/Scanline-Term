@@ -59,4 +59,65 @@ describe('TerminalRenderer', () => {
     expect(terminalAverageColor(normalTerminal as never, colorProfile('dos-vga')).background).toBe('#000000');
     expect(terminalAverageColor(inverseTerminal as never, colorProfile('dos-vga')).background).toBe('#ffffff');
   });
+
+  it('renders cursor according to cursorStyle setting', () => {
+    const fillRectSpy = vi.fn();
+    const fillTextSpy = vi.fn();
+    const context = {
+      fillStyle: '',
+      globalAlpha: 1,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'middle',
+      fillRect: fillRectSpy,
+      fillText: fillTextSpy,
+      measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    const rows = [[cell('A'), cell('B')]];
+    const terminal = {
+      cols: 2,
+      rows: 1,
+      options: {},
+      buffer: {
+        active: {
+          viewportY: 0,
+          baseY: 0,
+          cursorX: 0,
+          cursorY: 0,
+          getNullCell: () => cell(''),
+          getLine: (row: number) => ({ getCell: (column: number) => rows[row]?.[column] }),
+        },
+      },
+      onCursorMove: () => ({ dispose() {} }),
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: () => ({ dispose() {} }),
+    };
+
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+
+    // Test 'underline'
+    fillRectSpy.mockClear();
+    renderer.markDirty();
+    renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, cursorStyle: 'underline' });
+    const underlineCall = fillRectSpy.mock.calls.find((call) => call[2] === 8 && call[3] === 2);
+    expect(underlineCall).toBeDefined();
+
+    // Test 'bar'
+    fillRectSpy.mockClear();
+    renderer.markDirty();
+    renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, cursorStyle: 'bar' });
+    const barCall = fillRectSpy.mock.calls.find((call) => call[2] === 2 && call[3] === 10);
+    expect(barCall).toBeDefined();
+
+    // Test 'block'
+    fillRectSpy.mockClear();
+    renderer.markDirty();
+    renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, cursorStyle: 'block' });
+    const blockCall = fillRectSpy.mock.calls.find((call) => call[2] === 8 && call[3] === 10);
+    expect(blockCall).toBeDefined();
+  });
 });

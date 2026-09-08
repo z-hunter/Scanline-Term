@@ -16,6 +16,7 @@ type NumericKey = Exclude<
   | 'antiAliasedPixels'
   | 'colorMode'
   | 'bloomAlgorithm'
+  | 'cursorStyle'
 >;
 
 const SHOW_TELEMETRY = false;
@@ -326,6 +327,24 @@ export function SettingsPanel({
 
       <fieldset>
         <legend>Display</legend>
+        <div className="setting-block">
+          <span className="setting-label">Cursor style</span>
+          <SegmentedControl
+            value={stored.crt.cursorStyle}
+            data-testid="cursor-style-segmented"
+            options={[
+              { value: 'block', label: 'Block' },
+              { value: 'underline', label: 'Underline' },
+              { value: 'bar', label: 'Bar' },
+            ]}
+            onChange={(cursorStyle) =>
+              setStored((current) => ({
+                ...current,
+                crt: { ...current.crt, cursorStyle },
+              }))
+            }
+          />
+        </div>
         {(
           [
             ['crtEmulation', 'CRT Emulation'],

@@ -205,4 +205,54 @@ describe('SettingsPanel font-size editing flow', () => {
     });
     container.remove();
   });
+
+  it('updates cursorStyle when a segmented control option is clicked', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    const control = container.querySelector('[data-testid="cursor-style-segmented"]');
+    expect(control).not.toBeNull();
+
+    const buttons = control!.querySelectorAll('button');
+    expect(buttons).toHaveLength(3);
+    expect(buttons[0].textContent).toBe('Block');
+    expect(buttons[1].textContent).toBe('Underline');
+    expect(buttons[2].textContent).toBe('Bar');
+
+    // Click 'Underline'
+    await act(async () => {
+      buttons[1].click();
+    });
+
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.cursorStyle).toBe('underline');
+
+    // Click 'Bar'
+    await act(async () => {
+      buttons[2].click();
+    });
+
+    expect(currentStored.crt.cursorStyle).toBe('bar');
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

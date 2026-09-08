@@ -29,6 +29,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('spiral');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
+    expect(DEFAULT_CRT_SETTINGS.cursorStyle).toBe('block');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
     expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
@@ -148,5 +149,13 @@ describe('CRT settings', () => {
     expect(loaded.crt.imageBrightness).toBe(1.25);
     expect(loaded.crt.imageContrast).toBe(0.75);
     expect(loaded.crt.backgroundDesaturation).toBe(0.6);
+  });
+
+  it('accepts valid cursor styles and falls back to block on invalid values', () => {
+    expect(loadStoredSettings(null).crt.cursorStyle).toBe('block');
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'underline' } })).crt.cursorStyle).toBe('underline');
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'bar' } })).crt.cursorStyle).toBe('bar');
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'invalid' } })).crt.cursorStyle).toBe('block');
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 123 } })).crt.cursorStyle).toBe('block');
   });
 });

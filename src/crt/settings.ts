@@ -1,4 +1,4 @@
-import type { BloomAlgorithm, CRTColorMode, CRTSettings } from './CRTFilter';
+import type { BloomAlgorithm, CRTColorMode, CRTSettings, CursorStyle } from './CRTFilter';
 import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
@@ -26,6 +26,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   breathing: 1,
   antiAliasedPixels: true,
   colorMode: 'color',
+  cursorStyle: 'block',
 });
 
 export const RESOLUTIONS = [
@@ -84,6 +85,9 @@ const isColorMode = (value: unknown): value is CRTColorMode =>
   value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
 
 const isBloomAlgorithm = (value: unknown): value is BloomAlgorithm => value === 'soft' || value === 'spiral';
+
+const isCursorStyle = (value: unknown): value is CursorStyle =>
+  value === 'block' || value === 'underline' || value === 'bar';
 
 const numberInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
@@ -149,6 +153,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     }
     if (isColorMode(value.crt.colorMode)) result.crt.colorMode = value.crt.colorMode;
     if (isBloomAlgorithm(value.crt.bloomAlgorithm)) result.crt.bloomAlgorithm = value.crt.bloomAlgorithm;
+    if (isCursorStyle(value.crt.cursorStyle)) result.crt.cursorStyle = value.crt.cursorStyle;
   } catch {
     // Corrupt localStorage must never prevent the demo from starting.
   }

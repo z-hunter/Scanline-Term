@@ -2,6 +2,7 @@ import type { ColorProfileId } from '../terminal-color-profiles';
 
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 export type BloomAlgorithm = 'soft' | 'spiral';
+export type CursorStyle = 'block' | 'underline' | 'bar';
 
 const PASSTHROUGH_FS = `
   precision mediump float;
@@ -50,6 +51,7 @@ export interface CRTSettings {
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
   colorMode: CRTColorMode;
+  cursorStyle: CursorStyle;
 }
 
 export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow'>): number {

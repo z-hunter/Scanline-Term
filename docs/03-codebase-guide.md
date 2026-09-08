@@ -132,7 +132,8 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 **Exported types:**
 - `CRTColorMode` — `'color' | 'bw' | 'green' | 'amber' | 'blue'`
 - `BloomAlgorithm` — `'soft' | 'spiral'`
-- `CRTSettings` — Full interface with 24 fields
+- `CursorStyle` — `'block' | 'underline' | 'bar'`
+- `CRTSettings` — Full interface with 25 fields
 - `persistenceDecay(persistence, elapsedSeconds)` — Calculates FBO decay factor and quantization cutoff
 
 **Class: `CRTFilter`**

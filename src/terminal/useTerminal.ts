@@ -84,7 +84,9 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
-    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), effectiveLaunch); renderer.current!.bindTerminal(session.terminal);
+    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), effectiveLaunch);
+    if (session.terminal) session.terminal.options.cursorStyle = settingsRef.current.cursorStyle;
+    renderer.current!.bindTerminal(session.terminal);
     void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' }));
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const openBrowser = useCallback((url?: string) => {
@@ -173,7 +175,14 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ kind?: string; url?: string }>('browser-launch', (event) => { if (event.payload?.kind === 'browser' && typeof event.payload.url === 'string') openBrowser(event.payload.url); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser launch: ${String(reason)}`)); return () => unlisten?.(); }, [onError, openBrowser]);
   const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, settings.consoleFont, settings.consoleFontSize, resolution]);
-  useEffect(() => { renderer.current!.markDirty(); }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize]);
+  useEffect(() => {
+    renderer.current!.markDirty();
+    for (const { session } of sessions.current.values()) {
+      if (session.terminal) {
+        session.terminal.options.cursorStyle = settings.cursorStyle;
+      }
+    }
+  }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize, settings.cursorStyle]);
   useEffect(() => {
     const reopenAddress = (event: KeyboardEvent) => {
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');
