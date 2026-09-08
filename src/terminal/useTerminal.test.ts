@@ -812,6 +812,78 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
+  it('toggles fullscreen on Right-Alt (AltGr) with Enter and NumpadEnter without requiring event.altKey', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.mockSetFullscreen.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const activeId = hookResult.activeTabId!;
+    const session = terminalSession(activeId);
+    expect(session).toBeDefined();
+    if (session) {
+      session.win32InputMode = true;
+    }
+
+    const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
+
+    // Right-Alt (AltGr) keydown where event.altKey is false on Enter
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'AltRight', key: 'AltGraph', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', altKey: false, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltRight', key: 'AltGraph', bubbles: true }));
+    });
+
+    expect(mocked.mockSetFullscreen).toHaveBeenCalledTimes(1);
+    expect(sendInputSpy).not.toHaveBeenCalled();
+
+    mocked.mockSetFullscreen.mockClear();
+    sendInputSpy.mockClear();
+
+    // Right-Alt with NumpadEnter
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'AltRight', key: 'Alt', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'NumpadEnter', altKey: false, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'NumpadEnter', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltRight', key: 'Alt', bubbles: true }));
+    });
+
+    expect(mocked.mockSetFullscreen).toHaveBeenCalledTimes(1);
+    expect(sendInputSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
   it('sends matching Win32 Alt keyup on blur when replayed Alt was forwarded', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();
