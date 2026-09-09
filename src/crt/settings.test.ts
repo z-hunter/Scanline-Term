@@ -20,7 +20,9 @@ describe('CRT settings', () => {
     expect(correctedImageLuma(0.5, 1.5, 1)).toBe(0.75);
     expect(correctedImageLuma(0.5, 1, 0.5)).toBe(0.5);
     expect(correctedImageLuma(1, 1.5, 1)).toBe(1);
-    expect(breathingExpansion(0.05, 1.5, 1, 1)).toBeGreaterThan(breathingExpansion(0.05, 0.5, 1, 1) + 0.04);
+    expect(breathingExpansion(correctedImageLuma(0.05, 1.5, 1), 1.5, 1)).toBeGreaterThan(
+      breathingExpansion(correctedImageLuma(0.05, 0.5, 1), 0.5, 1) + 0.04,
+    );
   });
 
   it('samples the whole image rather than one linear stripe', () => {

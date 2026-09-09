@@ -30,9 +30,9 @@ export function correctedImageLuma(luma: number, brightness: number, contrast: n
   return Math.min(1, Math.max(0, ((luma - 0.5) * contrast + 0.5) * brightness));
 }
 
-export function breathingExpansion(luma: number, brightness: number, contrast: number, strength: number): number {
+export function breathingExpansion(correctedLuma: number, brightness: number, strength: number): number {
   const brightnessDrive = Math.max(0, brightness - 1) * 0.08;
-  return Math.min(0.05, 0.004 + correctedImageLuma(luma, brightness, contrast) * 0.038 + brightnessDrive) * strength;
+  return Math.min(0.05, 0.004 + correctedLuma * 0.038 + brightnessDrive) * strength;
 }
 
 export function averageCorrectedLuma(
@@ -1155,7 +1155,6 @@ export class CRTFilter {
       const targetExpansion = breathingExpansion(
         avgLuma,
         settings.imageBrightness,
-        settings.imageContrast,
         breathingSetting,
       );
       this.smoothedExpansion +=
