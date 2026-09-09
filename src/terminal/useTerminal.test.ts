@@ -31,7 +31,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
-import { adjacentTabId, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, browserTabColor, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
 const tabs: TerminalTab[] = [
@@ -117,6 +117,14 @@ describe('renumberTabs', () => {
   });
 });
 
+describe('browserTabColor', () => {
+  it('normalizes page colors and picks readable tab text', () => {
+    expect(browserTabColor('#F0F0F0')).toEqual({ background: '#f0f0f0', foreground: '#101a14' });
+    expect(browserTabColor('102030')).toEqual({ background: '#102030', foreground: '#d7f5df' });
+    expect(browserTabColor('#fff')).toBeNull();
+  });
+});
+
 describe('terminal launch event', () => {
   it('starts a new session with the command and working directory from -T', async () => {
     mocked.handlers.clear();
@@ -192,6 +200,8 @@ describe('useTerminal closeSession concurrent closures', () => {
     await act(async () => { hookResult.openBrowser(); });
     const browserId = hookResult.activeTabId!;
     expect(hookResult.addressTabId).toBe(browserId);
+    await act(async () => { mocked.handlers.get('browser-color')!({ payload: { sessionId: browserId, background: '#f0f0f0' } }); });
+    expect(hookResult.tabs.find((tab) => tab.id === browserId)).toMatchObject({ background: '#f0f0f0', foreground: '#101a14' });
     await act(async () => { hookResult.closeAddress(); });
     await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true })); });
     expect(hookResult.addressTabId).toBe(browserId);

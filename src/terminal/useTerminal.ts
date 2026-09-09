@@ -11,7 +11,7 @@ import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
 
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
-export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed' } & TabColor;
+export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web' } & TabColor;
 export type WorkspaceTab = TerminalTab | BrowserTab;
 export type ShellInfo = { name: string; command: string };
 type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean };
@@ -53,6 +53,14 @@ export function renumberTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   });
 }
 
+export function browserTabColor(value: string): TabColor | null {
+  const normalized = value.startsWith('#') ? value.slice(1) : value;
+  if (!/^[\da-f]{6}$/i.test(normalized)) return null;
+  const channels = [0, 2, 4].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16));
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  return { background: `#${normalized.toLowerCase()}`, foreground: luminance > 150 ? '#101a14' : '#d7f5df' };
+}
+
 export function useTerminal({ settings, defaultShell = '', resolution, onError, onToggleSettings, onToggleAi }: { settings: CRTSettings; defaultShell?: string; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void }) {
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
@@ -91,18 +99,18 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'New tab'}`, status: 'running', background: '#18241e', foreground: '#d7f4dc' };
+    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc' };
     setTabs((current) => [...current, tab]); selectSession(id);
     if (!url) { setAddressTabId(id); return; }
-    void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => ({ ...current, kind: 'browser', status: 'failed', title: `${current.ordinal}. Failed` })); onError(`Could not create browser: ${String(reason)}`); });
+    void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [onError, selectSession, updateTab]);
   const navigateBrowser = useCallback((id: string, value: string) => {
     const url = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
     try { const parsed = new URL(url); if (!/^https?:$/.test(parsed.protocol)) throw new Error('URL must use http or https'); } catch (reason) { onError(`Invalid browser URL: ${String(reason)}`); return; }
     setAddressTabId(null);
     const command = browsers.current.has(id) ? 'navigate_browser' : 'create_browser';
-    void invoke(command, { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => onError(`Browser navigation failed: ${String(reason)}`));
-  }, [onError]);
+    void invoke(command, { sessionId: id, url }).then(() => { browsers.current.add(id); updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'web' as const, status: 'running', title: `${current.ordinal}. ${new URL(url).hostname}` } : current); }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'home' as const, status: 'failed' } : current); onError(`Browser navigation failed: ${String(reason)}`); });
+  }, [onError, updateTab]);
   const closeSession = useCallback(async (id: string) => {
     const tab = tabsRef.current.find((item) => item.id === id); const record = sessions.current.get(id);
     if (tab?.kind === 'browser') { const nativeBrowser = browsers.current.delete(id); recentTabs.current = recentTabs.current.filter((item) => item !== id); const next = adjacentTabId(tabsRef.current, id); const remaining = renumberTabs(tabsRef.current.filter((item) => item.id !== id)); let focusTerminal = false; setAddressTabId((current) => current === id ? null : current); nextOrdinal.current = remaining.length + 1; tabsRef.current = remaining; setTabs((current) => renumberTabs(current.filter((item) => item.id !== id))); if (activeRef.current === id) { const targetId = next ?? remaining[0]?.id; if (targetId) { focusTerminal = sessions.current.has(targetId); selectSession(targetId); } else try { await getCurrentWindow().close(); } catch (reason) { onError(`Could not close application: ${String(reason)}`); } } const restoreTerminalFocus = () => { if (focusTerminal) window.requestAnimationFrame(() => outputRef.current?.focus()); }; if (nativeBrowser) void invoke('close_browser', { sessionId: id }).catch((reason) => onError(`Browser close failed: ${String(reason)}`)).finally(restoreTerminalFocus); else restoreTerminalFocus(); return; }
@@ -171,6 +179,7 @@ export function useTerminal({ settings, defaultShell = '', resolution, onError, 
     return () => unlisten?.();
   }, [onError, openSession]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; title?: string }>('browser-title', (event) => { const { sessionId, title } = event.payload ?? {}; if (sessionId && typeof title === 'string') updateTab(sessionId, (tab) => tab.kind === 'browser' ? { ...tab, title: `${tab.ordinal}. ${title || 'New tab'}` } : tab); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser title: ${String(reason)}`)); return () => unlisten?.(); }, [onError, updateTab]);
+  useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; background?: string }>('browser-color', (event) => { const { sessionId, background } = event.payload ?? {}; const color = typeof background === 'string' ? browserTabColor(background) : null; if (sessionId && color) updateTab(sessionId, (tab) => tab.kind === 'browser' ? { ...tab, ...color } : tab); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser color: ${String(reason)}`)); return () => unlisten?.(); }, [onError, updateTab]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; code?: string }>('browser-shortcut', (event) => { const { sessionId, code } = event.payload ?? {}; if (sessionId === activeRef.current && typeof code === 'string') { menu.current = true; window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true })); menu.current = false; } }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser shortcut: ${String(reason)}`)); return () => unlisten?.(); }, [onError]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ kind?: string; url?: string }>('browser-launch', (event) => { if (event.payload?.kind === 'browser' && typeof event.payload.url === 'string') openBrowser(event.payload.url); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser launch: ${String(reason)}`)); return () => unlisten?.(); }, [onError, openBrowser]);
   const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);

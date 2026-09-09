@@ -81,6 +81,21 @@
 
 ---
 
+## Why the Home Dashboard Uses a Local JSON File
+
+**Decision:** The home dashboard stores its versioned configuration in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, with Rust owning filesystem access and retaining `home.json.bak` during replacement.
+
+**Rationale:**
+- A plain local file is easy to inspect, back up, and synchronize between devices without adding a server or account dependency.
+- Keeping reads and writes in Rust avoids granting arbitrary filesystem access to the WebView.
+- Schema validation, size limits, atomic replacement, and a backup prevent malformed or interrupted edits from silently destroying the configuration.
+
+**Keyboard consequence:** Home controls use the same modal `F` hint model as native browser pages. While `asdfghjkl` hints are active they take precedence over custom link shortcuts; this keeps hint selection deterministic without removing normal-mode shortcuts.
+
+**Deferred:** File watching, cloud synchronization, conflict merging, custom themes, and multi-page dashboards are intentionally outside the MVP.
+
+---
+
 ## Why the CRT Module Is Framework-Free
 
 **Decision:** `CRTFilter.ts` is a plain ES class with no React, no framework imports, and no DOM dependencies beyond the `HTMLCanvasElement` and `WebGLRenderingContext` it receives.

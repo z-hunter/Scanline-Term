@@ -17,6 +17,7 @@ The project originated in the **Quest/Scanline** game engine. The [`CRTFilter`](
 - Selectable virtual resolutions (QVGA through XGA) or physical-pixel mode.
 - Selectable color profiles (DOS VGA, Windows Campbell, Solarized, IBM 3279, Commodore 64, Cyberpunk, etc.) and monochrome phosphor tints (B&W, Green, Amber, Blue).
 - Instant startup; a splash image displays while the WebView and ConPTY session initialize.
+- `Menu+B` opens a local, keyboard-first home dashboard for bookmarks and editor actions before a link is promoted to a native WebView2 tab.
 - In browser/Vite preview mode: an animated mock terminal demonstrates the CRT filter without needing a native build.
 
 ## Major Capabilities
@@ -30,6 +31,7 @@ The project originated in the **Quest/Scanline** game engine. The [`CRTFilter`](
 | **Color system** | 8 terminal color profiles × 5 phosphor color modes, ANSI 16/256/RGB remapping |
 | **Input** | VT key encoding, Win32 Input Mode (`?9001h`), function keys F1–F24, numpad application mode, cursor keys, Ctrl/Alt combos, mouse tracking (X10, VT200, drag, any-event, SGR 1006) |
 | **Clipboard** | Menu-key+V paste, Menu-key+C copy-mode, middle-button selection, browser `onPaste`, `navigator.clipboard` |
+| **Home dashboard** | `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, categorized links, browser-style `F` hints, keyboard editor, atomic saves with backup |
 | **Font** | Enumeration of system monospace fonts via Win32 GDI `EnumFontFamiliesExW`, configurable font and size |
 | **Settings** | All CRT + console settings persisted in `localStorage` under `scanline-term.settings.v1` with validated loading |
 | **Packaging** | Tauri 2 NSIS installer, bundled ConPTY DLLs |

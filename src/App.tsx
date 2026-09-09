@@ -17,10 +17,11 @@ import {
   RESOLUTIONS,
 } from "./crt/settings";
 import { useCRT } from "./crt/useCRT";
-import { useTerminal, type ShellInfo } from "./terminal/useTerminal";
+import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
+import { HomeDashboard } from "./ui/HomeDashboard";
 import {
   appendAgentDelta,
   completeAgentMessage,
@@ -83,7 +84,6 @@ export default function App() {
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
-  const addressRef = useRef<HTMLInputElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [windowSize, setWindowSize] = useState(() => ({
@@ -148,7 +148,7 @@ export default function App() {
     onToggleSettings: toggleSettings,
     onToggleAi: toggleAi,
   });
-  const activeBrowser = terminal.tabs.find((tab) => tab.id === terminal.activeTabId && tab.kind === "browser");
+  const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
   const crt = useCRT({
     settings: stored.crt,
@@ -182,8 +182,8 @@ export default function App() {
     const update = () => {
       const rect = screenRef.current?.getBoundingClientRect();
       const payload = {
-        sessionId: activeBrowserId && terminal.addressTabId !== activeBrowserId ? activeBrowserId : null,
-        bounds: activeBrowserId && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
+        sessionId: activeBrowser?.page === "web" ? activeBrowserId : null,
+        bounds: activeBrowser?.page === "web" && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
       };
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
@@ -192,12 +192,16 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.status, reportError, stored.tabPlacement, stored.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, reportError, stored.tabPlacement, stored.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
   useEffect(() => {
-    if (!terminal.addressTabId) return;
-    const frame = requestAnimationFrame(() => { addressRef.current?.focus(); addressRef.current?.select(); });
+    if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
+    const frame = requestAnimationFrame(() => {
+      const search = document.querySelector<HTMLInputElement>(".browser-home-search input");
+      search?.focus();
+      search?.select();
+    });
     return () => cancelAnimationFrame(frame);
-  }, [terminal.addressTabId]);
+  }, [activeBrowser?.page, terminal.addressTabId]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -208,10 +212,10 @@ export default function App() {
         const interval = setInterval(() => {
           window.focus();
           window.requestAnimationFrame(() => {
-            if (terminal.addressTabId) {
-              addressRef.current?.blur();
-              addressRef.current?.focus();
-              addressRef.current?.select();
+            if (activeBrowser?.page === "home") {
+              const search = document.querySelector<HTMLInputElement>(".browser-home-search input");
+              search?.focus();
+              search?.select();
             } else {
               outputRef.current?.blur();
               outputRef.current?.focus();
@@ -234,7 +238,7 @@ export default function App() {
       unlisten?.();
       void unlistenFocus.then((f) => f());
     };
-  }, [settingsVisible, aiVisible, terminal.addressTabId, outputRef]);
+  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     try {
       const models = await codex.listModels();
@@ -962,12 +966,7 @@ export default function App() {
             <span className="frame-status">
               {terminal.size.cols} × {terminal.size.rows}
             </span>
-            {terminal.addressTabId && (
-              <form className="browser-address" onSubmit={(event) => { event.preventDefault(); const value = new FormData(event.currentTarget).get("url"); if (typeof value === "string") terminal.navigateBrowser(terminal.addressTabId!, value); }}>
-                <input ref={addressRef} name="url" type="text" inputMode="url" placeholder="https://example.com" aria-label="Browser address" onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); terminal.closeAddress(); } }} />
-                <button type="submit">Open</button>
-              </form>
-            )}
+            {activeBrowser?.page === "home" && <HomeDashboard tabId={activeBrowser.id} onNavigate={terminal.navigateBrowser} onError={reportError} />}
           </div>
         </div>
         {error && (

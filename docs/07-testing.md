@@ -90,6 +90,13 @@ Run: `cd src-tauri && cargo test`
 - [ ] In a Win32 Input Mode console application, press and release Menu alone; verify it receives the Context Menu / Apps key, then verify Menu+S and Menu+arrow remain application shortcuts
 - [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab
 - [ ] Numpad keys work in application keypad mode (if applicable)
+- [ ] `Menu+B` opens the home dashboard and creates `%APPDATA%\\com.zhunter.scanlineterm\\home.json` with the default links
+- [ ] On the home dashboard, `F` shows hints over links, buttons, inputs, and editor controls; typing a hint activates it and `Esc` closes the mode
+- [ ] While hints are active, a custom link shortcut (for example `g`) selects the matching hint instead of opening its normal-mode link
+- [ ] `F5` on the home dashboard does not reload the application; `F6` and `O` focus the search field
+- [ ] Use hints to enter Edit mode, add/rename/delete a category or link, complete the prompt dialogs with the keyboard, and verify the JSON file changes
+- [ ] Reload the home dashboard and verify saved changes persist; malformed JSON shows an error and `Use default` restores a valid configuration
+- [ ] Open a page from home and verify its browser tab adopts the page theme/background color with readable text; navigate to another page in the same native tab and verify the color updates again
 - [ ] With one terminal tab and one native browser tab, use only `Menu+←` / `Menu+→` (or `Menu+<` / `Menu+>`) to switch browser → terminal; immediately type text and verify it reaches the terminal without a mouse click
 - [ ] In a native browser tab, open a `target="_blank"` link (for example Gmail `Sign in`) and verify that its destination loads in the current tab
 - [ ] Switch terminal → browser with the same shortcut; verify the browser does not open a context menu from the carried-over Menu key, then press Menu by itself and verify its normal browser context menu still opens

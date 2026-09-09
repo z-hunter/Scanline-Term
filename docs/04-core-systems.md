@@ -147,7 +147,7 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+V** | Paste from clipboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+C** | Enter copy mode | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
-| **Menu+B** | Create a browser tab and focus its address field | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+B** | Create a browser tab with the local home dashboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+W** | Close the active terminal or browser tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+→ / Menu+>** | Select the next tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
@@ -167,6 +167,10 @@ Each browser tab owns a separate WebView2 controller. Hiding a browser child doe
 `browser::set_active_browser` handles the browser → terminal transition: hide the children, release `BrowserState`, and call `app.get_webview("main").set_focus()`. Keep this controller-focus call conditional on that transition; do not call it at startup or from the top-level `WM_SETFOCUS` callback, where it can re-enter native focus dispatch and hang the app. Window activation instead uses Win32 `SetFocus` on the first visible direct `WRY_WEBVIEW` child. Do not use recursive `EnumChildWindows`: hidden browser children may precede the terminal and steal focus.
 
 WebView2 does not preserve a held `Menu` modifier across the browser → terminal boundary. After that transition, the user must release and press Menu again before another Menu shortcut; do not synthesize modifier key state to hide this limitation.
+
+### Browser Home Dashboard
+
+Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView. The page provides categorized links, local filtering, direct URL opening, single-key shortcuts, browser-style `F` hints for every visible link/button/input, and a minimal editor. While hints are active, their `asdfghjkl` labels take precedence over link shortcuts; `Esc` closes the mode and `F5` is consumed so the home panel cannot reload the application. Its source of truth is `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, loaded and saved by `home::load_home_config` and `home::save_home_config`; filesystem access is kept on the Rust side. A successful link navigation promotes the tab to a native browser child. On every native page load, the injected browser script reads `meta[name=theme-color]` or the document background and sends a validated `browser-color` event; the frontend chooses a readable tab foreground and applies the reported background. The same update occurs for subsequent in-page navigation. The MVP intentionally has no file watcher, cloud sync, merge logic, or multi-page dashboard.
 
 ### Key-Repeat Handling
 

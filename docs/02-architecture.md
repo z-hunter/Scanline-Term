@@ -24,6 +24,7 @@ graph TB
   subgraph "WebView / Frontend (React + WebGL)"
     AppTsx["App.tsx<br/>React composition root"]
     TabsUi["ui/TerminalTabs.tsx<br/>tab strip"]
+    HomeUi["ui/HomeDashboard.tsx<br/>local bookmark home"]
     UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
     UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
     TerminalSession["terminal/TerminalSession.ts<br/>PTY session coordinator"]
@@ -57,6 +58,7 @@ graph TB
 
   AppTsx --> UseTerminal
   AppTsx --> TabsUi
+  AppTsx --> HomeUi
   AppTsx --> UseCRT
   AppTsx --> Settings
 
@@ -75,6 +77,8 @@ graph TB
   UseCRT --> CRTFilter
   SourceCanvas --> CRTFilter
   CRTFilter --> OutputCanvas
+  HomeUi -->|"invoke load/save_home_config"| Main
+  Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```
 
 ## Execution Boundary
@@ -170,6 +174,8 @@ sequenceDiagram
 
 `set_active_browser` must mirror its browser-entry focus call when it leaves a browser tab: after hiding children, and only after releasing `BrowserState`, it calls `app.get_webview("main").set_focus()`. Calling this controller-focus API unconditionally during startup or from a native `WM_SETFOCUS` handler can re-enter WebView2 focus processing and make the application unresponsive. The handoff is therefore guarded by a real active-browser → terminal transition. Window restoration uses Win32 `SetFocus` only on the first **visible direct** `WRY_WEBVIEW` child; recursive enumeration can select a hidden browser child created earlier.
 
+`Menu+B` creates a browser tab in a local `home` page state. `HomeDashboard` is rendered in the main WebView while the native child WebView2 is absent. Selecting a validated HTTP(S) link changes the tab to `web`, calls `create_browser`, and then shows the child WebView2. Each native browser page reports a validated theme/background color through the `browser-color` event, so the corresponding tab updates its background and readable foreground color after home navigation or later in-page navigation. The home configuration is loaded and saved through Rust commands at `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; the WebView never receives arbitrary filesystem permissions. In home state, `F` opens browser-style `asdfghjkl` hints for links, buttons, inputs, and editor controls; hint labels take precedence over custom link shortcuts, `Esc` closes the mode, and `F5` is consumed. Reload is explicit, and external sync conflicts are not merged.
+
 The browser injects a small page-local script that bridges allowed `Menu+…` shortcuts through a rejected `scanline-term://shortcut/...` navigation; remote pages never get Tauri IPC. It also routes `target="_blank"` links and HTTP(S) `window.open()` calls into the current native browser tab: child WebView2 pop-up hosting is unreliable, while same-tab navigation preserves the external site's authentication flow. A standalone `Menu` press remains native browser input. The script suppresses only an orphan `ContextMenu` keyup that can arrive after a terminal → browser `Menu+arrow` transition, so that the combination does not open the browser context menu. A held `Menu` is not synthesized across native WebView boundaries: after browser → terminal switching, release and press `Menu` again before using another Menu shortcut.
 
 ### Mouse Input → Console
@@ -226,7 +232,7 @@ sequenceDiagram
 
 ### Command Line → Workspace Tab
 
-On first launch, Rust parses the positional target and `-P` into a workspace launch request. An absolute `http` or `https` URL opens a browser tab; a directory becomes the shell working directory, and a file or executable name becomes the terminal command. The browser is a native child WebView2 surface, so it bypasses the WebGL CRT pipeline while retaining the screen frame's dimensions. A later URL invocation is emitted as `browser-launch` to the running instance. Menu combinations from the native child are intercepted, bridged through a session-specific rejected navigation and local `browser-shortcut` event, then handled by the same frontend shortcut handler; remote pages receive no Tauri IPC.
+On first launch, Rust parses the positional target and `-P` into a workspace launch request. An absolute `http` or `https` URL opens a browser tab; a directory becomes the shell working directory, and a file or executable name becomes the terminal command. A blank browser tab starts in the local home dashboard; selecting a link promotes it to a native child WebView2 surface, which bypasses the WebGL CRT pipeline while retaining the screen frame's dimensions. A later URL invocation is emitted as `browser-launch` to the running instance. Menu combinations from the native child are intercepted, bridged through a session-specific rejected navigation and local `browser-shortcut` event, then handled by the same frontend shortcut handler; remote pages receive no Tauri IPC.
 
 ## Concurrency Model
 

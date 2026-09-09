@@ -31,7 +31,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 
 Keep your hands on the keyboard and stay in the zone:
 
-* **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI).
+* **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
 * **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
 
 ### 3. Native Windows ConPTY Engine
@@ -85,7 +85,7 @@ Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S
 | **`Menu + S`** | Settings Panel | Open / close the real-time CRT shader lab and display controls |
 | **`Menu + A`** | AI Assistant Panel | Open / close the Codex AI assistant panel |
 | **`Menu + N`** | New Terminal Tab | Spawn a new independent ConPTY shell session |
-| **`Menu + B`** | New Browser Tab | Open a new embedded WebView2 browser tab and focus address bar |
+| **`Menu + B`** | New Browser Tab | Open a local bookmark home page; links promote the tab to WebView2 |
 | **`Menu + W`** | Close Tab | Close the active terminal session or browser tab |
 | **`Menu + 1...9`** | Switch Tab | Switch directly to tab 1 through 9 |
 | **`Menu + →`** / **`Menu + >`** | Next Tab | Switch to the next terminal or browser tab (cycles) |
@@ -105,12 +105,13 @@ Embedded WebView2 browser tabs feature a keyboard-first, Vim-inspired navigation
 | **`d`** / **`u`** | Half-Page Scroll | Scroll half page down / up |
 | **`gg`** / **`G`** | Top / Bottom | Jump to top (`gg`) or bottom (`G`) of the page |
 | **`h`** / **`l`** (or **`Backspace`**) | History Navigation | Go back (`h` / `Backspace`) or forward (`l`) in page history |
-| **`f`** | Link Hints | Show letter hints over interactive elements (links, buttons, inputs) to follow links without a mouse |
-| **`o`** or **`F6`** | Address Bar | Open the address/search overlay bar |
+| **`f`** | Link Hints | Show `asdfghjkl` hints over interactive elements; on the local home page this covers links, buttons, inputs and the editor |
+| **`o`** or **`F6`** | Address / Search | Open the native browser address overlay or focus the home search field |
 | **`/`** | Find in Page | Search text on the current page |
 | **`r`** | Reload | Reload the current page |
 | **`i`** | Pass/Insert Mode | Enter pass-through mode to interact directly with web page keys |
 | **`Esc`** | Normal Mode | Exit hints, address bar, or pass/insert mode back to normal navigation |
+| **`F5`** | Home Safety | The local home page consumes F5 so it cannot reload the application |
 | **`Menu + ...`** | App Shortcuts | All main app shortcuts (`Menu + W`, `Menu + 1...9`, `Menu + B`, etc.) remain fully accessible within browser tabs |
 
 ---

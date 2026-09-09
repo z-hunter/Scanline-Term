@@ -26,7 +26,7 @@ ScanlineTerm/
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── ui/                        # SettingsPanel, AiPanel, TerminalTabs, layoutFit and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -42,6 +42,7 @@ ScanlineTerm/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── codex.rs              # Codex app-server lifecycle and JSONL bridge
+│   │   ├── home.rs               # Validated home.json load/save and backup handling
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
@@ -70,7 +71,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Terminals share one `TerminalRenderer` and CRT filter; browser tabs are native child WebViews and deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, and the explicit browser → main-WebView focus handoff; it must not treat top-level window focus as equivalent to terminal keyboard focus.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 
@@ -122,6 +123,10 @@ The single React component that constitutes the entire UI. Contains:
 | `terminalSizeRef` | `{cols, rows}` | Last sent terminal dimensions |
 | `resolutionRef` | resolution object | Current resolution for use in callbacks |
 | `settingsRef` | `CRTSettings` | Current settings for use in rAF loop |
+
+#### [`src/ui/HomeDashboard.tsx`](../src/ui/HomeDashboard.tsx)
+
+Renders the dependency-free home page for a blank browser tab. It loads and saves the validated `home.json` document through Tauri commands, filters links, handles single-key shortcuts, provides browser-style `F` hints for every visible action, and promotes a home tab to a native WebView2 tab when navigation starts.
 
 ---
 
@@ -252,6 +257,10 @@ Defines 8 terminal color profiles:
 
 Owns the singleton hidden `codex app-server --stdio` process. It validates the CLI version, creates an app-local isolated `CODEX_HOME` and workspace, converts JSON-RPC messages to JSONL, emits `codex-message` / `codex-stderr` / `codex-exit`, and kills the known process tree on shutdown.
 
+#### [`src-tauri/src/home.rs`](../src-tauri/src/home.rs)
+
+Owns the versioned home document at the Tauri app config path. It validates links and shortcuts, creates the default example, writes through a temporary file, and retains `home.json.bak` for recovery.
+
 #### [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
 
 | Item | Purpose |
@@ -289,6 +298,8 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `list_available_shells` | — | `{ name, command }[]` | Default-shell selector |
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
 | `set_global_hotkey_enabled` | `enabled: boolean` | `Result<(), String>` | Persisted global-hotkey setting effect |
+| `load_home_config` | — | `{ path, config }` | Home dashboard initialization/reload |
+| `save_home_config` | `config` | `{ path, config }` | Home dashboard editor actions |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
 | `codex_send` | `generation, JSON-RPC object` | `Result<(), String>` | `CodexClient` requests, notifications and tool responses; rejects stale generations |
 | `codex_stop` | `generation` | `Result<(), String>` | Generation-safe shutdown; stale generation is a no-op |
@@ -300,6 +311,10 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 | `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
 | `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
 | `terminal-launch` | `{ command?, cwd? }` | Opens a new tab after a second `-T` invocation |
+| `browser-title` | `{ sessionId, title }` | Updates a native browser tab title from the document title |
+| `browser-color` | `{ sessionId, background }` | Updates a native browser tab color from the page theme/background |
+| `browser-shortcut` | `{ sessionId, code }` | Routes an allow-listed Menu shortcut from a native browser child |
+| `browser-launch` | `{ kind, url }` | Opens a browser tab from a later CLI invocation |
 | `codex-message` | `{ generation, message }` | `CodexClient` JSON-RPC router |
 | `codex-stderr` | `{ generation, text }` | Available diagnostic event; not yet subscribed by the frontend |
 | `codex-exit` | `{ generation, text }` | Fails pending Codex requests for the active generation |
