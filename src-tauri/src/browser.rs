@@ -27,6 +27,8 @@ pub fn browser_url(value: &str) -> Result<url::Url, String> {
 
 const NAVIGATION_SCRIPT: &str = r#"(() => {
   let mode = 'normal', pendingG = false, hint = null, menu = false;
+  const open = window.open; window.open = (url, ...args) => typeof url === 'string' && /^https?:/i.test(url) ? (location.href = url, window) : open.call(window, url, ...args);
+  addEventListener('click', e => { const link = e.target.closest('a[target="_blank"]'); if (link?.href) { e.preventDefault(); location.href = link.href; } }, true);
   const shortcut = code => { location.href = '__SCANLINE_SHORTCUT_URL__' + code; };
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
   const labels = 'asdfghjkl';

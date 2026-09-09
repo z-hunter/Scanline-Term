@@ -91,6 +91,7 @@ Run: `cd src-tauri && cargo test`
 - [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab
 - [ ] Numpad keys work in application keypad mode (if applicable)
 - [ ] With one terminal tab and one native browser tab, use only `Menu+←` / `Menu+→` (or `Menu+<` / `Menu+>`) to switch browser → terminal; immediately type text and verify it reaches the terminal without a mouse click
+- [ ] In a native browser tab, open a `target="_blank"` link (for example Gmail `Sign in`) and verify that its destination loads in the current tab
 - [ ] Switch terminal → browser with the same shortcut; verify the browser does not open a context menu from the carried-over Menu key, then press Menu by itself and verify its normal browser context menu still opens
 - [ ] After browser → terminal while keeping Menu held, release and press Menu before issuing the next Menu shortcut; this is the supported native-WebView boundary behavior
 - [ ] With a browser tab present but a terminal tab active, minimize/restore the app and Alt+Tab away and back; immediately type in the terminal without clicking
