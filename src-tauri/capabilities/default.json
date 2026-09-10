@@ -10,6 +10,8 @@
     "core:window:allow-close",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-fullscreen",
+    "core:menu:allow-new",
+    "core:menu:allow-popup",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://**" }]

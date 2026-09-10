@@ -324,6 +324,57 @@ canvas:focus,
   background: #204b2d;
 }
 
+.new-tab-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.new-tab-menu {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: auto;
+  z-index: 10;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid #497556;
+  border-radius: 5px;
+  background: #0b130e;
+  box-shadow: 0 8px 18px #0009;
+}
+
+.new-tab-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 3px;
+  color: #d7f5df;
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.new-tab-menu button:hover,
+.new-tab-menu button:focus-visible {
+  background: #204b2d;
+  outline: none;
+}
+
+.new-tab-menu-label {
+  padding: 7px 9px 3px;
+  color: #9ccca9;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.terminal-tabs-left .new-tab-menu {
+  top: 0;
+  right: calc(100% + 4px);
+  left: auto;
+}
+
 .tabs-actions {
   display: flex;
   align-items: center;

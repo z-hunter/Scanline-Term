@@ -168,6 +168,10 @@ Each browser tab owns a separate WebView2 controller. Hiding a browser child doe
 
 WebView2 does not preserve a held `Menu` modifier across the browser → terminal boundary. After that transition, the user must release and press Menu again before another Menu shortcut; do not synthesize modifier key state to hide this limitation.
 
+### Native context menu
+
+The `+` tab button and terminal canvas suppress the browser's default context menu and invoke the shared `ui/nativeNewTabMenu.ts` builder in the desktop build. The popup contains `New Terminal tab`, `New Browser tab`, and a `Shells` submenu populated by `list_available_shells`. Tauri renders it as a native Windows popup, which keeps the complete menu above native browser child WebView2 surfaces; a DOM menu cannot cross that z-order boundary. Browser preview mode retains the DOM fallback for development without Tauri.
+
 ### Browser Home Dashboard
 
 Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView. The page provides categorized links, local filtering, direct URL opening, single-key shortcuts, browser-style `F` hints for every visible link/button/input, and a minimal editor. While hints are active, their `asdfghjkl` labels take precedence over link shortcuts; `Esc` closes the mode and `F5` is consumed so the home panel cannot reload the application. Its source of truth is `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, loaded and saved by `home::load_home_config` and `home::save_home_config`; filesystem access is kept on the Rust side. A successful link navigation promotes the tab to a native browser child. On every native page load, the injected browser script reads `meta[name=theme-color]` or the document background and sends a validated `browser-color` event; the frontend chooses a readable tab foreground and applies the reported background. The same update occurs for subsequent in-page navigation. The MVP intentionally has no file watcher, cloud sync, merge logic, or multi-page dashboard.

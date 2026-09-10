@@ -143,6 +143,42 @@ describe('TerminalTabs', () => {
     container.remove();
   });
 
+  it('opens the custom menu on right-click and starts the selected tab type', async () => {
+    const onNew = vi.fn();
+    const onNewBrowser = vi.fn();
+    const onNewShell = vi.fn();
+    const onToggleSettings = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TerminalTabs, {
+        tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew,
+        onNewBrowser, onNewShell, shells: [{ name: 'PowerShell', command: 'pwsh.exe' }], onToggleSettings,
+      }));
+    });
+
+    const newBtn = container.querySelector<HTMLButtonElement>('.new-tab-button')!;
+    const contextMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    await act(async () => { newBtn.dispatchEvent(contextMenu); });
+    expect(contextMenu.defaultPrevented).toBe(true);
+    expect(container.querySelector('.new-tab-menu')).not.toBeNull();
+
+    const menuItems = container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+    await act(async () => { menuItems[1].click(); });
+    expect(onNewBrowser).toHaveBeenCalledOnce();
+    expect(container.querySelector('.new-tab-menu')).toBeNull();
+
+    await act(async () => { newBtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    const shellItem = container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[2];
+    await act(async () => { shellItem.click(); });
+    expect(onNewShell).toHaveBeenCalledWith('pwsh.exe');
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('renders top placement with tabs, new-tab button, and tabs-actions in container', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

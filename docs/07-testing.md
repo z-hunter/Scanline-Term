@@ -112,6 +112,14 @@ Run: `cd src-tauri && cargo test`
 - [ ] Middle button click starts selection
 - [ ] Mouse coordinates match expected cells (verify in a TUI app that shows cursor position)
 
+### After Changes to Context Menus / Native WebView2 Layering
+
+- [ ] Right-click `+` in a terminal tab opens the native popup above the tab strip
+- [ ] Right-click `+` in a browser tab opens the complete native popup above the page
+- [ ] Right-click the terminal canvas opens the same native popup
+- [ ] `New Terminal tab`, `New Browser tab`, and every configured shell item invoke the expected action
+- [ ] `Escape` or clicking outside closes the native popup; the browser's default context menu does not appear
+
 ### After Changes to Clipboard
 
 - [ ] Menu+V pastes text from clipboard into terminal

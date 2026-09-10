@@ -178,6 +178,10 @@ sequenceDiagram
 
 The browser injects a small page-local script that bridges allowed `Menu+…` shortcuts through a rejected `scanline-term://shortcut/...` navigation; remote pages never get Tauri IPC. It also routes `target="_blank"` links and HTTP(S) `window.open()` calls into the current native browser tab: child WebView2 pop-up hosting is unreliable, while same-tab navigation preserves the external site's authentication flow. A standalone `Menu` press remains native browser input. The script suppresses only an orphan `ContextMenu` keyup that can arrive after a terminal → browser `Menu+arrow` transition, so that the combination does not open the browser context menu. A held `Menu` is not synthesized across native WebView boundaries: after browser → terminal switching, release and press `Menu` again before using another Menu shortcut.
 
+### Native context menus and WebView2 layering
+
+`src/ui/nativeNewTabMenu.ts` is the single builder for the new-tab menu. It creates a Tauri `Menu` with `New Terminal tab`, `New Browser tab`, and a `Shells` submenu populated from the configured shell list. In the desktop build, right-clicking the `+` button or the terminal canvas opens this native popup; the DOM menu is only a browser-preview/API-failure fallback. Native popup menus are top-level Windows menus, so they render above native child WebView2 surfaces where a DOM element cannot be raised by CSS `z-index`. The frontend capability grants `core:menu:allow-new` and `core:menu:allow-popup` for this path.
+
 ### Mouse Input → Console
 
 ```mermaid
@@ -187,6 +191,7 @@ sequenceDiagram
     participant App as App.tsx mouse handlers
     participant Mouse as terminal-mouse.ts
     participant Invoke as invoke("write_terminal")
+    participant NativeMenu as Tauri native menu
 
     User->>Canvas: mousedown / mousemove / mouseup / wheel
     Canvas->>App: React mouse event handler
@@ -200,6 +205,10 @@ sequenceDiagram
         App->>Invoke: invoke("write_terminal", { input })
     else Normal Mode (scrollback)
         App->>App: terminal.scrollLines(±3)
+    else Context menu
+        App->>App: preventDefault()
+        App->>NativeMenu: showNativeNewTabMenu()
+        NativeMenu-->>User: native Tauri popup above WebView2
     end
 ```
 

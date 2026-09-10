@@ -26,7 +26,7 @@ ScanlineTerm/
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, layoutFit and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -71,7 +71,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, validated HTTP(S)/local-document targets, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing, per-tab colors, and terminal-canvas context-menu routing; `ui/TerminalTabs.tsx` renders the post-it tab strip. `ui/nativeNewTabMenu.ts` builds the shared Tauri native new-tab popup. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, validated HTTP(S)/local-document targets, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 
@@ -127,6 +127,10 @@ The single React component that constitutes the entire UI. Contains:
 #### [`src/ui/HomeDashboard.tsx`](../src/ui/HomeDashboard.tsx)
 
 Renders the dependency-free home page for a blank browser tab. It loads and saves the validated `home.json` document through Tauri commands, filters links, handles single-key shortcuts, provides browser-style `F` hints for every visible action, and promotes a home tab to a native WebView2 tab when navigation starts.
+
+#### [`src/ui/nativeNewTabMenu.ts`](../src/ui/nativeNewTabMenu.ts)
+
+Builds the shared Tauri native popup used by the `+` button and terminal-canvas context menu. It owns the three menu actions and the configured-shell submenu so browser and terminal entry points stay identical. The native popup is required when a browser child WebView2 is visible because CSS menus in the main WebView cannot overlap that native surface.
 
 ---
 

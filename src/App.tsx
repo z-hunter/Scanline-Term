@@ -143,6 +143,7 @@ export default function App() {
   const terminal = useTerminal({
     settings: stored.crt,
     defaultShell: stored.defaultShell,
+    shells,
     resolution,
     onError: reportError,
     onToggleSettings: toggleSettings,
@@ -942,6 +943,9 @@ export default function App() {
               onSelect={terminal.selectSession}
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}
+              onNewBrowser={() => terminal.openBrowser()}
+              onNewShell={(command) => terminal.openSession({ command })}
+              shells={shells}
               onToggleSettings={toggleSettings}
               onToggleAi={toggleAi}
               settingsVisible={settingsVisible}

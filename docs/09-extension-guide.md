@@ -202,6 +202,7 @@ const unlisten = await listen<PayloadType>('my-event', (event) => {
 - **Commands**: No additional capability needed (Tauri 2 allows all commands by default).
 - **Events**: `core:event:allow-listen` is already granted — covers all events.
 - **New window operations**: May require additional `core:window:allow-*` permissions in `capabilities/default.json`.
+- **Native popup menus**: Use `@tauri-apps/api/menu`; grant `core:menu:allow-new` and `core:menu:allow-popup` in `capabilities/default.json`. Prefer a shared builder when the same actions are available from multiple surfaces.
 
 ### Validation
 

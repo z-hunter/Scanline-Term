@@ -1,6 +1,8 @@
-import type { CSSProperties, KeyboardEvent, Ref } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import type { TabPlacement } from '../crt/settings';
-import type { WorkspaceTab } from '../terminal/useTerminal';
+import type { ShellInfo, WorkspaceTab } from '../terminal/useTerminal';
+import { showNativeNewTabMenu } from './nativeNewTabMenu';
 
 export function TerminalTabs({
   tabs,
@@ -9,6 +11,9 @@ export function TerminalTabs({
   onSelect,
   onClose,
   onNew,
+  onNewBrowser = () => undefined,
+  onNewShell = () => undefined,
+  shells = [],
   onToggleSettings,
   onToggleAi,
   settingsVisible = false,
@@ -22,6 +27,9 @@ export function TerminalTabs({
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNew: () => void;
+  onNewBrowser?: () => void;
+  onNewShell?: (command: string) => void;
+  shells?: ShellInfo[];
   onToggleSettings: () => void;
   onToggleAi?: () => void;
   settingsVisible?: boolean;
@@ -29,6 +37,19 @@ export function TerminalTabs({
   panelRef?: Ref<HTMLDivElement>;
   hideTabList?: boolean;
 }) {
+  const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
+  const newTabControlRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!newTabMenuOpen) return;
+    const closeOnKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setNewTabMenuOpen(false); };
+    const closeOnMouse = (event: globalThis.MouseEvent) => {
+      if (!newTabControlRef.current?.contains(event.target as Node)) setNewTabMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnMouse);
+    document.addEventListener('keydown', closeOnKey);
+    return () => { document.removeEventListener('mousedown', closeOnMouse); document.removeEventListener('keydown', closeOnKey); };
+  }, [newTabMenuOpen]);
+  const openNativeNewTabMenu = () => void showNativeNewTabMenu({ onNew, onNewBrowser, onNewShell, shells }).catch(() => setNewTabMenuOpen(true));
   const selectByKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const previous = placement === 'top' ? 'ArrowLeft' : 'ArrowUp'; const next = placement === 'top' ? 'ArrowRight' : 'ArrowDown';
     let target = index;
@@ -44,7 +65,17 @@ export function TerminalTabs({
       <button id={`terminal-tab-${tab.id}`} type="button" role="tab" aria-selected={tab.id === activeId} aria-controls="terminal-display" tabIndex={tab.id === activeId ? 0 : -1} onClick={() => onSelect(tab.id)} onKeyDown={(event) => selectByKey(event, index)}>{tab.title}</button>
       <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} disabled={tab.status === 'starting' && tab.kind !== 'browser'} onClick={() => onClose(tab.id)}>×</button>
     </div>)}</div>}
-    <button type="button" className="new-tab-button" aria-label="New terminal tab" onClick={() => onNew()}>+</button>
+    <div ref={newTabControlRef} className="new-tab-control">
+      <button type="button" className="new-tab-button" aria-label="New terminal tab" aria-haspopup="menu" aria-expanded={newTabMenuOpen} onClick={() => { onNew(); setNewTabMenuOpen(false); }} onContextMenu={(event) => { event.preventDefault(); if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true); }}>+</button>
+      {newTabMenuOpen && <div className="new-tab-menu" role="menu" aria-label="New tab options">
+        <button type="button" role="menuitem" onClick={() => { onNew(); setNewTabMenuOpen(false); }}>New Terminal tab</button>
+        <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab</button>
+        {shells.length > 0 && <>
+          <div className="new-tab-menu-label">Shells</div>
+          {shells.map((shell) => <button key={shell.command} type="button" role="menuitem" onClick={() => { onNewShell(shell.command); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
+        </>}
+      </div>}
+    </div>
     <div className="tabs-actions">
       <button
         type="button"
