@@ -522,12 +522,12 @@ canvas:focus,
 .browser-home h1, .browser-home h2 { margin: 0; font-weight: 500; }
 .browser-home h1 { color: #a4f5b8; font-size: clamp(20px, 4vw, 34px); }
 .browser-home h2 { color: #79d897; font-size: 14px; }
-.browser-home button { color: #d7f4dc; background: #163321; border: 1px solid #416b4d; padding: 6px 9px; cursor: pointer; font: inherit; }
+.browser-home button { color: #d7f4dc; background: #163321; border: 1px solid #416b4d; border-radius: 5px; padding: 6px 9px; cursor: pointer; font: inherit; }
 .browser-home button:hover, .browser-home button:focus-visible { background: #285638; border-color: #8bd49b; }
 .browser-home button:disabled { cursor: default; opacity: .55; }
 .browser-home-search { max-width: 980px; margin: 0 auto 22px; }
 .browser-home-search label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.browser-home-search input { min-width: 0; flex: 1; color: #e6ffe9; background: #020604; border: 1px solid #547764; padding: 10px 12px; font: inherit; }
+.browser-home-search input { min-width: 0; flex: 1; color: #e6ffe9; background: #020604; border: 1px solid #547764; border-radius: 5px; padding: 10px 12px; font: inherit; }
 .browser-home-search input:focus-visible { outline: 2px solid #8bd49b; outline-offset: 1px; }
 .browser-home-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; max-width: 980px; margin: 0 auto; }
 .browser-home-category { min-width: 0; padding: 14px; background: #0b170fbb; border: 1px solid #294c34; }

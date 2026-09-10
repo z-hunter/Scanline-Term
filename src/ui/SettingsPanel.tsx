@@ -39,7 +39,6 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
   'Final image': [
     { key: 'imageBrightness', label: 'Image brightness', min: 0.5, max: 1.5, step: 0.05 },
     { key: 'imageContrast', label: 'Image contrast', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'backgroundDesaturation', label: 'Background desaturation', min: 0, max: 1, step: 0.05 },
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
@@ -196,26 +195,6 @@ export function SettingsPanel({
       </label>
 
       <label className="resolution-control">
-        Color mode
-        <select
-          value={stored.crt.colorMode}
-          data-testid="color-mode-select"
-          onChange={(event) =>
-            setStored((current) => ({
-              ...current,
-              crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
-            }))
-          }
-        >
-          <option value="color">Color</option>
-          <option value="bw">B&amp;W</option>
-          <option value="green">Green</option>
-          <option value="amber">Amber</option>
-          <option value="blue">Phosphor Blue</option>
-        </select>
-      </label>
-
-      <label className="resolution-control">
         Color profile
         <select
           value={stored.crt.colorProfile}
@@ -273,57 +252,112 @@ export function SettingsPanel({
         </label>
       </div>
 
-      {Object.entries(controls).map(([group, groupControls]) => (
-        <fieldset className="knob-group" key={group}>
-          <legend>{group}</legend>
-          {groupControls.map((control) => {
-            if (group === 'Light' && control.key === 'bloom') {
-              return (
-                <div className="bloom-card" key={control.key}>
-                  <label className="slider-control">
-                    <span>
-                      {control.label}
-                      <output>{formatValue(stored.crt[control.key])}</output>
-                    </span>
-                    <Knob
-                      {...control}
-                      value={stored.crt[control.key]}
-                      onChange={(value) => update(control.key, value)}
-                    />
-                  </label>
-                  <SegmentedControl
-                    value={stored.crt.bloomAlgorithm}
-                    disabled={stored.crt.bloom === 0}
-                    options={[
-                      { value: 'soft', label: 'Soft' },
-                      { value: 'spiral', label: 'Spiral' },
-                    ]}
-                    onChange={(algo) =>
-                      setStored((current) => ({
-                        ...current,
-                        crt: { ...current.crt, bloomAlgorithm: algo },
-                      }))
-                    }
-                  />
-                </div>
-              );
-            }
-            return (
-              <label className="slider-control" key={control.key}>
-                <span>
-                  {control.label}
-                  <output>{formatValue(stored.crt[control.key])}</output>
-                </span>
-                <Knob
-                  {...control}
-                  value={stored.crt[control.key]}
-                  onChange={(value) => update(control.key, value)}
-                />
+      <fieldset>
+        <legend>CRT</legend>
+        <Switch
+          label="CRT Emulation"
+          checked={stored.crt.crtEmulation}
+          data-testid="control-crtEmulation"
+          onChange={(checked) =>
+            setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, crtEmulation: checked },
+            }))
+          }
+        />
+        {stored.crt.crtEmulation && (
+          <div className="crt-subsections">
+            <div className="font-control-row">
+              <label className="resolution-control font-name-control">
+                Color mode
+                <select
+                  value={stored.crt.colorMode}
+                  data-testid="color-mode-select"
+                  onChange={(event) =>
+                    setStored((current) => ({
+                      ...current,
+                      crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
+                    }))
+                  }
+                >
+                  <option value="color">Color</option>
+                  <option value="bw">B&amp;W</option>
+                  <option value="green">Green</option>
+                  <option value="amber">Amber</option>
+                  <option value="blue">Phosphor Blue</option>
+                </select>
               </label>
-            );
-          })}
-        </fieldset>
-      ))}
+              {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
+                <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
+                  <span>
+                    Surface desat.
+                    <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
+                  </span>
+                  <Knob
+                    label="Background desaturation"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={stored.crt.backgroundDesaturation}
+                    onChange={(value) => update('backgroundDesaturation', value)}
+                  />
+                </label>
+              )}
+            </div>
+            {Object.entries(controls).map(([group, groupControls]) => (
+              <fieldset className="knob-group" key={group}>
+                <legend>{group}</legend>
+                {groupControls.map((control) => {
+                  if (group === 'Light' && control.key === 'bloom') {
+                    return (
+                      <div className="bloom-card" key={control.key}>
+                        <label className="slider-control">
+                          <span>
+                            {control.label}
+                            <output>{formatValue(stored.crt[control.key])}</output>
+                          </span>
+                          <Knob
+                            {...control}
+                            value={stored.crt[control.key]}
+                            onChange={(value) => update(control.key, value)}
+                          />
+                        </label>
+                        <SegmentedControl
+                          value={stored.crt.bloomAlgorithm}
+                          disabled={stored.crt.bloom === 0}
+                          options={[
+                            { value: 'soft', label: 'Soft' },
+                            { value: 'spiral', label: 'Spiral' },
+                          ]}
+                          onChange={(algo) =>
+                            setStored((current) => ({
+                              ...current,
+                              crt: { ...current.crt, bloomAlgorithm: algo },
+                            }))
+                          }
+                        />
+                      </div>
+                    );
+                  }
+                  return (
+                    <label className="slider-control" key={control.key}>
+                      <span>
+                        {control.label}
+                        <output>{formatValue(stored.crt[control.key])}</output>
+                      </span>
+                      <Knob
+                        {...control}
+                        value={stored.crt[control.key]}
+                        onChange={(value) => update(control.key, value)}
+                      />
+                    </label>
+                  );
+                })}
+              </fieldset>
+            ))}
+          </div>
+        )}
+      </fieldset>
 
       <fieldset>
         <legend>Display</legend>
@@ -347,7 +381,6 @@ export function SettingsPanel({
         </div>
         {(
           [
-            ['crtEmulation', 'CRT Emulation'],
             ['bezelGlow', 'Bezel glow'],
             ['showBezel', 'Monitor frame'],
             ['antiAliasedPixels', 'Anti-moiré pixels'],
@@ -357,7 +390,6 @@ export function SettingsPanel({
             key={key}
             label={label}
             checked={stored.crt[key]}
-            data-testid={key === 'crtEmulation' ? 'control-crtEmulation' : undefined}
             onChange={(checked) =>
               setStored((current) => ({
                 ...current,
