@@ -144,6 +144,19 @@ export function SettingsPanel({
     setFontSizeInput(String(stored.crt.consoleFontSize));
   }
 
+  const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    setFontSizeInput(value);
+    
+    const parsed = /^[+-]?\d+$/.test(value.trim()) ? parseInt(value.trim(), 10) : NaN;
+    if (!Number.isNaN(parsed) && parsed >= 6 && parsed <= 32) {
+      setStored((current) => ({
+        ...current,
+        crt: { ...current.crt, consoleFontSize: parsed },
+      }));
+    }
+  };
+
   const commitFontSize = () => {
     const trimmed = fontSizeInput.trim();
     const parsed = /^[+-]?\d+$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
@@ -241,7 +254,7 @@ export function SettingsPanel({
             max={32}
             step={1}
             value={fontSizeInput}
-            onChange={(event) => setFontSizeInput(event.target.value)}
+            onChange={handleFontSizeChange}
             onBlur={commitFontSize}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {

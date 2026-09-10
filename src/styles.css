@@ -141,7 +141,7 @@ canvas:focus,
 
 .terminal-workspace-left .workspace-settings-button {
   top: 8px;
-  left: calc(50% + min(calc(50% - var(--tab-space)), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+  left: calc(50% + var(--tab-space, 0px) / 2 + min(calc(50% - var(--tab-space, 0px) / 2 - 8px), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
 }
 
 .terminal-workspace-left:has(.screen-frame.physical-window) .workspace-settings-button {
@@ -193,7 +193,7 @@ canvas:focus,
 .terminal-tabs-left {
   position: absolute;
   top: 50%;
-  right: calc(50% + min(calc(50% - var(--tab-space)), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+  right: calc(50% - var(--tab-space, 0px) / 2 + min(calc(50% - var(--tab-space, 0px) / 2 - 8px), calc(var(--workspace-screen-height, calc(100vh - 18px)) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
   align-self: auto;
   transform: translateY(-50%);
   flex-direction: column;
@@ -255,6 +255,11 @@ canvas:focus,
 
 .terminal-tabs-left .terminal-tab {
   transform: none;
+  justify-content: space-between;
+}
+
+.terminal-tabs-left .terminal-tab > button:first-child {
+  text-align: left;
 }
 
 .terminal-tab.active {
@@ -454,14 +459,16 @@ canvas:focus,
 
 .terminal-workspace-left .screen-frame {
   position: absolute;
-  left: 50%;
+  left: calc(50% + var(--tab-space, 0px) / 2);
   top: 50%;
   transform: translate(-50%, -50%);
-  max-width: min(calc(100% - 2 * var(--tab-space)), 100%);
+  max-width: calc(100% - var(--tab-space, 0px) - 16px);
 }
 
 .terminal-workspace-left .screen-frame.physical-window {
   inset: 0;
+  left: var(--tab-space, 0px);
+  width: auto;
   transform: none;
   max-width: none;
 }
@@ -969,7 +976,7 @@ footer {
   }
 
   .terminal-tabs-left {
-    right: calc(50% + min(calc(50% - var(--tab-space)), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
+    right: calc(50% - var(--tab-space, 0px) / 2 + min(calc(50% - var(--tab-space, 0px) / 2 - 8px), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) + 8px);
   }
 
   .terminal-workspace-top .workspace-settings-button {
@@ -977,6 +984,6 @@ footer {
   }
 
   .terminal-workspace-left .workspace-settings-button {
-    left: calc(50% + min(calc(50% - var(--tab-space)), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
+    left: calc(50% + var(--tab-space, 0px) / 2 + min(calc(50% - var(--tab-space, 0px) / 2 - 8px), calc((100vw - 36px) * var(--screen-ratio, 1.3333333333) / 2)) - 28px);
   }
 }

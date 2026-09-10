@@ -26,29 +26,18 @@ export function persistenceDecay(persistence: number, elapsedSeconds: number): {
   };
 }
 
-export function correctedImageLuma(luma: number, brightness: number, contrast: number): number {
-  return Math.min(1, Math.max(0, ((luma - 0.5) * contrast + 0.5) * brightness));
+export function breathingExpansion(luma: number, strength: number): number {
+  return (0.004 + luma * 0.038) * strength;
 }
 
-export function breathingExpansion(correctedLuma: number, brightness: number, strength: number): number {
-  const brightnessDrive = Math.max(0, brightness - 1) * 0.08;
-  return Math.min(0.05, 0.004 + correctedLuma * 0.038 + brightnessDrive) * strength;
-}
-
-export function averageCorrectedLuma(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  brightness: number,
-  contrast: number,
-): number {
+export function averageImageLuma(data: Uint8ClampedArray, width: number, height: number): number {
   let sum = 0;
   let count = 0;
   for (let y = 0; y < 8; y++) {
     for (let x = 0; x < 8; x++) {
       const pixel = ((Math.floor((y + 0.5) * height / 8) * width) + Math.floor((x + 0.5) * width / 8)) * 4;
       const luma = (data[pixel] * 0.2126 + data[pixel + 1] * 0.7152 + data[pixel + 2] * 0.0722) / 255;
-      sum += correctedImageLuma(luma, brightness, contrast);
+      sum += luma;
       count++;
     }
   }
@@ -1139,13 +1128,7 @@ export class CRTFilter {
           const w = sourceCanvas.width;
           const h = sourceCanvas.height;
           const imgData = ctx.getImageData(0, 0, w, h);
-          avgLuma = averageCorrectedLuma(
-            imgData.data,
-            w,
-            h,
-            settings.imageBrightness,
-            settings.imageContrast,
-          );
+          avgLuma = averageImageLuma(imgData.data, w, h);
         } catch {
           // Some canvas implementations do not allow pixel reads.
         }
@@ -1154,7 +1137,6 @@ export class CRTFilter {
       // The screen is mostly black, so final brightness needs a direct HV drive to remain visible.
       const targetExpansion = breathingExpansion(
         avgLuma,
-        settings.imageBrightness,
         breathingSetting,
       );
       this.smoothedExpansion +=
