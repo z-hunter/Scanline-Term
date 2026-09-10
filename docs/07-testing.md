@@ -33,7 +33,7 @@ Run: `npm test`
 |------|------|----------|
 | `limits_terminal_dimensions` | PTY validation | Valid size (80×30), invalid cols (0), invalid rows (151) |
 | `validates_frontend_session_ids` | Terminal command boundary | UUID-shaped session IDs are accepted and malformed IDs are rejected |
-| `parses_terminal_launch_arguments` / `treats_a_directory_as_shell_working_directory` / `rejects_a_missing_working_directory` | Launch parsing | Command, directory and invalid working-directory cases |
+| `parses_terminal_launch_arguments` / `routes_existing_local_documents_to_the_browser` / `treats_a_directory_as_shell_working_directory` / `rejects_a_missing_working_directory` | Launch parsing | Command, local document, directory and invalid working-directory cases |
 | `unrelated_process_has_no_child` | Process lookup | Nonexistent process returns no child |
 | `bundled_conpty_streams_win32_input_request` | ConPTY integration | Spawns cmd.exe with bundled ConPTY, verifies `\x1b[?9001h` appears in output |
 | `win32_input_mode_delivers_function_key` | ConPTY + Win32 Input | Sends F1 Win32 input sequence to PowerShell `ReadKey`, verifies "F1" output |

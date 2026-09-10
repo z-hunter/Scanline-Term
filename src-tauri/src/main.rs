@@ -134,8 +134,14 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
 }
 
 fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
-    if let Some(value) = target_argument(args).and_then(|value| browser::browser_url(value).ok()) {
-        return (LaunchRequest::Browser { url: value.into() }, false);
+    if let Some(target) = target_argument(args) {
+        if let Some(value) = browser::browser_url(target).ok().map(Into::into).or_else(|| {
+            let path = Path::new(target);
+            let path = if path.is_absolute() { path.to_path_buf() } else { Path::new(cwd).join(path) };
+            browser::local_document_url(&path).map(Into::into)
+        }) {
+            return (LaunchRequest::Browser { url: value }, false);
+        }
     }
     let (terminal, tab) = terminal_launch(args, cwd);
     (LaunchRequest::Terminal { command: terminal.command, cwd: terminal.cwd }, tab)
@@ -707,6 +713,22 @@ mod tests {
                 assert_eq!(cwd.as_deref(), Some("C:\\temp"));
             }
             _ => panic!("expected terminal launch request"),
+        }
+    }
+
+    #[test]
+    fn routes_existing_local_documents_to_the_browser() {
+        for extension in ["htm", "html", "PDF"] {
+            let file = std::env::temp_dir().join(format!("scanline-term-launch-test.{extension}"));
+            std::fs::write(&file, "<h1>test</h1>").unwrap();
+            let args = vec!["scanline-term".into(), "-T".into(), file.to_string_lossy().into_owned()];
+            let (request, in_tab) = launch_request(&args, "C:\\work");
+            assert!(!in_tab);
+            match request {
+                LaunchRequest::Browser { url } => assert!(url.starts_with("file:///")),
+                _ => panic!("expected browser launch request"),
+            }
+            std::fs::remove_file(file).unwrap();
         }
     }
 

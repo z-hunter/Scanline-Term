@@ -62,6 +62,16 @@ pub fn default_config() -> HomeConfig {
                     url: "https://v2.tauri.app/".into(),
                     shortcut: Some("t".into()),
                 },
+                HomeLink {
+                    title: "Scanline Term".into(),
+                    url: "https://github.com/z-hunter/Scanline-Term".into(),
+                    shortcut: Some("s".into()),
+                },
+                HomeLink {
+                    title: "Quest".into(),
+                    url: "https://github.com/z-hunter/Quest".into(),
+                    shortcut: Some("q".into()),
+                },
             ],
         }],
     }
@@ -242,6 +252,8 @@ mod tests {
     fn default_config_round_trips_and_keeps_backup() {
         let path = temp_file();
         let config = default_config();
+        assert!(config.categories[0].links.iter().any(|link| link.url == "https://github.com/z-hunter/Scanline-Term"));
+        assert!(config.categories[0].links.iter().any(|link| link.url == "https://github.com/z-hunter/Quest"));
         write_config(&path, &config).unwrap();
         assert_eq!(read_config(&path).unwrap(), config);
         let changed = HomeConfig {

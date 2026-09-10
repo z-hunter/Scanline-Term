@@ -25,6 +25,8 @@ const defaultHomeConfig = (): HomeConfig => ({
   categories: [{ title: 'Development', links: [
     { title: 'GitHub', url: 'https://github.com/', shortcut: 'g' },
     { title: 'Tauri Docs', url: 'https://v2.tauri.app/', shortcut: 't' },
+    { title: 'Scanline Term', url: 'https://github.com/z-hunter/Scanline-Term', shortcut: 's' },
+    { title: 'Quest', url: 'https://github.com/z-hunter/Quest', shortcut: 'q' },
   ] }],
 });
 

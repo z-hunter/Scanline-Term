@@ -36,7 +36,7 @@ Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title 
 
 ### Command-line launch
 
-`scanline-term [target] [-P <path>]` starts the first tab. An existing directory target opens the default shell there; a file path or executable name runs that command instead. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [-P <path>]` is routed to the existing application and opens the requested session in a new tab.
+`scanline-term [target] [-P <path>]` starts the first tab. An existing `.htm`, `.html` or `.pdf` target opens in the embedded browser; an existing directory opens the default shell there; other file paths or executable names run as commands. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [-P <path>]` is routed to the existing application and opens the requested browser document or terminal session in a new tab.
 
 ---
 

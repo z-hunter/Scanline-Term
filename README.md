@@ -137,7 +137,8 @@ The optional `[target]` argument is automatically detected and routed:
 
 * **Directory Path** (`.` or `C:\path\to\dir`): Launches the default shell in the specified directory.
 * **Command or Executable** (`pwsh`, `cmd.exe`, `C:\tools\app.exe`): Launches the given command or console program directly.
-* **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded retro WebView2 browser tab.
+* **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded WebView2 browser tab.
+* **Local document** (`C:\docs\manual.html`, `.htm`, `.html` or `.pdf`): Opens the existing file in an embedded browser tab.
 
 ### Practical Examples
 
@@ -153,6 +154,10 @@ sterm -P C:\Projects\MyProject pwsh
 
 # Open a new tab in an existing Scanline Term window
 sterm -T pwsh
+
+# Open a local HTML/PDF document in the embedded browser
+sterm C:\Docs\manual.html
+sterm -T C:\Docs\manual.pdf
 
 # Open a new tab with working directory set
 sterm -T -P C:\Projects\MyProject
@@ -252,4 +257,4 @@ The WebGL `CRTFilter` originated in our *Quest/Scanline* project and is maintain
 
 ---
 
-*Enjoy retro terminal computing! PRs, suggestions, and feedback are always welcome.*
+*Enjoy CRT computing! PRs, suggestions, and feedback are always welcome.*

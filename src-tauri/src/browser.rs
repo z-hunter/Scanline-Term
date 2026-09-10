@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use tauri::{webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
 
@@ -23,6 +23,19 @@ fn valid_id(id: &str) -> Result<(), String> {
 pub fn browser_url(value: &str) -> Result<url::Url, String> {
     let url = url::Url::parse(value).map_err(|_| "browser URL is invalid")?;
     if matches!(url.scheme(), "http" | "https") { Ok(url) } else { Err("browser URL must use http or https".into()) }
+}
+
+pub fn local_document_url(path: &Path) -> Option<url::Url> {
+    let path = path.canonicalize().ok()?;
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    if !path.is_file() || !matches!(extension.as_str(), "htm" | "html" | "pdf") { return None; }
+    url::Url::from_file_path(path).ok()
+}
+
+pub fn browser_target_url(value: &str) -> Result<url::Url, String> {
+    if let Ok(url) = browser_url(value) { return Ok(url); }
+    let url = url::Url::parse(value).map_err(|_| "browser URL is invalid")?;
+    if url.scheme() == "file" && url.to_file_path().ok().and_then(|path| local_document_url(&path)).is_some() { Ok(url) } else { Err("browser URL must use http, https, or an existing local document".into()) }
 }
 
 const NAVIGATION_SCRIPT: &str = r#"(() => {
@@ -84,7 +97,7 @@ fn browser_color_value(value: &str) -> Option<String> {
 fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option<String>) -> Result<(), String> {
     let state = app.state::<BrowserState>();
     valid_id(&session_id)?;
-    let initial = url.as_deref().map(browser_url).transpose()?.unwrap_or_else(|| url::Url::parse("about:blank").unwrap());
+    let initial = url.as_deref().map(browser_target_url).transpose()?.unwrap_or_else(|| url::Url::parse("about:blank").unwrap());
     let window = app.get_window("main").ok_or("main window is unavailable")?;
     trace(&app, "create", &session_id, initial.as_str());
     let id = session_id.clone(); let app_for_title = app.clone(); let page_app = app.clone(); let page_id = session_id.clone(); let app_for_navigation = app.clone(); let navigation_id = session_id.clone();
@@ -92,7 +105,7 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
     let browser = window.add_child(
         WebviewBuilder::new(format!("browser-{session_id}"), WebviewUrl::External(initial))
             .devtools(cfg!(debug_assertions))
-            .on_navigation(move |url| { if let Some(code) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code })); return false; } matches!(url.scheme(), "http" | "https" | "about") })
+            .on_navigation(move |url| { if let Some(code) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code })); return false; } matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .on_download(|_, event| !matches!(event, DownloadEvent::Requested { .. }))
             .on_page_load(move |webview, payload| { let event = payload.event(); trace(&page_app, match event { PageLoadEvent::Started => "load-start", PageLoadEvent::Finished => "load-finished" }, &page_id, payload.url().as_str()); if event == PageLoadEvent::Finished { match webview.eval(&navigation_script) { Ok(()) => trace(&page_app, "script-installed", &page_id, payload.url().as_str()), Err(error) => trace(&page_app, "script-failed", &page_id, error.to_string()) } } })
@@ -117,7 +130,7 @@ pub async fn create_browser(app: tauri::AppHandle, session_id: BrowserId, url: O
 
 #[tauri::command]
 pub fn navigate_browser(app: tauri::AppHandle, state: State<BrowserState>, session_id: BrowserId, url: String) -> Result<(), String> {
-    valid_id(&session_id)?; let url = browser_url(&url)?;
+    valid_id(&session_id)?; let url = browser_target_url(&url)?;
     trace(&app, "navigate", &session_id, url.as_str());
     state.0.lock().map_err(|_| "browser state is unavailable")?.webviews.get(&session_id).ok_or("browser is not running")?.navigate(url).map_err(|e| e.to_string())
 }
@@ -154,4 +167,4 @@ pub fn close_browser(state: State<BrowserState>, session_id: BrowserId) -> Resul
 }
 
 #[cfg(test)]
-mod tests { use super::{browser_color_value, browser_shortcut, browser_url}; #[test] fn accepts_only_http_urls() { assert!(browser_url("https://example.com").is_ok()); assert!(browser_url("file:///C:/x").is_err()); } #[test] fn accepts_only_its_supported_browser_shortcuts() { let id = "11111111-1111-1111-1111-111111111111"; let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap(); assert_eq!(browser_shortcut(&url, id), Some("KeyW".into())); assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None); let right_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowRight")).unwrap(); assert_eq!(browser_shortcut(&right_arrow, id), Some("ArrowRight".into())); let left_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowLeft")).unwrap(); assert_eq!(browser_shortcut(&left_arrow, id), Some("ArrowLeft".into())); let tab_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Tab")).unwrap(); assert_eq!(browser_shortcut(&tab_key, id), Some("Tab".into())); let quote_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Quote")).unwrap(); assert_eq!(browser_shortcut(&quote_key, id), Some("Quote".into())); let unsupported = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyX")).unwrap(); assert_eq!(browser_shortcut(&unsupported, id), None); } #[test] fn accepts_only_valid_browser_colors() { assert_eq!(browser_color_value("aBc123"), Some("#aBc123".into())); assert_eq!(browser_color_value("fff"), None); } }
+mod tests { use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url}; #[test] fn accepts_only_http_urls() { assert!(browser_url("https://example.com").is_ok()); assert!(browser_url("file:///C:/x").is_err()); } #[test] fn accepts_only_existing_local_documents() { assert!(browser_target_url("file:///C:/definitely-missing-scanline-term.html").is_err()); } #[test] fn accepts_only_its_supported_browser_shortcuts() { let id = "11111111-1111-1111-1111-111111111111"; let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap(); assert_eq!(browser_shortcut(&url, id), Some("KeyW".into())); assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None); let right_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowRight")).unwrap(); assert_eq!(browser_shortcut(&right_arrow, id), Some("ArrowRight".into())); let left_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowLeft")).unwrap(); assert_eq!(browser_shortcut(&left_arrow, id), Some("ArrowLeft".into())); let tab_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Tab")).unwrap(); assert_eq!(browser_shortcut(&tab_key, id), Some("Tab".into())); let quote_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Quote")).unwrap(); assert_eq!(browser_shortcut(&quote_key, id), Some("Quote".into())); let unsupported = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyX")).unwrap(); assert_eq!(browser_shortcut(&unsupported, id), None); } #[test] fn accepts_only_valid_browser_colors() { assert_eq!(browser_color_value("aBc123"), Some("#aBc123".into())); assert_eq!(browser_color_value("fff"), None); } }

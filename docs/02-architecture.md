@@ -232,7 +232,7 @@ sequenceDiagram
 
 ### Command Line → Workspace Tab
 
-On first launch, Rust parses the positional target and `-P` into a workspace launch request. An absolute `http` or `https` URL opens a browser tab; a directory becomes the shell working directory, and a file or executable name becomes the terminal command. A blank browser tab starts in the local home dashboard; selecting a link promotes it to a native child WebView2 surface, which bypasses the WebGL CRT pipeline while retaining the screen frame's dimensions. A later URL invocation is emitted as `browser-launch` to the running instance. Menu combinations from the native child are intercepted, bridged through a session-specific rejected navigation and local `browser-shortcut` event, then handled by the same frontend shortcut handler; remote pages receive no Tauri IPC.
+On first launch, Rust parses the positional target and `-P` into a workspace launch request. An absolute `http` or `https` URL opens a browser tab; an existing `.htm`, `.html` or `.pdf` file is converted to a local `file://` browser target; a directory becomes the shell working directory, and other file or executable names become the terminal command. A blank browser tab starts in the local home dashboard; selecting a link promotes it to a native child WebView2 surface, which bypasses the WebGL CRT pipeline while retaining the screen frame's dimensions. A later URL or local-document invocation, including `-T`, is emitted as `browser-launch` to the running instance. Menu combinations from the native child are intercepted, bridged through a session-specific rejected navigation and local `browser-shortcut` event, then handled by the same frontend shortcut handler; remote pages receive no Tauri IPC.
 
 ## Concurrency Model
 

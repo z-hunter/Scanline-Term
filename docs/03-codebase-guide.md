@@ -71,7 +71,7 @@ ScanlineTerm/
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
+> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, active input routing and per-tab colors; `ui/TerminalTabs.tsx` renders the post-it tab strip. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, validated HTTP(S)/local-document targets, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 
