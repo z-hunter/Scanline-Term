@@ -17,6 +17,8 @@ use std::{
 #[cfg(windows)]
 use std::collections::BTreeSet;
 #[cfg(windows)]
+use std::sync::atomic::AtomicBool;
+#[cfg(windows)]
 use windows_sys::Win32::{
     Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
     System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
@@ -27,7 +29,6 @@ use conpty_oxide::{
     ConPtyBackend, PtyController, SessionOptions, Size,
 };
 use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 mod codex;
 mod browser;
 mod home;
@@ -379,15 +380,22 @@ fn operating_system() -> String {
         .filter(|version| !version.is_empty()).unwrap_or_else(|| std::env::consts::OS.to_owned())
 }
 
-fn summon_shortcut() -> Shortcut {
-    Shortcut::new(Some(Modifiers::SUPER), Code::Backquote)
+#[cfg(windows)]
+const SUMMON_HOTKEY_ID: i32 = 1;
+#[cfg(windows)]
+static SUMMON_HOTKEY_ENABLED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+fn summon_hotkey() -> (u32, u32) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_NOREPEAT, MOD_WIN, VK_OEM_3};
+    (MOD_WIN | MOD_NOREPEAT, VK_OEM_3 as u32)
 }
 
 #[cfg(windows)]
 fn is_window_active(window: &tauri::WebviewWindow) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
     if let Ok(hwnd) = window.hwnd() {
-        unsafe { GetForegroundWindow() == hwnd.0 as _ }
+        unsafe { GetAncestor(GetForegroundWindow(), GA_ROOT) == hwnd.0 as _ }
     } else {
         false
     }
@@ -433,6 +441,14 @@ fn restore_and_focus_window(window: &tauri::WebviewWindow) {
     });
 }
 
+fn toggle_summon_window(window: &tauri::WebviewWindow) {
+    if window.is_visible().unwrap_or(false) && is_window_active(window) {
+        let _ = window.hide();
+    } else {
+        restore_and_focus_window(window);
+    }
+}
+
 #[cfg(windows)]
 static PREV_WNDPROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 #[cfg(windows)]
@@ -446,11 +462,18 @@ unsafe extern "system" fn window_subclass_proc(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED, SIZE_MAXIMIZED,
+        CallWindowProcW, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED, SIZE_MAXIMIZED,
         WM_SYSCOMMAND, SC_MINIMIZE, WM_SETFOCUS,
     };
 
     static WAS_MINIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    if msg == WM_HOTKEY && wparam == SUMMON_HOTKEY_ID as usize {
+        if let Some(window) = MAIN_WINDOW.get() {
+            toggle_summon_window(window);
+        }
+        return 0;
+    }
 
     if msg == WM_SYSCOMMAND && ((wparam & 0xFFF0) as u32) == SC_MINIMIZE {
         WAS_MINIMIZED.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -499,23 +522,27 @@ fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
 
 #[tauri::command]
 fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let shortcut = summon_shortcut();
-    let shortcuts = app.global_shortcut();
-    if enabled && !shortcuts.is_registered(shortcut) {
-        shortcuts.on_shortcut(shortcut, |app, _, event| {
-            if event.state != ShortcutState::Pressed {
-                return;
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
+
+        let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        if enabled && !SUMMON_HOTKEY_ENABLED.load(Ordering::SeqCst) {
+            let (modifiers, key) = summon_hotkey();
+            if unsafe { RegisterHotKey(hwnd.0 as _, SUMMON_HOTKEY_ID, modifiers, key) } == 0 {
+                return Err(std::io::Error::last_os_error().to_string());
             }
-            let Some(window) = app.get_webview_window("main") else { return };
-            if window.is_visible().unwrap_or(false) && is_window_active(&window) {
-                let _ = window.hide();
-            } else {
-                restore_and_focus_window(&window);
+            SUMMON_HOTKEY_ENABLED.store(true, Ordering::SeqCst);
+        } else if !enabled && SUMMON_HOTKEY_ENABLED.load(Ordering::SeqCst) {
+            if unsafe { UnregisterHotKey(hwnd.0 as _, SUMMON_HOTKEY_ID) } == 0 {
+                return Err(std::io::Error::last_os_error().to_string());
             }
-        }).map_err(|error| error.to_string())?;
-    } else if !enabled && shortcuts.is_registered(shortcut) {
-        shortcuts.unregister(shortcut).map_err(|error| error.to_string())?;
+            SUMMON_HOTKEY_ENABLED.store(false, Ordering::SeqCst);
+        }
     }
+    #[cfg(not(windows))]
+    let _ = (app, enabled);
     Ok(())
 }
 
@@ -624,7 +651,6 @@ fn main() {
         .manage(codex::CodexState::default())
         .manage(LaunchState(launch))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let icon = Image::from_bytes(include_bytes!("../icons/32x32 - Copy.png"))?;
             let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
@@ -648,8 +674,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        child_process_name, dev_conpty_dir, launch_request, powershell_name, pty_size,
-        summon_shortcut, target_argument, terminal_launch, valid_session_id,
+        child_process_name, dev_conpty_dir, launch_request, powershell_name, pty_size, summon_hotkey,
+        target_argument, terminal_launch, valid_session_id,
         valid_working_directory, LaunchRequest,
     };
 
@@ -661,7 +687,7 @@ mod tests {
 
     #[test]
     fn uses_win_backquote_for_global_summon() {
-        assert_eq!(summon_shortcut().into_string(), "super+Backquote");
+        assert_eq!(summon_hotkey(), (0x4008, 0xC0));
     }
 
     #[test]
