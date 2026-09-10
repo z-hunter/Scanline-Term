@@ -141,7 +141,10 @@ export function SettingsPanel({
 
   if (stored.crt.consoleFontSize !== prevFontSize) {
     setPrevFontSize(stored.crt.consoleFontSize);
-    setFontSizeInput(String(stored.crt.consoleFontSize));
+    const parsedInput = /^[+-]?\d+$/.test(fontSizeInput.trim()) ? parseInt(fontSizeInput.trim(), 10) : NaN;
+    if (parsedInput !== stored.crt.consoleFontSize) {
+      setFontSizeInput(String(stored.crt.consoleFontSize));
+    }
   }
 
   const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {

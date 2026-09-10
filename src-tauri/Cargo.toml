@@ -1,6 +1,6 @@
 [package]
 name = "scanline_term"
-version = "0.1.4"
+version = "0.1.5"
 description = "Desktop shell for the Scanline Term CRT demo"
 authors = ["Michael Voitovich and contributors"]
 edition = "2021"

@@ -206,6 +206,62 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
+  it('retains raw valid input text such as "08" during live persistence until blur or Enter', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('.font-size-control input');
+    expect(input?.value).toBe('14');
+
+    // Type "08" (parsed to 8 which is >= 6 and <= 32)
+    await act(async () => {
+      setInputValue(input!, '08');
+    });
+
+    // Simulated parent re-render with updated stored value
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    // Stored should be updated to 8, but input should keep raw text "08"
+    expect(currentStored.crt.consoleFontSize).toBe(8);
+    expect(input?.value).toBe('08');
+
+    // Blur should canonicalize to "8"
+    await act(async () => {
+      blurInput(input!);
+    });
+    expect(input?.value).toBe('8');
+    expect(currentStored.crt.consoleFontSize).toBe(8);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it('updates cursorStyle when a segmented control option is clicked', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
