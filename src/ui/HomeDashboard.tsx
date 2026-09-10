@@ -3,7 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 
 export type HomeLink = { title: string; url: string; shortcut?: string };
 export type HomeCategory = { title: string; links: HomeLink[] };
-export type HomeConfig = { version: 1; title: string; categories: HomeCategory[] };
+export type HomeConfig = { version: 1 | 2; title: string; categories: HomeCategory[] };
 type HomePayload = { path: string; config: HomeConfig };
 type HomeHint = { element: HTMLElement; label: string; rect: DOMRect };
 let cachedHome: HomePayload | null = null;
@@ -20,7 +20,7 @@ const hintLabelAt = (index: number, total: number) => {
 };
 
 const defaultHomeConfig = (): HomeConfig => ({
-  version: 1,
+  version: 2,
   title: 'Scanline Home',
   categories: [{ title: 'Development', links: [
     { title: 'GitHub', url: 'https://github.com/', shortcut: 'g' },
@@ -175,6 +175,7 @@ export function HomeDashboard({ tabId, onNavigate, onError }: { tabId: string; o
   };
   const update = (mutate: (current: HomeConfig) => HomeConfig) => { if (config) void save(mutate(config)); };
   const addCategory = () => {
+    setEditing(true);
     const title = promptValue('Category name', 'New category');
     if (title) update((current) => ({ ...current, categories: [...current.categories, { title, links: [] }] }));
   };
@@ -220,10 +221,11 @@ export function HomeDashboard({ tabId, onNavigate, onError }: { tabId: string; o
   return (
     <section ref={homeRef} className="browser-home" aria-label="Scanline home page" data-hint-mode={hints ? 'active' : undefined} onPointerDown={() => hints && setHints(null)}>
       <header className="browser-home-header">
-        <div><p className="browser-home-kicker">SCANLINE TERM // HOME</p><h1>{config?.title ?? 'Scanline Home'}</h1></div>
+        <div className="browser-home-brand"><img className="browser-home-logo" src="/icon.png" alt="" aria-hidden="true" /><div><p className="browser-home-kicker">SCANLINE TERM // HOME</p><h1>{config?.title ?? 'Scanline Home'}</h1></div></div>
         <div className="browser-home-actions">
           <button type="button" onClick={() => void load(true)} disabled={loading}>Reload</button>
           <button type="button" onClick={() => setEditing((value) => !value)} disabled={!config}>{editing ? 'Done' : 'Edit'}</button>
+          <button type="button" onClick={addCategory} disabled={!config}>+ Add category</button>
         </div>
       </header>
       <form className="browser-home-search" onSubmit={(event) => { event.preventDefault(); submitSearch(); }}>
@@ -249,7 +251,6 @@ export function HomeDashboard({ tabId, onNavigate, onError }: { tabId: string; o
             </div>
           </section>;
         })}
-        {editing && <button type="button" className="browser-home-add-category" onClick={addCategory}>+ Add category</button>}
       </div>}
       {hints?.entries.map(({ label, rect }) => label.startsWith(hints.typed) && <span className="browser-home-hint" key={label} style={{ left: rect.left, top: rect.top }}>{label}</span>)}
       <footer className="browser-home-footer">{path || 'Local home configuration'} · F shows keyboard hints · Esc closes hints</footer>

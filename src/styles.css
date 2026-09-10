@@ -515,8 +515,9 @@ canvas:focus,
   background: radial-gradient(circle at 50% 0, #163321 0, #07100a 52%, #020604 100%);
   font: 14px/1.4 ui-monospace, Consolas, monospace;
 }
-.browser-home-header, .browser-home-category-title, .browser-home-link, .browser-home-search, .browser-home-actions, .browser-home-error { display: flex; align-items: center; gap: 8px; }
+.browser-home-header, .browser-home-brand, .browser-home-category-title, .browser-home-link, .browser-home-search, .browser-home-actions, .browser-home-error { display: flex; align-items: center; gap: 8px; }
 .browser-home-header { justify-content: space-between; gap: 18px; margin: 0 auto 24px; max-width: 980px; }
+.browser-home-logo { width: 48px; height: 48px; flex: 0 0 auto; object-fit: contain; }
 .browser-home-kicker { margin: 0; color: #6bba80; font-size: 11px; letter-spacing: .12em; }
 .browser-home h1, .browser-home h2 { margin: 0; font-weight: 500; }
 .browser-home h1 { color: #a4f5b8; font-size: clamp(20px, 4vw, 34px); }
@@ -540,7 +541,6 @@ canvas:focus,
 .browser-home-link-open small { overflow: hidden; color: #6b9178; text-overflow: ellipsis; white-space: nowrap; }
 .browser-home-link kbd { min-width: 20px; padding: 2px 5px; color: #b7f4c3; background: #204b2d; border: 1px solid #4a8057; text-align: center; }
 .browser-home-hint { position: fixed; z-index: 2147483647; pointer-events: none; padding: 1px 4px; color: #111; background: #ffe66d; border: 1px solid #8d7420; font: 12px/1.2 ui-monospace, Consolas, monospace; }
-.browser-home-add-category { grid-column: 1 / -1; }
 .browser-home-empty, .browser-home-status, .browser-home-footer { color: #6b9178; }
 .browser-home-error { justify-content: space-between; max-width: 980px; margin: 0 auto 16px; padding: 8px 10px; color: #ffb0a8; background: #321616; border: 1px solid #8d4540; }
 .browser-home-footer { max-width: 980px; margin: 26px auto 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }

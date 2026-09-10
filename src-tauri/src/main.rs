@@ -718,8 +718,17 @@ mod tests {
 
     #[test]
     fn routes_existing_local_documents_to_the_browser() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let test_dir =
+            std::env::temp_dir().join(format!("scanline-term-launch-test-{}", timestamp));
+        std::fs::create_dir(&test_dir).unwrap();
+
         for extension in ["htm", "html", "PDF"] {
-            let file = std::env::temp_dir().join(format!("scanline-term-launch-test.{extension}"));
+            let file = test_dir.join(format!("test.{extension}"));
             std::fs::write(&file, "<h1>test</h1>").unwrap();
             let args = vec!["scanline-term".into(), "-T".into(), file.to_string_lossy().into_owned()];
             let (request, in_tab) = launch_request(&args, "C:\\work");
@@ -728,8 +737,8 @@ mod tests {
                 LaunchRequest::Browser { url } => assert!(url.starts_with("file:///")),
                 _ => panic!("expected browser launch request"),
             }
-            std::fs::remove_file(file).unwrap();
         }
+        std::fs::remove_dir_all(test_dir).unwrap();
     }
 
     #[test]

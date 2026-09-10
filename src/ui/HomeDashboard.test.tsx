@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocked.inv
 import { HomeDashboard } from './HomeDashboard';
 
 const config = {
-  version: 1 as const,
+  version: 2 as const,
   title: 'Test Home',
   categories: [{ title: 'Tools', links: [{ title: 'GitHub', url: 'https://github.com/', shortcut: 'g' }, { title: 'Docs', url: 'https://docs.example/' }] }],
 };
@@ -30,6 +30,7 @@ async function renderHome(onNavigate = vi.fn()) {
 describe('HomeDashboard', () => {
   it('loads links and opens a selected URL', async () => {
     const { host, onNavigate, tabId } = await renderHome();
+    expect(Array.from(host.querySelectorAll('button')).some((item) => item.textContent === '+ Add category')).toBe(true);
     const button = Array.from(host.querySelectorAll('button')).find((item) => item.textContent?.includes('GitHub'));
     expect(button).toBeDefined();
     await act(async () => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });

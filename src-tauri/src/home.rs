@@ -15,6 +15,7 @@ const TEMP_FILE: &str = "home.json.tmp";
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_CATEGORIES: usize = 64;
 const MAX_LINKS: usize = 512;
+const CURRENT_VERSION: u8 = 2;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -47,7 +48,7 @@ pub struct HomeConfigPayload {
 
 pub fn default_config() -> HomeConfig {
     HomeConfig {
-        version: 1,
+        version: CURRENT_VERSION,
         title: "Scanline Home".into(),
         categories: vec![HomeCategory {
             title: "Development".into(),
@@ -93,7 +94,7 @@ fn validate_text(value: &str, field: &str, max: usize) -> Result<(), String> {
 }
 
 pub fn validate_config(config: &HomeConfig) -> Result<(), String> {
-    if config.version != 1 {
+    if !matches!(config.version, 1 | CURRENT_VERSION) {
         return Err("home config version is unsupported".into());
     }
     validate_text(&config.title, "home title", 80)?;
@@ -196,11 +197,54 @@ fn write_config(path: &Path, config: &HomeConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_config(mut config: HomeConfig) -> (HomeConfig, bool) {
+    if config.version >= CURRENT_VERSION {
+        return (config, false);
+    }
+
+    let legacy_default = config.title == "Scanline Home"
+        && config.categories.len() == 1
+        && config.categories[0].title == "Development"
+        && config.categories[0].links.len() == 2
+        && config.categories[0]
+            .links
+            .iter()
+            .any(|link| link.url == "https://github.com/")
+        && config.categories[0]
+            .links
+            .iter()
+            .any(|link| link.url == "https://v2.tauri.app/");
+
+    if legacy_default {
+        config.categories[0].links.extend([
+            HomeLink {
+                title: "Scanline Term".into(),
+                url: "https://github.com/z-hunter/Scanline-Term".into(),
+                shortcut: Some("s".into()),
+            },
+            HomeLink {
+                title: "Quest".into(),
+                url: "https://github.com/z-hunter/Quest".into(),
+                shortcut: Some("q".into()),
+            },
+        ]);
+    }
+
+    config.version = CURRENT_VERSION;
+    (config, true)
+}
+
 #[tauri::command]
 pub fn load_home_config(app: AppHandle) -> Result<HomeConfigPayload, String> {
     let path = config_path(&app)?;
     let config = match read_config(&path) {
-        Ok(config) => config,
+        Ok(config) => {
+            let (config, migrated) = migrate_config(config);
+            if migrated {
+                write_config(&path, &config)?;
+            }
+            config
+        }
         Err(_error) if !path.exists() => {
             let backup = backup_path(&path);
             if backup.exists() {
@@ -233,7 +277,10 @@ pub fn save_home_config(app: AppHandle, config: HomeConfig) -> Result<HomeConfig
 
 #[cfg(test)]
 mod tests {
-    use super::{default_config, read_config, validate_config, write_config, HomeConfig, HomeLink};
+    use super::{
+        default_config, migrate_config, read_config, validate_config, write_config, HomeConfig,
+        HomeLink,
+    };
     use std::{
         fs,
         path::PathBuf,
@@ -252,8 +299,22 @@ mod tests {
     fn default_config_round_trips_and_keeps_backup() {
         let path = temp_file();
         let config = default_config();
-        assert!(config.categories[0].links.iter().any(|link| link.url == "https://github.com/z-hunter/Scanline-Term"));
-        assert!(config.categories[0].links.iter().any(|link| link.url == "https://github.com/z-hunter/Quest"));
+        assert!(config.categories[0]
+            .links
+            .iter()
+            .any(|link| link.url == "https://github.com/z-hunter/Scanline-Term"));
+        assert!(config.categories[0]
+            .links
+            .iter()
+            .any(|link| link.url == "https://github.com/z-hunter/Quest"));
+        assert!(config.categories[0].links.iter().any(|link| link.url
+            == "https://github.com/z-hunter/Scanline-Term"
+            && link.shortcut.as_deref() == Some("s")));
+        assert!(config.categories[0]
+            .links
+            .iter()
+            .any(|link| link.url == "https://github.com/z-hunter/Quest"
+                && link.shortcut.as_deref() == Some("q")));
         write_config(&path, &config).unwrap();
         assert_eq!(read_config(&path).unwrap(), config);
         let changed = HomeConfig {
@@ -282,5 +343,26 @@ mod tests {
         };
         config.categories[0].links[1].shortcut = Some("X".into());
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn migrates_legacy_default_links_once() {
+        let mut legacy = default_config();
+        legacy.version = 1;
+        legacy.categories[0].links.truncate(2);
+
+        let (migrated, changed) = migrate_config(legacy);
+        assert!(changed);
+        assert_eq!(migrated.version, 2);
+        assert!(migrated.categories[0].links.iter().any(|link| {
+            link.url == "https://github.com/z-hunter/Scanline-Term"
+                && link.shortcut.as_deref() == Some("s")
+        }));
+        assert!(migrated.categories[0].links.iter().any(|link| {
+            link.url == "https://github.com/z-hunter/Quest" && link.shortcut.as_deref() == Some("q")
+        }));
+
+        let (_, changed_again) = migrate_config(migrated);
+        assert!(!changed_again);
     }
 }
