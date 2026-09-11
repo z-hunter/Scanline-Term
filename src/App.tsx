@@ -242,13 +242,14 @@ export default function App() {
     // Also keep onFocusChanged for alt-tabbing
     const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) enforceFocus();
+      else terminal.renderer?.setFocused(false);
     });
 
     return () => {
       unlisten?.();
       void unlistenFocus.then((f) => f());
     };
-  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, outputRef]);
+  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, terminal.renderer, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     try {
       const models = await codex.listModels();

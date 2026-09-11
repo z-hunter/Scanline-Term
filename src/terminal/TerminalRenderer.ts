@@ -110,10 +110,15 @@ export class TerminalRenderer {
   private stats: RenderStats = { redraws: 0, canvasMs: 0, glyphs: 0 };
   private sourceLuma = 0.12;
   private hasMeasuredSourceLuma = false;
+  private lastCursorPhase = -1;
+  private lastCursorMoveTime = 0;
+  private lastCursorX = -1;
+  private lastCursorY = -1;
+  private cursorMoved = false;
 
   bindTerminal(terminal: Terminal | null): void {
-    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.markDirty();
-    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markTerminalDirty()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
+    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
+    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
     const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;
@@ -121,9 +126,27 @@ export class TerminalRenderer {
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
     this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.markDirty(); return true;
   }
-  setFocused(focused: boolean): void { if (this.focused === focused) return; this.focused = focused; this.markDirty(); }
+  setFocused(focused: boolean): void {
+    if (this.focused === focused) return;
+    this.focused = focused;
+    if (focused) this.lastCursorMoveTime = performance.now() / 1000;
+    this.markDirty();
+  }
   markDirty(): void { this.dirty = true; this.fullDirty = true; }
   private markTerminalDirty(): void { this.dirty = true; }
+  private markCursorMoved(): void { this.cursorMoved = true; this.dirty = true; }
+  isCursorBlinkActive(): boolean { return this.focused; }
+  getCursorBlinkPhase(time: number): number {
+    if (!this.isCursorBlinkActive()) return 0;
+    const idleTime = Math.max(0, time - this.lastCursorMoveTime);
+    if (idleTime < 0.5) return 0;
+    return Math.floor(idleTime * 2);
+  }
+  isCursorVisibleAt(time: number, buffer: { viewportY: number; baseY: number; cursorX: number; cursorY: number }, isCursorHidden: boolean): boolean {
+    if (buffer.viewportY !== buffer.baseY || isCursorHidden) return false;
+    if (buffer.cursorX < 0 || buffer.cursorY < 0) return false;
+    return this.getCursorBlinkPhase(time) % 2 === 0;
+  }
   get averageLuma(): number { return this.sourceLuma; }
   get hasMeasuredLuma(): boolean { return this.hasMeasuredSourceLuma; }
   consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
@@ -139,17 +162,30 @@ export class TerminalRenderer {
   draw(time: number, settings: CRTSettings): boolean {
     const source = this.sourceCanvas; const terminal = this.terminal;
     if (!terminal) { this.drawMock(time, settings); return true; }
-    const cursorPhase = Math.floor(time * 2); if (!this.dirty && cursorPhase === Math.floor((time - .1) * 2)) return false;
+    const buffer = terminal.buffer.active;
+    const cursorX = buffer.cursorX;
+    const cursorY = buffer.cursorY;
+    const cursorMoved = cursorX !== this.lastCursorX || cursorY !== this.lastCursorY || this.cursorMoved;
+    if (cursorMoved) {
+      this.cursorMoved = false;
+      this.lastCursorX = cursorX;
+      this.lastCursorY = cursorY;
+      this.lastCursorMoveTime = time;
+      this.dirty = true;
+    }
+    const cursorPhase = this.getCursorBlinkPhase(time);
+    if (!this.dirty && cursorPhase === this.lastCursorPhase) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx);
-    const buffer = terminal.buffer.active; const cell = buffer.getNullCell();
+    const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
-    const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core; const cursorVisible = buffer.viewportY === buffer.baseY && core?.coreService?.isCursorHidden !== true && (!this.focused || cursorPhase % 2 === 0);
+    const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
+    const cursorVisible = this.isCursorVisibleAt(time, buffer, core?.coreService?.isCursorHidden === true);
     const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
     const changedRows = new Set<number>(); const nextSignatures: string[] = [];
     if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
-    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; return false; }
+    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; return false; }
     const started = performance.now(); let glyphs = 0;
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize);
@@ -169,7 +205,7 @@ export class TerminalRenderer {
       }
     }
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
-    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
   }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
     if (!line) return '';
@@ -231,5 +267,5 @@ export class TerminalRenderer {
       }
     }
   }
-  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; }
+  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; }
 }

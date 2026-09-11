@@ -133,4 +133,140 @@ describe('TerminalRenderer', () => {
     const blockCall = fillRectSpy.mock.calls.find((call) => call[2] === 8 && call[3] === 10);
     expect(blockCall).toBeDefined();
   });
+
+  it('does not blink cursor while moving or typing, and only blinks when stationary', () => {
+    const fillRectSpy = vi.fn();
+    const context = {
+      fillStyle: '',
+      globalAlpha: 1,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'middle',
+      fillRect: fillRectSpy,
+      fillText: vi.fn(),
+      measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    const rows = [[cell('A'), cell('B'), cell('C'), cell('D'), cell('E')]];
+    let onCursorMoveCallback = () => {};
+    const terminalBuffer = {
+      viewportY: 0,
+      baseY: 0,
+      cursorX: 0,
+      cursorY: 0,
+      getNullCell: () => cell(''),
+      getLine: (row: number) => ({ getCell: (column: number) => rows[row]?.[column] }),
+    };
+    const terminal = {
+      cols: 5,
+      rows: 1,
+      options: {},
+      buffer: { active: terminalBuffer },
+      onCursorMove: (cb: () => void) => { onCursorMoveCallback = cb; return { dispose() {} }; },
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: () => ({ dispose() {} }),
+    };
+
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+
+    // Initial frame at t = 0: cursor at (0, 0) should be drawn (visible)
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true);
+    // Cursor fillRect should be called with width=8, height=10
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 20 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+
+    // After remaining stationary for > 0.5s (t = 0.55): cursor blinks off
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0.55, DEFAULT_CRT_SETTINGS)).toBe(true);
+    // Row 0 background is cleared/redrawn, but cursor is NOT drawn
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(false);
+
+    // Cursor moves while in the "off" phase: t = 0.60, cursorX = 1
+    terminalBuffer.cursorX = 1;
+    onCursorMoveCallback();
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0.60, DEFAULT_CRT_SETTINGS)).toBe(true);
+    // Cursor MUST immediately be visible at col 1 (x = 28)
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 28 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+
+    // Continue moving (t = 0.70, cursorX = 2): stays visible
+    terminalBuffer.cursorX = 2;
+    onCursorMoveCallback();
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0.70, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 36 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+
+    // Continue moving (t = 0.80, cursorX = 3): stays visible
+    terminalBuffer.cursorX = 3;
+    onCursorMoveCallback();
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0.80, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+
+    // Stop moving at t = 0.80. At t = 1.10 (0.3s after stopping, < 0.5s): still visible, no redraw needed
+    expect(renderer.draw(1.10, DEFAULT_CRT_SETTINGS)).toBe(false);
+
+    // At t = 1.35 (> 0.5s after stopping at 0.80): blinks off
+    fillRectSpy.mockClear();
+    expect(renderer.draw(1.35, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(false);
+
+    // At t = 1.85 (> 1.0s after stopping at 0.80): blinks on again
+    fillRectSpy.mockClear();
+    expect(renderer.draw(1.85, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+  });
+
+  it('pauses cursor blinking when unfocused and keeps cursor solid visible', () => {
+    const fillRectSpy = vi.fn();
+    const context = {
+      fillStyle: '',
+      globalAlpha: 1,
+      font: '',
+      textAlign: 'left',
+      textBaseline: 'middle',
+      fillRect: fillRectSpy,
+      fillText: vi.fn(),
+      measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    const rows = [[cell('A')]];
+    const terminal = {
+      cols: 1,
+      rows: 1,
+      options: {},
+      buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell(''), getLine: () => ({ getCell: () => rows[0][0] }) } },
+      onCursorMove: () => ({ dispose() {} }),
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: () => ({ dispose() {} }),
+    };
+
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+
+    // Focus lost: blinking is paused
+    renderer.setFocused(false);
+    expect(renderer.isCursorBlinkActive()).toBe(false);
+    expect(renderer.getCursorBlinkPhase(0)).toBe(0);
+    expect(renderer.getCursorBlinkPhase(0.75)).toBe(0);
+    expect(renderer.getCursorBlinkPhase(2.5)).toBe(0);
+
+    // When drawn while unfocused, cursor is solid ON
+    fillRectSpy.mockClear();
+    expect(renderer.draw(0.75, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(true);
+
+    // Subsequent draws while unfocused and idle return false (no blink redraws)
+    expect(renderer.draw(1.25, DEFAULT_CRT_SETTINGS)).toBe(false);
+    expect(renderer.draw(1.75, DEFAULT_CRT_SETTINGS)).toBe(false);
+
+    // Regain focus: cursor resets move time and starts solid ON
+    renderer.setFocused(true);
+    expect(renderer.isCursorBlinkActive()).toBe(true);
+  });
 });
