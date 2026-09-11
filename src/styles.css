@@ -615,6 +615,7 @@ footer,
   transform: scale(var(--settings-scale, 1));
   transform-origin: top left;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px;
   border: 1px solid #263b2d;
   border-radius: 12px;
@@ -935,6 +936,33 @@ output {
   color: #b9d7c1;
   font-size: 13px;
   margin-bottom: 6px;
+}
+
+.bezel-control-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0 8px;
+}
+
+.bezel-control-row .setting-block {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.bezel-control-row .segmented-control-item {
+  padding: 5px 4px;
+}
+
+.bezel-control-row .bezel-highlight-control {
+  margin: 0;
+  flex-shrink: 0;
+  width: 78px;
+}
+
+.bezel-control-row .bezel-highlight-control span {
+  font-size: 11px;
 }
 
 .reset-button {

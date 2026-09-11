@@ -311,4 +311,83 @@ describe('SettingsPanel font-size editing flow', () => {
     });
     container.remove();
   });
+
+  it('renders Bezel section with Monitor frame, Bezel glow, Bezel highlight, and Channel switch roll below it', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    // Find Bezel fieldset
+    const fieldsets = Array.from(container.querySelectorAll('fieldset'));
+    const bezelFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Bezel');
+    expect(bezelFieldset).toBeDefined();
+
+    // Verify .bezel-control-row inside Bezel fieldset
+    const row = bezelFieldset?.querySelector('.bezel-control-row');
+    expect(row).not.toBeNull();
+
+    const bezelGlowBlock = row?.querySelector('.setting-block');
+    expect(bezelGlowBlock?.textContent).toContain('Bezel glow');
+
+    const bezelHighlightControl = row?.querySelector('.bezel-highlight-control');
+    expect(bezelHighlightControl?.textContent).toContain('Bezel highlight');
+
+    const glowButtons = bezelGlowBlock?.querySelectorAll('button');
+    expect(glowButtons).toHaveLength(3);
+    expect(glowButtons?.[2].textContent).toBe('Relect.');
+    await act(async () => {
+      glowButtons?.[2].click();
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.bezelGlow).toBe(true);
+    expect(currentStored.crt.bezelGlowMode).toBe('reflection');
+    setStored.mockClear();
+
+    // Verify Monitor frame switch inside Bezel fieldset is below the bezel-control-row
+    const monitorFrameSwitch = bezelFieldset?.querySelector('.switch-control');
+    expect(row).not.toBeNull();
+    expect(monitorFrameSwitch).not.toBeNull();
+    expect(monitorFrameSwitch?.textContent).toContain('Monitor frame');
+    if (row && monitorFrameSwitch) {
+      expect(Boolean(row.compareDocumentPosition(monitorFrameSwitch) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    }
+
+    // Toggle Monitor frame
+    const monitorFrameCheckbox = monitorFrameSwitch?.querySelector('input');
+    await act(async () => {
+      monitorFrameCheckbox?.click();
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.showBezel).toBe(true);
+    setStored.mockClear();
+
+    // Verify Channel switch roll is after the Bezel fieldset
+    const nextSibling = bezelFieldset?.nextElementSibling;
+    expect(nextSibling?.textContent).toContain('Channel switch roll');
+
+    // Verify Display fieldset still has Anti-moiré pixels and no longer has Monitor frame
+    const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
+    expect(displayFieldset?.textContent).toContain('Anti-moiré pixels');
+    expect(displayFieldset?.textContent).not.toContain('Monitor frame');
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

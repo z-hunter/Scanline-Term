@@ -379,9 +379,9 @@ Ambient Glass Light is a static, soft external illumination across the centre of
 
 ### Bezel Glow Modes
 
-`Phosphor spill` is the original 16-tap local halo sampled from the source image. `Screen reflection` mirrors a softened, moderately desaturated reduced-resolution bright screen texture into the curved matte bezel, like the cool-retro-term frame-shininess effect. It uses the same four half-resolution blur passes as Screen glow, reusing that texture whenever glow is enabled.
+`Phosphor spill` is the original 16-tap local halo sampled from the source image. `Screen reflection` mirrors a softened reduced-resolution bright screen texture into the curved matte bezel, like the cool-retro-term frame-shininess effect. It uses the same four half-resolution blur passes as Screen glow, reusing that texture whenever glow is enabled. Both it and Bezel highlight pass through the phosphor colour conversion in monochrome modes.
 
-`Bezel highlight` is separate: a cool external-light band on the inner plastic facet. Its geometric mask fades toward corners and is independent of reflection mode and blur passes. With HV Breathing enabled, the existing GPU average-luma texture gently modulates it from 0.65× to 1.25×; otherwise it stays at the selected strength and does not enable luma reduction.
+`Bezel highlight` is separate: an external-light band on the inner plastic facet. Its geometric mask fades toward corners and is independent of reflection mode and blur passes. With HV Breathing enabled, the existing GPU average-luma texture gently modulates it from 0.65× to 1.25×; otherwise it stays at the selected strength and does not enable luma reduction.
 
 ### Signal Effects
 

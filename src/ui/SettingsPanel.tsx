@@ -37,7 +37,6 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
     { key: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05 },
     { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
     { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
-    { key: 'bezelHighlight', label: 'Bezel highlight', min: 0, max: 1, step: 0.05 },
     { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   'Final image': [
@@ -377,6 +376,48 @@ export function SettingsPanel({
                 })}
               </fieldset>
             ))}
+            <fieldset>
+              <legend>Bezel</legend>
+              <div className="bezel-control-row">
+                <div className="setting-block">
+                  <span className="setting-label">Bezel glow</span>
+                  <SegmentedControl<'off' | BezelGlowMode>
+                    value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
+                    options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
+                    onChange={(value) => setStored((current) => ({
+                      ...current,
+                      crt: value === 'off'
+                        ? { ...current.crt, bezelGlow: false }
+                        : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
+                    }))}
+                  />
+                </div>
+                <label className="slider-control bezel-highlight-control">
+                  <span>
+                    Bezel highlight
+                    <output>{formatValue(stored.crt.bezelHighlight)}</output>
+                  </span>
+                  <Knob
+                    label="Bezel highlight"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={stored.crt.bezelHighlight}
+                    onChange={(value) => update('bezelHighlight', value)}
+                  />
+                </label>
+              </div>
+              <Switch
+                label="Monitor frame"
+                checked={stored.crt.showBezel}
+                onChange={(checked) =>
+                  setStored((current) => ({
+                    ...current,
+                    crt: { ...current.crt, showBezel: checked },
+                  }))
+                }
+              />
+            </fieldset>
             <Switch
               label="Channel switch roll"
               checked={stored.crt.channelSwitchEffect}
@@ -387,19 +428,6 @@ export function SettingsPanel({
                 }))
               }
             />
-            <div className="setting-block">
-              <span className="setting-label">Bezel glow</span>
-              <SegmentedControl<'off' | BezelGlowMode>
-                value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
-                options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Reflection' }]}
-                onChange={(value) => setStored((current) => ({
-                  ...current,
-                  crt: value === 'off'
-                    ? { ...current.crt, bezelGlow: false }
-                    : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
-                }))}
-              />
-            </div>
           </div>
         )}
       </fieldset>
@@ -424,24 +452,16 @@ export function SettingsPanel({
             }
           />
         </div>
-        {(
-          [
-            ['showBezel', 'Monitor frame'],
-            ['antiAliasedPixels', 'Anti-moiré pixels'],
-          ] as const
-        ).map(([key, label]) => (
-          <Switch
-            key={key}
-            label={label}
-            checked={stored.crt[key]}
-            onChange={(checked) =>
-              setStored((current) => ({
-                ...current,
-                crt: { ...current.crt, [key]: checked },
-              }))
-            }
-          />
-        ))}
+        <Switch
+          label="Anti-moiré pixels"
+          checked={stored.crt.antiAliasedPixels}
+          onChange={(checked) =>
+            setStored((current) => ({
+              ...current,
+              crt: { ...current.crt, antiAliasedPixels: checked },
+            }))
+          }
+        />
       </fieldset>
 
       <fieldset>

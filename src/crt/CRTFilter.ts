@@ -536,15 +536,14 @@ export class CRTFilter {
                       float cornerFade = 1.0 - smoothstep(0.58, 0.94, min(abs(v_texCoord.x - 0.5), abs(v_texCoord.y - 0.5)) * 2.0);
                       float highlightResponse = 1.0;
                       if (u_breathingStrength > 0.0) highlightResponse = 0.65 + 0.6 * smoothstep(0.002, 0.06, texture2D(u_lumaTexture, vec2(0.5)).r);
-                      finalColor += vec3(0.38, 0.56, 0.72) * facetBand * cornerFade * u_bezelHighlight * highlightResponse;
+                      finalColor += applyColorMode(vec3(0.38, 0.56, 0.72)) * facetBand * cornerFade * u_bezelHighlight * highlightResponse;
                       #endif
 
                       #if ENABLE_BEZEL_REFLECTION
                       vec2 mirroredUV = abs(curvedUV);
                       mirroredUV = 1.0 - abs(1.0 - mirroredUV);
                       vec3 reflection = texture2D(u_glowTexture, mirroredUV).rgb;
-                      float reflectionLuma = dot(reflection, vec3(0.2126, 0.7152, 0.0722));
-                      reflection = mix(reflection, vec3(reflectionLuma), 0.0);
+                      reflection = applyColorMode(reflection);
                       vec2 reflectionDistance = max(vec2(0.0), max(0.0 - curvedUV, curvedUV - 1.0));
                       float reflectionFade = 1.0 - smoothstep(0.0, 0.25, length(reflectionDistance));
                       finalColor += reflection * 0.6 * reflectionFade;
