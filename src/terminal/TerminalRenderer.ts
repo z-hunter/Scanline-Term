@@ -155,7 +155,22 @@ export class TerminalRenderer {
     const terminal = this.terminal; if (!terminal) return null;
     const rect = output.getBoundingClientRect(); if (!rect.width || !rect.height) return null;
     let u = (clientX - rect.left) / rect.width; let v = (clientY - rect.top) / rect.height;
-    if (settings.crtEmulation && settings.curvature > 0) { let x = (u - .5) * 2 * (1 + settings.curvature * .1); let y = (v - .5) * 2 * (1 + settings.curvature * .1); x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5; y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5; u = x / 2 + .5; v = y / 2 + .5; }
+    if (settings.crtEmulation) {
+      if ((settings.bezelThickness ?? 0) > 0) {
+        const insetX = settings.bezelThickness / (output.width || rect.width);
+        const insetY = settings.bezelThickness / (output.height || rect.height);
+        u = (u - insetX) / Math.max(0.0001, 1 - 2 * insetX);
+        v = (v - insetY) / Math.max(0.0001, 1 - 2 * insetY);
+      }
+      if (settings.curvature > 0) {
+        let x = (u - .5) * 2 * (1 + settings.curvature * .1);
+        let y = (v - .5) * 2 * (1 + settings.curvature * .1);
+        x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5;
+        y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5;
+        u = x / 2 + .5;
+        v = y / 2 + .5;
+      }
+    }
     const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont); const offset = terminalContentOffset(this.sourceCanvas.width, this.sourceCanvas.height, terminal.cols, terminal.rows, cell);
     return { col: Math.max(1, Math.min(terminal.cols, Math.floor((u * this.sourceCanvas.width - offset.x) / cell.width) + 1)), row: Math.max(1, Math.min(terminal.rows, Math.floor((v * this.sourceCanvas.height - offset.y) / cell.height) + 1)) };
   }

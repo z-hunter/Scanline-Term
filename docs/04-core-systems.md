@@ -393,6 +393,8 @@ Ambient Glass Light is a static, soft external illumination across the centre of
 
 `Bezel highlight` is separate: an external-light band on the inner plastic facet. Its geometric mask fades toward corners and is independent of reflection mode and blur passes. With HV Breathing enabled, the existing GPU average-luma texture gently modulates it from 0.65× to 1.25×; otherwise it stays at the selected strength and does not enable luma reduction.
 
+`Bezel thickness` (0–10 px) adjusts the extra inward frame margin. When set above 0, the matte bezel, highlight facet, and glow/reflections become visible even at zero curvature, proportionally contracting the active screen area by the selected number of physical pixels.
+
 ### Signal Effects
 
 - **Imperfect signal** is one 0–1 strength control for subtle temporal flicker, global and per-line X/Y jitter, and rolling horizontal waves. Wave motion runs at 15 Hz while its random interference state changes at 1.5 Hz, avoiding a repeated uniform pattern.

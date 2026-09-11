@@ -41,6 +41,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.humBar).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.ambientGlassLight).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.bezelHighlight).toBe(0.35);
+    expect(DEFAULT_CRT_SETTINGS.bezelThickness).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.channelSwitchEffect).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
@@ -208,6 +209,12 @@ describe('CRT settings', () => {
   it('accepts bezel highlight strength only within its safe range', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { bezelHighlight: 0.4 } })).crt.bezelHighlight).toBe(0.4);
     expect(loadStoredSettings(JSON.stringify({ crt: { bezelHighlight: 2 } })).crt.bezelHighlight).toBe(0.35);
+  });
+
+  it('accepts bezel thickness only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: 5 } })).crt.bezelThickness).toBe(5);
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: 15 } })).crt.bezelThickness).toBe(0);
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: -1 } })).crt.bezelThickness).toBe(0);
   });
 
   it('preserves the channel switch roll switch', () => {

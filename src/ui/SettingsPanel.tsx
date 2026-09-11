@@ -27,6 +27,7 @@ const SHOW_TELEMETRY = false;
 const controls: Record<string, { key: NumericKey; label: string; min: number; max: number; step: number }[]> = {
   Geometry: [
     { key: 'curvature', label: 'Curvature', min: 0, max: 0.5, step: 0.01 },
+    { key: 'bezelThickness', label: 'Bezel thickness', min: 0, max: 10, step: 1 },
     { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.05 },
   ],
   Raster: [

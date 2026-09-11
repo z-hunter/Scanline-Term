@@ -68,6 +68,7 @@ export interface CRTSettings {
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   ambientGlassLight: number; // 0.0 to 1.0 (Soft external illumination on the CRT glass)
   bezelHighlight: number; // 0.0 to 1.0 (External light on the inner bezel facet)
+  bezelThickness: number; // 0 to 10 pixels (Extra inner bezel thickness)
   imperfectSignal: number; // 0.0 to 1.0 (Flicker, jitter and horizontal roll)
   humBar: number; // 0.0 to 1.0 (Travelling glowing hum bar)
   channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
@@ -128,6 +129,7 @@ export class CRTFilter {
   humBarLocation: WebGLUniformLocation | null;
   channelSwitchLocation: WebGLUniformLocation | null;
   imageLocation: WebGLUniformLocation | null;
+  bezelThicknessLocation: WebGLUniformLocation | null = null;
 
   smoothedExpansion: number = 0;
   lastBreathingTime: number = 0;
@@ -144,6 +146,8 @@ export class CRTFilter {
   accumPreviousLumaTexLocation: WebGLUniformLocation | null = null;
   accumSourceChangedLocation: WebGLUniformLocation | null = null;
   accumCurvatureLocation: WebGLUniformLocation | null = null;
+  accumBezelThicknessLocation: WebGLUniformLocation | null = null;
+  accumResolutionLocation: WebGLUniformLocation | null = null;
   accumBreathingStrengthLocation: WebGLUniformLocation | null = null;
   accumDecayLocation: WebGLUniformLocation | null = null;
   accumCutoffLocation: WebGLUniformLocation | null = null;
@@ -232,6 +236,7 @@ export class CRTFilter {
       this.humBarLocation = null;
       this.channelSwitchLocation = null;
       this.imageLocation = null;
+      this.bezelThicknessLocation = null;
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
       this.colorModeLocation = null;
@@ -278,6 +283,7 @@ export class CRTFilter {
     this.humBarLocation = null;
     this.channelSwitchLocation = null;
     this.imageLocation = null;
+    this.bezelThicknessLocation = null;
     this.colorModeLocation = null;
     this.maskTypeLocation = null;
     this.maskStrengthLocation = null;
@@ -367,6 +373,7 @@ export class CRTFilter {
     this.lumaTextureLocation = gl.getUniformLocation(program, 'u_lumaTexture');
     this.ambientGlassLightLocation = gl.getUniformLocation(program, 'u_ambientGlassLight');
     this.bezelHighlightLocation = gl.getUniformLocation(program, 'u_bezelHighlight');
+    this.bezelThicknessLocation = gl.getUniformLocation(program, 'u_bezelThickness');
     this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
     this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
     this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
@@ -455,6 +462,7 @@ export class CRTFilter {
             uniform sampler2D u_lumaTexture;
             uniform float u_ambientGlassLight;
             uniform float u_bezelHighlight;
+            uniform float u_bezelThickness;
             uniform float u_imperfectSignal;
             uniform float u_humBar;
             uniform float u_channelSwitch;
@@ -473,19 +481,20 @@ export class CRTFilter {
 
             // Curvature
             vec2 curve(vec2 uv) {
-                // If curvature is 0, return uv
-                if (u_curvature <= 0.0) return uv; // Small optimization/bypass
+                vec2 inset = vec2(u_bezelThickness) / u_resolution;
+                vec2 uv_scaled = (uv - inset) / max(vec2(0.0001), 1.0 - 2.0 * inset);
+                if (u_curvature <= 0.0) return uv_scaled;
                 
                 // Parameterized:
                 // Use u_curvature to scale the distortion
                 // u_curvature = 1.0 is "normal" strong distortion.
                 
-                vec2 center = uv - 0.5;
+                vec2 center = uv_scaled - 0.5;
                 float r2 = dot(center, center);
                 // Simple pincushion: uv = center * (1.0 + k * r2) + 0.5
                 
                 // Using the previous "fancy" math but parameterized:
-                vec2 uv_t = (uv - 0.5) * 2.0;
+                vec2 uv_t = (uv_scaled - 0.5) * 2.0;
                 uv_t *= 1.0 + (u_curvature * 0.1); // Zoom out slightly to fit
                 
                 uv_t.x *= 1.0 + pow((abs(uv_t.y) / 5.0), 2.0) * u_curvature * 5.0;
@@ -957,11 +966,15 @@ export class CRTFilter {
       uniform float u_sourceChanged;
       uniform float u_curvature;
       uniform float u_breathingStrength;
+      uniform float u_bezelThickness;
+      uniform vec2 u_resolution;
       varying vec2 v_texCoord;
 
       vec2 curve(vec2 uv) {
-          if (u_curvature <= 0.0) return uv;
-          vec2 p = (uv - 0.5) * 2.0;
+          vec2 inset = vec2(u_bezelThickness) / u_resolution;
+          vec2 uv_scaled = (uv - inset) / max(vec2(0.0001), 1.0 - 2.0 * inset);
+          if (u_curvature <= 0.0) return uv_scaled;
+          vec2 p = (uv_scaled - 0.5) * 2.0;
           p *= 1.0 + u_curvature * 0.1;
           p.x *= 1.0 + pow(abs(p.y) / 5.0, 2.0) * u_curvature * 5.0;
           p.y *= 1.0 + pow(abs(p.x) / 4.0, 2.0) * u_curvature * 5.0;
@@ -1015,6 +1028,8 @@ export class CRTFilter {
       this.accumPreviousLumaTexLocation = gl.getUniformLocation(this.accumProgram, 'u_previousLuma');
       this.accumSourceChangedLocation = gl.getUniformLocation(this.accumProgram, 'u_sourceChanged');
       this.accumCurvatureLocation = gl.getUniformLocation(this.accumProgram, 'u_curvature');
+      this.accumBezelThicknessLocation = gl.getUniformLocation(this.accumProgram, 'u_bezelThickness');
+      this.accumResolutionLocation = gl.getUniformLocation(this.accumProgram, 'u_resolution');
       this.accumBreathingStrengthLocation = gl.getUniformLocation(this.accumProgram, 'u_breathingStrength');
       this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
       this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
@@ -1362,6 +1377,8 @@ export class CRTFilter {
       if (this.accumCutoffLocation) gl.uniform1f(this.accumCutoffLocation, cutoff);
       if (this.accumSourceChangedLocation) gl.uniform1f(this.accumSourceChangedLocation, sourceChangedWithPrevious ? 1 : 0);
       if (this.accumCurvatureLocation) gl.uniform1f(this.accumCurvatureLocation, settings.curvature);
+      if (this.accumBezelThicknessLocation) gl.uniform1f(this.accumBezelThicknessLocation, settings.bezelThickness ?? 0.0);
+      if (this.accumResolutionLocation) gl.uniform2f(this.accumResolutionLocation, this.canvas.width, this.canvas.height);
       if (this.accumBreathingStrengthLocation) gl.uniform1f(this.accumBreathingStrengthLocation, settings.breathing || 0.0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -1438,6 +1455,8 @@ export class CRTFilter {
     if (this.glowLocation) gl.uniform1f(this.glowLocation, glow);
     if (this.ambientGlassLightLocation) gl.uniform1f(this.ambientGlassLightLocation, ambientGlassLight);
     if (this.bezelHighlightLocation) gl.uniform1f(this.bezelHighlightLocation, bezelHighlight);
+    if (this.bezelThicknessLocation)
+      gl.uniform1f(this.bezelThicknessLocation, settings.bezelThickness ?? 0.0);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
     if (this.imperfectSignalLocation) gl.uniform1f(this.imperfectSignalLocation, imperfectSignal);
