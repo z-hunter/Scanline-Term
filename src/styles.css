@@ -893,10 +893,25 @@ output {
   align-self: start;
 }
 
+.knob-group > .switch-control {
+  grid-column: 1 / -1;
+  margin: 6px 0 2px;
+}
+
 .font-control-row {
   display: flex;
   gap: 8px;
   align-items: flex-start;
+}
+
+.convergence-controls {
+  flex-wrap: nowrap;
+}
+
+.convergence-controls .font-size-control {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
 }
 
 .font-name-control {

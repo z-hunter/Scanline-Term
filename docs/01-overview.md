@@ -27,7 +27,7 @@ The project originated in the **Quest/Scanline** game engine. The [`CRTFilter`](
 | **Terminal backend** | Windows ConPTY via [`conpty-oxide`](https://crates.io/crates/conpty-oxide) crate, bundled ConPTY DLLs |
 | **Terminal state** | [`@xterm/xterm`](https://www.npmjs.com/package/@xterm/xterm) v6 — used as a headless VT parser/state machine (no DOM rendering) |
 | **Custom rendering** | 2D Canvas character grid → WebGL CRT fragment shader pipeline |
-| **CRT effects** | Curvature, vignette, scanlines (Sinc-integrated Fourier beam), beam modulation, chromatic aberration, bloom (soft/spiral), screen glow, phosphor grain, phosphor persistence (ping-pong FBOs), HV breathing, Imperfect signal, hum-bar, channel switch roll, bezel glow, anti-moiré pixels, brightness/contrast, background desaturation |
+| **CRT effects** | Curvature, vignette, scanlines (Sinc-integrated Fourier beam), beam modulation, edge-dependent RGB beam misconvergence, bloom (soft/spiral), screen glow, phosphor grain, phosphor persistence (ping-pong FBOs), HV breathing, Imperfect signal, hum-bar, channel switch roll, bezel glow, anti-moiré pixels, brightness/contrast, background desaturation |
 | **Color system** | 8 terminal color profiles × 5 phosphor color modes, ANSI 16/256/RGB remapping |
 | **Input** | VT key encoding, Win32 Input Mode (`?9001h`), function keys F1–F24, numpad application mode, cursor keys, Ctrl/Alt combos, mouse tracking (X10, VT200, drag, any-event, SGR 1006) |
 | **Clipboard** | Menu-key+V paste, Menu-key+C copy-mode, middle-button selection, browser `onPaste`, `navigator.clipboard` |

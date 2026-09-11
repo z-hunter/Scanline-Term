@@ -50,7 +50,8 @@ export interface CRTSettings {
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
   scanlineIntensity: number; // 0.0 to 1.0
-  aberration: number; // 0.0 to 10.0 (pixels?)
+  aberration: number; // 0.0 to 5.0 output pixels of edge R/B separation per axis
+  aberrationFalloff: number; // 1.0 to 4.0 (1 = linear, higher = edge-focused)
   vignette: number; // 0.0 to 1.0
   phosphor: number; // 0.0 to 1.0 (Surface noise/lift)
   bezelGlow: boolean; // Optimization toggle
@@ -108,6 +109,7 @@ export class CRTFilter {
   scanlineCountLocation: WebGLUniformLocation | null;
   curvatureLocation: WebGLUniformLocation | null;
   aberrationLocation: WebGLUniformLocation | null;
+  aberrationFalloffLocation: WebGLUniformLocation | null;
   vignetteLocation: WebGLUniformLocation | null;
   scanlineIntensityLocation: WebGLUniformLocation | null;
   phosphorLocation: WebGLUniformLocation | null;
@@ -215,6 +217,7 @@ export class CRTFilter {
       this.scanlineCountLocation = null;
       this.curvatureLocation = null;
       this.aberrationLocation = null;
+      this.aberrationFalloffLocation = null;
       this.vignetteLocation = null;
       this.scanlineIntensityLocation = null;
       this.phosphorLocation = null;
@@ -262,6 +265,7 @@ export class CRTFilter {
     this.scanlineCountLocation = null;
     this.curvatureLocation = null;
     this.aberrationLocation = null;
+    this.aberrationFalloffLocation = null;
     this.vignetteLocation = null;
     this.scanlineIntensityLocation = null;
     this.phosphorLocation = null;
@@ -356,6 +360,7 @@ export class CRTFilter {
     this.scanlineCountLocation = gl.getUniformLocation(program, 'u_scanlineCount');
     this.curvatureLocation = gl.getUniformLocation(program, 'u_curvature');
     this.aberrationLocation = gl.getUniformLocation(program, 'u_aberration');
+    this.aberrationFalloffLocation = gl.getUniformLocation(program, 'u_aberrationFalloff');
     this.vignetteLocation = gl.getUniformLocation(program, 'u_vignette');
     this.scanlineIntensityLocation = gl.getUniformLocation(program, 'u_scanlineIntensity');
     this.phosphorLocation = gl.getUniformLocation(program, 'u_phosphor');
@@ -446,6 +451,7 @@ export class CRTFilter {
             uniform float u_scanlineCount;
             uniform float u_curvature;
             uniform float u_aberration;
+            uniform float u_aberrationFalloff;
             uniform float u_vignette;
             uniform float u_scanlineIntensity;
             uniform float u_phosphor;
@@ -722,12 +728,17 @@ export class CRTFilter {
                 rasterUV.y = mod(rasterUV.y + u_channelSwitch * rollPeriod, rollPeriod);
                 #endif
 
-                // Chromatic Aberration
-                float offset = u_aberration * 0.005;
-                
-                float r = sampleScreen(rasterUV + vec2(offset, 0.0)).r;
+                // Symmetric edge misconvergence: red appears outward, blue inward.
+                // Sampling direction is opposite to apparent image displacement.
+                // Left edge: R-G-B; right edge: B-G-R. The same inversion applies vertically and at corners.
+                float colorEnabled = 1.0 - step(0.5, u_colorMode);
+                vec2 edge = curvedUV * 2.0 - 1.0;
+                vec2 profile = sign(edge) * pow(abs(edge), vec2(u_aberrationFalloff));
+                vec2 delta = profile * (0.5 * u_aberration * colorEnabled) / u_resolution;
+
+                float r = sampleScreen(rasterUV - delta).r;
                 float g = sampleScreen(rasterUV).g;
-                float b = sampleScreen(rasterUV + vec2(-offset, 0.0)).b;
+                float b = sampleScreen(rasterUV + delta).b;
 
                 vec3 imageColor = vec3(r, g, b);
 
@@ -1446,6 +1457,7 @@ export class CRTFilter {
     if (this.scanlineIntensityLocation)
       gl.uniform1f(this.scanlineIntensityLocation, settings.scanlineIntensity);
     if (this.aberrationLocation) gl.uniform1f(this.aberrationLocation, settings.aberration);
+    if (this.aberrationFalloffLocation) gl.uniform1f(this.aberrationFalloffLocation, settings.aberrationFalloff);
     if (this.vignetteLocation) gl.uniform1f(this.vignetteLocation, settings.vignette);
     if (this.phosphorLocation) gl.uniform1f(this.phosphorLocation, settings.phosphor || 0.0);
     if (this.bezelGlowLocation)

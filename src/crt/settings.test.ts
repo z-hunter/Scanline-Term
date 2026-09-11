@@ -56,6 +56,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.cursorStyle).toBe('block');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.aberrationFalloff).toBe(2);
   });
 
   it('rejects corrupt values and falls back to VGA', () => {
@@ -138,6 +139,14 @@ describe('CRT settings', () => {
   it('accepts the expanded glow intensity range', () => {
     const loaded = loadStoredSettings(JSON.stringify({ crt: { glow: 2 } }));
     expect(loaded.crt.glow).toBe(2);
+  });
+
+  it('validates edge misconvergence falloff', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { aberrationFalloff: 1 } })).crt.aberrationFalloff).toBe(1);
+    expect(loadStoredSettings(JSON.stringify({ crt: { aberrationFalloff: 4 } })).crt.aberrationFalloff).toBe(4);
+    expect(loadStoredSettings(JSON.stringify({ crt: { aberrationFalloff: 0.5 } })).crt.aberrationFalloff).toBe(2);
+    expect(loadStoredSettings(JSON.stringify({ crt: { aberrationFalloff: 4.5 } })).crt.aberrationFalloff).toBe(2);
+    expect(loadStoredSettings(JSON.stringify({ crt: { aberrationFalloff: 'hard' } })).crt.aberrationFalloff).toBe(2);
   });
 
   it('accepts a phosphor color mode', () => {

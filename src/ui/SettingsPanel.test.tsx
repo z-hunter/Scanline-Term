@@ -312,7 +312,7 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('renders Bezel section with Monitor frame, Bezel glow, Bezel highlight, and Channel switch roll below it', async () => {
+  it('renders Bezel section with Monitor frame, Bezel glow, Bezel highlight, and Channel switch roll in Temporal', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
       currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
@@ -376,9 +376,19 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(currentStored.crt.showBezel).toBe(true);
     setStored.mockClear();
 
-    // Verify Channel switch roll is after the Bezel fieldset
-    const nextSibling = bezelFieldset?.nextElementSibling;
-    expect(nextSibling?.textContent).toContain('Channel switch roll');
+    // Verify Channel switch roll is inside the Temporal fieldset
+    const temporalFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Temporal');
+    expect(temporalFieldset?.textContent).toContain('Channel switch roll');
+
+    // Toggle Channel switch roll
+    const channelSwitch = temporalFieldset?.querySelector('.switch-control');
+    const channelSwitchCheckbox = channelSwitch?.querySelector('input');
+    await act(async () => {
+      channelSwitchCheckbox?.click();
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.channelSwitchEffect).toBe(false);
+    setStored.mockClear();
 
     // Verify Display fieldset still has Anti-moiré pixels and no longer has Monitor frame
     const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
@@ -420,6 +430,24 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(strengthKnobOff?.getAttribute('aria-disabled')).toBe('true');
     expect(strengthKnobOff?.closest('.slider-control')?.classList.contains('disabled')).toBe(true);
 
+    const convergenceKnob = container.querySelector('.knob[aria-label="Edge misconvergence"]');
+    const falloffKnobOff = container.querySelector('.knob[aria-label="Edge falloff"]');
+    expect(convergenceKnob).not.toBeNull();
+    expect(falloffKnobOff?.classList.contains('disabled')).toBe(true);
+    expect(falloffKnobOff?.getAttribute('aria-disabled')).toBe('true');
+
+    await act(async () => {
+      convergenceKnob?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    });
+    expect(currentStored.crt.aberration).toBe(0.25);
+    await render();
+    const falloffKnobOn = container.querySelector('.knob[aria-label="Edge falloff"]');
+    expect(falloffKnobOn?.getAttribute('aria-disabled')).toBeNull();
+    await act(async () => {
+      falloffKnobOn?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    });
+    expect(currentStored.crt.aberrationFalloff).toBe(2.25);
+
     await act(async () => {
       maskSelect!.value = 'aperture';
       maskSelect!.dispatchEvent(new Event('change', { bubbles: true }));
@@ -437,6 +465,12 @@ describe('SettingsPanel font-size editing flow', () => {
     currentStored = { ...currentStored, crt: { ...currentStored.crt, colorMode: 'green' } };
     await render();
     expect(container.querySelector('[data-testid="color-mask-select"]')).toBeNull();
+    expect(container.querySelector('.knob[aria-label="Edge misconvergence"]')).toBeNull();
+    expect(container.querySelector('.knob[aria-label="Edge falloff"]')).toBeNull();
+    const desatKnob = container.querySelector('.knob[aria-label="Background desaturation"]');
+    expect(desatKnob).not.toBeNull();
+    const updatedColorModeSelect = container.querySelector<HTMLSelectElement>('[data-testid="color-mode-select"]');
+    expect(desatKnob?.closest('.font-control-row')).toBe(updatedColorModeSelect?.closest('.font-control-row'));
 
     await act(async () => {
       root.unmount();

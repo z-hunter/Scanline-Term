@@ -348,6 +348,7 @@ Uses FBOs at `glowResolutionScale` (0.5×).
 4. Vertical blur (second iteration), spread 1.5
 
 Each blur pass uses a 5-tap Gaussian kernel (weights: 0.227027, 0.316216×2, 0.070270×2).
+The Glow blur source is the current image texture before final scanline modulation; the resulting diffuse layer is blended after scanlines, hum-bar, and the RGB mask so it can illuminate scanline gaps like light diffusing through the CRT faceplate.
 
 ### Pass 3: Final CRT Fragment Shader
 
@@ -363,7 +364,7 @@ The main fragment shader applies all visual effects in order:
 5. Imperfect signal UV distortion
 6. Hum-bar UV position
 7. Channel switch roll
-8. Chromatic aberration (R/B channel offset)
+8. Edge-dependent RGB beam misconvergence (symmetric R/B channel offset)
 9. Persistence trail overlay (from Pass 1)
 10. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
 11. Phosphor grain/noise texture
@@ -378,6 +379,18 @@ The main fragment shader applies all visual effects in order:
 20. Vignette & ambient glass light
 21. Final clamp × 1.1
 ```
+
+The color CRT mode keeps green as the convergence reference. Edge misconvergence samples red and blue from opposite sides of a centered screen-space field, so the visible ordering reverses across the screen: red appears outward and blue toward the center. `Edge falloff` controls the profile from linear (`1`) to edge-focused (`4`); the strength is measured in physical output pixels and is disabled for monochrome phosphor modes.
+
+### Edge Misconvergence
+
+`Edge misconvergence` simulates imperfect CRT beam convergence that becomes stronger away from the optical centre. The effect is evaluated in the final CRT fragment shader without adding a render pass or FBO:
+
+- `Edge misconvergence` (`0–5`) is the maximum red/blue separation per screen axis at an edge, in physical output pixels. The default is `0`, preserving the clean image until enabled.
+- `Edge falloff` (`1–4`, default `2`) raises the normalized distance from the centre to a power. `1` is linear; higher values keep the centre more closely aligned and concentrate the error near the bezel.
+- Green remains the reference channel. Red is sampled so it appears farther from the centre; blue appears closer. Thus the visible order is `R–G–B` at the left edge and `B–G–R` at the right edge, with the same inward/outward reversal vertically and diagonally in the corners.
+- The field is based on curved screen coordinates, while samples use the current raster coordinates. This keeps the convergence centre fixed when signal jitter, channel roll, or HV breathing are enabled.
+- The separation is applied only to the sharp colour raster before persistence, Bloom, scanline modulation, and screen Glow. Trail, Bloom, and Glow remain diffuse and are not independently channel-shifted. B&W and monochrome phosphor modes disable the separation.
 
 ### HV Breathing
 

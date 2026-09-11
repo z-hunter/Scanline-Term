@@ -39,11 +39,11 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
     { key: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05 },
     { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
     { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
-    { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   'Final image': [
     { key: 'imageBrightness', label: 'Brightness', min: 0.5, max: 1.5, step: 0.05 },
     { key: 'imageContrast', label: 'Contrast', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
@@ -312,9 +312,7 @@ export function SettingsPanel({
                     <option value="blue">Phosphor Blue</option>
                   </select>
                 </label>
-              </div>
-              {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
-                <div className="font-control-row">
+                {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
                   <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
                     <span>
                       Surface desat.
@@ -329,8 +327,8 @@ export function SettingsPanel({
                       onChange={(value) => update('backgroundDesaturation', value)}
                     />
                   </label>
-                </div>
-              )}
+                )}
+              </div>
               {stored.crt.colorMode === 'color' && (
                 <div className="font-control-row">
                   <label className="resolution-control font-name-control">
@@ -364,6 +362,40 @@ export function SettingsPanel({
                       value={stored.crt.maskStrength}
                       disabled={stored.crt.maskType === 'off'}
                       onChange={(value) => update('maskStrength', value)}
+                    />
+                  </label>
+                </div>
+              )}
+              {stored.crt.colorMode === 'color' && (
+                <div className="font-control-row convergence-controls">
+                  <label className="slider-control font-size-control" style={{ margin: 0 }}>
+                    <span>
+                      Edge<br />
+                      misconvergence
+                      <output>{formatValue(stored.crt.aberration)} px</output>
+                    </span>
+                    <Knob
+                      label="Edge misconvergence"
+                      min={0}
+                      max={5}
+                      step={0.25}
+                      value={stored.crt.aberration}
+                      onChange={(value) => update('aberration', value)}
+                    />
+                  </label>
+                  <label className={`slider-control font-size-control ${stored.crt.aberration === 0 ? 'disabled' : ''}`} style={{ margin: 0 }}>
+                    <span>
+                      Edge falloff
+                      <output>{formatValue(stored.crt.aberrationFalloff)}</output>
+                    </span>
+                    <Knob
+                      label="Edge falloff"
+                      min={1}
+                      max={4}
+                      step={0.25}
+                      value={stored.crt.aberrationFalloff}
+                      disabled={stored.crt.aberration === 0}
+                      onChange={(value) => update('aberrationFalloff', value)}
                     />
                   </label>
                 </div>
@@ -418,6 +450,18 @@ export function SettingsPanel({
                     </label>
                   );
                 })}
+                {group === 'Temporal' && (
+                  <Switch
+                    label="Channel switch roll"
+                    checked={stored.crt.channelSwitchEffect}
+                    onChange={(checked) =>
+                      setStored((current) => ({
+                        ...current,
+                        crt: { ...current.crt, channelSwitchEffect: checked },
+                      }))
+                    }
+                  />
+                )}
               </fieldset>
             ))}
             <fieldset>
@@ -462,16 +506,6 @@ export function SettingsPanel({
                 }
               />
             </fieldset>
-            <Switch
-              label="Channel switch roll"
-              checked={stored.crt.channelSwitchEffect}
-              onChange={(checked) =>
-                setStored((current) => ({
-                  ...current,
-                  crt: { ...current.crt, channelSwitchEffect: checked },
-                }))
-              }
-            />
           </div>
         )}
       </fieldset>
