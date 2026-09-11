@@ -1263,4 +1263,77 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove();
     vi.restoreAllMocks();
   });
+
+  it('cancels pending delayed session transitions when reselecting the active terminal', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    const onTerminalTabTransition = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: { ...DEFAULT_CRT_SETTINGS, channelSwitchEffect: true },
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+        onTerminalTabTransition,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    await act(async () => {
+      hookResult.openSession();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(hookResult.tabs).toHaveLength(2);
+    const tab1Id = hookResult.tabs[0].id;
+    const tab2Id = hookResult.tabs[1].id;
+
+    await act(async () => {
+      hookResult.selectSession(tab1Id, false);
+    });
+    expect(hookResult.activeTabId).toBe(tab1Id);
+
+    await act(async () => {
+      hookResult.selectSession(tab2Id, true);
+    });
+    expect(onTerminalTabTransition).toHaveBeenCalledTimes(1);
+    expect(hookResult.activeTabId).toBe(tab1Id);
+
+    // Reselect the active tab before the 150ms timeout expires
+    await act(async () => {
+      hookResult.selectSession(tab1Id);
+    });
+
+    // Wait for longer than the 150ms transition timeout
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    // Tab 1 must remain active, delayed transition to tab 2 was cancelled
+    expect(hookResult.activeTabId).toBe(tab1Id);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
 });
+

@@ -299,7 +299,7 @@ Colors are resolved through the active color profile:
 
 ## CRT Pipeline
 
-The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter.render()` method executes up to 4 WebGL passes:
+The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter.render()` method executes up to 9 WebGL passes, reflecting the listed luma reduction, persistence, soft-bloom, glow, and final passes:
 
 ### Pass 1: Persistence Accumulation (conditional)
 
@@ -371,6 +371,10 @@ The main fragment shader applies all visual effects in order:
 ### HV Breathing
 
 HV Breathing drives raster expansion from a GPU reduction of the actual source texture: when the source changes and the effect is enabled, a 16×16 evenly spaced luma sample grid is rendered to a 1×1 texture. The final CRT shader samples that texture directly, so the response remains frame-accurate without a CPU canvas readback or dependence on terminal-cell and tab-colour heuristics. With HV Breathing disabled, the reduction pass is skipped entirely.
+
+### Ambient Glass Light
+
+Ambient Glass Light is a static, soft external illumination across the centre of the curved screen, modelled after cool-retro-term's `Ambient Light`. It is independent of terminal content, bloom, and glow. A 0–1 control blends a pale glass-light mask that smoothly fades toward the screen edges; at zero its shader branch is compiled out.
 
 ### Signal Effects
 

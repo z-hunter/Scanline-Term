@@ -35,6 +35,7 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
   Light: [
     { key: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05 },
     { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
+    { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
     { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   'Final image': [

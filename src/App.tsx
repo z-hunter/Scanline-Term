@@ -10,7 +10,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import packageInfo from "../package.json";
 import {
   loadStoredSettings,
@@ -88,6 +88,8 @@ export default function App() {
   const startChannelSwitchRef = useRef<() => void>(() => {});
   const preservePersistenceForChannelSwitchRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
   const [windowSize, setWindowSize] = useState(() => ({
     width: typeof window !== "undefined" ? window.innerWidth : 1440,
     height: typeof window !== "undefined" ? window.innerHeight : 960,
@@ -286,11 +288,46 @@ export default function App() {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
   useEffect(() => {
-    if (!isTauri() || !stored.autoUpdateEnabled) return;
+    if (!isTauri() || !stored.autoUpdateEnabled) {
+      setAvailableUpdate((current) => {
+        if (current) void current.close();
+        return null;
+      });
+      return;
+    }
+    let cancelled = false;
     void check()
-      .then((update) => update?.downloadAndInstall())
+      .then((update) => {
+        if (cancelled) {
+          void update?.close();
+          return;
+        }
+        setAvailableUpdate((current) => {
+          if (current) void current.close();
+          return update;
+        });
+      })
       .catch((reason) => console.warn("Update check failed:", reason));
+    return () => {
+      cancelled = true;
+    };
   }, [stored.autoUpdateEnabled]);
+  const installUpdate = useCallback(async () => {
+    if (!availableUpdate || updateInstalling) return;
+    setUpdateInstalling(true);
+    try {
+      await availableUpdate.downloadAndInstall(undefined, { restartAfterInstall: true });
+    } catch (reason) {
+      setUpdateInstalling(false);
+      reportError(`Update installation failed: ${String(reason)}`);
+    }
+  }, [availableUpdate, reportError, updateInstalling]);
+  const dismissUpdate = useCallback(() => {
+    setAvailableUpdate((current) => {
+      if (current) void current.close();
+      return null;
+    });
+  }, []);
   useEffect(() => {
     if (isTauri())
       void invoke<ShellInfo[]>("list_available_shells").then(setShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
@@ -986,6 +1023,17 @@ export default function App() {
           <p className="error" role="alert">
             {error}
           </p>
+        )}
+        {availableUpdate && (
+          <div className="update-notice" role="status">
+            <span>Update {availableUpdate.version} is available.</span>
+            <button type="button" onClick={() => void installUpdate()} disabled={updateInstalling}>
+              {updateInstalling ? "Installing…" : "Install"}
+            </button>
+            <button type="button" onClick={dismissUpdate} disabled={updateInstalling}>
+              Later
+            </button>
+          </div>
         )}
       </section>
       {aiVisible && (

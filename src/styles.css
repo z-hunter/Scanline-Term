@@ -591,6 +591,23 @@ footer,
   color: #ff9b9b;
 }
 
+.update-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #d7f4dc;
+  font-size: 12px;
+}
+
+.update-notice button {
+  padding: 4px 8px;
+  color: #b7f4c3;
+  background: #204b2d;
+  border: 1px solid #4a8057;
+}
+
 .settings-panel {
   width: calc(100% / var(--settings-scale, 1));
   height: calc((100vh - 18px) / var(--settings-scale, 1));

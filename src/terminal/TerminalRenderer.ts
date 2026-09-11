@@ -7,6 +7,7 @@ export type CopySelection = { start: CopyPoint; end: CopyPoint };
 export type Resolution = { id: string; width?: number; height?: number };
 export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
 export type TabColor = { background: string; foreground: string };
+type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
@@ -59,9 +60,38 @@ export function terminalAverageColor(terminal: Terminal, profile: TerminalColorP
   return { background, foreground: luminance > 145 ? '#101a14' : '#d7f5df' };
 }
 
-export function terminalAverageLuma(terminal: Terminal, profile: TerminalColorProfile): number {
-  const [red, green, blue] = rgb(terminalAverageColor(terminal, profile).background);
+function luma([red, green, blue]: [number, number, number]): number {
   return (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255;
+}
+
+// This estimates the full source raster without a canvas readback. A glyph covers
+// only a small fraction of its cell; treating it as the tab-color 22% coverage
+// makes a single bright character disproportionately drive HV breathing.
+export function terminalAverageLuma(terminal: Terminal, profile: TerminalColorProfile, frame?: LumaFrame): number {
+  const baseLuma = luma(rgb(profile.background));
+  const totalArea = Math.max(1, frame ? frame.width * frame.height : terminal.cols * terminal.rows);
+  let total = baseLuma * totalArea;
+  const buffer = terminal.buffer.active; const cell = buffer.getNullCell();
+  for (let row = 0; row < terminal.rows; row += 1) {
+    const line = buffer.getLine(buffer.viewportY + row); if (!line) continue;
+    for (let column = 0; column < terminal.cols; column += 1) {
+      const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue;
+      let bg = rgb(cellColor(current, false, profile)); let fg = rgb(cellColor(current, true, profile));
+      if (current.isInverse && current.isInverse()) [bg, fg] = [fg, bg];
+      const x = frame ? frame.padding + column * frame.cellWidth : column;
+      const y = frame ? frame.padding + row * frame.cellHeight : row;
+      const width = frame ? frame.cellWidth * current.getWidth() : current.getWidth();
+      const height = frame ? frame.cellHeight : 1;
+      const area = frame
+        ? Math.max(0, Math.min(frame.width, x + width) - Math.max(0, x)) * Math.max(0, Math.min(frame.height, y + height) - Math.max(0, y))
+        : width * height;
+      if (area === 0) continue;
+      const backgroundLuma = luma(bg);
+      total += (backgroundLuma - baseLuma) * area;
+      if (current.getChars() && !current.isInvisible?.()) total += (luma(fg) - backgroundLuma) * area * 0.08 * (current.isDim?.() ? 0.6 : 1);
+    }
+  }
+  return Math.min(1, Math.max(0, total / totalArea));
 }
 
 export class TerminalRenderer {
@@ -134,7 +164,7 @@ export class TerminalRenderer {
         ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
       }
     }
-    if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile); this.hasMeasuredSourceLuma = true; }
+    if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding }); this.hasMeasuredSourceLuma = true; }
     this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
   }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {

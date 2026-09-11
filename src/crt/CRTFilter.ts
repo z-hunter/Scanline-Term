@@ -59,6 +59,7 @@ export interface CRTSettings {
   backgroundDesaturation: number; // 0.0 to 1.0 (Monochrome background texture only)
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
+  ambientGlassLight: number; // 0.0 to 1.0 (Soft external illumination on the CRT glass)
   imperfectSignal: number; // 0.0 to 1.0 (Flicker, jitter and horizontal roll)
   humBar: number; // 0.0 to 1.0 (Travelling glowing hum bar)
   channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
@@ -67,8 +68,8 @@ export interface CRTSettings {
   cursorStyle: CursorStyle;
 }
 
-export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'>): number {
-  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0);
+export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight'>>): number {
+  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0) | ((settings.ambientGlassLight ?? 0) > 0 ? 64 : 0);
 }
 
 export class CRTFilter {
@@ -106,6 +107,7 @@ export class CRTFilter {
   beamModulationLocation: WebGLUniformLocation | null;
   breathingStrengthLocation: WebGLUniformLocation | null;
   lumaTextureLocation: WebGLUniformLocation | null;
+  ambientGlassLightLocation: WebGLUniformLocation | null;
   imperfectSignalLocation: WebGLUniformLocation | null;
   humBarLocation: WebGLUniformLocation | null;
   channelSwitchLocation: WebGLUniformLocation | null;
@@ -199,6 +201,7 @@ export class CRTFilter {
       this.beamModulationLocation = null;
       this.breathingStrengthLocation = null;
       this.lumaTextureLocation = null;
+      this.ambientGlassLightLocation = null;
       this.imperfectSignalLocation = null;
       this.humBarLocation = null;
       this.channelSwitchLocation = null;
@@ -240,6 +243,7 @@ export class CRTFilter {
     this.beamModulationLocation = null;
     this.breathingStrengthLocation = null;
     this.lumaTextureLocation = null;
+    this.ambientGlassLightLocation = null;
     this.imperfectSignalLocation = null;
     this.humBarLocation = null;
     this.channelSwitchLocation = null;
@@ -297,7 +301,8 @@ export class CRTFilter {
       .replace('#define ENABLE_GLOW 0', `#define ENABLE_GLOW ${(effectMask >> 2) & 1}`)
       .replace('#define ENABLE_IMPERFECT_SIGNAL 0', `#define ENABLE_IMPERFECT_SIGNAL ${(effectMask >> 3) & 1}`)
       .replace('#define ENABLE_HUM_BAR 0', `#define ENABLE_HUM_BAR ${(effectMask >> 4) & 1}`)
-      .replace('#define ENABLE_CHANNEL_SWITCH 0', `#define ENABLE_CHANNEL_SWITCH ${(effectMask >> 5) & 1}`);
+      .replace('#define ENABLE_CHANNEL_SWITCH 0', `#define ENABLE_CHANNEL_SWITCH ${(effectMask >> 5) & 1}`)
+      .replace('#define ENABLE_AMBIENT_GLASS 0', `#define ENABLE_AMBIENT_GLASS ${(effectMask >> 6) & 1}`);
     const program = this.createProgram(gl, this.crtVsSource, source);
     if (!program) return;
     if (this.program) gl.deleteProgram(this.program);
@@ -325,6 +330,7 @@ export class CRTFilter {
     this.beamModulationLocation = gl.getUniformLocation(program, 'u_beamModulation');
     this.breathingStrengthLocation = gl.getUniformLocation(program, 'u_breathingStrength');
     this.lumaTextureLocation = gl.getUniformLocation(program, 'u_lumaTexture');
+    this.ambientGlassLightLocation = gl.getUniformLocation(program, 'u_ambientGlassLight');
     this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
     this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
     this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
@@ -385,6 +391,7 @@ export class CRTFilter {
             #define ENABLE_IMPERFECT_SIGNAL 0
             #define ENABLE_HUM_BAR 0
             #define ENABLE_CHANNEL_SWITCH 0
+            #define ENABLE_AMBIENT_GLASS 0
             uniform sampler2D u_image;
             uniform vec2 u_resolution;
             uniform float u_time;
@@ -405,6 +412,7 @@ export class CRTFilter {
             uniform float u_beamModulation;
             uniform float u_breathingStrength;
             uniform sampler2D u_lumaTexture;
+            uniform float u_ambientGlassLight;
             uniform float u_imperfectSignal;
             uniform float u_humBar;
             uniform float u_channelSwitch;
@@ -726,6 +734,10 @@ export class CRTFilter {
                 #endif
 
                 // Vignette (Physical curved faceplate glass property)
+                #if ENABLE_AMBIENT_GLASS
+                float glassMask = clamp(sqrt(25.0 * curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y)), 0.0, 1.0);
+                color = mix(color, vec3(0.35), glassMask * u_ambientGlassLight * 0.3);
+                #endif
                 float vignette = curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y);
                 float vig = pow(vignette * (15.0), 0.25);
                 color *= mix(1.0, vig, u_vignette);
@@ -1098,10 +1110,11 @@ export class CRTFilter {
     const persistence = settings.persistence || 0.0;
     const bloom = settings.bloom || 0.0;
     const glow = settings.glow || 0.0;
+    const ambientGlassLight = settings.ambientGlassLight || 0.0;
     const imperfectSignal = settings.imperfectSignal || 0.0;
     const humBar = settings.humBar || 0.0;
     const channelSwitchEffect = settings.channelSwitchEffect;
-    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, imperfectSignal, humBar, channelSwitchEffect }));
+    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, ambientGlassLight, imperfectSignal, humBar, channelSwitchEffect }));
     if (!this.program) return;
 
     let activeInputTexture = this.texture;
@@ -1216,6 +1229,7 @@ export class CRTFilter {
     if (this.bloomLocation) gl.uniform1f(this.bloomLocation, bloom);
     if (this.bloomAlgorithmLocation) gl.uniform1f(this.bloomAlgorithmLocation, legacyBloom ? 1.0 : 0.0);
     if (this.glowLocation) gl.uniform1f(this.glowLocation, glow);
+    if (this.ambientGlassLightLocation) gl.uniform1f(this.ambientGlassLightLocation, ambientGlassLight);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
     if (this.imperfectSignalLocation) gl.uniform1f(this.imperfectSignalLocation, imperfectSignal);

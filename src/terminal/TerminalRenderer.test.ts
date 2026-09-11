@@ -54,6 +54,12 @@ describe('TerminalRenderer', () => {
     expect(terminalAverageLuma(terminal as never, colorProfile('dos-vga'))).toBeCloseTo(1);
   });
 
+  it('uses the full source raster for breathing luma, not a single glyph cell', () => {
+    const cell = { getChars: () => 'X', getWidth: () => 1, getFgColor: () => 0xffffff, getBgColor: () => 0, isFgRGB: () => true, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false };
+    const terminal = { cols: 1, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } } };
+    expect(terminalAverageLuma(terminal as never, colorProfile('dos-vga'), { width: 100, height: 100, cellWidth: 10, cellHeight: 10, padding: 0 })).toBeCloseTo(0.0008);
+  });
+
   it('swaps foreground and background for inverse cells when calculating average color', () => {
     const normalCell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0xffffff, getBgColor: () => 0x000000, isFgRGB: () => true, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false };
     const inverseCell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0xffffff, getBgColor: () => 0x000000, isFgRGB: () => true, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => true };

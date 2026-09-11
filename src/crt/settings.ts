@@ -24,6 +24,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   backgroundDesaturation: 0.5,
   beamModulation: 0.5,
   breathing: 1,
+  ambientGlassLight: 0,
   imperfectSignal: 0,
   humBar: 0,
   channelSwitchEffect: true,
@@ -79,6 +80,7 @@ const numericRanges = {
   backgroundDesaturation: [0, 1],
   beamModulation: [0, 1],
   breathing: [0, 1],
+  ambientGlassLight: [0, 1],
   imperfectSignal: [0, 1],
   humBar: [0, 1],
 } as const;

@@ -80,10 +80,13 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     colorFrames.current.set(id, frame);
   }, [updateTab]);
   const selectSession = useCallback((id: string, animate = true) => {
+    if (pendingSelection.current !== null) {
+      window.clearTimeout(pendingSelection.current);
+      pendingSelection.current = null;
+    }
     if (id === activeRef.current) return;
     const record = sessions.current.get(id);
     if (animate && record && sessions.current.has(activeRef.current ?? '') && settingsRef.current.channelSwitchEffect && onTerminalTabTransitionRef.current) {
-      if (pendingSelection.current !== null) window.clearTimeout(pendingSelection.current);
       onTerminalTabTransitionRef.current();
       pendingSelection.current = window.setTimeout(() => {
         pendingSelection.current = null;
