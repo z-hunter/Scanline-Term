@@ -70,7 +70,7 @@
 
 | Symptom | Probable Cause | Diagnostic | Fix |
 |---------|---------------|------------|-----|
-| Trail never disappears (burn-in) | Quantization cutoff too small for low persistence | Check `persistenceDecay()` output | The cutoff formula `(30/255) × elapsedSeconds` should prevent this; increase persistence to verify decay is working |
+| Trail never disappears on a coloured TUI background | History is fed by the steady current frame rather than only by extinguished pixels | Confirm accumulation frames advance while history energy remains non-zero during an unchanged screen | Accumulate `max(previous - current, 0)`, gated by `sourceChanged`; do not clear history on ordinary scene changes |
 | Trail is too bright | `persistenceIntensity` too high | Reduce trail intensity control | Range is 0–4; typical value is 1 |
 | Ghost images after resolution change | Old FBO data at different resolution | `clearPersistence()` should be called | Verify `ensureFBO` detects size change and calls `clearPersistence()` |
 

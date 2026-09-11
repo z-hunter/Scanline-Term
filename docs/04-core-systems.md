@@ -308,13 +308,22 @@ The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter
 
 Uses ping-pong FBOs at `persistenceResolutionScale` (0.5×) of source resolution.
 
-1. Upload current source canvas to main texture (TEXTURE0)
-2. Bind history FBO texture (TEXTURE1)
+1. Ping-pong two full-resolution source textures: the latest terminal frame and the immediately preceding one.
+2. Bind the latest source (TEXTURE0), previous source (TEXTURE1), and history FBO texture (TEXTURE2).
 3. Render accumulation shader to target FBO:
    - `decayedHistory = max(0, history * decay - cutoff)`
-   - `trail = max(current * 0.09, decayedHistory)`
+   - when the source changed, `emission = max(previous - current, 0) * 0.09`
+   - `trail = max(emission, decayedHistory)`
    - Slight desaturation (mix with luma at 35%)
 4. Swap ping-pong FBOs
+
+#### Persistence invariant: history contains only extinguished light
+
+The direct source image already displays steady phosphors. The persistence FBO must therefore store only the light that disappeared between source frames, never a standing copy of the current frame or its background.
+
+This matters for FAR Manager and other TUIs with a bright coloured background. The former model seeded every accumulation pass with `current * 0.09`. A static blue panel consequently maintained a non-zero history floor forever; a ghost was especially visible through scanlines and only appeared to fade when a later screen update changed the input. The render loop itself was healthy (60 FPS, ~16.7 ms accumulation intervals); clearing history on a scene change merely hid the defect and was intentionally rejected.
+
+The current model compares the two source textures only when `sourceChanged` is true and emits the positive part of `previous - current`. Closing a FAR dialog, moving a selection highlight, or covering shell text with a panel therefore creates a trail; an unchanged panel contributes no new energy and the FBO decays to zero. `clearPersistence()` also drops the source-frame comparison state so a resize cannot create a false first-frame trail.
 
 **Decay calculation** (`persistenceDecay()`):
 - Base = lerp(0.2, 0.9915, persistence)

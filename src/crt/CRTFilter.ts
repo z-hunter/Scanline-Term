@@ -88,6 +88,7 @@ export class CRTFilter {
   gl: WebGLRenderingContext | null;
   program: WebGLProgram | null;
   texture: WebGLTexture | null;
+  previousTexture: WebGLTexture | null = null;
   buffer: WebGLBuffer | null;
   positionLocation: number;
   texCoordLocation: number;
@@ -137,7 +138,9 @@ export class CRTFilter {
   accumPosLocation: number = 0;
   accumTexCoordLocation: number = 0;
   accumCurrentTexLocation: WebGLUniformLocation | null = null;
+  accumPreviousTexLocation: WebGLUniformLocation | null = null;
   accumHistoryTexLocation: WebGLUniformLocation | null = null;
+  accumSourceChangedLocation: WebGLUniformLocation | null = null;
   accumDecayLocation: WebGLUniformLocation | null = null;
   accumCutoffLocation: WebGLUniformLocation | null = null;
 
@@ -175,6 +178,7 @@ export class CRTFilter {
   private crtFsSource = '';
   private crtEffectMask = Number.NaN;
   private persistenceActive = false;
+  private hasSourceFrame = false;
   private channelSwitchStartedAt = 0;
   private lumaProgram: WebGLProgram | null = null;
   private lumaTexture: WebGLTexture | null = null;
@@ -872,12 +876,17 @@ export class CRTFilter {
     );
 
     // Create texture with LINEAR filtering for subpixel anti-aliased interpolation
-    this.texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const createSourceTexture = () => {
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      return texture;
+    };
+    this.texture = createSourceTexture();
+    this.previousTexture = createSourceTexture();
 
     this.lumaProgram = this.createProgram(gl, vsSource, `
       precision mediump float;
@@ -923,9 +932,11 @@ export class CRTFilter {
     const accumFsSource = `
       precision mediump float;
       uniform sampler2D u_current;
+      uniform sampler2D u_previous;
       uniform sampler2D u_history;
       uniform float u_decay;
       uniform float u_cutoff;
+      uniform float u_sourceChanged;
       varying vec2 v_texCoord;
 
       void main() {
@@ -936,8 +947,11 @@ export class CRTFilter {
           // without getting stuck at a 1/255 truncation floor ("phosphor burn-in")
           vec3 decayedHistory = max(vec3(0.0), history * u_decay - vec3(u_cutoff));
 
-          // Soft translucent trail: enters at 9% of active source brightness for an ultra-delicate afterglow
-          vec3 trail = max(current * 0.09, decayedHistory);
+          // A static background is already present in the direct image. Only a
+          // pixel that became dimmer emits a residual phosphor trail.
+          vec3 previous = texture2D(u_previous, v_texCoord).rgb;
+          vec3 emission = u_sourceChanged > 0.5 ? max(previous - current, vec3(0.0)) * 0.09 : vec3(0.0);
+          vec3 trail = max(emission, decayedHistory);
 
           // Slight desaturation: phosphor afterglow naturally loses saturation as it decays
           float luma = dot(trail, vec3(0.2126, 0.7152, 0.0722));
@@ -952,7 +966,9 @@ export class CRTFilter {
       this.accumPosLocation = gl.getAttribLocation(this.accumProgram, 'a_position');
       this.accumTexCoordLocation = gl.getAttribLocation(this.accumProgram, 'a_texCoord');
       this.accumCurrentTexLocation = gl.getUniformLocation(this.accumProgram, 'u_current');
+      this.accumPreviousTexLocation = gl.getUniformLocation(this.accumProgram, 'u_previous');
       this.accumHistoryTexLocation = gl.getUniformLocation(this.accumProgram, 'u_history');
+      this.accumSourceChangedLocation = gl.getUniformLocation(this.accumProgram, 'u_sourceChanged');
       this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
       this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
     }
@@ -1110,6 +1126,7 @@ export class CRTFilter {
 
   clearPersistence(): void {
     this.lastPersistenceTime = 0;
+    this.hasSourceFrame = false;
     if (!this.gl || !this.fboA || !this.fboB) return;
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboA);
@@ -1148,6 +1165,7 @@ export class CRTFilter {
       if (tex) gl.deleteTexture(tex);
     }
     if (this.texture) gl.deleteTexture(this.texture);
+    if (this.previousTexture) gl.deleteTexture(this.previousTexture);
     if (this.lumaTexture) gl.deleteTexture(this.lumaTexture);
     if (this.lumaFbo) gl.deleteFramebuffer(this.lumaFbo);
     if (this.buffer) gl.deleteBuffer(this.buffer);
@@ -1160,6 +1178,7 @@ export class CRTFilter {
     this.fboTexA = null;
     this.fboTexB = null;
     this.texture = null;
+    this.previousTexture = null;
     this.buffer = null;
     this.program = null;
     this.accumProgram = null;
@@ -1178,16 +1197,22 @@ export class CRTFilter {
   }
 
   render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true): void {
-    if (!this.gl || !this.buffer || !this.texture) return;
+    if (!this.gl || !this.buffer || !this.texture || !this.previousTexture) return;
     const gl = this.gl;
 
-    // 1. Upload source canvas to texture
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    // 1. Ping-pong the source textures so the accumulation pass can compare
+    // the just-rendered terminal frame with the previous one.
+    const sourceChangedWithPrevious = sourceChanged && this.hasSourceFrame;
     if (sourceChanged) {
+      const nextTexture = this.previousTexture;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, nextTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      this.previousTexture = this.texture;
+      this.texture = nextTexture;
+      this.hasSourceFrame = true;
       if (settings.breathing > 0.0 && this.lumaProgram && this.lumaFbo && this.lumaTexture) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.lumaFbo);
         gl.viewport(0, 0, 1, 1);
@@ -1258,13 +1283,19 @@ export class CRTFilter {
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       if (this.accumCurrentTexLocation) gl.uniform1i(this.accumCurrentTexLocation, 0);
 
-      // Texture Unit 1: History frame
+      // Texture Unit 1: Previous source frame
       gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.previousTexture);
+      if (this.accumPreviousTexLocation) gl.uniform1i(this.accumPreviousTexLocation, 1);
+
+      // Texture Unit 2: History frame
+      gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, historyTex);
-      if (this.accumHistoryTexLocation) gl.uniform1i(this.accumHistoryTexLocation, 1);
+      if (this.accumHistoryTexLocation) gl.uniform1i(this.accumHistoryTexLocation, 2);
 
       if (this.accumDecayLocation) gl.uniform1f(this.accumDecayLocation, decay);
       if (this.accumCutoffLocation) gl.uniform1f(this.accumCutoffLocation, cutoff);
+      if (this.accumSourceChangedLocation) gl.uniform1f(this.accumSourceChangedLocation, sourceChangedWithPrevious ? 1 : 0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 
