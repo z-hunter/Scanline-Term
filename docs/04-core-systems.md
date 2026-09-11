@@ -299,7 +299,7 @@ Colors are resolved through the active color profile:
 
 ## CRT Pipeline
 
-The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter.render()` method executes up to 3 WebGL passes:
+The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter.render()` method executes up to 4 WebGL passes:
 
 ### Pass 1: Persistence Accumulation (conditional)
 
@@ -370,7 +370,7 @@ The main fragment shader applies all visual effects in order:
 
 ### HV Breathing
 
-HV Breathing drives raster expansion from the terminal buffer's average luma, calculated during source-canvas redraws; it does not use `getImageData()` or any CPU readback from the canvas. The first measured terminal frame restarts the smoothing state so the visible terminal, rather than the startup placeholder, defines the initial response. Luma is clamped to the valid 0–1 range; a non-finite value falls back to a safe startup level, and the smoothed state self-recovers if it becomes non-finite. This prevents the effect from becoming permanently inactive until manually toggled through zero.
+HV Breathing drives raster expansion from a GPU reduction of the actual source texture: when the source changes and the effect is enabled, a 16×16 evenly spaced luma sample grid is rendered to a 1×1 texture. The final CRT shader samples that texture directly, so the response remains frame-accurate without a CPU canvas readback or dependence on terminal-cell and tab-colour heuristics. With HV Breathing disabled, the reduction pass is skipped entirely.
 
 ### Signal Effects
 

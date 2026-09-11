@@ -104,7 +104,8 @@ export class CRTFilter {
   persistenceLocation: WebGLUniformLocation | null;
   persistenceIntensityLocation: WebGLUniformLocation | null;
   beamModulationLocation: WebGLUniformLocation | null;
-  breathingScaleLocation: WebGLUniformLocation | null;
+  breathingStrengthLocation: WebGLUniformLocation | null;
+  lumaTextureLocation: WebGLUniformLocation | null;
   imperfectSignalLocation: WebGLUniformLocation | null;
   humBarLocation: WebGLUniformLocation | null;
   channelSwitchLocation: WebGLUniformLocation | null;
@@ -158,6 +159,12 @@ export class CRTFilter {
   private crtEffectMask = Number.NaN;
   private persistenceActive = false;
   private channelSwitchStartedAt = 0;
+  private lumaProgram: WebGLProgram | null = null;
+  private lumaTexture: WebGLTexture | null = null;
+  private lumaFbo: WebGLFramebuffer | null = null;
+  private lumaImageLocation: WebGLUniformLocation | null = null;
+  private lumaPosLocation = 0;
+  private lumaTexCoordLocation = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -190,7 +197,8 @@ export class CRTFilter {
       this.persistenceLocation = null;
       this.persistenceIntensityLocation = null;
       this.beamModulationLocation = null;
-      this.breathingScaleLocation = null;
+      this.breathingStrengthLocation = null;
+      this.lumaTextureLocation = null;
       this.imperfectSignalLocation = null;
       this.humBarLocation = null;
       this.channelSwitchLocation = null;
@@ -230,7 +238,8 @@ export class CRTFilter {
     this.persistenceLocation = null;
     this.persistenceIntensityLocation = null;
     this.beamModulationLocation = null;
-    this.breathingScaleLocation = null;
+    this.breathingStrengthLocation = null;
+    this.lumaTextureLocation = null;
     this.imperfectSignalLocation = null;
     this.humBarLocation = null;
     this.channelSwitchLocation = null;
@@ -314,7 +323,8 @@ export class CRTFilter {
     this.persistenceLocation = gl.getUniformLocation(program, 'u_persistence');
     this.persistenceIntensityLocation = gl.getUniformLocation(program, 'u_persistenceIntensity');
     this.beamModulationLocation = gl.getUniformLocation(program, 'u_beamModulation');
-    this.breathingScaleLocation = gl.getUniformLocation(program, 'u_breathingScale');
+    this.breathingStrengthLocation = gl.getUniformLocation(program, 'u_breathingStrength');
+    this.lumaTextureLocation = gl.getUniformLocation(program, 'u_lumaTexture');
     this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
     this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
     this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
@@ -393,7 +403,8 @@ export class CRTFilter {
             uniform float u_persistence;
             uniform float u_persistenceIntensity;
             uniform float u_beamModulation;
-            uniform float u_breathingScale;
+            uniform float u_breathingStrength;
+            uniform sampler2D u_lumaTexture;
             uniform float u_imperfectSignal;
             uniform float u_humBar;
             uniform float u_channelSwitch;
@@ -549,9 +560,10 @@ export class CRTFilter {
                 // In dark/resting state: narrow black margin inside the bezel (~1.3%)
                 // In peak bright state: raster expands outward and creeps 1-2px under the static bezel
                 vec2 rasterUV = curvedUV;
-                if (u_breathingScale > 0.0) {
+                float breathingScale = (0.004 + texture2D(u_lumaTexture, vec2(0.5)).r * 0.038) * 1.2 * u_breathingStrength;
+                if (breathingScale > 0.0) {
                     float baseMargin = 0.015;
-                    float rasterScale = 1.0 + (baseMargin * 2.0) - u_breathingScale;
+                    float rasterScale = 1.0 + (baseMargin * 2.0) - breathingScale;
                     rasterUV = (curvedUV - 0.5) * rasterScale + 0.5;
                 }
 
@@ -574,7 +586,10 @@ export class CRTFilter {
                 #endif
 
                 #if ENABLE_CHANNEL_SWITCH
-                rasterUV.y = fract(rasterUV.y + u_channelSwitch);
+                // The blank interval separates consecutive copies of the raster,
+                // so the top cannot wrap into the bottom while the raster breathes.
+                float rollPeriod = 1.18;
+                rasterUV.y = mod(rasterUV.y + u_channelSwitch * rollPeriod, rollPeriod);
                 #endif
 
                 // Chromatic Aberration
@@ -746,6 +761,36 @@ export class CRTFilter {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    this.lumaProgram = this.createProgram(gl, vsSource, `
+      precision mediump float;
+      uniform sampler2D u_image;
+      varying vec2 v_texCoord;
+      void main() {
+        float total = 0.0;
+        for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+          vec3 color = texture2D(u_image, (vec2(float(x), float(y)) + 0.5) / 16.0).rgb;
+          total += dot(color, vec3(0.2126, 0.7152, 0.0722));
+        }
+        gl_FragColor = vec4(vec3(total / 256.0), 1.0);
+      }
+    `);
+    this.lumaTexture = gl.createTexture();
+    this.lumaFbo = gl.createFramebuffer();
+    if (this.lumaTexture && this.lumaFbo) {
+      gl.bindTexture(gl.TEXTURE_2D, this.lumaTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.lumaFbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lumaTexture, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    if (this.lumaProgram) {
+      this.lumaPosLocation = gl.getAttribLocation(this.lumaProgram, 'a_position');
+      this.lumaTexCoordLocation = gl.getAttribLocation(this.lumaProgram, 'a_texCoord');
+      this.lumaImageLocation = gl.getUniformLocation(this.lumaProgram, 'u_image');
+    }
 
     // Accumulation / Persistence Shader Pass
     const accumVsSource = `
@@ -986,10 +1031,13 @@ export class CRTFilter {
       if (tex) gl.deleteTexture(tex);
     }
     if (this.texture) gl.deleteTexture(this.texture);
+    if (this.lumaTexture) gl.deleteTexture(this.lumaTexture);
+    if (this.lumaFbo) gl.deleteFramebuffer(this.lumaFbo);
     if (this.buffer) gl.deleteBuffer(this.buffer);
     if (this.program) gl.deleteProgram(this.program);
     if (this.accumProgram) gl.deleteProgram(this.accumProgram);
     if (this.blurProgram) gl.deleteProgram(this.blurProgram);
+    if (this.lumaProgram) gl.deleteProgram(this.lumaProgram);
     this.fboA = null;
     this.fboB = null;
     this.fboTexA = null;
@@ -999,6 +1047,9 @@ export class CRTFilter {
     this.program = null;
     this.accumProgram = null;
     this.blurProgram = null;
+    this.lumaTexture = null;
+    this.lumaFbo = null;
+    this.lumaProgram = null;
     this.bloomFboA = null;
     this.bloomFboB = null;
     this.glowFboA = null;
@@ -1009,7 +1060,7 @@ export class CRTFilter {
     this.glowTexB = null;
   }
 
-  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true, sourceLuma = 0.12): void {
+  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true): void {
     if (!this.gl || !this.buffer || !this.texture) return;
     const gl = this.gl;
 
@@ -1020,6 +1071,20 @@ export class CRTFilter {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sourceCanvas);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      if (settings.breathing > 0.0 && this.lumaProgram && this.lumaFbo && this.lumaTexture) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.lumaFbo);
+        gl.viewport(0, 0, 1, 1);
+        gl.useProgram(this.lumaProgram);
+        gl.enableVertexAttribArray(this.lumaPosLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+        gl.vertexAttribPointer(this.lumaPosLocation, 2, gl.FLOAT, false, 16, 0);
+        gl.enableVertexAttribArray(this.lumaTexCoordLocation);
+        gl.vertexAttribPointer(this.lumaTexCoordLocation, 2, gl.FLOAT, false, 16, 8);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        if (this.lumaImageLocation) gl.uniform1i(this.lumaImageLocation, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
     }
 
     if (!settings.crtEmulation) {
@@ -1176,36 +1241,15 @@ export class CRTFilter {
       );
     }
 
-    // High-Voltage Anode Breathing (Raster Bloom expansion on bright scenes)
-    let breathingScale = 0.0;
-    const breathingSetting = settings.breathing || 0.0;
-    if (breathingSetting > 0.0) {
-      if (!Number.isFinite(this.smoothedExpansion)) this.smoothedExpansion = 0.0;
-      const now = performance.now();
-      const dt =
-        this.lastBreathingTime > 0
-          ? Math.min(0.1, (now - this.lastBreathingTime) / 1000)
-          : 0.016;
-      this.lastBreathingTime = now;
-
-      // The screen is mostly black, so final brightness needs a direct HV drive to remain visible.
-      const targetExpansion = breathingExpansion(
-        sourceLuma,
-        breathingSetting,
-      );
-      this.smoothedExpansion +=
-        (targetExpansion - this.smoothedExpansion) * (1.0 - Math.exp(-dt * 12.0));
-      breathingScale = this.smoothedExpansion;
-    } else {
-      this.smoothedExpansion = 0.0;
-      this.lastBreathingTime = 0;
-    }
-    if (this.breathingScaleLocation) gl.uniform1f(this.breathingScaleLocation, breathingScale);
+    if (this.breathingStrengthLocation) gl.uniform1f(this.breathingStrengthLocation, settings.breathing || 0.0);
 
     // Texture Unit 0: Main Image (Sharp active frame)
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     if (this.imageLocation) gl.uniform1i(this.imageLocation, 0);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.lumaTexture);
+    if (this.lumaTextureLocation) gl.uniform1i(this.lumaTextureLocation, 4);
 
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, bloomTexture);

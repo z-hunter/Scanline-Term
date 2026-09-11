@@ -40,7 +40,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
         if (filter) {
           if (!filter.isValid() && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); } 
           if (!breathingPrimed && renderer.hasMeasuredLuma) { filter.restartBreathing(); breathingPrimed = true; }
-          if (filter.isValid()) filter.render(renderer.sourceCanvas, settingsRef.current, changed, renderer.averageLuma);
+          if (filter.isValid()) filter.render(renderer.sourceCanvas, settingsRef.current, changed);
         } else if (ctx2d) {
           if (changed) {
             ctx2d.imageSmoothingEnabled = settingsRef.current.antiAliasedPixels !== false;

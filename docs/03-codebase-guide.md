@@ -158,7 +158,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `blur(input, w, h, target, dx, dy, threshold, spread)` | Runs one separable Gaussian blur pass |
 | `clearPersistence()` | Clears both persistence FBOs to black |
 | `isValid()` | Returns `true` if WebGL resources are available |
-| `render(sourceCanvas, settings, sourceChanged, sourceLuma)` | Main render entry — direct pass-through with CRT off, otherwise persistence → bloom/glow → specialized final CRT; source luma drives HV breathing |
+| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise GPU luma reduction → persistence → bloom/glow → specialized final CRT |
 | `dispose()` | Deletes all WebGL resources |
 
 **Shader programs:**
