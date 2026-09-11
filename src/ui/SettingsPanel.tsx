@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import type { BezelGlowMode, CRTColorMode, CRTSettings } from '../crt/CRTFilter';
+import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from '../crt/CRTFilter';
 import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
@@ -17,6 +17,7 @@ type NumericKey = Exclude<
   | 'antiAliasedPixels'
   | 'channelSwitchEffect'
   | 'colorMode'
+  | 'maskType'
   | 'bloomAlgorithm'
   | 'cursorStyle'
 >;
@@ -216,7 +217,7 @@ export function SettingsPanel({
       </label>
 
       <label className="resolution-control">
-        Color profile
+        ANSI color profile
         <select
           value={stored.crt.colorProfile}
           data-testid="color-profile-select"
@@ -288,43 +289,85 @@ export function SettingsPanel({
         />
         {stored.crt.crtEmulation && (
           <div className="crt-subsections">
-            <div className="font-control-row">
-              <label className="resolution-control font-name-control">
-                Color mode
-                <select
-                  value={stored.crt.colorMode}
-                  data-testid="color-mode-select"
-                  onChange={(event) =>
-                    setStored((current) => ({
-                      ...current,
-                      crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
-                    }))
-                  }
-                >
-                  <option value="color">Color</option>
-                  <option value="bw">B&amp;W</option>
-                  <option value="green">Green</option>
-                  <option value="amber">Amber</option>
-                  <option value="blue">Phosphor Blue</option>
-                </select>
-              </label>
-              {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
-                <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
-                  <span>
-                    Surface desat.
-                    <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
-                  </span>
-                  <Knob
-                    label="Background desaturation"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={stored.crt.backgroundDesaturation}
-                    onChange={(value) => update('backgroundDesaturation', value)}
-                  />
+            <fieldset className="knob-group colors-group">
+              <legend>Colors</legend>
+              <div className="font-control-row">
+                <label className="resolution-control font-name-control">
+                  Color mode
+                  <select
+                    value={stored.crt.colorMode}
+                    data-testid="color-mode-select"
+                    onChange={(event) =>
+                      setStored((current) => ({
+                        ...current,
+                        crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
+                      }))
+                    }
+                  >
+                    <option value="color">Color</option>
+                    <option value="bw">B&amp;W</option>
+                    <option value="green">Green</option>
+                    <option value="amber">Amber</option>
+                    <option value="blue">Phosphor Blue</option>
+                  </select>
                 </label>
+              </div>
+              {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
+                <div className="font-control-row">
+                  <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
+                    <span>
+                      Surface desat.
+                      <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
+                    </span>
+                    <Knob
+                      label="Background desaturation"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={stored.crt.backgroundDesaturation}
+                      onChange={(value) => update('backgroundDesaturation', value)}
+                    />
+                  </label>
+                </div>
               )}
-            </div>
+              {stored.crt.colorMode === 'color' && (
+                <div className="font-control-row">
+                  <label className="resolution-control font-name-control">
+                    Color mask
+                    <select
+                      value={stored.crt.maskType}
+                      data-testid="color-mask-select"
+                      onChange={(event) =>
+                        setStored((current) => ({
+                          ...current,
+                          crt: { ...current.crt, maskType: event.target.value as CRTMaskType },
+                        }))
+                      }
+                    >
+                      <option value="off">Off</option>
+                      <option value="aperture">Aperture grille</option>
+                      <option value="slot">Slot mask</option>
+                      <option value="shadow">Shadow mask</option>
+                    </select>
+                  </label>
+                  <label className={`slider-control font-size-control ${stored.crt.maskType === 'off' ? 'disabled' : ''}`} style={{ width: '130px', margin: 0 }}>
+                    <span>
+                      Strength
+                      <output>{formatValue(stored.crt.maskStrength)}</output>
+                    </span>
+                    <Knob
+                      label="Color mask strength"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={stored.crt.maskStrength}
+                      disabled={stored.crt.maskType === 'off'}
+                      onChange={(value) => update('maskStrength', value)}
+                    />
+                  </label>
+                </div>
+              )}
+            </fieldset>
             {Object.entries(controls).map(([group, groupControls]) => (
               <fieldset className="knob-group" key={group}>
                 <legend>{group}</legend>

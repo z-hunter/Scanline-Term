@@ -1,4 +1,4 @@
-import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTSettings, CursorStyle } from './CRTFilter';
+import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from './CRTFilter';
 import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
@@ -32,6 +32,8 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   channelSwitchEffect: true,
   antiAliasedPixels: true,
   colorMode: 'color',
+  maskType: 'off',
+  maskStrength: 0.3,
   cursorStyle: 'block',
 });
 
@@ -86,6 +88,7 @@ const numericRanges = {
   bezelHighlight: [0, 1],
   imperfectSignal: [0, 1],
   humBar: [0, 1],
+  maskStrength: [0, 1],
 } as const;
 
 const isResolution = (value: unknown): value is ResolutionId =>
@@ -93,6 +96,8 @@ const isResolution = (value: unknown): value is ResolutionId =>
 
 const isColorMode = (value: unknown): value is CRTColorMode =>
   value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
+const isMaskType = (value: unknown): value is CRTMaskType =>
+  value === 'off' || value === 'aperture' || value === 'slot' || value === 'shadow';
 
 const isBloomAlgorithm = (value: unknown): value is BloomAlgorithm => value === 'soft' || value === 'spiral';
 const isBezelGlowMode = (value: unknown): value is BezelGlowMode => value === 'spill' || value === 'reflection';
@@ -165,6 +170,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
     if (isColorMode(value.crt.colorMode)) result.crt.colorMode = value.crt.colorMode;
+    if (isMaskType(value.crt.maskType)) result.crt.maskType = value.crt.maskType;
     if (isBloomAlgorithm(value.crt.bloomAlgorithm)) result.crt.bloomAlgorithm = value.crt.bloomAlgorithm;
     if (isCursorStyle(value.crt.cursorStyle)) result.crt.cursorStyle = value.crt.cursorStyle;
   } catch {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breathingExpansion, channelSwitchProgress, crtEffectMask, persistenceDecay } from './CRTFilter';
+import { breathingExpansion, channelSwitchProgress, crtEffectMask, persistenceDecay, phosphorMaskScale } from './CRTFilter';
 import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
@@ -50,6 +50,8 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.backgroundDesaturation).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.bloomAlgorithm).toBe('spiral');
     expect(DEFAULT_CRT_SETTINGS.colorMode).toBe('color');
+    expect(DEFAULT_CRT_SETTINGS.maskType).toBe('off');
+    expect(DEFAULT_CRT_SETTINGS.maskStrength).toBe(0.3);
     expect(DEFAULT_CRT_SETTINGS.cursorStyle).toBe('block');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
@@ -139,6 +141,23 @@ describe('CRT settings', () => {
 
   it('accepts a phosphor color mode', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
+  });
+
+  it('validates persisted color mask settings', () => {
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { maskType: 'shadow', maskStrength: 0.4 } }));
+    expect(loaded.crt.maskType).toBe('shadow');
+    expect(loaded.crt.maskStrength).toBe(0.4);
+    const invalid = loadStoredSettings(JSON.stringify({ crt: { maskType: 'dots', maskStrength: 2 } }));
+    expect(invalid.crt.maskType).toBe('off');
+    expect(invalid.crt.maskStrength).toBe(0.3);
+  });
+
+  it('uses an integer phosphor scale near 640 triads across', () => {
+    expect(phosphorMaskScale(1920)).toBe(1);
+    expect(phosphorMaskScale(3840)).toBe(2);
+    expect(phosphorMaskScale(5760)).toBe(3);
+    expect(phosphorMaskScale(1)).toBe(1);
+    expect(phosphorMaskScale(9999)).toBe(3);
   });
 
   it('accepts alternate bloom algorithm', () => {

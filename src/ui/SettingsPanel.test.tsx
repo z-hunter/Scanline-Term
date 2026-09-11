@@ -390,4 +390,57 @@ describe('SettingsPanel font-size editing flow', () => {
     });
     container.remove();
   });
+
+  it('shows the Colors section and color-only mask controls', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const render = async () => {
+      await act(async () => {
+        root.render(createElement(SettingsPanel, { ...defaultProps, stored: currentStored, setStored }));
+      });
+    };
+
+    await render();
+    const maskSelect = container.querySelector<HTMLSelectElement>('[data-testid="color-mask-select"]');
+    const colorModeSelect = container.querySelector<HTMLSelectElement>('[data-testid="color-mode-select"]');
+    expect(maskSelect).not.toBeNull();
+    expect(maskSelect?.closest('.font-control-row')).not.toBe(colorModeSelect?.closest('.font-control-row'));
+    expect(container.querySelector('[data-testid="color-mask-size-select"]')).toBeNull();
+    expect(container.textContent).toContain('Colors');
+    expect(container.textContent).toContain('Strength');
+
+    const strengthKnobOff = container.querySelector('.knob[aria-label="Color mask strength"]');
+    expect(strengthKnobOff?.classList.contains('disabled')).toBe(true);
+    expect(strengthKnobOff?.getAttribute('aria-disabled')).toBe('true');
+    expect(strengthKnobOff?.closest('.slider-control')?.classList.contains('disabled')).toBe(true);
+
+    await act(async () => {
+      maskSelect!.value = 'aperture';
+      maskSelect!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(currentStored.crt.maskType).toBe('aperture');
+    await render();
+    expect(container.querySelector('[data-testid="color-mask-size-select"]')).toBeNull();
+    expect(container.textContent).toContain('Strength');
+
+    const strengthKnobOn = container.querySelector('.knob[aria-label="Color mask strength"]');
+    expect(strengthKnobOn?.classList.contains('disabled')).toBe(false);
+    expect(strengthKnobOn?.getAttribute('aria-disabled')).toBeNull();
+    expect(strengthKnobOn?.closest('.slider-control')?.classList.contains('disabled')).toBe(false);
+
+    currentStored = { ...currentStored, crt: { ...currentStored.crt, colorMode: 'green' } };
+    await render();
+    expect(container.querySelector('[data-testid="color-mask-select"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

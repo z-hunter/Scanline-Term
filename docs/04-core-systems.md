@@ -360,13 +360,14 @@ The main fragment shader applies all visual effects in order:
 11. Phosphor grain/noise texture
 12. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
 13. Beam modulation (luma-dependent scanline width)
-14. Screen glow overlay (from Pass 2, desaturated 35%)
-15. Image brightness/contrast correction
-16. Color mode conversion (luma × phosphor tint)
-17. Background desaturation (monochrome modes only)
-18. Composite, Imperfect signal flicker, and Hum-bar light band
-19. Vignette
-20. Final clamp × 1.1
+14. Image brightness/contrast correction
+15. Color mode conversion (luma × phosphor tint)
+16. Background desaturation (monochrome modes only)
+17. Composite, Imperfect signal flicker, and Hum-bar light band
+18. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
+19. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
+20. Vignette & ambient glass light
+21. Final clamp × 1.1
 ```
 
 ### HV Breathing
@@ -404,6 +405,10 @@ When `crtEmulation` is `false`, a separate pass-through shader applies only brig
 | Green | `'green'` (2) | Luma × vec3(0.45, 1.0, 0.62) |
 | Amber | `'amber'` (3) | Luma × vec3(1.0, 0.58, 0.2) |
 | Blue | `'blue'` (4) | Luma × vec3(0.42, 0.72, 1.0) |
+
+### Color Phosphor Mask
+
+Color mode can optionally apply a screen-space procedural RGB mask after the final image, scanlines, and hum-bar are composited, before the thick-glass screen glow is overlaid. Tight Bloom/halation remains before the mask to expand the electron-beam image; wide Glow is applied afterward as diffusion of the emitted light through the faceplate glass. `Aperture grille` uses vertically blended RGB stripes, `Slot mask` blends neighbouring RGB phosphors while retaining staggered dark rows, and `Shadow mask` uses a staggered `RRGGBB / GBBRRG` pattern. The mask remains in physical output-pixel coordinates for stable high-frequency detail, uses an Auto scale of approximately 640 triads across the screen, and is disabled for B&W and monochrome phosphor modes.
 
 ### Bloom Algorithms
 

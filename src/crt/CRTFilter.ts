@@ -1,6 +1,7 @@
 import type { ColorProfileId } from '../terminal-color-profiles';
 
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
+export type CRTMaskType = 'off' | 'aperture' | 'slot' | 'shadow';
 export type BloomAlgorithm = 'soft' | 'spiral';
 export type BezelGlowMode = 'spill' | 'reflection';
 export type CursorStyle = 'block' | 'underline' | 'bar';
@@ -25,6 +26,10 @@ export function persistenceDecay(persistence: number, elapsedSeconds: number): {
     decay: Math.exp((-Math.LN2 / halfLife) * elapsedSeconds),
     cutoff: (30.0 / 255.0) * elapsedSeconds,
   };
+}
+
+export function phosphorMaskScale(width: number): number {
+  return Math.max(1, Math.min(3, Math.round(width / 1920)));
 }
 
 export function breathingExpansion(luma: number, strength: number): number {
@@ -68,6 +73,8 @@ export interface CRTSettings {
   channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
   colorMode: CRTColorMode;
+  maskType: CRTMaskType;
+  maskStrength: number;
   cursorStyle: CursorStyle;
 }
 
@@ -88,6 +95,9 @@ export class CRTFilter {
   sourceResolutionLocation: WebGLUniformLocation | null;
   antiAliasedPixelsLocation: WebGLUniformLocation | null;
   colorModeLocation: WebGLUniformLocation | null;
+  maskTypeLocation: WebGLUniformLocation | null = null;
+  maskStrengthLocation: WebGLUniformLocation | null = null;
+  maskScaleLocation: WebGLUniformLocation | null = null;
   crtEmulationLocation: WebGLUniformLocation | null;
   imageBrightnessLocation: WebGLUniformLocation | null;
   imageContrastLocation: WebGLUniformLocation | null;
@@ -215,6 +225,9 @@ export class CRTFilter {
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
       this.colorModeLocation = null;
+      this.maskTypeLocation = null;
+      this.maskStrengthLocation = null;
+      this.maskScaleLocation = null;
       this.crtEmulationLocation = null;
       this.imageBrightnessLocation = null;
       this.imageContrastLocation = null;
@@ -256,6 +269,9 @@ export class CRTFilter {
     this.channelSwitchLocation = null;
     this.imageLocation = null;
     this.colorModeLocation = null;
+    this.maskTypeLocation = null;
+    this.maskStrengthLocation = null;
+    this.maskScaleLocation = null;
     this.crtEmulationLocation = null;
     this.imageBrightnessLocation = null;
     this.imageContrastLocation = null;
@@ -347,6 +363,9 @@ export class CRTFilter {
     this.sourceResolutionLocation = gl.getUniformLocation(program, 'u_sourceResolution');
     this.antiAliasedPixelsLocation = gl.getUniformLocation(program, 'u_antiAliasedPixels');
     this.colorModeLocation = gl.getUniformLocation(program, 'u_colorMode');
+    this.maskTypeLocation = gl.getUniformLocation(program, 'u_maskType');
+    this.maskStrengthLocation = gl.getUniformLocation(program, 'u_maskStrength');
+    this.maskScaleLocation = gl.getUniformLocation(program, 'u_maskScale');
     this.crtEmulationLocation = gl.getUniformLocation(program, 'u_crtEmulation');
     this.imageBrightnessLocation = gl.getUniformLocation(program, 'u_imageBrightness');
     this.imageContrastLocation = gl.getUniformLocation(program, 'u_imageContrast');
@@ -432,6 +451,9 @@ export class CRTFilter {
             uniform vec2 u_sourceResolution;
             uniform float u_antiAliasedPixels;
             uniform float u_colorMode;
+            uniform float u_maskType;
+            uniform float u_maskStrength;
+            uniform float u_maskScale;
             uniform float u_crtEmulation;
             uniform float u_imageBrightness;
             uniform float u_imageContrast;
@@ -503,6 +525,54 @@ export class CRTFilter {
                  else if (u_colorMode < 3.5) phosphorTint = vec3(1.1, 0.68, 0.2); // Amber
                  else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
                  return luma * phosphorTint;
+             }
+
+             vec3 apertureMask(float x) {
+                  float phase = fract(x / 3.0);
+                  return vec3(1.0) + 0.5 * cos(6.2831853 * (phase - vec3(0.0, 0.3333333, 0.6666667)));
+             }
+
+             vec3 hardRgbMask(float x) {
+                 float stripe = fract(floor(x) / 3.0);
+                 vec3 mask = vec3(0.5);
+                 if (stripe < 0.3333333) mask.r = 1.5;
+                 else if (stripe < 0.6666667) mask.g = 1.5;
+                 else mask.b = 1.5;
+                 return mask;
+             }
+
+             vec3 colorMask() {
+                  // ponytail: procedural mask is the fast WebGL 1 baseline; add LUT resampling only if visual comparison demands it.
+                  vec2 pixelPos = gl_FragCoord.xy / max(u_maskScale, 1.0);
+                  vec2 pos = floor(pixelPos);
+                  vec3 mask = hardRgbMask(pixelPos.x);
+
+                  if (u_maskType < 1.5) {
+                      // Faceplate diffusion blends adjacent aperture-grille phosphors without changing Strength.
+                      mask = apertureMask(pixelPos.x - 1.0) * 0.2
+                          + apertureMask(pixelPos.x) * 0.6
+                          + apertureMask(pixelPos.x + 1.0) * 0.2;
+                  } else if (u_maskType < 2.5) {
+                      // Guest-style compressed slot mask: diffuse RGB phosphors but preserve the dark row geometry.
+                      float halfTile = step(0.5, fract(pos.x / 6.0));
+                      float brightRow = step(0.5, fract((pos.y + halfTile) / 2.0));
+                      mask = hardRgbMask(pixelPos.x - 1.0) * 0.2
+                          + hardRgbMask(pixelPos.x) * 0.6
+                          + hardRgbMask(pixelPos.x + 1.0) * 0.2;
+                      mask *= mix(0.5, 1.5, brightRow);
+                  } else if (u_maskType > 2.5) {
+                      // Lottes-style VGA shadow mask: RRGGBB / GBBRRG.
+                      float row = floor(pos.y * 0.5);
+                      float shadowStripe = fract((pos.x + row * 3.0) / 6.0);
+                      mask = vec3(0.5);
+                      if (shadowStripe < 0.3333333) mask.r = 1.5;
+                      else if (shadowStripe < 0.6666667) mask.g = 1.5;
+                      else mask.b = 1.5;
+                  }
+
+                  // Hard masks average to 5/6; the soft aperture profile already averages to 1.
+                  float normalization = u_maskType < 1.5 ? 1.0 : 1.2;
+                  return mix(vec3(1.0), mask * normalization, clamp(u_maskStrength, 0.0, 1.0));
              }
 
              void main() {
@@ -729,22 +799,6 @@ export class CRTFilter {
                 }
 
                 backgroundColor *= scanline;
-
-                // CRT Ambient Screen Glow (wide blur of the complete screen image, like light through glass)
-                #if ENABLE_GLOW
-                if (u_glow > 0.0) {
-                     vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
-
-                     // Slight desaturation: diffuse light scattered inside thick CRT faceplate glass is less chromatic
-                     float glowLuma = dot(glowSum, vec3(0.2126, 0.7152, 0.0722));
-                     glowSum = mix(glowSum, vec3(glowLuma), 0.35);
-
-                     // Screen blend mode: illuminates both phosphors and scanline gaps
-                     vec3 diffuseGlow = glowSum * u_glow * 0.5;
-                     imageColor = 1.0 - (1.0 - imageColor) * (1.0 - diffuseGlow);
-                }
-                #endif
-
                 // Image-only final correction, before the two layers are color-converted and combined.
                 imageColor = (imageColor - 0.5) * u_imageContrast + 0.5;
                 imageColor *= u_imageBrightness;
@@ -766,6 +820,24 @@ export class CRTFilter {
                 color += applyColorMode(vec3(humBand * u_humBar * 0.12));
                 #endif
 
+                // RGB masks belong to color CRTs; monochrome phosphor modes retain their clean tube surface.
+                if (u_colorMode <= 0.5 && u_maskType > 0.5) color *= colorMask();
+
+                // CRT Ambient Screen Glow (wide blur of the complete screen image, like light scattered in thick faceplate glass)
+                #if ENABLE_GLOW
+                if (u_glow > 0.0) {
+                     vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
+
+                     // Slight desaturation: diffuse light scattered inside thick CRT faceplate glass is less chromatic
+                     float glowLuma = dot(glowSum, vec3(0.2126, 0.7152, 0.0722));
+                     glowSum = mix(glowSum, vec3(glowLuma), 0.35);
+                     glowSum = applyColorMode(glowSum);
+
+                     // Screen blend mode: illuminates both phosphors, scanlines, and mask gaps
+                     vec3 diffuseGlow = glowSum * (u_glow * 0.5 * u_imageBrightness);
+                     color = 1.0 - (1.0 - color) * (1.0 - diffuseGlow);
+                }
+                #endif
                 // Vignette (Physical curved faceplate glass property)
                 #if ENABLE_AMBIENT_GLASS
                 float glassMask = clamp(sqrt(25.0 * curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y)), 0.0, 1.0);
@@ -1279,10 +1351,18 @@ export class CRTFilter {
       gl.uniform2f(this.sourceResolutionLocation, sourceCanvas.width, sourceCanvas.height);
     if (this.antiAliasedPixelsLocation)
       gl.uniform1f(this.antiAliasedPixelsLocation, settings.antiAliasedPixels !== false ? 1.0 : 0.0);
-    if (this.colorModeLocation) {
+        if (this.colorModeLocation) {
       const colorMode = { color: 0, bw: 1, green: 2, amber: 3, blue: 4 }[settings.colorMode] ?? 0;
       gl.uniform1f(this.colorModeLocation, colorMode);
     }
+    if (this.maskTypeLocation) {
+      const maskType = { off: 0, aperture: 1, slot: 2, shadow: 3 }[settings.maskType] ?? 0;
+      gl.uniform1f(this.maskTypeLocation, maskType);
+    }
+    if (this.maskStrengthLocation)
+      gl.uniform1f(this.maskStrengthLocation, settings.maskStrength);
+    if (this.maskScaleLocation)
+      gl.uniform1f(this.maskScaleLocation, phosphorMaskScale(this.canvas.width));
     if (this.crtEmulationLocation) gl.uniform1f(this.crtEmulationLocation, settings.crtEmulation ? 1.0 : 0.0);
     if (this.imageBrightnessLocation) gl.uniform1f(this.imageBrightnessLocation, settings.imageBrightness);
     if (this.imageContrastLocation) gl.uniform1f(this.imageContrastLocation, settings.imageContrast);
