@@ -71,6 +71,7 @@
 | Symptom | Probable Cause | Diagnostic | Fix |
 |---------|---------------|------------|-----|
 | Trail never disappears on a coloured TUI background | History is fed by the steady current frame rather than only by extinguished pixels | Confirm accumulation frames advance while history energy remains non-zero during an unchanged screen | Accumulate `max(previous - current, 0)`, gated by `sourceChanged`; do not clear history on ordinary scene changes |
+| HV Breathing leaves no trail where the raster contracts | History is accumulated in source UVs rather than physical screen coordinates | Toggle a bright/full-screen image to dark with Breathing enabled | Compare old/new rasters after curvature and their respective HV expansion; sample trail in output UVs |
 | Trail is too bright | `persistenceIntensity` too high | Reduce trail intensity control | Range is 0–4; typical value is 1 |
 | Ghost images after resolution change | Old FBO data at different resolution | `clearPersistence()` should be called | Verify `ensureFBO` detects size change and calls `clearPersistence()` |
 

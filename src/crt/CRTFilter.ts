@@ -140,7 +140,11 @@ export class CRTFilter {
   accumCurrentTexLocation: WebGLUniformLocation | null = null;
   accumPreviousTexLocation: WebGLUniformLocation | null = null;
   accumHistoryTexLocation: WebGLUniformLocation | null = null;
+  accumCurrentLumaTexLocation: WebGLUniformLocation | null = null;
+  accumPreviousLumaTexLocation: WebGLUniformLocation | null = null;
   accumSourceChangedLocation: WebGLUniformLocation | null = null;
+  accumCurvatureLocation: WebGLUniformLocation | null = null;
+  accumBreathingStrengthLocation: WebGLUniformLocation | null = null;
   accumDecayLocation: WebGLUniformLocation | null = null;
   accumCutoffLocation: WebGLUniformLocation | null = null;
 
@@ -182,7 +186,9 @@ export class CRTFilter {
   private channelSwitchStartedAt = 0;
   private lumaProgram: WebGLProgram | null = null;
   private lumaTexture: WebGLTexture | null = null;
+  private previousLumaTexture: WebGLTexture | null = null;
   private lumaFbo: WebGLFramebuffer | null = null;
+  private previousLumaFbo: WebGLFramebuffer | null = null;
   private lumaImageLocation: WebGLUniformLocation | null = null;
   private lumaPosLocation = 0;
   private lumaTexCoordLocation = 0;
@@ -719,9 +725,9 @@ export class CRTFilter {
                 // Phosphor Afterglow Trail (Soft, translucent trail overlay)
                 #if ENABLE_TRAIL
                 if (u_persistence > 0.0) {
-                     vec3 trail = texture2D(u_trail, rasterUV).rgb;
-                     float inBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0) * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
-                     imageColor = max(imageColor, trail * inBounds * clamp(u_persistenceIntensity, 0.0, 4.0));
+                     // History is in physical screen coordinates, after raster geometry.
+                     vec3 trail = texture2D(u_trail, v_texCoord).rgb;
+                     imageColor = max(imageColor, trail * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
                 #endif
 
@@ -901,15 +907,25 @@ export class CRTFilter {
         gl_FragColor = vec4(vec3(total / 256.0), 1.0);
       }
     `);
-    this.lumaTexture = gl.createTexture();
-    this.lumaFbo = gl.createFramebuffer();
-    if (this.lumaTexture && this.lumaFbo) {
-      gl.bindTexture(gl.TEXTURE_2D, this.lumaTexture);
+    const createLumaTarget = () => {
+      const texture = gl.createTexture();
+      const framebuffer = gl.createFramebuffer();
+      if (!texture || !framebuffer) return null;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.lumaFbo);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lumaTexture, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      return { texture, framebuffer };
+    };
+    const currentLuma = createLumaTarget();
+    const previousLuma = createLumaTarget();
+    if (currentLuma && previousLuma) {
+      this.lumaTexture = currentLuma.texture;
+      this.lumaFbo = currentLuma.framebuffer;
+      this.previousLumaTexture = previousLuma.texture;
+      this.previousLumaFbo = previousLuma.framebuffer;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
     if (this.lumaProgram) {
@@ -934,13 +950,40 @@ export class CRTFilter {
       uniform sampler2D u_current;
       uniform sampler2D u_previous;
       uniform sampler2D u_history;
+      uniform sampler2D u_currentLuma;
+      uniform sampler2D u_previousLuma;
       uniform float u_decay;
       uniform float u_cutoff;
       uniform float u_sourceChanged;
+      uniform float u_curvature;
+      uniform float u_breathingStrength;
       varying vec2 v_texCoord;
 
+      vec2 curve(vec2 uv) {
+          if (u_curvature <= 0.0) return uv;
+          vec2 p = (uv - 0.5) * 2.0;
+          p *= 1.0 + u_curvature * 0.1;
+          p.x *= 1.0 + pow(abs(p.y) / 5.0, 2.0) * u_curvature * 5.0;
+          p.y *= 1.0 + pow(abs(p.x) / 4.0, 2.0) * u_curvature * 5.0;
+          return p * 0.5 + 0.5;
+      }
+
+      vec2 rasterUV(float luma) {
+          vec2 uv = curve(v_texCoord);
+          float breathingScale = (0.004 + luma * 0.038) * 1.2 * u_breathingStrength;
+          if (breathingScale > 0.0) {
+              uv = (uv - 0.5) * (1.03 - breathingScale) + 0.5;
+          }
+          return uv;
+      }
+
+      vec3 sampleScreen(sampler2D image, vec2 uv) {
+          float inBounds = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+          return texture2D(image, uv).rgb * inBounds;
+      }
+
       void main() {
-          vec3 current = texture2D(u_current, v_texCoord).rgb;
+          vec3 current = sampleScreen(u_current, rasterUV(texture2D(u_currentLuma, vec2(0.5)).r));
           vec3 history = texture2D(u_history, v_texCoord).rgb;
           
           // Quantization cutoff: subtracting 0.5/255 guarantees 8-bit framebuffers decay to absolute 0
@@ -949,7 +992,7 @@ export class CRTFilter {
 
           // A static background is already present in the direct image. Only a
           // pixel that became dimmer emits a residual phosphor trail.
-          vec3 previous = texture2D(u_previous, v_texCoord).rgb;
+          vec3 previous = sampleScreen(u_previous, rasterUV(texture2D(u_previousLuma, vec2(0.5)).r));
           vec3 emission = u_sourceChanged > 0.5 ? max(previous - current, vec3(0.0)) * 0.09 : vec3(0.0);
           vec3 trail = max(emission, decayedHistory);
 
@@ -968,7 +1011,11 @@ export class CRTFilter {
       this.accumCurrentTexLocation = gl.getUniformLocation(this.accumProgram, 'u_current');
       this.accumPreviousTexLocation = gl.getUniformLocation(this.accumProgram, 'u_previous');
       this.accumHistoryTexLocation = gl.getUniformLocation(this.accumProgram, 'u_history');
+      this.accumCurrentLumaTexLocation = gl.getUniformLocation(this.accumProgram, 'u_currentLuma');
+      this.accumPreviousLumaTexLocation = gl.getUniformLocation(this.accumProgram, 'u_previousLuma');
       this.accumSourceChangedLocation = gl.getUniformLocation(this.accumProgram, 'u_sourceChanged');
+      this.accumCurvatureLocation = gl.getUniformLocation(this.accumProgram, 'u_curvature');
+      this.accumBreathingStrengthLocation = gl.getUniformLocation(this.accumProgram, 'u_breathingStrength');
       this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
       this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
     }
@@ -1167,7 +1214,9 @@ export class CRTFilter {
     if (this.texture) gl.deleteTexture(this.texture);
     if (this.previousTexture) gl.deleteTexture(this.previousTexture);
     if (this.lumaTexture) gl.deleteTexture(this.lumaTexture);
+    if (this.previousLumaTexture) gl.deleteTexture(this.previousLumaTexture);
     if (this.lumaFbo) gl.deleteFramebuffer(this.lumaFbo);
+    if (this.previousLumaFbo) gl.deleteFramebuffer(this.previousLumaFbo);
     if (this.buffer) gl.deleteBuffer(this.buffer);
     if (this.program) gl.deleteProgram(this.program);
     if (this.accumProgram) gl.deleteProgram(this.accumProgram);
@@ -1184,7 +1233,9 @@ export class CRTFilter {
     this.accumProgram = null;
     this.blurProgram = null;
     this.lumaTexture = null;
+    this.previousLumaTexture = null;
     this.lumaFbo = null;
+    this.previousLumaFbo = null;
     this.lumaProgram = null;
     this.bloomFboA = null;
     this.bloomFboB = null;
@@ -1213,8 +1264,8 @@ export class CRTFilter {
       this.previousTexture = this.texture;
       this.texture = nextTexture;
       this.hasSourceFrame = true;
-      if (settings.breathing > 0.0 && this.lumaProgram && this.lumaFbo && this.lumaTexture) {
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.lumaFbo);
+      if (this.lumaProgram && this.previousLumaFbo && this.previousLumaTexture) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.previousLumaFbo);
         gl.viewport(0, 0, 1, 1);
         gl.useProgram(this.lumaProgram);
         gl.enableVertexAttribArray(this.lumaPosLocation);
@@ -1226,6 +1277,12 @@ export class CRTFilter {
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
         if (this.lumaImageLocation) gl.uniform1i(this.lumaImageLocation, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        const nextLumaTexture = this.previousLumaTexture;
+        this.previousLumaTexture = this.lumaTexture;
+        this.lumaTexture = nextLumaTexture;
+        const nextLumaFbo = this.previousLumaFbo;
+        this.previousLumaFbo = this.lumaFbo;
+        this.lumaFbo = nextLumaFbo;
       }
     }
 
@@ -1258,8 +1315,8 @@ export class CRTFilter {
       this.lastPersistenceTime = now;
       const { decay, cutoff } = persistenceDecay(persistence, elapsedSeconds);
 
-      const pWidth = Math.max(1, Math.floor(sourceCanvas.width * this.persistenceResolutionScale));
-      const pHeight = Math.max(1, Math.floor(sourceCanvas.height * this.persistenceResolutionScale));
+      const pWidth = Math.max(1, Math.floor(this.canvas.width * this.persistenceResolutionScale));
+      const pHeight = Math.max(1, Math.floor(this.canvas.height * this.persistenceResolutionScale));
       this.ensureFBO(pWidth, pHeight);
 
       const targetFBO = this.fboCurrent === 0 ? this.fboA : this.fboB;
@@ -1293,9 +1350,19 @@ export class CRTFilter {
       gl.bindTexture(gl.TEXTURE_2D, historyTex);
       if (this.accumHistoryTexLocation) gl.uniform1i(this.accumHistoryTexLocation, 2);
 
+      // Luma ping-pong makes the previous raster use its own HV expansion.
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.lumaTexture);
+      if (this.accumCurrentLumaTexLocation) gl.uniform1i(this.accumCurrentLumaTexLocation, 3);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this.previousLumaTexture);
+      if (this.accumPreviousLumaTexLocation) gl.uniform1i(this.accumPreviousLumaTexLocation, 4);
+
       if (this.accumDecayLocation) gl.uniform1f(this.accumDecayLocation, decay);
       if (this.accumCutoffLocation) gl.uniform1f(this.accumCutoffLocation, cutoff);
       if (this.accumSourceChangedLocation) gl.uniform1f(this.accumSourceChangedLocation, sourceChangedWithPrevious ? 1 : 0);
+      if (this.accumCurvatureLocation) gl.uniform1f(this.accumCurvatureLocation, settings.curvature);
+      if (this.accumBreathingStrengthLocation) gl.uniform1f(this.accumBreathingStrengthLocation, settings.breathing || 0.0);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 

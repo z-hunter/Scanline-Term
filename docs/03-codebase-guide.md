@@ -158,13 +158,13 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `blur(input, w, h, target, dx, dy, threshold, spread)` | Runs one separable Gaussian blur pass |
 | `clearPersistence()` | Clears both persistence FBOs to black |
 | `isValid()` | Returns `true` if WebGL resources are available |
-| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise GPU luma reduction → persistence → bloom/glow → specialized final CRT |
+| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise ping-ponged GPU luma reduction → screen-space persistence → bloom/glow → specialized final CRT |
 | `dispose()` | Deletes all WebGL resources |
 
 **Shader programs:**
 
 1. **CRT Main Fragment Shader** — curvature, HV breathing, Imperfect signal, hum-bar, channel switch roll, anti-moiré pixels, chromatic aberration, persistence trail overlay, bloom/halation, phosphor grain, scanlines (Sinc-integrated Fourier), beam modulation, screen glow, color mode conversion, vignette, brightness/contrast, selectable bezel spill/reflection
-2. **Accumulation Fragment Shader** — phosphor persistence: compares previous and current source frames, accumulates only extinguished light with decayed history, then applies desaturation and a quantization cutoff
+2. **Accumulation Fragment Shader** — phosphor persistence: compares previous and current rasters after curvature/HV Breathing, accumulates only extinguished light with decayed history, then applies desaturation and a quantization cutoff
 3. **Blur Fragment Shader** — 5-tap separable Gaussian, configurable threshold (bright-pass) and spread
 4. **Pass-through Fragment Shader** — raw terminal image with brightness/contrast only when CRT emulation is off
 
