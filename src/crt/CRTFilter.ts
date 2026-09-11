@@ -2,6 +2,7 @@ import type { ColorProfileId } from '../terminal-color-profiles';
 
 export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
 export type BloomAlgorithm = 'soft' | 'spiral';
+export type BezelGlowMode = 'spill' | 'reflection';
 export type CursorStyle = 'block' | 'underline' | 'bar';
 
 const PASSTHROUGH_FS = `
@@ -48,6 +49,7 @@ export interface CRTSettings {
   vignette: number; // 0.0 to 1.0
   phosphor: number; // 0.0 to 1.0 (Surface noise/lift)
   bezelGlow: boolean; // Optimization toggle
+  bezelGlowMode: BezelGlowMode;
   showBezel: boolean;
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   bloomAlgorithm: BloomAlgorithm;
@@ -60,6 +62,7 @@ export interface CRTSettings {
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
   ambientGlassLight: number; // 0.0 to 1.0 (Soft external illumination on the CRT glass)
+  bezelHighlight: number; // 0.0 to 1.0 (External light on the inner bezel facet)
   imperfectSignal: number; // 0.0 to 1.0 (Flicker, jitter and horizontal roll)
   humBar: number; // 0.0 to 1.0 (Travelling glowing hum bar)
   channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
@@ -68,8 +71,9 @@ export interface CRTSettings {
   cursorStyle: CursorStyle;
 }
 
-export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight'>>): number {
-  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0) | ((settings.ambientGlassLight ?? 0) > 0 ? 64 : 0);
+export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight' | 'bezelHighlight' | 'bezelGlow' | 'bezelGlowMode'>>): number {
+  const reflection = settings.bezelGlow && settings.bezelGlowMode === 'reflection';
+  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0) | ((settings.ambientGlassLight ?? 0) > 0 ? 64 : 0) | (reflection ? 128 : 0) | ((settings.bezelHighlight ?? 0) > 0 ? 256 : 0);
 }
 
 export class CRTFilter {
@@ -108,6 +112,7 @@ export class CRTFilter {
   breathingStrengthLocation: WebGLUniformLocation | null;
   lumaTextureLocation: WebGLUniformLocation | null;
   ambientGlassLightLocation: WebGLUniformLocation | null;
+  bezelHighlightLocation: WebGLUniformLocation | null;
   imperfectSignalLocation: WebGLUniformLocation | null;
   humBarLocation: WebGLUniformLocation | null;
   channelSwitchLocation: WebGLUniformLocation | null;
@@ -202,6 +207,7 @@ export class CRTFilter {
       this.breathingStrengthLocation = null;
       this.lumaTextureLocation = null;
       this.ambientGlassLightLocation = null;
+      this.bezelHighlightLocation = null;
       this.imperfectSignalLocation = null;
       this.humBarLocation = null;
       this.channelSwitchLocation = null;
@@ -244,6 +250,7 @@ export class CRTFilter {
     this.breathingStrengthLocation = null;
     this.lumaTextureLocation = null;
     this.ambientGlassLightLocation = null;
+    this.bezelHighlightLocation = null;
     this.imperfectSignalLocation = null;
     this.humBarLocation = null;
     this.channelSwitchLocation = null;
@@ -302,7 +309,9 @@ export class CRTFilter {
       .replace('#define ENABLE_IMPERFECT_SIGNAL 0', `#define ENABLE_IMPERFECT_SIGNAL ${(effectMask >> 3) & 1}`)
       .replace('#define ENABLE_HUM_BAR 0', `#define ENABLE_HUM_BAR ${(effectMask >> 4) & 1}`)
       .replace('#define ENABLE_CHANNEL_SWITCH 0', `#define ENABLE_CHANNEL_SWITCH ${(effectMask >> 5) & 1}`)
-      .replace('#define ENABLE_AMBIENT_GLASS 0', `#define ENABLE_AMBIENT_GLASS ${(effectMask >> 6) & 1}`);
+      .replace('#define ENABLE_AMBIENT_GLASS 0', `#define ENABLE_AMBIENT_GLASS ${(effectMask >> 6) & 1}`)
+      .replace('#define ENABLE_BEZEL_REFLECTION 0', `#define ENABLE_BEZEL_REFLECTION ${(effectMask >> 7) & 1}`)
+      .replace('#define ENABLE_BEZEL_HIGHLIGHT 0', `#define ENABLE_BEZEL_HIGHLIGHT ${(effectMask >> 8) & 1}`);
     const program = this.createProgram(gl, this.crtVsSource, source);
     if (!program) return;
     if (this.program) gl.deleteProgram(this.program);
@@ -331,6 +340,7 @@ export class CRTFilter {
     this.breathingStrengthLocation = gl.getUniformLocation(program, 'u_breathingStrength');
     this.lumaTextureLocation = gl.getUniformLocation(program, 'u_lumaTexture');
     this.ambientGlassLightLocation = gl.getUniformLocation(program, 'u_ambientGlassLight');
+    this.bezelHighlightLocation = gl.getUniformLocation(program, 'u_bezelHighlight');
     this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
     this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
     this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
@@ -392,6 +402,8 @@ export class CRTFilter {
             #define ENABLE_HUM_BAR 0
             #define ENABLE_CHANNEL_SWITCH 0
             #define ENABLE_AMBIENT_GLASS 0
+            #define ENABLE_BEZEL_REFLECTION 0
+            #define ENABLE_BEZEL_HIGHLIGHT 0
             uniform sampler2D u_image;
             uniform vec2 u_resolution;
             uniform float u_time;
@@ -413,6 +425,7 @@ export class CRTFilter {
             uniform float u_breathingStrength;
             uniform sampler2D u_lumaTexture;
             uniform float u_ambientGlassLight;
+            uniform float u_bezelHighlight;
             uniform float u_imperfectSignal;
             uniform float u_humBar;
             uniform float u_channelSwitch;
@@ -516,6 +529,26 @@ export class CRTFilter {
                       
                       vec3 finalColor = vec3(grey);
 
+                      #if ENABLE_BEZEL_HIGHLIGHT
+                      vec2 bezelDistance = max(vec2(0.0), max(0.0 - curvedUV, curvedUV - 1.0));
+                      float facetDistance = length(bezelDistance);
+                      float facetBand = smoothstep(0.0005, 0.0035, facetDistance) * (1.0 - smoothstep(0.0065, 0.025, facetDistance));
+                      float cornerFade = 1.0 - smoothstep(0.58, 0.94, min(abs(v_texCoord.x - 0.5), abs(v_texCoord.y - 0.5)) * 2.0);
+                      float highlightResponse = 1.0;
+                      if (u_breathingStrength > 0.0) highlightResponse = 0.65 + 0.6 * smoothstep(0.002, 0.06, texture2D(u_lumaTexture, vec2(0.5)).r);
+                      finalColor += vec3(0.38, 0.56, 0.72) * facetBand * cornerFade * u_bezelHighlight * highlightResponse;
+                      #endif
+
+                      #if ENABLE_BEZEL_REFLECTION
+                      vec2 mirroredUV = abs(curvedUV);
+                      mirroredUV = 1.0 - abs(1.0 - mirroredUV);
+                      vec3 reflection = texture2D(u_glowTexture, mirroredUV).rgb;
+                      float reflectionLuma = dot(reflection, vec3(0.2126, 0.7152, 0.0722));
+                      reflection = mix(reflection, vec3(reflectionLuma), 0.0);
+                      vec2 reflectionDistance = max(vec2(0.0), max(0.0 - curvedUV, curvedUV - 1.0));
+                      float reflectionFade = 1.0 - smoothstep(0.0, 0.25, length(reflectionDistance));
+                      finalColor += reflection * 0.6 * reflectionFade;
+                      #else
                       // BEZEL GLOW (Single Pass - 16 Tap Spiral Blur)
                       // No FBO. No Multi-Texture. We sample u_image directly.
                       if (u_bezelGlow > 0.5) {
@@ -559,6 +592,7 @@ export class CRTFilter {
                            glow = max(applyColorMode(pow(glow, vec3(1.7))), applyColorMode(vec3(0.002, 0.007, 0.004)));
                            finalColor += glow * 2.2 * fade;
                       }
+                      #endif
 
                      gl_FragColor = vec4(finalColor, 1.0);
                      return;
@@ -1111,10 +1145,12 @@ export class CRTFilter {
     const bloom = settings.bloom || 0.0;
     const glow = settings.glow || 0.0;
     const ambientGlassLight = settings.ambientGlassLight || 0.0;
+    const bezelHighlight = settings.bezelHighlight || 0.0;
+    const bezelReflection = settings.bezelGlow && settings.bezelGlowMode === 'reflection';
     const imperfectSignal = settings.imperfectSignal || 0.0;
     const humBar = settings.humBar || 0.0;
     const channelSwitchEffect = settings.channelSwitchEffect;
-    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, ambientGlassLight, imperfectSignal, humBar, channelSwitchEffect }));
+    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, bezelGlow: settings.bezelGlow, bezelGlowMode: settings.bezelGlowMode, ambientGlassLight, bezelHighlight, imperfectSignal, humBar, channelSwitchEffect }));
     if (!this.program) return;
 
     let activeInputTexture = this.texture;
@@ -1173,7 +1209,7 @@ export class CRTFilter {
     let bloomTexture = this.texture;
     let glowTexture = this.texture;
     const legacyBloom = settings.bloomAlgorithm === 'spiral';
-    if (((bloom > 0.0 && !legacyBloom) || glow > 0.0) && this.blurProgram) {
+    if (((bloom > 0.0 && !legacyBloom) || glow > 0.0 || bezelReflection) && this.blurProgram) {
       const width = Math.max(1, Math.floor(sourceCanvas.width * this.glowResolutionScale));
       const height = Math.max(1, Math.floor(sourceCanvas.height * this.glowResolutionScale));
       if (this.ensureGlowFBO(width, height) && this.bloomFboA && this.bloomFboB && this.bloomTexA && this.bloomTexB) {
@@ -1182,13 +1218,15 @@ export class CRTFilter {
           this.blur(this.bloomTexA, width, height, this.bloomFboB, 0, 1, 0.0, 1);
           bloomTexture = this.bloomTexB;
         }
-        if (glow > 0.0 && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
+        if ((glow > 0.0 || bezelReflection) && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
           // Two small separable passes approximate a wide Gaussian without sparse ghost copies.
           // Keep dark profile backgrounds out of the Glow source; only image pixels should emit light.
           this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.08, 1.5);
           this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
-          this.blur(this.glowTexB, width, height, this.glowFboA, 1, 0, 0.0, 1.5);
-          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
+          if (glow > 0.0 || bezelReflection) {
+            this.blur(this.glowTexB, width, height, this.glowFboA, 1, 0, 0.0, 1.5);
+            this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
+          }
           glowTexture = this.glowTexB;
         }
       }
@@ -1230,6 +1268,7 @@ export class CRTFilter {
     if (this.bloomAlgorithmLocation) gl.uniform1f(this.bloomAlgorithmLocation, legacyBloom ? 1.0 : 0.0);
     if (this.glowLocation) gl.uniform1f(this.glowLocation, glow);
     if (this.ambientGlassLightLocation) gl.uniform1f(this.ambientGlassLightLocation, ambientGlassLight);
+    if (this.bezelHighlightLocation) gl.uniform1f(this.bezelHighlightLocation, bezelHighlight);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
     if (this.imperfectSignalLocation) gl.uniform1f(this.imperfectSignalLocation, imperfectSignal);

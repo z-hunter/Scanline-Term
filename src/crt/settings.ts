@@ -1,4 +1,4 @@
-import type { BloomAlgorithm, CRTColorMode, CRTSettings, CursorStyle } from './CRTFilter';
+import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTSettings, CursorStyle } from './CRTFilter';
 import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
 
 export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
@@ -13,6 +13,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   vignette: 0.5,
   phosphor: 1,
   bezelGlow: true,
+  bezelGlowMode: 'spill',
   showBezel: false,
   bloom: 0.1,
   bloomAlgorithm: 'spiral',
@@ -25,6 +26,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   beamModulation: 0.5,
   breathing: 1,
   ambientGlassLight: 0,
+  bezelHighlight: 0.35,
   imperfectSignal: 0,
   humBar: 0,
   channelSwitchEffect: true,
@@ -81,6 +83,7 @@ const numericRanges = {
   beamModulation: [0, 1],
   breathing: [0, 1],
   ambientGlassLight: [0, 1],
+  bezelHighlight: [0, 1],
   imperfectSignal: [0, 1],
   humBar: [0, 1],
 } as const;
@@ -92,6 +95,7 @@ const isColorMode = (value: unknown): value is CRTColorMode =>
   value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
 
 const isBloomAlgorithm = (value: unknown): value is BloomAlgorithm => value === 'soft' || value === 'spiral';
+const isBezelGlowMode = (value: unknown): value is BezelGlowMode => value === 'spill' || value === 'reflection';
 
 const isCursorStyle = (value: unknown): value is CursorStyle =>
   value === 'block' || value === 'underline' || value === 'bar';
@@ -148,6 +152,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       }
     }
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
+    if (isBezelGlowMode(value.crt.bezelGlowMode)) result.crt.bezelGlowMode = value.crt.bezelGlowMode;
     if (typeof value.crt.showBezel === 'boolean') result.crt.showBezel = value.crt.showBezel;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
     if (typeof value.crt.channelSwitchEffect === 'boolean') result.crt.channelSwitchEffect = value.crt.channelSwitchEffect;

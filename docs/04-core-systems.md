@@ -230,8 +230,9 @@ if (settings.crtEmulation && settings.curvature > 0) {
   v = y / 2 + 0.5;
 }
 const cell = fontCellSize(...);
-col = Math.floor((u * source.width - padding) / cell.width) + 1;
-row = Math.floor((v * source.height - padding) / cell.height) + 1;
+const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cell);
+col = Math.floor((u * source.width - offset.x) / cell.width) + 1;
+row = Math.floor((v * source.height - offset.y) / cell.height) + 1;
 ```
 
 The inline TypeScript mapping matches the shader's `curve()` formula. Selection and terminal mouse input therefore follow the visible curvature back into source-canvas coordinates.
@@ -348,7 +349,7 @@ The main fragment shader applies all visual effects in order:
 ```
 1. CRT Emulation bypass check (if disabled → simple brightness/contrast only)
 2. Curvature distortion (barrel/pincushion)
-3. Bezel detection → bezel glow rendering (16-tap spiral blur if outside screen)
+3. Bezel detection → selected bezel treatment: 16-tap phosphor spill or blurred screen reflection
 4. HV Breathing raster expansion
 5. Imperfect signal UV distortion
 6. Hum-bar UV position
@@ -375,6 +376,12 @@ HV Breathing drives raster expansion from a GPU reduction of the actual source t
 ### Ambient Glass Light
 
 Ambient Glass Light is a static, soft external illumination across the centre of the curved screen, modelled after cool-retro-term's `Ambient Light`. It is independent of terminal content, bloom, and glow. A 0–1 control blends a pale glass-light mask that smoothly fades toward the screen edges; at zero its shader branch is compiled out.
+
+### Bezel Glow Modes
+
+`Phosphor spill` is the original 16-tap local halo sampled from the source image. `Screen reflection` mirrors a softened, moderately desaturated reduced-resolution bright screen texture into the curved matte bezel, like the cool-retro-term frame-shininess effect. It uses the same four half-resolution blur passes as Screen glow, reusing that texture whenever glow is enabled.
+
+`Bezel highlight` is separate: a cool external-light band on the inner plastic facet. Its geometric mask fades toward corners and is independent of reflection mode and blur passes. With HV Breathing enabled, the existing GPU average-luma texture gently modulates it from 0.65× to 1.25×; otherwise it stays at the selected strength and does not enable luma reduction.
 
 ### Signal Effects
 
@@ -448,6 +455,8 @@ rows = clamp(floor((height - 2*padding) / cellHeight), 8, 150)
 ```
 
 These limits match the Rust validation in `pty_size()`: cols ∈ [20, 300], rows ∈ [8, 150].
+
+After the dimensions are rounded down to whole cells, the renderer centres the resulting grid in the source canvas. The remaining pixels are therefore shared between opposite bezel edges instead of all accumulating below and to the right.
 
 ### Virtual vs Physical Resolution
 

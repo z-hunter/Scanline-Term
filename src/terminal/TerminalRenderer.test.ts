@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, terminalAverageColor, terminalAverageLuma, TerminalRenderer } from './TerminalRenderer';
+import { fontCellSize, terminalAverageColor, terminalAverageLuma, terminalContentOffset, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('TerminalRenderer', () => {
+  it('centers the rendered grid after cell dimensions are rounded', () => {
+    expect(terminalContentOffset(100, 103, 8, 8, { width: 10, height: 10 })).toEqual({ x: 10, y: 11 });
+  });
+
   it('uses window pixels for aspect-constrained physical modes', () => {
     const output = document.createElement('canvas'); output.width = 1234; output.height = 567;
     for (const id of ['physical-4x3', 'physical-8x5']) {

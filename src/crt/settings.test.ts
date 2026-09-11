@@ -18,6 +18,7 @@ describe('CRT settings', () => {
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 1, channelSwitchEffect: false })).toBe(16);
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: true })).toBe(32);
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, ambientGlassLight: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(64);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, bezelHighlight: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(256);
   });
 
   it('keeps final image correction out of HV breathing geometry', () => {
@@ -39,6 +40,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.imperfectSignal).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.humBar).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.ambientGlassLight).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.bezelHighlight).toBe(0.35);
     expect(DEFAULT_CRT_SETTINGS.channelSwitchEffect).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
@@ -184,8 +186,18 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { ambientGlassLight: 2 } })).crt.ambientGlassLight).toBe(0);
   });
 
+  it('accepts bezel highlight strength only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelHighlight: 0.4 } })).crt.bezelHighlight).toBe(0.4);
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelHighlight: 2 } })).crt.bezelHighlight).toBe(0.35);
+  });
+
   it('preserves the channel switch roll switch', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { channelSwitchEffect: false } })).crt.channelSwitchEffect).toBe(false);
+  });
+
+  it('preserves bezel glow mode and rejects unknown values', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelGlowMode: 'reflection' } })).crt.bezelGlowMode).toBe('reflection');
+    expect(loadStoredSettings(JSON.stringify({ crt: { bezelGlowMode: 'invalid' } })).crt.bezelGlowMode).toBe('spill');
   });
 
   it('accepts valid cursor styles and falls back to block on invalid values', () => {
