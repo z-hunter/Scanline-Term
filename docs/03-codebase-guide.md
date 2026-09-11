@@ -142,7 +142,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 - `CRTColorMode` — `'color' | 'bw' | 'green' | 'amber' | 'blue'`
 - `BloomAlgorithm` — `'soft' | 'spiral'`
 - `CursorStyle` — `'block' | 'underline' | 'bar'`
-- `CRTSettings` — Full interface with 25 fields
+- `CRTSettings` — Full interface with CRT controls, including Imperfect signal, Hum-bar, and Channel switch roll
 - `persistenceDecay(persistence, elapsedSeconds)` — Calculates FBO decay factor and quantization cutoff
 
 **Class: `CRTFilter`**
@@ -150,7 +150,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | Method | Purpose |
 |--------|---------|
 | `constructor(canvas)` | Acquires WebGL context, calls `init()` |
-| `init()` | Compiles the initial CRT variant plus accumulation and blur programs; the final shader is specialized when Trail, Bloom, or Glow are toggled |
+| `init()` | Compiles the initial CRT variant plus accumulation and blur programs; the final shader is specialized when Trail, Bloom, Glow, or signal effects are toggled |
 | `createShader(gl, type, source)` | Compiles a single GLSL shader |
 | `createProgram(gl, vsSource, fsSource)` | Links a vertex+fragment program |
 | `ensureFBO(width, height)` | Creates/resizes ping-pong FBOs for persistence |
@@ -158,12 +158,12 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `blur(input, w, h, target, dx, dy, threshold, spread)` | Runs one separable Gaussian blur pass |
 | `clearPersistence()` | Clears both persistence FBOs to black |
 | `isValid()` | Returns `true` if WebGL resources are available |
-| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise persistence → bloom/glow → specialized final CRT |
+| `render(sourceCanvas, settings, sourceChanged, sourceLuma)` | Main render entry — direct pass-through with CRT off, otherwise persistence → bloom/glow → specialized final CRT; source luma drives HV breathing |
 | `dispose()` | Deletes all WebGL resources |
 
 **Shader programs:**
 
-1. **CRT Main Fragment Shader** — curvature, anti-moiré pixels, chromatic aberration, persistence trail overlay, bloom/halation, phosphor grain, scanlines (Sinc-integrated Fourier), beam modulation, screen glow, color mode conversion, vignette, brightness/contrast, bezel glow
+1. **CRT Main Fragment Shader** — curvature, HV breathing, Imperfect signal, hum-bar, channel switch roll, anti-moiré pixels, chromatic aberration, persistence trail overlay, bloom/halation, phosphor grain, scanlines (Sinc-integrated Fourier), beam modulation, screen glow, color mode conversion, vignette, brightness/contrast, bezel glow
 2. **Accumulation Fragment Shader** — phosphor persistence: blends current frame with decayed history, desaturation, quantization cutoff
 3. **Blur Fragment Shader** — 5-tap separable Gaussian, configurable threshold (bright-pass) and spread
 4. **Pass-through Fragment Shader** — raw terminal image with brightness/contrast only when CRT emulation is off

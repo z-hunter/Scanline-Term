@@ -62,11 +62,11 @@ export function browserTabColor(value: string): TabColor | null {
   return { background: `#${normalized.toLowerCase()}`, foreground: luminance > 150 ? '#101a14' : '#d7f5df' };
 }
 
-export function useTerminal({ settings, defaultShell = '', shells = [], resolution, onError, onToggleSettings, onToggleAi }: { settings: CRTSettings; defaultShell?: string; shells?: ShellInfo[]; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void }) {
+export function useTerminal({ settings, defaultShell = '', shells = [], resolution, onError, onToggleSettings, onToggleAi, onTerminalTabTransition }: { settings: CRTSettings; defaultShell?: string; shells?: ShellInfo[]; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void; onTerminalTabTransition?: () => void }) {
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
-  const settingsRef = useRef(settings); const defaultShellRef = useRef(defaultShell); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError);
-  settingsRef.current = settings; defaultShellRef.current = defaultShell; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError;
+  const settingsRef = useRef(settings); const defaultShellRef = useRef(defaultShell); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null);
+  settingsRef.current = settings; defaultShellRef.current = defaultShell; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const refreshTabColor = useCallback((id: string) => {
     if (colorFrames.current.has(id)) return;
@@ -79,17 +79,28 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     });
     colorFrames.current.set(id, frame);
   }, [updateTab]);
-  const selectSession = useCallback((id: string) => {
+  const selectSession = useCallback((id: string, animate = true) => {
+    if (id === activeRef.current) return;
+    const record = sessions.current.get(id);
+    if (animate && record && sessions.current.has(activeRef.current ?? '') && settingsRef.current.channelSwitchEffect && onTerminalTabTransitionRef.current) {
+      if (pendingSelection.current !== null) window.clearTimeout(pendingSelection.current);
+      onTerminalTabTransitionRef.current();
+      pendingSelection.current = window.setTimeout(() => {
+        pendingSelection.current = null;
+        selectSession(id, false);
+      }, 150);
+      return;
+    }
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
     activeRef.current = id; setActiveTabId(id);
-    const record = sessions.current.get(id); if (!record) { setLive(false); renderer.current!.setSelection(null); return; }
+    if (!record) { setLive(false); renderer.current!.setSelection(null); return; }
     renderer.current!.bindTerminal(record.session.terminal); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
   }, []);
   const openSession = useCallback((launch?: TerminalLaunch) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(settingsRef.current.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
-    sessions.current.set(id, { tab, session, inputLocked: false }); setTabs((current) => [...current, tab]); selectSession(id);
+    sessions.current.set(id, { tab, session, inputLocked: false }); setTabs((current) => [...current, tab]); selectSession(id, false);
     const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
@@ -101,7 +112,7 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc' };
-    setTabs((current) => [...current, tab]); selectSession(id);
+    setTabs((current) => [...current, tab]); selectSession(id, false);
     if (!url) { setAddressTabId(id); return; }
     void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [onError, selectSession, updateTab]);
@@ -167,6 +178,7 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     return () => {
       active = false;
       window.clearTimeout(start);
+      if (pendingSelection.current !== null) window.clearTimeout(pendingSelection.current);
       for (const frame of cleanupFrames.values()) window.cancelAnimationFrame(frame);
       cleanupFrames.clear();
       for (const { session } of activeSessions.values()) void session.close().catch((reason) => onErrorRef.current(`Terminal close failed: ${String(reason)}`));
@@ -192,7 +204,7 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
         session.terminal.options.cursorStyle = settings.cursorStyle;
       }
     }
-  }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize, settings.cursorStyle]);
+  }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize, settings.cursorStyle, settings.breathing]);
   useEffect(() => {
     const reopenAddress = (event: KeyboardEvent) => {
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');

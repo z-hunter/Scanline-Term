@@ -24,6 +24,9 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   backgroundDesaturation: 0.5,
   beamModulation: 0.5,
   breathing: 1,
+  imperfectSignal: 0,
+  humBar: 0,
+  channelSwitchEffect: true,
   antiAliasedPixels: true,
   colorMode: 'color',
   cursorStyle: 'block',
@@ -76,6 +79,8 @@ const numericRanges = {
   backgroundDesaturation: [0, 1],
   beamModulation: [0, 1],
   breathing: [0, 1],
+  imperfectSignal: [0, 1],
+  humBar: [0, 1],
 } as const;
 
 const isResolution = (value: unknown): value is ResolutionId =>
@@ -143,6 +148,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.bezelGlow === 'boolean') result.crt.bezelGlow = value.crt.bezelGlow;
     if (typeof value.crt.showBezel === 'boolean') result.crt.showBezel = value.crt.showBezel;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
+    if (typeof value.crt.channelSwitchEffect === 'boolean') result.crt.channelSwitchEffect = value.crt.channelSwitchEffect;
     if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.consoleFont === 'string' && value.crt.consoleFont.length > 0 && value.crt.consoleFont.length <= 128) {

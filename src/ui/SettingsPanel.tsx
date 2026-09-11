@@ -14,6 +14,7 @@ type NumericKey = Exclude<
   | 'bezelGlow'
   | 'showBezel'
   | 'antiAliasedPixels'
+  | 'channelSwitchEffect'
   | 'colorMode'
   | 'bloomAlgorithm'
   | 'cursorStyle'
@@ -37,13 +38,15 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
     { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   'Final image': [
-    { key: 'imageBrightness', label: 'Image brightness', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'imageContrast', label: 'Image contrast', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'imageBrightness', label: 'Brightness', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'imageContrast', label: 'Contrast', min: 0.5, max: 1.5, step: 0.05 },
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
     { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 4, step: 0.05 },
     { key: 'breathing', label: 'HV breathing', min: 0, max: 1, step: 0.05 },
+    { key: 'imperfectSignal', label: 'Imperfect signal', min: 0, max: 1, step: 0.05 },
+    { key: 'humBar', label: 'Hum-bar', min: 0, max: 1, step: 0.05 },
   ],
 };
 
@@ -150,7 +153,7 @@ export function SettingsPanel({
   const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setFontSizeInput(value);
-    
+
     const parsed = /^[+-]?\d+$/.test(value.trim()) ? parseInt(value.trim(), 10) : NaN;
     if (!Number.isNaN(parsed) && parsed >= 6 && parsed <= 32) {
       setStored((current) => ({
@@ -371,6 +374,16 @@ export function SettingsPanel({
                 })}
               </fieldset>
             ))}
+            <Switch
+              label="Channel switch roll"
+              checked={stored.crt.channelSwitchEffect}
+              onChange={(checked) =>
+                setStored((current) => ({
+                  ...current,
+                  crt: { ...current.crt, channelSwitchEffect: checked },
+                }))
+              }
+            />
           </div>
         )}
       </fieldset>
@@ -476,7 +489,7 @@ export function SettingsPanel({
           </select>
         </label>
         <Switch
-          label="Check & install updates"
+          label="Check for updates automatically"
           checked={stored.autoUpdateEnabled}
           onChange={(checked) =>
             setStored((current) => ({ ...current, autoUpdateEnabled: checked }))

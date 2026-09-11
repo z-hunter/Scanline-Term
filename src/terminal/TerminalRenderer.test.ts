@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, terminalAverageColor, TerminalRenderer } from './TerminalRenderer';
+import { fontCellSize, terminalAverageColor, terminalAverageLuma, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -22,7 +22,9 @@ describe('TerminalRenderer', () => {
     const rows = [[cell('A'), cell('B')], [cell('C'), cell('D')]]; let parsed = () => {};
     const terminal = { cols: 2, rows: 2, options: {}, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell(''), getLine: (row: number) => ({ getCell: (column: number) => rows[row]?.[column] }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
     const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+    expect(renderer.hasMeasuredLuma).toBe(false);
     expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true); context.fillText.mockClear();
+    expect(renderer.hasMeasuredLuma).toBe(true);
     rows[0][0] = cell('X'); parsed();
     expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
     expect(context.fillText).toHaveBeenCalledTimes(2);
@@ -49,6 +51,7 @@ describe('TerminalRenderer', () => {
     const cell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0xffffff, isFgRGB: () => false, isBgRGB: () => true, isFgPalette: () => false, isBgPalette: () => false };
     const terminal = { cols: 2, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } } };
     expect(terminalAverageColor(terminal as never, colorProfile('dos-vga'))).toEqual({ background: '#ffffff', foreground: '#101a14' });
+    expect(terminalAverageLuma(terminal as never, colorProfile('dos-vga'))).toBeCloseTo(1);
   });
 
   it('swaps foreground and background for inverse cells when calculating average color', () => {

@@ -21,7 +21,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       ctx2d = output.getContext('2d', { alpha: false });
     }
 
-    let raf = 0; let reported = false; let count = 0; let started = performance.now(); 
+    let raf = 0; let reported = false; let breathingPrimed = false; let count = 0; let started = performance.now();
     
     const resize = () => { 
       const rect = output.getBoundingClientRect(); 
@@ -39,7 +39,8 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
         const changed = renderer.draw(now / 1000, settingsRef.current); 
         if (filter) {
           if (!filter.isValid() && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); } 
-          if (filter.isValid()) filter.render(renderer.sourceCanvas, settingsRef.current, changed); 
+          if (!breathingPrimed && renderer.hasMeasuredLuma) { filter.restartBreathing(); breathingPrimed = true; }
+          if (filter.isValid()) filter.render(renderer.sourceCanvas, settingsRef.current, changed, renderer.averageLuma);
         } else if (ctx2d) {
           if (changed) {
             ctx2d.imageSmoothingEnabled = settingsRef.current.antiAliasedPixels !== false;
@@ -66,5 +67,6 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
   }, [onError, onResizeSource, renderer, settings.crtEmulation]);
   useEffect(() => { filterRef.current?.clearPersistence(); }, [resolution]);
   const clearPersistence = useCallback(() => filterRef.current?.clearPersistence(), []);
-  return { outputRef, fps, renderStats, clearPersistence };
+  const startChannelSwitch = useCallback(() => filterRef.current?.startChannelSwitch(), []);
+  return { outputRef, fps, renderStats, clearPersistence, startChannelSwitch };
 }

@@ -14,7 +14,7 @@
 | FPS drops to ~30 | WebGL software rendering | Check `edge://gpu` in a browser; look for "Software only" | Update GPU drivers; ensure hardware acceleration is enabled in WebView2 |
 | Input feels laggy | `write_terminal` invocations backing up | Add `console.log` before `invoke('write_terminal')` | Check if ConPTY session is alive; verify writer thread isn't blocked |
 | Typing latency on rapid keystrokes | Every keydown generates an `invoke()` IPC call | Profile with DevTools Performance tab | This is inherent to the architecture; Win32 Input Mode adds keyup events too |
-| Breathing effect causes jank | `getImageData()` reads back the source canvas every frame | Profile CPU; breathing samples 64 grid pixels | Reduce breathing intensity or set to 0 when not needed |
+| HV breathing is weak on a dark terminal | The effect follows the terminal buffer's average luma | Use bright output or increase the HV breathing control | No canvas CPU readback is performed |
 
 ### Console / ConPTY
 

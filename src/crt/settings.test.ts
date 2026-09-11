@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { averageImageLuma, breathingExpansion, crtEffectMask, persistenceDecay } from './CRTFilter';
+import { breathingExpansion, channelSwitchProgress, crtEffectMask, persistenceDecay } from './CRTFilter';
 import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
@@ -9,23 +9,25 @@ describe('CRT settings', () => {
   });
 
   it('compiles only the enabled heavy CRT effects', () => {
-    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0 })).toBe(0);
-    expect(crtEffectMask({ persistence: 1, bloom: 0, glow: 0 })).toBe(1);
-    expect(crtEffectMask({ persistence: 0, bloom: 1, glow: 0 })).toBe(2);
-    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 1 })).toBe(4);
-    expect(crtEffectMask({ persistence: 1, bloom: 1, glow: 1 })).toBe(7);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(0);
+    expect(crtEffectMask({ persistence: 1, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(1);
+    expect(crtEffectMask({ persistence: 0, bloom: 1, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(2);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(4);
+    expect(crtEffectMask({ persistence: 1, bloom: 1, glow: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(7);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 1, humBar: 0, channelSwitchEffect: false })).toBe(8);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 1, channelSwitchEffect: false })).toBe(16);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: true })).toBe(32);
   });
 
   it('keeps final image correction out of HV breathing geometry', () => {
-    expect(breathingExpansion(0.5, 1)).toBeCloseTo(0.023);
+    expect(breathingExpansion(0.5, 1)).toBeCloseTo(0.0276);
+    expect(breathingExpansion(Number.NaN, 1)).toBeCloseTo(0.010272);
   });
 
-  it('samples the whole image rather than one linear stripe', () => {
-    const pixels = new Uint8ClampedArray(16 * 16 * 4);
-    pixels[((15 * 16 + 15) * 4)] = 255;
-    pixels[((15 * 16 + 15) * 4) + 1] = 255;
-    pixels[((15 * 16 + 15) * 4) + 2] = 255;
-    expect(averageImageLuma(pixels, 16, 16)).toBeGreaterThan(0);
+  it('eases the channel switch roll to a complete screen turn', () => {
+    expect(channelSwitchProgress(100, 100)).toBe(0);
+    expect(channelSwitchProgress(100, 310)).toBe(0.5);
+    expect(channelSwitchProgress(100, 520)).toBe(1);
   });
 
   it('keeps default CRT parameters without the removed hum setting', () => {
@@ -33,6 +35,9 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(120);
     expect(DEFAULT_CRT_SETTINGS.scanlineIntensity).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.beamModulation).toBe(0.5);
+    expect(DEFAULT_CRT_SETTINGS.imperfectSignal).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.humBar).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.channelSwitchEffect).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
     expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(1.8);
@@ -44,7 +49,6 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.cursorStyle).toBe('block');
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
-    expect('humBar' in DEFAULT_CRT_SETTINGS).toBe(false);
   });
 
   it('rejects corrupt values and falls back to VGA', () => {
@@ -161,6 +165,20 @@ describe('CRT settings', () => {
     expect(loaded.crt.imageBrightness).toBe(1.25);
     expect(loaded.crt.imageContrast).toBe(0.75);
     expect(loaded.crt.backgroundDesaturation).toBe(0.6);
+  });
+
+  it('accepts imperfect signal strength only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { imperfectSignal: 0.4 } })).crt.imperfectSignal).toBe(0.4);
+    expect(loadStoredSettings(JSON.stringify({ crt: { imperfectSignal: 2 } })).crt.imperfectSignal).toBe(0);
+  });
+
+  it('accepts hum-bar strength only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { humBar: 0.4 } })).crt.humBar).toBe(0.4);
+    expect(loadStoredSettings(JSON.stringify({ crt: { humBar: 2 } })).crt.humBar).toBe(0);
+  });
+
+  it('preserves the channel switch roll switch', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { channelSwitchEffect: false } })).crt.channelSwitchEffect).toBe(false);
   });
 
   it('accepts valid cursor styles and falls back to block on invalid values', () => {

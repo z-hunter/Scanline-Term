@@ -59,6 +59,11 @@ export function terminalAverageColor(terminal: Terminal, profile: TerminalColorP
   return { background, foreground: luminance > 145 ? '#101a14' : '#d7f5df' };
 }
 
+export function terminalAverageLuma(terminal: Terminal, profile: TerminalColorProfile): number {
+  const [red, green, blue] = rgb(terminalAverageColor(terminal, profile).background);
+  return (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255;
+}
+
 export class TerminalRenderer {
   readonly sourceCanvas = document.createElement('canvas');
   private terminal: Terminal | null = null;
@@ -70,9 +75,11 @@ export class TerminalRenderer {
   private cursorRow: number | null = null;
   private disposables: { dispose(): void }[] = [];
   private stats: RenderStats = { redraws: 0, canvasMs: 0, glyphs: 0 };
+  private sourceLuma = 0.12;
+  private hasMeasuredSourceLuma = false;
 
   bindTerminal(terminal: Terminal | null): void {
-    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.markDirty();
+    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.markDirty();
     if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markTerminalDirty()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
@@ -84,6 +91,8 @@ export class TerminalRenderer {
   setFocused(focused: boolean): void { if (this.focused === focused) return; this.focused = focused; this.markDirty(); }
   markDirty(): void { this.dirty = true; this.fullDirty = true; }
   private markTerminalDirty(): void { this.dirty = true; }
+  get averageLuma(): number { return this.sourceLuma; }
+  get hasMeasuredLuma(): boolean { return this.hasMeasuredSourceLuma; }
   consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
   setSelection(selection: CopySelection | null): void { this.selection = selection; this.markDirty(); }
   cellAtPoint(clientX: number, clientY: number, output: HTMLCanvasElement, settings: CRTSettings) {
@@ -125,6 +134,7 @@ export class TerminalRenderer {
         ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
       }
     }
+    if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile); this.hasMeasuredSourceLuma = true; }
     this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
   }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {

@@ -147,6 +147,10 @@ Run: `cd src-tauri && cargo test`
 - [ ] Persistence: enable trail, type rapidly, verify afterglow appears and decays
 - [ ] Bloom: increase bloom, verify bright areas glow (test both soft and spiral algorithms)
 - [ ] Glow: increase screen glow, verify diffuse light overlay
+- [ ] HV breathing: starts immediately after the first terminal frame and reacts to brighter output
+- [ ] Imperfect signal: increase strength, verify subtle flicker, jitter and non-uniform rolling waves; set to 0 and verify no shader work for it
+- [ ] Hum-bar: increase strength, verify a glowing top-to-bottom band with no line tearing
+- [ ] Channel switch roll: switch terminal tabs; old source rolls first, new source joins after a short delay, and phosphor afterglow crosses the transition; disable it and verify instant switching
 - [ ] Color modes: switch through Color/B&W/Green/Amber/Blue
 - [ ] Bezel: toggle bezel glow, toggle monitor frame
 - [ ] Anti-moiré: toggle, verify difference at low virtual resolutions

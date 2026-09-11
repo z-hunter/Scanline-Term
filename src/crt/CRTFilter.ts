@@ -27,21 +27,13 @@ export function persistenceDecay(persistence: number, elapsedSeconds: number): {
 }
 
 export function breathingExpansion(luma: number, strength: number): number {
-  return (0.004 + luma * 0.038) * strength;
+  const safeLuma = Number.isFinite(luma) ? Math.min(1, Math.max(0, luma)) : 0.12;
+  return (0.004 + safeLuma * 0.038) * 1.2 * strength;
 }
 
-export function averageImageLuma(data: Uint8ClampedArray, width: number, height: number): number {
-  let sum = 0;
-  let count = 0;
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      const pixel = ((Math.floor((y + 0.5) * height / 8) * width) + Math.floor((x + 0.5) * width / 8)) * 4;
-      const luma = (data[pixel] * 0.2126 + data[pixel + 1] * 0.7152 + data[pixel + 2] * 0.0722) / 255;
-      sum += luma;
-      count++;
-    }
-  }
-  return count ? sum / count : 0;
+export function channelSwitchProgress(startedAt: number, now: number): number {
+  const t = Math.min(1, Math.max(0, (now - startedAt) / 420));
+  return t * t * (3 - 2 * t);
 }
 
 export interface CRTSettings {
@@ -67,13 +59,16 @@ export interface CRTSettings {
   backgroundDesaturation: number; // 0.0 to 1.0 (Monochrome background texture only)
   beamModulation: number; // 0.0 to 1.0 (Dynamically widens electron beam on bright pixels)
   breathing: number; // 0.0 to 1.0 (High Voltage Anode Breathing / Raster Bloom)
+  imperfectSignal: number; // 0.0 to 1.0 (Flicker, jitter and horizontal roll)
+  humBar: number; // 0.0 to 1.0 (Travelling glowing hum bar)
+  channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
   antiAliasedPixels: boolean; // Anti-Moiré sharp pixel filter (Bandlimited Box Integration)
   colorMode: CRTColorMode;
   cursorStyle: CursorStyle;
 }
 
-export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow'>): number {
-  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0);
+export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'>): number {
+  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0);
 }
 
 export class CRTFilter {
@@ -110,6 +105,9 @@ export class CRTFilter {
   persistenceIntensityLocation: WebGLUniformLocation | null;
   beamModulationLocation: WebGLUniformLocation | null;
   breathingScaleLocation: WebGLUniformLocation | null;
+  imperfectSignalLocation: WebGLUniformLocation | null;
+  humBarLocation: WebGLUniformLocation | null;
+  channelSwitchLocation: WebGLUniformLocation | null;
   imageLocation: WebGLUniformLocation | null;
 
   smoothedExpansion: number = 0;
@@ -159,6 +157,7 @@ export class CRTFilter {
   private crtFsSource = '';
   private crtEffectMask = Number.NaN;
   private persistenceActive = false;
+  private channelSwitchStartedAt = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -192,6 +191,9 @@ export class CRTFilter {
       this.persistenceIntensityLocation = null;
       this.beamModulationLocation = null;
       this.breathingScaleLocation = null;
+      this.imperfectSignalLocation = null;
+      this.humBarLocation = null;
+      this.channelSwitchLocation = null;
       this.imageLocation = null;
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
@@ -229,6 +231,9 @@ export class CRTFilter {
     this.persistenceIntensityLocation = null;
     this.beamModulationLocation = null;
     this.breathingScaleLocation = null;
+    this.imperfectSignalLocation = null;
+    this.humBarLocation = null;
+    this.channelSwitchLocation = null;
     this.imageLocation = null;
     this.colorModeLocation = null;
     this.crtEmulationLocation = null;
@@ -280,7 +285,10 @@ export class CRTFilter {
     const source = effectMask < 0 ? PASSTHROUGH_FS : this.crtFsSource
       .replace('#define ENABLE_TRAIL 0', `#define ENABLE_TRAIL ${effectMask & 1}`)
       .replace('#define ENABLE_BLOOM 0', `#define ENABLE_BLOOM ${(effectMask >> 1) & 1}`)
-      .replace('#define ENABLE_GLOW 0', `#define ENABLE_GLOW ${(effectMask >> 2) & 1}`);
+      .replace('#define ENABLE_GLOW 0', `#define ENABLE_GLOW ${(effectMask >> 2) & 1}`)
+      .replace('#define ENABLE_IMPERFECT_SIGNAL 0', `#define ENABLE_IMPERFECT_SIGNAL ${(effectMask >> 3) & 1}`)
+      .replace('#define ENABLE_HUM_BAR 0', `#define ENABLE_HUM_BAR ${(effectMask >> 4) & 1}`)
+      .replace('#define ENABLE_CHANNEL_SWITCH 0', `#define ENABLE_CHANNEL_SWITCH ${(effectMask >> 5) & 1}`);
     const program = this.createProgram(gl, this.crtVsSource, source);
     if (!program) return;
     if (this.program) gl.deleteProgram(this.program);
@@ -307,6 +315,9 @@ export class CRTFilter {
     this.persistenceIntensityLocation = gl.getUniformLocation(program, 'u_persistenceIntensity');
     this.beamModulationLocation = gl.getUniformLocation(program, 'u_beamModulation');
     this.breathingScaleLocation = gl.getUniformLocation(program, 'u_breathingScale');
+    this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
+    this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
+    this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
     this.sourceResolutionLocation = gl.getUniformLocation(program, 'u_sourceResolution');
     this.antiAliasedPixelsLocation = gl.getUniformLocation(program, 'u_antiAliasedPixels');
     this.colorModeLocation = gl.getUniformLocation(program, 'u_colorMode');
@@ -361,6 +372,9 @@ export class CRTFilter {
             #define ENABLE_TRAIL 0
             #define ENABLE_BLOOM 0
             #define ENABLE_GLOW 0
+            #define ENABLE_IMPERFECT_SIGNAL 0
+            #define ENABLE_HUM_BAR 0
+            #define ENABLE_CHANNEL_SWITCH 0
             uniform sampler2D u_image;
             uniform vec2 u_resolution;
             uniform float u_time;
@@ -380,6 +394,9 @@ export class CRTFilter {
             uniform float u_persistenceIntensity;
             uniform float u_beamModulation;
             uniform float u_breathingScale;
+            uniform float u_imperfectSignal;
+            uniform float u_humBar;
+            uniform float u_channelSwitch;
             uniform vec2 u_sourceResolution;
             uniform float u_antiAliasedPixels;
             uniform float u_colorMode;
@@ -451,7 +468,7 @@ export class CRTFilter {
                  vec3 phosphorTint = vec3(1.0);
                  if (u_colorMode < 1.5) phosphorTint = vec3(1.0); // B&W, D65 white point (~6500K)
                  else if (u_colorMode < 2.5) phosphorTint = vec3(0.45, 1.0, 0.62); // Green
-                 else if (u_colorMode < 3.5) phosphorTint = vec3(1.0, 0.58, 0.2); // Amber
+                 else if (u_colorMode < 3.5) phosphorTint = vec3(1.1, 0.68, 0.2); // Amber
                  else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
                  return luma * phosphorTint;
              }
@@ -537,6 +554,28 @@ export class CRTFilter {
                     float rasterScale = 1.0 + (baseMargin * 2.0) - u_breathingScale;
                     rasterUV = (curvedUV - 0.5) * rasterScale + 0.5;
                 }
+
+                #if ENABLE_IMPERFECT_SIGNAL
+                float waveTime = u_time * 15.0;
+                // Update the random interference ten times slower than the rolling waves.
+                float interferenceTime = floor(u_time * 1.5) / 1.5;
+                float globalNoise = fract(sin(interferenceTime * 91.71) * 43758.5453) - 0.5;
+                float line = floor(rasterUV.y * u_resolution.y);
+                float lineNoise = fract(sin(line * 12.9898 + interferenceTime * 78.233) * 43758.5453) - 0.5;
+                float horizontalRoll = sin((rasterUV.y * 22.0 + waveTime) * 6.2831853)
+                    + 0.35 * sin((rasterUV.y * 57.0 - waveTime * 0.63) * 6.2831853);
+                rasterUV += vec2(globalNoise * 0.0012 + lineNoise * 0.0016 + horizontalRoll * 0.0007, globalNoise * 0.0006) * u_imperfectSignal;
+                #endif
+
+                #if ENABLE_HUM_BAR
+                float humPosition = 1.0 - fract(u_time * 0.08);
+                float humDistance = abs(fract(rasterUV.y - humPosition + 0.5) - 0.5);
+                float humBand = 1.0 - smoothstep(0.006, 0.055, humDistance);
+                #endif
+
+                #if ENABLE_CHANNEL_SWITCH
+                rasterUV.y = fract(rasterUV.y + u_channelSwitch);
+                #endif
 
                 // Chromatic Aberration
                 float offset = u_aberration * 0.005;
@@ -661,6 +700,15 @@ export class CRTFilter {
                     finalBackground = mix(finalBackground, vec3(backgroundLuma), clamp(u_backgroundDesaturation, 0.0, 1.0));
                 }
                 vec3 color = finalImage * scanline + finalBackground;
+
+                #if ENABLE_IMPERFECT_SIGNAL
+                float flicker = 0.985 + 0.025 * globalNoise;
+                color *= mix(1.0, flicker, u_imperfectSignal);
+                #endif
+
+                #if ENABLE_HUM_BAR
+                color += applyColorMode(vec3(humBand * u_humBar * 0.12));
+                #endif
 
                 // Vignette (Physical curved faceplate glass property)
                 float vignette = curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y);
@@ -915,6 +963,15 @@ export class CRTFilter {
     return !!(this.gl && this.program && this.buffer && this.texture);
   }
 
+  startChannelSwitch(): void {
+    this.channelSwitchStartedAt = performance.now();
+  }
+
+  restartBreathing(): void {
+    this.smoothedExpansion = 0;
+    this.lastBreathingTime = 0;
+  }
+
   dispose(): void {
     if (!this.gl) return;
     const gl = this.gl;
@@ -952,7 +1009,7 @@ export class CRTFilter {
     this.glowTexB = null;
   }
 
-  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true): void {
+  render(sourceCanvas: HTMLCanvasElement, settings: CRTSettings, sourceChanged = true, sourceLuma = 0.12): void {
     if (!this.gl || !this.buffer || !this.texture) return;
     const gl = this.gl;
 
@@ -976,7 +1033,10 @@ export class CRTFilter {
     const persistence = settings.persistence || 0.0;
     const bloom = settings.bloom || 0.0;
     const glow = settings.glow || 0.0;
-    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow }));
+    const imperfectSignal = settings.imperfectSignal || 0.0;
+    const humBar = settings.humBar || 0.0;
+    const channelSwitchEffect = settings.channelSwitchEffect;
+    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, imperfectSignal, humBar, channelSwitchEffect }));
     if (!this.program) return;
 
     let activeInputTexture = this.texture;
@@ -987,11 +1047,11 @@ export class CRTFilter {
       const elapsedSeconds = this.lastPersistenceTime ? (now - this.lastPersistenceTime) / 1000 : 1 / 60;
       this.lastPersistenceTime = now;
       const { decay, cutoff } = persistenceDecay(persistence, elapsedSeconds);
-      
+
       const pWidth = Math.max(1, Math.floor(sourceCanvas.width * this.persistenceResolutionScale));
       const pHeight = Math.max(1, Math.floor(sourceCanvas.height * this.persistenceResolutionScale));
       this.ensureFBO(pWidth, pHeight);
-      
+
       const targetFBO = this.fboCurrent === 0 ? this.fboA : this.fboB;
       const targetTex = this.fboCurrent === 0 ? this.fboTexA : this.fboTexB;
       const historyTex = this.fboCurrent === 0 ? this.fboTexB : this.fboTexA;
@@ -1075,7 +1135,8 @@ export class CRTFilter {
     // Uniforms
     if (this.resolutionLocation)
       gl.uniform2f(this.resolutionLocation, this.canvas.width, this.canvas.height);
-    if (this.timeLocation) gl.uniform1f(this.timeLocation, performance.now() / 1000);
+    const now = performance.now();
+    if (this.timeLocation) gl.uniform1f(this.timeLocation, now / 1000);
 
     if (this.scanlineCountLocation)
       gl.uniform1f(this.scanlineCountLocation, settings.scanlineCount);
@@ -1092,6 +1153,11 @@ export class CRTFilter {
     if (this.glowLocation) gl.uniform1f(this.glowLocation, glow);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
+    if (this.imperfectSignalLocation) gl.uniform1f(this.imperfectSignalLocation, imperfectSignal);
+    if (this.humBarLocation) gl.uniform1f(this.humBarLocation, humBar);
+    const channelSwitch = channelSwitchEffect ? channelSwitchProgress(this.channelSwitchStartedAt, now) : 0;
+    if (now - this.channelSwitchStartedAt >= 420) this.channelSwitchStartedAt = 0;
+    if (this.channelSwitchLocation) gl.uniform1f(this.channelSwitchLocation, channelSwitch);
     if (this.sourceResolutionLocation)
       gl.uniform2f(this.sourceResolutionLocation, sourceCanvas.width, sourceCanvas.height);
     if (this.antiAliasedPixelsLocation)
@@ -1114,6 +1180,7 @@ export class CRTFilter {
     let breathingScale = 0.0;
     const breathingSetting = settings.breathing || 0.0;
     if (breathingSetting > 0.0) {
+      if (!Number.isFinite(this.smoothedExpansion)) this.smoothedExpansion = 0.0;
       const now = performance.now();
       const dt =
         this.lastBreathingTime > 0
@@ -1121,22 +1188,9 @@ export class CRTFilter {
           : 0.016;
       this.lastBreathingTime = now;
 
-      let avgLuma = 0.12;
-      const ctx = sourceCanvas.getContext('2d');
-      if (ctx) {
-        try {
-          const w = sourceCanvas.width;
-          const h = sourceCanvas.height;
-          const imgData = ctx.getImageData(0, 0, w, h);
-          avgLuma = averageImageLuma(imgData.data, w, h);
-        } catch {
-          // Some canvas implementations do not allow pixel reads.
-        }
-      }
-
       // The screen is mostly black, so final brightness needs a direct HV drive to remain visible.
       const targetExpansion = breathingExpansion(
-        avgLuma,
+        sourceLuma,
         breathingSetting,
       );
       this.smoothedExpansion +=

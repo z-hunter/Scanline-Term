@@ -28,7 +28,7 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 
 ### Multiple sessions and tabs
 
-The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits its UUID with output and exit events, so every tab keeps an independent xterm scrollback buffer. The frontend reuses one source canvas and CRT filter: selecting a tab rebinds the renderer to that buffer and clears phosphor persistence, preventing a previous tab's afterglow from appearing on the next one. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent.
+The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits its UUID with output and exit events, so every tab keeps an independent xterm scrollback buffer. The frontend reuses one source canvas and CRT filter: selecting a tab normally clears phosphor persistence, preventing a previous tab's afterglow from appearing on the next one. The optional Channel switch roll deliberately preserves it so the previous source decays naturally over the new one. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent.
 
 Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
 
@@ -341,7 +341,7 @@ Each blur pass uses a 5-tap Gaussian kernel (weights: 0.227027, 0.316216×2, 0.0
 
 ### Pass 3: Final CRT Fragment Shader
 
-The final shader is specialized when Trail, Bloom, or Glow are toggled, so disabled effects are removed at compile time. Persistence FBOs are cleared only when Trail transitions from enabled to disabled.
+The final shader is specialized when Trail, Bloom, Glow, Imperfect signal, Hum-bar, or Channel switch roll are toggled, so disabled effect branches are removed at compile time. Persistence FBOs are cleared only when Trail transitions from enabled to disabled.
 
 The main fragment shader applies all visual effects in order:
 
@@ -350,20 +350,35 @@ The main fragment shader applies all visual effects in order:
 2. Curvature distortion (barrel/pincushion)
 3. Bezel detection → bezel glow rendering (16-tap spiral blur if outside screen)
 4. HV Breathing raster expansion
-5. Chromatic aberration (R/B channel offset)
-6. Persistence trail overlay (from Pass 1)
-7. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
-8. Phosphor grain/noise texture
-9. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
-10. Beam modulation (luma-dependent scanline width)
-11. Screen glow overlay (from Pass 2, desaturated 35%)
-12. Image brightness/contrast correction
-13. Color mode conversion (luma × phosphor tint)
-14. Background desaturation (monochrome modes only)
-15. Composite: finalImage × scanline + finalBackground
-16. Vignette
-17. Final clamp × 1.1
+5. Imperfect signal UV distortion
+6. Hum-bar UV position
+7. Channel switch roll
+8. Chromatic aberration (R/B channel offset)
+9. Persistence trail overlay (from Pass 1)
+10. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
+11. Phosphor grain/noise texture
+12. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
+13. Beam modulation (luma-dependent scanline width)
+14. Screen glow overlay (from Pass 2, desaturated 35%)
+15. Image brightness/contrast correction
+16. Color mode conversion (luma × phosphor tint)
+17. Background desaturation (monochrome modes only)
+18. Composite, Imperfect signal flicker, and Hum-bar light band
+19. Vignette
+20. Final clamp × 1.1
 ```
+
+### HV Breathing
+
+HV Breathing drives raster expansion from the terminal buffer's average luma, calculated during source-canvas redraws; it does not use `getImageData()` or any CPU readback from the canvas. The first measured terminal frame restarts the smoothing state so the visible terminal, rather than the startup placeholder, defines the initial response. Luma is clamped to the valid 0–1 range; a non-finite value falls back to a safe startup level, and the smoothed state self-recovers if it becomes non-finite. This prevents the effect from becoming permanently inactive until manually toggled through zero.
+
+### Signal Effects
+
+- **Imperfect signal** is one 0–1 strength control for subtle temporal flicker, global and per-line X/Y jitter, and rolling horizontal waves. Wave motion runs at 15 Hz while its random interference state changes at 1.5 Hz, avoiding a repeated uniform pattern.
+- **Hum-bar** is a separate 0–1 control for a glowing horizontal band that travels top-to-bottom at 0.08 cycles per second. It adds light only; it does not displace scanlines or create tearing.
+- **Channel switch roll** is an on/off CRT control. On a terminal-to-terminal tab change, the current image starts a 420 ms vertical roll; the new source is bound after 150 ms and continues the same roll. Persistence history is deliberately retained for this transition, so the old source decays over the new one. Browser transitions, new tabs, and tab closure stay immediate.
+
+When a signal effect is off, its final-shader macro is compiled out. Channel switch roll also has no transition delay when disabled.
 
 ### CRT Emulation Toggle
 

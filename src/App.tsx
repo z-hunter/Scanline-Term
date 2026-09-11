@@ -85,6 +85,8 @@ export default function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
+  const startChannelSwitchRef = useRef<() => void>(() => {});
+  const preservePersistenceForChannelSwitchRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [windowSize, setWindowSize] = useState(() => ({
     width: typeof window !== "undefined" ? window.innerWidth : 1440,
@@ -148,6 +150,10 @@ export default function App() {
     onError: reportError,
     onToggleSettings: toggleSettings,
     onToggleAi: toggleAi,
+    onTerminalTabTransition: () => {
+      preservePersistenceForChannelSwitchRef.current = true;
+      startChannelSwitchRef.current();
+    },
   });
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
@@ -159,7 +165,8 @@ export default function App() {
     onResizeSource: terminal.resizeSource,
     enabled: !activeBrowser,
   });
-  const { clearPersistence, outputRef, fps, renderStats } = crt;
+  const { clearPersistence, outputRef, fps, renderStats, startChannelSwitch } = crt;
+  startChannelSwitchRef.current = startChannelSwitch;
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -568,7 +575,9 @@ export default function App() {
   }, [loadModels, terminal.activeSessionId, reportError]);
   useEffect(() => {
     if (!terminal.activeSessionId) return;
-    clearPersistence();
+    const preservePersistence = preservePersistenceForChannelSwitchRef.current;
+    preservePersistenceForChannelSwitchRef.current = false;
+    if (!preservePersistence) clearPersistence();
     window.requestAnimationFrame(() => outputRef.current?.focus());
   }, [terminal.activeSessionId, clearPersistence, outputRef]);
   useEffect(() => {
