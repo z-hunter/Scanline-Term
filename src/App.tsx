@@ -13,8 +13,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import packageInfo from "../package.json";
 import {
+  clonePresetSettings,
+  DEFAULT_PRESET_SETTINGS,
+  loadPresetSettings,
   loadStoredSettings,
   RESOLUTIONS,
+  type PresetSettings,
 } from "./crt/settings";
 import { useCRT } from "./crt/useCRT";
 import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
@@ -80,6 +84,9 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const [defaultPreset, setDefaultPreset] = useState<PresetSettings>(() => clonePresetSettings(DEFAULT_PRESET_SETTINGS));
+  const [presets, setPresets] = useState<string[]>(["default"]);
+  const [presetsReady, setPresetsReady] = useState(!isTauri());
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -136,19 +143,11 @@ export default function App() {
       })),
     [],
   );
-  const resolution =
-    RESOLUTIONS.find((item) => item.id === stored.resolution) ?? RESOLUTIONS[1];
-  const physicalWindow = resolution.id === "physical";
-  const screenStyle = physicalWindow
-    ? undefined
-    : ({
-      "--screen-ratio": String(resolution.width! / resolution.height!),
-    } as CSSProperties);
   const terminal = useTerminal({
-    settings: stored.crt,
+    defaultPreset,
+    ready: presetsReady,
     defaultShell: stored.defaultShell,
     shells,
-    resolution,
     onError: reportError,
     onToggleSettings: toggleSettings,
     onToggleAi: toggleAi,
@@ -157,10 +156,101 @@ export default function App() {
       startChannelSwitchRef.current();
     },
   });
+  const activePreset = terminal.activePreset;
+  const activePresetState = terminal.activePresetState;
+  const resolution =
+    RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
+  const physicalWindow = resolution.id === "physical";
+  const screenStyle = physicalWindow
+    ? undefined
+    : ({
+      "--screen-ratio": String(resolution.width! / resolution.height!),
+    } as CSSProperties);
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  const refreshPresets = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      let catalog = await invoke<{ path: string; names: string[] }>("list_presets");
+      if (!catalog.names.some((name) => name.toLowerCase() === "default")) {
+        const created = await invoke<{ names: string[] }>("save_preset", {
+          name: "default",
+          preset: DEFAULT_PRESET_SETTINGS,
+          overwrite: false,
+        });
+        catalog = { ...catalog, names: created.names };
+      }
+      setPresets(catalog.names);
+      try {
+        const raw = await invoke<unknown>("load_preset", { name: "default" });
+        const loaded = loadPresetSettings(JSON.stringify(raw));
+        if (loaded) setDefaultPreset(loaded);
+        else reportError("Could not load default preset: invalid preset format");
+      } catch (reason) {
+        reportError(`Could not load default preset: ${String(reason)}`);
+      }
+    } catch (reason) {
+      reportError(`Could not list presets: ${String(reason)}`);
+    } finally {
+      setPresetsReady(true);
+    }
+  }, [reportError]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    void refreshPresets();
+  }, [refreshPresets, settingsVisible]);
+  const loadPreset = useCallback(async (name: string) => {
+    const state = terminal.activePresetState;
+    if (!state) return;
+    if (state.dirty && !window.confirm("Discard unsaved preset changes and load this preset?")) {
+      terminal.updateActivePreset((current) => ({ ...current, draftName: name }));
+      return;
+    }
+    try {
+      const raw = await invoke<unknown>("load_preset", { name });
+      const loaded = loadPresetSettings(JSON.stringify(raw));
+      if (!loaded) throw new Error("invalid preset format");
+      if (terminal.activePresetState !== state) return;
+      terminal.replaceActivePreset(loaded, name);
+    } catch (reason) {
+      reportError(`Could not load preset ${name}: ${String(reason)}`);
+    }
+  }, [reportError, terminal]);
+  const savePreset = useCallback(async (name: string) => {
+    const state = terminal.activePresetState;
+    if (!state || !name.trim()) return;
+    try {
+      let result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset: state.settings, overwrite: false });
+      if (result.exists) {
+        if (!window.confirm(`Overwrite preset “${name.trim()}”?`)) return;
+        result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset: state.settings, overwrite: true });
+      }
+      if (!result.saved) throw new Error("preset was not saved");
+      setPresets(result.names);
+      if (name.trim().toLowerCase() === "default") setDefaultPreset(clonePresetSettings(state.settings));
+      if (terminal.activePresetState === state) terminal.markActivePresetSaved(name.trim());
+    } catch (reason) {
+      reportError(`Could not save preset: ${String(reason)}`);
+    }
+  }, [reportError, terminal]);
+  const panelStored: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
+  const setPanelStored = useCallback((action: React.SetStateAction<typeof stored>) => {
+    const currentPanel: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
+    const next = typeof action === "function" ? action(currentPanel) : action;
+    const changed = next.resolution !== activePreset.resolution || JSON.stringify(next.crt) !== JSON.stringify(activePreset.crt);
+    if (changed && terminal.activePresetState) {
+      terminal.updateActivePreset((current) => ({
+        ...current,
+        settings: { version: 1, resolution: next.resolution, crt: { ...next.crt } },
+        dirty: true,
+        name: current.dirty ? current.name : "custom",
+        draftName: current.dirty ? current.draftName : "custom",
+      }));
+    }
+    setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
+  }, [activePreset, stored, terminal]);
   const crt = useCRT({
-    settings: stored.crt,
+    settings: activePreset.crt,
     resolution,
     renderer: terminal.renderer,
     onError: reportError,
@@ -202,7 +292,7 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, reportError, stored.tabPlacement, stored.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -263,7 +353,17 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: stored.version,
+      tabPlacement: stored.tabPlacement,
+      hideTabsWhenSingleSession: stored.hideTabsWhenSingleSession,
+      globalHotkeyEnabled: stored.globalHotkeyEnabled,
+      autoUpdateEnabled: stored.autoUpdateEnabled,
+      settingsScale: stored.settingsScale,
+      showSettingsPanel: stored.showSettingsPanel,
+      showAiPanel: stored.showAiPanel,
+      defaultShell: stored.defaultShell,
+    }));
   }, [stored]);
   useEffect(() => {
     const onResize = () =>
@@ -703,6 +803,7 @@ export default function App() {
   const reset = () => {
     localStorage.removeItem(STORAGE_KEY);
     setStored(loadStoredSettings(null));
+    terminal.replaceActivePreset(clonePresetSettings(DEFAULT_PRESET_SETTINGS), "custom");
     clearPersistence();
   };
   const sessionId = terminal.activeSessionId;
@@ -1002,12 +1103,12 @@ export default function App() {
           <div
             id="terminal-display"
             ref={screenRef}
-            className={`screen-frame${physicalWindow ? " physical-window" : ""}${stored.crt.showBezel ? "" : " bezel-hidden"}`}
+            className={`screen-frame${physicalWindow ? " physical-window" : ""}${activePreset.crt.showBezel ? "" : " bezel-hidden"}`}
             style={screenStyle}
           >
             <canvas
               ref={outputRef}
-              key={stored.crt.crtEmulation ? "crt-on" : "crt-off"}
+              key={activePreset.crt.crtEmulation ? "crt-on" : "crt-off"}
               className={`output-canvas${activeBrowser ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
               tabIndex={terminal.live ? 0 : -1}
@@ -1059,8 +1160,8 @@ export default function App() {
       )}
       {settingsVisible && (
         <SettingsPanel
-          stored={stored}
-          setStored={setStored}
+          stored={panelStored}
+          setStored={setPanelStored}
           monospaceFonts={terminal.fonts}
           shells={shells}
           terminalSize={terminal.size}
@@ -1068,6 +1169,12 @@ export default function App() {
           renderStats={renderStats}
           appVersion={appVersion}
           onReset={reset}
+          presetState={activePresetState}
+          presetNames={presets}
+          presetDisabled={Boolean(activeBrowser)}
+          onLoadPreset={loadPreset}
+          onSavePreset={savePreset}
+          onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: true }))}
         />
       )}
     </main>

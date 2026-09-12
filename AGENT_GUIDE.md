@@ -129,6 +129,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Fix mouse coordinates** | `App.tsx` (terminalMouseCell, copyPoint) | `App.tsx` | `tauri:dev` with TUI app |
 | **Add a new resolution** | `settings.ts` (RESOLUTIONS) | `settings.ts` | `npm test`, visual in dev |
 | **Change persistence behavior** | `CRTFilter.ts` (accum shader, persistenceDecay), `settings.ts` | Both | `npm test`, visual in dev |
+| **Change terminal-tab presets** | `settings.ts`, `useTerminal.ts`, `SettingsPanel.tsx`, `presets.rs`, `App.tsx` | Same frontend state path plus Rust file commands | `npm test`, `cargo test`, `tauri:dev`: two tabs with different resolution/font/CRT settings, load/save/overwrite and dirty confirmations |
 | **Add window chrome / system tray** | `tauri.conf.json`, `main.rs`, `App.tsx` | All | `tauri:dev` |
 | **Add multi-tab / split** | `App.tsx`, `terminal/useTerminal.ts`, `main.rs`, settings and styles | Major refactor | `cargo test`, `npm test`, `tauri:dev` |
 | **Change tab/terminal context menu** | `ui/TerminalTabs.tsx`, `ui/nativeNewTabMenu.ts`, `terminal/useTerminal.ts`, `App.tsx`, `capabilities/default.json` | Same frontend/native menu path | `npm test`, `npm run build`, `tauri:dev`: right-click `+` and terminal canvas in terminal/browser tabs |

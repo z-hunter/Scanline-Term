@@ -7,7 +7,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   consoleFont: 'Consolas',
   consoleFontSize: 16,
   curvature: 0.13,
-  scanlineCount: 120,
+  scanlineCount: 270,
   scanlineIntensity: 0.5,
   aberration: 0,
   aberrationFalloff: 2,
@@ -25,7 +25,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   imageContrast: 1,
   backgroundDesaturation: 0.5,
   beamModulation: 0.5,
-  breathing: 1,
+  breathing: 0.5,
   ambientGlassLight: 0,
   bezelHighlight: 0.35,
   bezelThickness: 0,
@@ -55,9 +55,8 @@ export type TabPlacement = 'top' | 'left';
 
 export const DEFAULT_RESOLUTION: ResolutionId = '1024x768';
 
-export type StoredSettings = {
+export type AppSettings = {
   version: 1;
-  resolution: ResolutionId;
   tabPlacement: TabPlacement;
   hideTabsWhenSingleSession: boolean;
   globalHotkeyEnabled: boolean;
@@ -66,7 +65,24 @@ export type StoredSettings = {
   showSettingsPanel: boolean;
   showAiPanel: boolean;
   defaultShell: string;
+};
+
+export type StoredSettings = AppSettings & {
+  resolution: ResolutionId;
   crt: CRTSettings;
+};
+
+export type PresetSettings = {
+  version: 1;
+  resolution: ResolutionId;
+  crt: CRTSettings;
+};
+
+export type TabPresetState = {
+  name: string;
+  draftName: string;
+  settings: PresetSettings;
+  dirty: boolean;
 };
 
 const numericRanges = {
@@ -181,4 +197,35 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     // Corrupt localStorage must never prevent the demo from starting.
   }
   return result;
+}
+
+export const DEFAULT_PRESET_SETTINGS: Readonly<PresetSettings> = Object.freeze({
+  version: 1,
+  resolution: DEFAULT_RESOLUTION,
+  crt: { ...DEFAULT_CRT_SETTINGS },
+});
+
+export function clonePresetSettings(preset: PresetSettings): PresetSettings {
+  return { version: 1, resolution: preset.resolution, crt: { ...preset.crt } };
+}
+
+export function presetFromStored(stored: StoredSettings): PresetSettings {
+  return { version: 1, resolution: stored.resolution, crt: { ...stored.crt } };
+}
+
+export function equalPresetSettings(left: PresetSettings, right: PresetSettings): boolean {
+  return left.resolution === right.resolution && JSON.stringify(left.crt) === JSON.stringify(right.crt);
+}
+
+export function loadPresetSettings(raw: string): PresetSettings | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const value = parsed as { version?: unknown; resolution?: unknown; crt?: unknown };
+    if (value.version !== 1 || !isResolution(value.resolution) || !value.crt || typeof value.crt !== 'object' || Array.isArray(value.crt)) return null;
+    const stored = loadStoredSettings(JSON.stringify({ resolution: value.resolution, crt: value.crt }));
+    return presetFromStored(stored);
+  } catch {
+    return null;
+  }
 }

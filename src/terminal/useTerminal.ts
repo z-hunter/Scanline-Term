@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type Mou
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { RESOLUTIONS } from '../crt/settings';
 import type { CRTSettings } from '../crt/CRTFilter';
 import type { Resolution } from './TerminalRenderer';
 import { TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
@@ -10,12 +11,13 @@ import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
 import { showNativeNewTabMenu } from '../ui/nativeNewTabMenu';
+import { clonePresetSettings, DEFAULT_PRESET_SETTINGS, type PresetSettings, type TabPresetState } from '../crt/settings';
 
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
 export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web' } & TabColor;
 export type WorkspaceTab = TerminalTab | BrowserTab;
 export type ShellInfo = { name: string; command: string };
-type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean };
+type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean; preset: TabPresetState };
 
 export function adjacentTabId(tabs: WorkspaceTab[], id: string): string | null {
   const index = tabs.findIndex((tab) => tab.id === id);
@@ -62,11 +64,13 @@ export function browserTabColor(value: string): TabColor | null {
   return { background: `#${normalized.toLowerCase()}`, foreground: luminance > 150 ? '#101a14' : '#d7f5df' };
 }
 
-export function useTerminal({ settings, defaultShell = '', shells = [], resolution, onError, onToggleSettings, onToggleAi, onTerminalTabTransition }: { settings: CRTSettings; defaultShell?: string; shells?: ShellInfo[]; resolution: Resolution; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void; onTerminalTabTransition?: () => void }) {
+export function useTerminal({ defaultPreset, ready = true, settings, resolution, defaultShell = '', shells = [], onError, onToggleSettings, onToggleAi, onTerminalTabTransition }: { defaultPreset?: PresetSettings; ready?: boolean; settings?: CRTSettings; resolution?: Resolution; defaultShell?: string; shells?: ShellInfo[]; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void; onTerminalTabTransition?: () => void }) {
+  const initialPreset: PresetSettings = defaultPreset ?? { version: 1, resolution: (resolution?.id ?? DEFAULT_PRESET_SETTINGS.resolution) as PresetSettings['resolution'], crt: { ...(settings ?? DEFAULT_PRESET_SETTINGS.crt) } };
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
+  const [activePresetState, setActivePresetState] = useState<TabPresetState | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
-  const settingsRef = useRef(settings); const defaultShellRef = useRef(defaultShell); const resolutionRef = useRef(resolution); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null);
-  settingsRef.current = settings; defaultShellRef.current = defaultShell; resolutionRef.current = resolution; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
+  const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null);
+  defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const refreshTabColor = useCallback((id: string) => {
     if (colorFrames.current.has(id)) return;
@@ -74,7 +78,7 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
       colorFrames.current.delete(id);
       const terminal = sessions.current.get(id)?.session.terminal;
       if (!terminal) return;
-      const color = terminalAverageColor(terminal, initialProfile(settingsRef.current.colorProfile));
+      const color = terminalAverageColor(terminal, initialProfile(sessions.current.get(id)?.preset.settings.crt.colorProfile ?? defaultPresetRef.current.crt.colorProfile));
       updateTab(id, (current) => ({ ...current, ...color }));
     });
     colorFrames.current.set(id, frame);
@@ -96,26 +100,43 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     }
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
     activeRef.current = id; setActiveTabId(id);
-    if (!record) { setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setFocused(false); renderer.current!.setSelection(null); return; }
+    if (!record) { setActivePresetState(null); settingsRef.current = defaultPresetRef.current.crt; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setFocused(false); renderer.current!.setSelection(null); return; }
+    setActivePresetState(record.preset);
+    settingsRef.current = record.preset.settings.crt;
     renderer.current!.bindTerminal(record.session.terminal); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
   }, []);
+  const updateActivePreset = useCallback((update: (current: TabPresetState) => TabPresetState) => {
+    const record = activeRef.current ? sessions.current.get(activeRef.current) : undefined;
+    if (!record) return;
+    const next = update(record.preset);
+    record.preset = next;
+    setActivePresetState(next);
+    settingsRef.current = next.settings.crt;
+    renderer.current?.markDirty();
+  }, []);
+  const replaceActivePreset = useCallback((settings: PresetSettings, name: string) => {
+    updateActivePreset(() => ({ name, draftName: name, settings: clonePresetSettings(settings), dirty: false }));
+  }, [updateActivePreset]);
+  const markActivePresetSaved = useCallback((name: string) => {
+    updateActivePreset((current) => ({ ...current, name, draftName: name, dirty: false }));
+  }, [updateActivePreset]);
   const openSession = useCallback((launch?: TerminalLaunch) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(settingsRef.current.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
+    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset = clonePresetSettings(defaultPresetRef.current); const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
-    sessions.current.set(id, { tab, session, inputLocked: false }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || resolutionRef.current.width || 1, source.height || resolutionRef.current.height || 1, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont);
+    sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: 'default', draftName: 'default', settings: preset, dirty: false } }); setTabs((current) => [...current, tab]); selectSession(id, false);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
-    const starting = session.start(dimensions, initialProfile(settingsRef.current.colorProfile), effectiveLaunch);
-    if (session.terminal) session.terminal.options.cursorStyle = settingsRef.current.cursorStyle;
+    const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
+    if (session.terminal) session.terminal.options.cursorStyle = preset.crt.cursorStyle;
     renderer.current!.bindTerminal(session.terminal);
     void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' }));
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc' };
-    setTabs((current) => [...current, tab]); selectSession(id, false);
+    setTabs((current) => [...current, tab]); setActivePresetState(null); selectSession(id, false);
     if (!url) { setAddressTabId(id); return; }
     void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [onError, selectSession, updateTab]);
@@ -130,6 +151,7 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     const tab = tabsRef.current.find((item) => item.id === id); const record = sessions.current.get(id);
     if (tab?.kind === 'browser') { const nativeBrowser = browsers.current.delete(id); recentTabs.current = recentTabs.current.filter((item) => item !== id); const next = adjacentTabId(tabsRef.current, id); const remaining = renumberTabs(tabsRef.current.filter((item) => item.id !== id)); let focusTerminal = false; setAddressTabId((current) => current === id ? null : current); nextOrdinal.current = remaining.length + 1; tabsRef.current = remaining; setTabs((current) => renumberTabs(current.filter((item) => item.id !== id))); if (activeRef.current === id) { const targetId = next ?? remaining[0]?.id; if (targetId) { focusTerminal = sessions.current.has(targetId); selectSession(targetId); } else try { await getCurrentWindow().close(); } catch (reason) { onError(`Could not close application: ${String(reason)}`); } } const restoreTerminalFocus = () => { if (focusTerminal) window.requestAnimationFrame(() => outputRef.current?.focus()); }; if (nativeBrowser) void invoke('close_browser', { sessionId: id }).catch((reason) => onError(`Browser close failed: ${String(reason)}`)).finally(restoreTerminalFocus); else restoreTerminalFocus(); return; }
     if (!record || (tab?.status === 'starting' && record.session.live) || closing.current.has(id)) return;
+    if (record.preset.dirty && !window.confirm(`Close tab with unsaved preset changes?`)) return;
     closing.current.add(id);
     try {
       await record.session.close();
@@ -162,8 +184,9 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
     }
   }, [onError, selectSession, updateTab]);
   useEffect(() => { if (!isTauri()) return; void invoke<string[]>('list_monospace_fonts').then((items) => setFonts([...new Set(['Consolas', ...items])])).catch((reason) => onError(`Could not list system fonts: ${String(reason)}`)); }, [onError]);
-  useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, settings.colorProfile]);
+  useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, activePresetState?.settings.crt.colorProfile]);
   useEffect(() => {
+    if (!ready) return;
     let active = true;
     const activeSessions = sessions.current; const cleanupFrames = colorFrames.current;
     const start = window.setTimeout(() => {
@@ -188,26 +211,52 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
       activeSessions.clear();
       renderer.current!.dispose();
     };
-  }, [openBrowser, openSession]);
+  }, [openBrowser, openSession, ready]);
+  const closingWindow = useRef(false);
   useEffect(() => {
+    if (!isTauri()) return;
+    const currentWindow = getCurrentWindow() as unknown as { close: () => Promise<void>; onCloseRequested?: (handler: (event: { preventDefault: () => void }) => void | Promise<void>) => Promise<() => void> };
+    if (typeof currentWindow.onCloseRequested !== 'function') return;
+    let unlisten: (() => void) | undefined;
+    void currentWindow.onCloseRequested(async (event) => {
+      if (closingWindow.current || ![...sessions.current.values()].some((record) => record.preset.dirty)) return;
+      event.preventDefault();
+      if (!window.confirm('Close with unsaved preset changes?')) return;
+      closingWindow.current = true;
+      try {
+        await currentWindow.close();
+      } catch (reason) {
+        closingWindow.current = false;
+        onErrorRef.current(`Could not close application: ${String(reason)}`);
+      }
+    }).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten?.();
+  }, []);
+  useEffect(() => {
+    if (!isTauri() || !ready) return;
     let unlisten: UnlistenFn | undefined;
     void listen<TerminalLaunch>('terminal-launch', (event) => openSession(event.payload)).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive terminal launch: ${String(reason)}`));
     return () => unlisten?.();
-  }, [onError, openSession]);
+  }, [onError, openSession, ready]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; title?: string }>('browser-title', (event) => { const { sessionId, title } = event.payload ?? {}; if (sessionId && typeof title === 'string') updateTab(sessionId, (tab) => tab.kind === 'browser' ? { ...tab, title: `${tab.ordinal}. ${title || 'New tab'}` } : tab); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser title: ${String(reason)}`)); return () => unlisten?.(); }, [onError, updateTab]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; background?: string }>('browser-color', (event) => { const { sessionId, background } = event.payload ?? {}; const color = typeof background === 'string' ? browserTabColor(background) : null; if (sessionId && color) updateTab(sessionId, (tab) => tab.kind === 'browser' ? { ...tab, ...color } : tab); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser color: ${String(reason)}`)); return () => unlisten?.(); }, [onError, updateTab]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ sessionId?: string; code?: string }>('browser-shortcut', (event) => { const { sessionId, code } = event.payload ?? {}; if (sessionId === activeRef.current && typeof code === 'string') { menu.current = true; window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true })); menu.current = false; } }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser shortcut: ${String(reason)}`)); return () => unlisten?.(); }, [onError]);
   useEffect(() => { let unlisten: UnlistenFn | undefined; void listen<{ kind?: string; url?: string }>('browser-launch', (event) => { if (event.payload?.kind === 'browser' && typeof event.payload.url === 'string') openBrowser(event.payload.url); }).then((cleanup) => { unlisten = cleanup; }).catch((reason) => onError(`Could not receive browser launch: ${String(reason)}`)); return () => unlisten?.(); }, [onError, openBrowser]);
-  const resizeSource = useCallback((output: HTMLCanvasElement) => { outputRef.current = output; renderer.current!.resizeSource(resolutionRef.current, output); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, settingsRef.current.consoleFontSize, settingsRef.current.consoleFont); for (const { session } of sessions.current.values()) session.resize(dimensions); }, []);
-  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, settings.consoleFont, settings.consoleFontSize, resolution]);
+  const resizeSource = useCallback((output: HTMLCanvasElement) => {
+    outputRef.current = output;
+    const preset = (activeRef.current ? sessions.current.get(activeRef.current)?.preset.settings : undefined) ?? defaultPresetRef.current;
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6];
+    renderer.current!.resizeSource(resolution, output);
+    const source = renderer.current!.sourceCanvas;
+    const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
+    if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont));
+  }, []);
+  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, activePresetState?.settings.resolution, activePresetState?.settings.crt.consoleFont, activePresetState?.settings.crt.consoleFontSize]);
   useEffect(() => {
     renderer.current!.markDirty();
-    for (const { session } of sessions.current.values()) {
-      if (session.terminal) {
-        session.terminal.options.cursorStyle = settings.cursorStyle;
-      }
-    }
-  }, [settings.colorProfile, settings.consoleFont, settings.consoleFontSize, settings.cursorStyle, settings.breathing]);
+    const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
+    if (session?.terminal) session.terminal.options.cursorStyle = settingsRef.current.cursorStyle;
+  }, [activePresetState?.settings.crt.cursorStyle, activePresetState?.settings.crt.breathing]);
   useEffect(() => {
     const reopenAddress = (event: KeyboardEvent) => {
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');
@@ -342,5 +391,5 @@ export function useTerminal({ settings, defaultShell = '', shells = [], resoluti
   const copy = async (start: CopyPoint, end: CopyPoint) => { const terminal = activeSession()?.terminal; if (!terminal) return; const [first,last] = start.row < end.row || start.row === end.row && start.column <= end.column ? [start,end] : [end,start]; const text = Array.from({ length: last.row - first.row + 1 }, (_, index) => { const row = first.row + index; return terminal.buffer.active.getLine(row)?.translateToString(index === last.row - first.row, row === first.row ? first.column : 0, row === last.row ? last.column + 1 : terminal.cols) ?? ''; }).join('\r\n').replace(/(?:\r\n|\r|\n)$/, ''); if (text) await navigator.clipboard.writeText(text); };
   const openNativeContextMenu = (event: MouseEvent<HTMLCanvasElement>) => { event.preventDefault(); if (!isTauri()) return; void showNativeNewTabMenu({ onNew: () => openSession(), onNewBrowser: () => openBrowser(), onNewShell: (command) => openSession({ command }), shells }).catch((reason) => onError(`Could not open terminal context menu: ${String(reason)}`)); };
   useEffect(() => { const down = async (event: KeyboardEvent) => { if (event.code === 'AltLeft' || event.code === 'AltRight' || event.key === 'AltGraph') alt.current = true; if (event.key === 'ContextMenu') { menu.current = true; menuShortcut.current = false; menuEvent.current = event; event.preventDefault(); return; } if (menu.current && event.code !== 'ContextMenu') menuShortcut.current = true; if (menu.current && event.code === 'KeyW') { event.preventDefault(); if (!event.repeat && activeRef.current) void closeSession(activeRef.current); return; } if (event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address')) return; const session = keyboardSession(); const terminal = session?.terminal; if (menu.current && event.code === 'KeyS') { event.preventDefault(); if (!event.repeat) onToggleSettings(); return; } if (menu.current && event.code === 'KeyA') { event.preventDefault(); if (!event.repeat) onToggleAi?.(); return; } if (menu.current && event.code === 'KeyB') { event.preventDefault(); if (!event.repeat) openBrowser(); return; } if (menu.current && event.code === 'KeyV') { event.preventDefault(); if (!event.repeat) navigator.clipboard.readText().then((input) => session?.sendInput(input)).catch((reason) => onError(`Clipboard paste failed: ${String(reason)}`)); return; } if (menu.current && event.code === 'KeyC') { event.preventDefault(); if (!event.repeat) copyMode.current = true; return; } if (menu.current && event.code === 'KeyN') { event.preventDefault(); if (!event.repeat) openSession(); return; } if (menu.current && event.code === 'Quote') { event.preventDefault(); if (!event.repeat) { const aiComposer = document.querySelector('.ai-composer textarea') as HTMLTextAreaElement | null; if (document.activeElement?.closest('.ai-panel') || document.activeElement === aiComposer) { const canvas = document.querySelector('.terminal-workspace canvas') as HTMLCanvasElement | null; canvas?.focus(); } else { if (aiComposer) aiComposer.focus(); else onToggleAi?.(); } } return; } if (menu.current && /^Digit[1-9]$/.test(event.code)) { event.preventDefault(); if (!event.repeat) { const id = tabIdAtOrdinal(tabsRef.current, Number(event.code.at(-1))); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'ArrowRight' || event.code === 'Period' || event.key === '>')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = nextTabId(tabsRef.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'ArrowLeft' || event.code === 'Comma' || event.key === '<')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = previousTabId(tabsRef.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'Tab' || event.key === 'Tab')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = previousActiveTabId(tabsRef.current, recentTabs.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'PageUp' || event.code === 'PageDown')) { event.preventDefault(); if (terminal && terminal.buffer.active === terminal.buffer.normal) terminal.scrollLines((event.code === 'PageUp' ? -1 : 1) * (terminal.rows - 1)); return; } if (menu.current && (event.code === 'KeyJ' || event.code === 'KeyK')) { event.preventDefault(); const isUp = event.code === 'KeyK'; if (document.activeElement?.closest('.ai-panel')) { const aiMessages = document.querySelector('.ai-messages'); if (aiMessages) aiMessages.scrollBy(0, (isUp ? -1 : 1) * aiMessages.clientHeight * 0.8); } else if (terminal && terminal.buffer.active === terminal.buffer.normal) { terminal.scrollLines((isUp ? -1 : 1) * (terminal.rows - 1)); } return; } if ((event.altKey || alt.current || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')))) && (event.code === 'Enter' || event.code === 'NumpadEnter' || event.key === 'Enter') && isTauri()) { event.preventDefault(); fullscreen.current = true; if (!event.repeat) try { const window = getCurrentWindow(); await window.setFullscreen(!(await window.isFullscreen())); } catch (reason) { onError(`Fullscreen toggle failed: ${String(reason)}`); } return; } if (!session?.live || !terminal) return; const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes); event.preventDefault(); if (input) { terminal.scrollToBottom(); session.sendInput(input); } }; const up = (event: KeyboardEvent) => { if (event.code === 'AltLeft' || event.code === 'AltRight' || event.key === 'AltGraph') alt.current = false; if (event.key === 'ContextMenu') { const source = menuEvent.current; const standalone = !menuShortcut.current; menu.current = false; menuEvent.current = null; event.preventDefault(); if (standalone && source && !(event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address'))) { const session = keyboardSession(); if (session?.live && session.win32InputMode) { session.sendInput(win32InputKey(source, true)); session.sendInput(win32InputKey(event, false)); } } return; } if (event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address')) return; if (fullscreen.current && (event.code === 'Enter' || event.code === 'NumpadEnter')) { fullscreen.current = false; event.preventDefault(); return; } const session = keyboardSession(); if (!session?.live || !session.terminal) return; event.preventDefault(); if (session.win32InputMode) session.sendInput(win32InputKey(event, false)); }; const clearAlt = () => { alt.current = false; fullscreen.current = false; menu.current = false; menuEvent.current = null; menuShortcut.current = false; renderer.current?.setFocused(false); }; window.addEventListener('keydown', down, true); window.addEventListener('keyup', up, true); window.addEventListener('blur', clearAlt); return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); window.removeEventListener('blur', clearAlt); }; }, [closeSession, keyboardSession, onError, onToggleAi, onToggleSettings, openBrowser, openSession, selectSession]);
-  return { renderer: renderer.current, live, size, fonts, tabs, activeTabId, activeSessionId: sessions.current.has(activeTabId ?? '') ? activeTabId : null, addressTabId, openAddress: (id: string) => setAddressTabId(id), closeAddress: () => setAddressTabId(null), navigateBrowser, openSession, openBrowser, selectSession, closeSession, resizeSource, canvasProps: { onFocus: () => renderer.current?.setFocused(true), onBlur: () => renderer.current?.setFocused(false), onWheel: (event: WheelEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (!terminal || event.deltaY === 0) return; if (sendMouse(event, event.deltaY < 0 ? 'wheel-up' : 'wheel-down')) return; event.preventDefault(); if (terminal.buffer.active === terminal.buffer.normal) terminal.scrollLines(Math.sign(event.deltaY) * 3); }, onMouseDown: (event: MouseEvent<HTMLCanvasElement>) => { event.currentTarget.focus(); const terminal = activeSession()?.terminal; if (terminal && ((copyMode.current && event.button === 0) || event.button === 1)) { const point = cell(event); if (point) { event.preventDefault(); copyStart.current = copyPoint(point); renderer.current!.setSelection({ start: copyStart.current, end: copyStart.current }); } return; } if (event.button <= 2 && sendMouse(event, 'press', event.button as 0|1|2)) pressed.current.add(event.button); }, onMouseMove: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (terminal && copyStart.current && event.buttons) { const point = cell(event); if (point) renderer.current!.setSelection({ start: copyStart.current, end: copyPoint(point) }); return; } const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined; if (tracking && tracking !== 'none' && !(tracking === 'drag' && pressed.current.size === 0) && tracking !== 'x10' && tracking !== 'vt200') sendMouse(event, 'move', pressed.current.values().next().value as 0|1|2|undefined); }, onMouseUp: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (terminal && copyStart.current) { const start = copyStart.current; copyStart.current = null; copyMode.current = false; const point = cell(event); if (point) void copy(start, copyPoint(point)).catch((reason) => onError(`Clipboard copy failed: ${String(reason)}`)); renderer.current!.setSelection(null); return; } if (event.button <= 2) { sendMouse(event, 'release', event.button as 0|1|2); pressed.current.delete(event.button); } }, onMouseLeave: (event: MouseEvent<HTMLCanvasElement>) => { for (const button of pressed.current) sendMouse(event, 'release', button as 0|1|2); pressed.current.clear(); }, onContextMenu: openNativeContextMenu, onPaste: (event: ClipboardEvent<HTMLCanvasElement>) => { const input = event.clipboardData.getData('text'); if (!input) return; event.preventDefault(); activeSession()?.terminal?.scrollToBottom(); activeSession()?.sendInput(input); } } };
+  return { renderer: renderer.current, live, size, fonts, tabs, activeTabId, activeSessionId: sessions.current.has(activeTabId ?? '') ? activeTabId : null, activePreset: activePresetState?.settings ?? defaultPresetRef.current, activePresetState, updateActivePreset, replaceActivePreset, markActivePresetSaved, addressTabId, openAddress: (id: string) => setAddressTabId(id), closeAddress: () => setAddressTabId(null), navigateBrowser, openSession, openBrowser, selectSession, closeSession, resizeSource, canvasProps: { onFocus: () => renderer.current?.setFocused(true), onBlur: () => renderer.current?.setFocused(false), onWheel: (event: WheelEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (!terminal || event.deltaY === 0) return; if (sendMouse(event, event.deltaY < 0 ? 'wheel-up' : 'wheel-down')) return; event.preventDefault(); if (terminal.buffer.active === terminal.buffer.normal) terminal.scrollLines(Math.sign(event.deltaY) * 3); }, onMouseDown: (event: MouseEvent<HTMLCanvasElement>) => { event.currentTarget.focus(); const terminal = activeSession()?.terminal; if (terminal && ((copyMode.current && event.button === 0) || event.button === 1)) { const point = cell(event); if (point) { event.preventDefault(); copyStart.current = copyPoint(point); renderer.current!.setSelection({ start: copyStart.current, end: copyStart.current }); } return; } if (event.button <= 2 && sendMouse(event, 'press', event.button as 0|1|2)) pressed.current.add(event.button); }, onMouseMove: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (terminal && copyStart.current && event.buttons) { const point = cell(event); if (point) renderer.current!.setSelection({ start: copyStart.current, end: copyPoint(point) }); return; } const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined; if (tracking && tracking !== 'none' && !(tracking === 'drag' && pressed.current.size === 0) && tracking !== 'x10' && tracking !== 'vt200') sendMouse(event, 'move', pressed.current.values().next().value as 0|1|2|undefined); }, onMouseUp: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (terminal && copyStart.current) { const start = copyStart.current; copyStart.current = null; copyMode.current = false; const point = cell(event); if (point) void copy(start, copyPoint(point)).catch((reason) => onError(`Clipboard copy failed: ${String(reason)}`)); renderer.current!.setSelection(null); return; } if (event.button <= 2) { sendMouse(event, 'release', event.button as 0|1|2); pressed.current.delete(event.button); } }, onMouseLeave: (event: MouseEvent<HTMLCanvasElement>) => { for (const button of pressed.current) sendMouse(event, 'release', button as 0|1|2); pressed.current.clear(); }, onContextMenu: openNativeContextMenu, onPaste: (event: ClipboardEvent<HTMLCanvasElement>) => { const input = event.clipboardData.getData('text'); if (!input) return; event.preventDefault(); activeSession()?.terminal?.scrollToBottom(); activeSession()?.sendInput(input); } } };
 }

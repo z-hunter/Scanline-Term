@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from '../crt/CRTFilter';
-import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement } from '../crt/settings';
+import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
 import type { RenderStats } from '../terminal/TerminalRenderer';
@@ -129,6 +129,12 @@ export function SettingsPanel({
   renderStats,
   appVersion,
   onReset,
+  presetState = null,
+  presetNames = [],
+  presetDisabled = false,
+  onLoadPreset = () => undefined,
+  onSavePreset = () => undefined,
+  onPresetNameChange = () => undefined,
 }: {
   stored: StoredSettings;
   setStored: Dispatch<SetStateAction<StoredSettings>>;
@@ -139,6 +145,12 @@ export function SettingsPanel({
   renderStats: RenderStats;
   appVersion: string;
   onReset: () => void;
+  presetState?: TabPresetState | null;
+  presetNames?: string[];
+  presetDisabled?: boolean;
+  onLoadPreset?: (name: string) => void;
+  onSavePreset?: (name: string) => void;
+  onPresetNameChange?: (name: string) => void;
 }) {
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
@@ -200,6 +212,8 @@ export function SettingsPanel({
         </p>
       </header>
 
+      <fieldset className="preset-controls" disabled={presetDisabled}>
+
       <label className="resolution-control">
         Virtual resolution
         <select
@@ -216,6 +230,29 @@ export function SettingsPanel({
           ))}
         </select>
       </label>
+
+      <fieldset className="preset-picker">
+        <legend>Presets</legend>
+        <div className="preset-picker-row">
+          <input
+            list="preset-names"
+            value={presetState?.draftName ?? ''}
+            placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
+            aria-label="Preset name"
+            onChange={(event) => {
+              const value = event.target.value;
+              const existing = presetNames.find((name) => name.toLowerCase() === value.trim().toLowerCase());
+              const inputType = (event.nativeEvent as InputEvent).inputType;
+              if (existing && inputType === 'insertReplacementText' && existing.toLowerCase() !== presetState?.draftName.toLowerCase()) onLoadPreset(existing);
+              else onPresetNameChange(value);
+            }}
+          />
+          <datalist id="preset-names">
+            {presetNames.map((name) => <option key={name} value={name} />)}
+          </datalist>
+          {presetState?.dirty && <button type="button" onClick={() => onSavePreset(presetState.draftName)}>Save</button>}
+        </div>
+      </fieldset>
 
       <label className="resolution-control">
         ANSI color profile
@@ -540,6 +577,7 @@ export function SettingsPanel({
             }))
           }
         />
+      </fieldset>
       </fieldset>
 
       <fieldset>

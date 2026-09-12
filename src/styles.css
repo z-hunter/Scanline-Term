@@ -639,6 +639,40 @@ fieldset {
   border-radius: 8px;
 }
 
+.preset-picker {
+  width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  padding: 10px 12px;
+}
+
+.preset-picker-row {
+  display: flex;
+  gap: 8px;
+}
+
+.preset-picker-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #355840;
+  border-radius: 5px;
+  color: #d7f5df;
+  background: #0b130e;
+}
+
+.preset-picker-row button {
+  padding: 0 12px;
+}
+
+.preset-controls {
+  width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+}
+
 legend {
   padding: 0 5px;
   color: #7dffae;

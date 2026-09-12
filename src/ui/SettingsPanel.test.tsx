@@ -477,4 +477,40 @@ describe('SettingsPanel font-size editing flow', () => {
     });
     container.remove();
   });
+
+  it('renders the active tab preset and exposes Save only for dirty state', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onSavePreset = vi.fn();
+    const onPresetNameChange = vi.fn();
+    const onLoadPreset = vi.fn();
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetState: { name: 'default', draftName: 'custom', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: true },
+        presetNames: ['default', 'custom'],
+        onSavePreset,
+        onLoadPreset,
+        onPresetNameChange,
+      }));
+    });
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Preset name"]');
+    expect(input?.value).toBe('custom');
+    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+    await act(async () => { setInputValue(input!, 'new-name'); });
+    expect(onPresetNameChange).toHaveBeenCalledWith('new-name');
+    onPresetNameChange.mockClear();
+    await act(async () => { setInputValue(input!, 'default'); });
+    expect(onPresetNameChange).toHaveBeenCalledWith('default');
+    expect(onLoadPreset).not.toHaveBeenCalled();
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, 'default');
+      input?.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
+    });
+    expect(onLoadPreset).toHaveBeenCalledWith('default');
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
 });

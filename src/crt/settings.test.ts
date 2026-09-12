@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { breathingExpansion, channelSwitchProgress, crtEffectMask, persistenceDecay, phosphorMaskScale } from './CRTFilter';
-import { DEFAULT_CRT_SETTINGS, DEFAULT_RESOLUTION, loadStoredSettings } from './settings';
+import { DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings } from './settings';
 
 describe('CRT settings', () => {
   it('decays phosphor history by elapsed time rather than render frames', () => {
@@ -34,7 +34,8 @@ describe('CRT settings', () => {
 
   it('keeps default CRT parameters without the removed hum setting', () => {
     expect(DEFAULT_CRT_SETTINGS.curvature).toBe(0.13);
-    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(120);
+    expect(DEFAULT_CRT_SETTINGS.scanlineCount).toBe(270);
+    expect(DEFAULT_CRT_SETTINGS.breathing).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.scanlineIntensity).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.beamModulation).toBe(0.5);
     expect(DEFAULT_CRT_SETTINGS.imperfectSignal).toBe(0);
@@ -241,5 +242,21 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'bar' } })).crt.cursorStyle).toBe('bar');
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'invalid' } })).crt.cursorStyle).toBe('block');
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 123 } })).crt.cursorStyle).toBe('block');
+  });
+
+  it('loads a versioned preset and fills newly added fields from defaults', () => {
+    const preset = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: { consoleFont: 'Cascadia Mono', cursorStyle: 'bar' } }));
+    expect(preset?.resolution).toBe('640x480');
+    expect(preset?.crt.consoleFont).toBe('Cascadia Mono');
+    expect(preset?.crt.cursorStyle).toBe('bar');
+    expect(preset?.crt.curvature).toBe(DEFAULT_CRT_SETTINGS.curvature);
+  });
+
+  it('rejects malformed and unsupported presets without a partial state', () => {
+    expect(loadPresetSettings('{broken')).toBeNull();
+    expect(loadPresetSettings(JSON.stringify({ version: 2, resolution: '640x480', crt: {} }))).toBeNull();
+    expect(loadPresetSettings(JSON.stringify({ version: 1, resolution: 'bad', crt: {} }))).toBeNull();
+    expect(loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: [] }))).toBeNull();
+    expect(DEFAULT_PRESET_SETTINGS.version).toBe(1);
   });
 });

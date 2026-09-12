@@ -32,6 +32,12 @@ The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits
 
 Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
 
+### Per-tab visual settings and presets
+
+Each terminal session stores its own complete preset snapshot: virtual resolution, ANSI palette, font and size, Display controls, and CRT parameters. The shared source canvas and CRT filter always consume the active session's snapshot. A font or resolution change resizes only that session's ConPTY; inactive sessions retain their xterm dimensions until selected. New terminal sessions receive a cloned `default` preset, so later edits or overwrites do not retroactively alter existing tabs.
+
+Named presets are JSON files under `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The Rust `presets` module owns path safety, file enumeration, bounded reads, conflict detection, atomic writes, and backups. The settings panel keeps dirty state in the active tab, asks before replacing unsaved values, and never writes visual preset fields to the global `localStorage` settings record.
+
 Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title sequence. xterm parses it in `TerminalSession`, and the tab keeps its ordinal prefix (for example, `2. FAR Manager`). When a shell does not set an OSC title (such as `pwsh` launched from `cmd.exe`), `TerminalSession` polls `active_terminal_process` every 500 ms and uses the direct child image name instead; OSC titles take priority.
 
 ### Command-line launch

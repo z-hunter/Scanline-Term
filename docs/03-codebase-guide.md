@@ -22,7 +22,7 @@ ScanlineTerm/
 │   │   └── scanline-term-mini.png  # Logo asset
 │   ├── crt/
 │   │   ├── CRTFilter.ts           # ★ WebGL CRT shader pipeline (1101 lines)
-│   │   ├── settings.ts            # CRT settings, resolutions, localStorage loader
+│   │   ├── settings.ts            # CRT settings, preset schema, resolutions, localStorage loader
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
@@ -43,6 +43,7 @@ ScanlineTerm/
 │   ├── src/
 │   │   ├── codex.rs              # Codex app-server lifecycle and JSONL bridge
 │   │   ├── home.rs               # Validated home.json load/save and backup handling
+│   │   ├── presets.rs            # Bounded preset catalog and atomic JSON file commands
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
@@ -178,8 +179,10 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
 | `DEFAULT_RESOLUTION` | `'1024x768'` |
 | `ResolutionId` | Union type of resolution identifiers |
-| `StoredSettings` | `{ version: 1, resolution, crt }` |
+| `StoredSettings` | Global UI/shell/hotkey/update settings; legacy `resolution` and `crt` fields are read only for migration |
 | `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |
+
+`PresetSettings` is the versioned `{ version, resolution, crt }` payload stored in a named JSON file. `TabPresetState` is the per-terminal-tab `{ name, draftName, settings, dirty }` snapshot. `loadPresetSettings` reuses the existing field validators and rejects malformed or unsupported files without applying partial state.
 
 ---
 
@@ -264,6 +267,10 @@ Owns the singleton hidden `codex app-server --stdio` process. It validates the C
 #### [`src-tauri/src/home.rs`](../src-tauri/src/home.rs)
 
 Owns the versioned home document at the Tauri app config path. It validates links and shortcuts, creates the default example, writes through a temporary file, and retains `home.json.bak` for recovery.
+
+#### [`src-tauri/src/presets.rs`](../src-tauri/src/presets.rs)
+
+Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_presets`, `load_preset`, and `save_preset` Tauri commands. Names are validated as safe single Windows filenames, only regular bounded JSON files are listed, and writes use a temporary file plus `.bak` recovery copy. The Rust side does not interpret CRT fields; the WebView applies the shared settings validator before changing a tab.
 
 #### [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
 
