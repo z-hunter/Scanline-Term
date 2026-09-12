@@ -195,6 +195,13 @@ export function SettingsPanel({
     setFontSizeInput(String(clamped));
   };
 
+  const handleCellAdjustmentChange = (key: 'cellWidthAdjustment' | 'cellHeightAdjustment', value: string) => {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed >= -8 && parsed <= 16) {
+      setStored((current) => ({ ...current, crt: { ...current.crt, [key]: parsed } }));
+    }
+  };
+
   return (
     <aside className="settings-panel">
       <header>
@@ -250,7 +257,9 @@ export function SettingsPanel({
           <datalist id="preset-names">
             {presetNames.map((name) => <option key={name} value={name} />)}
           </datalist>
-          {presetState?.dirty && <button type="button" onClick={() => onSavePreset(presetState.draftName)}>Save</button>}
+          {presetState && (presetState.dirty || presetState.draftName !== presetState.name) && (
+            <button type="button" onClick={() => onSavePreset(presetState.draftName)}>Save</button>
+          )}
         </div>
       </fieldset>
 
@@ -308,6 +317,33 @@ export function SettingsPanel({
                 commitFontSize();
               }
             }}
+          />
+        </label>
+      </div>
+
+      <div className="font-control-row">
+        <label className="resolution-control font-size-control">
+          Cell width ±px
+          <input
+            type="number"
+            min={-8}
+            max={16}
+            step={1}
+            value={stored.crt.cellWidthAdjustment}
+            data-testid="cell-width-adjustment"
+            onChange={(event) => handleCellAdjustmentChange('cellWidthAdjustment', event.target.value)}
+          />
+        </label>
+        <label className="resolution-control font-size-control">
+          Cell height ±px
+          <input
+            type="number"
+            min={-8}
+            max={16}
+            step={1}
+            value={stored.crt.cellHeightAdjustment}
+            data-testid="cell-height-adjustment"
+            onChange={(event) => handleCellAdjustmentChange('cellHeightAdjustment', event.target.value)}
           />
         </label>
       </div>

@@ -190,6 +190,17 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { consoleFontSize: 14 } })).crt.consoleFontSize).toBe(14);
   });
 
+  it('defaults and validates cell size adjustments', () => {
+    expect(loadStoredSettings(null).crt.cellWidthAdjustment).toBe(0);
+    expect(loadStoredSettings(null).crt.cellHeightAdjustment).toBe(0);
+    const loaded = loadStoredSettings(JSON.stringify({ crt: { cellWidthAdjustment: -8, cellHeightAdjustment: 16 } }));
+    expect(loaded.crt.cellWidthAdjustment).toBe(-8);
+    expect(loaded.crt.cellHeightAdjustment).toBe(16);
+    const invalid = loadStoredSettings(JSON.stringify({ crt: { cellWidthAdjustment: -9, cellHeightAdjustment: 17 } }));
+    expect(invalid.crt.cellWidthAdjustment).toBe(0);
+    expect(invalid.crt.cellHeightAdjustment).toBe(0);
+  });
+
   it('preserves the CRT emulation switch', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { crtEmulation: false } })).crt.crtEmulation).toBe(false);
   });

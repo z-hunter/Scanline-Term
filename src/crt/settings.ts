@@ -6,6 +6,8 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   colorProfile: DEFAULT_COLOR_PROFILE_ID,
   consoleFont: 'Consolas',
   consoleFontSize: 16,
+  cellWidthAdjustment: 0,
+  cellHeightAdjustment: 0,
   curvature: 0.13,
   scanlineCount: 270,
   scanlineIntensity: 0.5,
@@ -87,6 +89,8 @@ export type TabPresetState = {
 
 const numericRanges = {
   consoleFontSize: [6, 32],
+  cellWidthAdjustment: [-8, 16],
+  cellHeightAdjustment: [-8, 16],
   curvature: [0, 0.5],
   scanlineCount: [0, 768],
   scanlineIntensity: [0, 1],
@@ -127,6 +131,9 @@ const isCursorStyle = (value: unknown): value is CursorStyle =>
 
 const numberInRange = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+
+const integerInRange = (value: unknown, min: number, max: number): value is number =>
+  Number.isInteger(value) && numberInRange(value, min, max);
 
 export function loadStoredSettings(raw: string | null): StoredSettings {
   const result: StoredSettings = {
@@ -172,7 +179,10 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
 
     for (const [key, range] of Object.entries(numericRanges)) {
       const candidate = value.crt[key];
-      if (numberInRange(candidate, range[0], range[1])) {
+      const valid = key === 'cellWidthAdjustment' || key === 'cellHeightAdjustment'
+        ? integerInRange(candidate, range[0], range[1])
+        : numberInRange(candidate, range[0], range[1]);
+      if (valid) {
         result.crt[key as keyof typeof numericRanges] = candidate as never;
       }
     }

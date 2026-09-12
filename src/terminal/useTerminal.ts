@@ -125,7 +125,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset = clonePresetSettings(defaultPresetRef.current); const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
     sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: 'default', draftName: 'default', settings: preset, dirty: false } }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
     const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
@@ -249,9 +249,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     renderer.current!.resizeSource(resolution, output);
     const source = renderer.current!.sourceCanvas;
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
-    if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont));
+    if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment));
   }, []);
-  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, activePresetState?.settings.resolution, activePresetState?.settings.crt.consoleFont, activePresetState?.settings.crt.consoleFontSize]);
+  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, activePresetState?.settings.resolution, activePresetState?.settings.crt.consoleFont, activePresetState?.settings.crt.consoleFontSize, activePresetState?.settings.crt.cellWidthAdjustment, activePresetState?.settings.crt.cellHeightAdjustment]);
   useEffect(() => {
     renderer.current!.markDirty();
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;

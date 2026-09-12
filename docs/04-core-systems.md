@@ -469,13 +469,13 @@ The persisted `globalHotkeyEnabled` setting invokes `set_global_hotkey_enabled`.
 
 ### Font Size and Cell Measurement
 
-`fontCellSize(fontSize, fontFamily)` in App.tsx:
+`fontCellSize(fontSize, fontFamily, context, cellWidthAdjustment, cellHeightAdjustment)` in `TerminalRenderer.ts`:
 
 ```typescript
 context.font = `${fontSize}px "${family}", Consolas, "Courier New", monospace`;
 const metrics = context.measureText('M');
-width = Math.ceil(metrics.width);
-height = Math.ceil(ascent + descent);  // fontBoundingBox or actualBoundingBox
+width = max(1, Math.ceil(metrics.width) + cellWidthAdjustment);
+height = max(1, Math.ceil(ascent + descent) + cellHeightAdjustment);  // fontBoundingBox or actualBoundingBox
 ```
 
 ### Terminal Dimensions Calculation

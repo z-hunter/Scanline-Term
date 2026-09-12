@@ -513,4 +513,65 @@ describe('SettingsPanel font-size editing flow', () => {
     await act(async () => { root.unmount(); });
     container.remove();
   });
+
+  it('renders Save button when settings are dirty or draftName differs from name', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // Clean settings and matching draftName: no Save button
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: false },
+        presetNames: ['default', 'custom'],
+      }));
+    });
+    expect(container.querySelector('.preset-picker button')).toBeNull();
+
+    // Clean settings but draftName differs from name: shows Save button
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetState: { name: 'default', draftName: 'renamed', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: false },
+        presetNames: ['default', 'custom'],
+      }));
+    });
+    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+
+    // Dirty settings with matching draftName: shows Save button
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: true },
+        presetNames: ['default', 'custom'],
+      }));
+    });
+    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
+  it('updates cell width and height adjustments', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const setStored = vi.fn();
+    await act(async () => {
+      root.render(createElement(SettingsPanel, { ...defaultProps, setStored }));
+    });
+    const width = container.querySelector<HTMLInputElement>('[data-testid="cell-width-adjustment"]')!;
+    const height = container.querySelector<HTMLInputElement>('[data-testid="cell-height-adjustment"]')!;
+    await act(async () => {
+      setInputValue(width, '-4');
+      setInputValue(height, '6');
+    });
+    expect(setStored).toHaveBeenCalled();
+    const updates = setStored.mock.calls.map(([update]) => update(defaultProps.stored));
+    expect(updates.at(-2)?.crt.cellWidthAdjustment).toBe(-4);
+    expect(updates.at(-1)?.crt.cellHeightAdjustment).toBe(6);
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
 });

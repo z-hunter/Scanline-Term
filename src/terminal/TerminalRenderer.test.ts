@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, terminalAverageColor, terminalAverageLuma, terminalContentOffset, TerminalRenderer } from './TerminalRenderer';
+import { fontCellSize, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -49,6 +49,30 @@ describe('TerminalRenderer', () => {
     // Repeated call with same font should hit cache and not call measureText or createElement again
     expect(measureTextSpy).toHaveBeenCalledTimes(1);
     createElementSpy.mockRestore();
+  });
+
+  it('applies cell size adjustments without allowing zero-sized cells', () => {
+    const context = { font: '', measureText: () => ({ width: 10, fontBoundingBoxAscent: 12, fontBoundingBoxDescent: 3 }) };
+    expect(fontCellSize(14, 'AdjustedFont', context as unknown as CanvasRenderingContext2D, 4, -2)).toEqual({ width: 14, height: 13 });
+    expect(fontCellSize(14, 'AdjustedFont', context as unknown as CanvasRenderingContext2D, -20, -20)).toEqual({ width: 1, height: 1 });
+  });
+
+  it('uses adjusted cells for terminal dimensions and mouse mapping', () => {
+    const base = terminalDimensions(400, 400, 16, 'MouseFont');
+    const adjusted = terminalDimensions(400, 400, 16, 'MouseFont', 5, 4);
+    expect(adjusted.cols).toBeLessThan(base.cols);
+    expect(adjusted.rows).toBeLessThan(base.rows);
+
+    const cell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false };
+    const terminal = { cols: 5, rows: 5, buffer: { active: { getNullCell: () => cell } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: () => ({ dispose() {} }), onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 100, height: 100 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+    const output = document.createElement('canvas'); output.width = 100; output.height = 100;
+    vi.spyOn(output, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+    const unadjusted = renderer.cellAtPoint(30, 10, output, { ...DEFAULT_CRT_SETTINGS, consoleFont: 'MouseFont', cellWidthAdjustment: 0, cellHeightAdjustment: 0 });
+    const widened = renderer.cellAtPoint(30, 10, output, { ...DEFAULT_CRT_SETTINGS, consoleFont: 'MouseFont', cellWidthAdjustment: 5, cellHeightAdjustment: 4 });
+    expect(widened?.col).not.toBe(unadjusted?.col);
   });
 
   it('averages visible cell colors and chooses readable tab text', () => {

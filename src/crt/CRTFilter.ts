@@ -47,6 +47,8 @@ export interface CRTSettings {
   colorProfile: ColorProfileId;
   consoleFont: string;
   consoleFontSize: number;
+  cellWidthAdjustment: number; // -8 to +16 pixels added to measured cell width
+  cellHeightAdjustment: number; // -8 to +16 pixels added to measured cell height
   curvature: number; // 0.0 to 1.0 (Approx, was using hardcoded math)
   scanlineCount: number; // 300 - 1000?
   scanlineIntensity: number; // 0.0 to 1.0

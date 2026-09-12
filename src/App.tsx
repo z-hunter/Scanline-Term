@@ -1174,7 +1174,7 @@ export default function App() {
           presetDisabled={Boolean(activeBrowser)}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
-          onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: true }))}
+          onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name }))}
         />
       )}
     </main>

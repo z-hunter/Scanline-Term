@@ -15,20 +15,20 @@ let measurementContext: CanvasRenderingContext2D | undefined;
 
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
 export function canvasFont(fontSize: number, family: string): string { return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`; }
-export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D): { width: number; height: number } {
+export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0): { width: number; height: number } {
   const key = `${fontSize}:${family}`;
   const cached = fontMetricsCache.get(key);
-  if (cached) return cached;
+  if (cached) return { width: Math.max(1, cached.width + widthAdjustment), height: Math.max(1, cached.height + heightAdjustment) };
   context ??= (measurementContext ??= document.createElement('canvas').getContext('2d') ?? undefined);
-  if (!context) return { width: Math.ceil(fontSize * 0.6), height: Math.ceil(fontSize * 1.2) };
+  if (!context) return { width: Math.max(1, Math.ceil(fontSize * 0.6) + widthAdjustment), height: Math.max(1, Math.ceil(fontSize * 1.2) + heightAdjustment) };
   context.font = canvasFont(fontSize, family);
   const metrics = context.measureText('M');
   const size = { width: Math.ceil(metrics.width), height: Math.ceil((metrics.fontBoundingBoxAscent || metrics.actualBoundingBoxAscent || fontSize) + (metrics.fontBoundingBoxDescent || metrics.actualBoundingBoxDescent || Math.ceil(fontSize * 0.2))) };
   fontMetricsCache.set(key, size);
-  return size;
+  return { width: Math.max(1, size.width + widthAdjustment), height: Math.max(1, size.height + heightAdjustment) };
 }
-export function terminalDimensions(width: number, height: number, fontSize: number, family: string) {
-  const padding = terminalPadding(width, height); const cell = fontCellSize(fontSize, family);
+export function terminalDimensions(width: number, height: number, fontSize: number, family: string, widthAdjustment = 0, heightAdjustment = 0) {
+  const padding = terminalPadding(width, height); const cell = fontCellSize(fontSize, family, undefined, widthAdjustment, heightAdjustment);
   return { cols: Math.max(20, Math.min(300, Math.floor((width - padding * 2) / cell.width))), rows: Math.max(8, Math.min(150, Math.floor((height - padding * 2) / cell.height))) };
 }
 export function terminalContentOffset(width: number, height: number, cols: number, rows: number, cell: { width: number; height: number }) {
@@ -171,7 +171,7 @@ export class TerminalRenderer {
         v = y / 2 + .5;
       }
     }
-    const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont); const offset = terminalContentOffset(this.sourceCanvas.width, this.sourceCanvas.height, terminal.cols, terminal.rows, cell);
+    const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont, undefined, settings.cellWidthAdjustment, settings.cellHeightAdjustment); const offset = terminalContentOffset(this.sourceCanvas.width, this.sourceCanvas.height, terminal.cols, terminal.rows, cell);
     return { col: Math.max(1, Math.min(terminal.cols, Math.floor((u * this.sourceCanvas.width - offset.x) / cell.width) + 1)), row: Math.max(1, Math.min(terminal.rows, Math.floor((v * this.sourceCanvas.height - offset.y) / cell.height) + 1)) };
   }
   draw(time: number, settings: CRTSettings): boolean {
@@ -191,7 +191,7 @@ export class TerminalRenderer {
     const cursorPhase = this.getCursorBlinkPhase(time);
     if (!this.dirty && cursorPhase === this.lastCursorPhase) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
-    const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx);
+    const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx, settings.cellWidthAdjustment, settings.cellHeightAdjustment);
     const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
