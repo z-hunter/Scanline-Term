@@ -202,10 +202,7 @@ export default function App() {
   const loadPreset = useCallback(async (name: string) => {
     const state = terminal.activePresetState;
     if (!state) return;
-    if (state.dirty && !window.confirm("Discard unsaved preset changes and load this preset?")) {
-      terminal.updateActivePreset((current) => ({ ...current, draftName: name }));
-      return;
-    }
+    if (state.dirty && !window.confirm("Discard unsaved preset changes and load this preset?")) return;
     try {
       const raw = await invoke<unknown>("load_preset", { name });
       const loaded = loadPresetSettings(JSON.stringify(raw));
@@ -243,8 +240,6 @@ export default function App() {
         ...current,
         settings: { version: 1, resolution: next.resolution, crt: { ...next.crt } },
         dirty: true,
-        name: current.dirty ? current.name : "custom",
-        draftName: current.dirty ? current.draftName : "custom",
       }));
     }
     setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
@@ -803,7 +798,7 @@ export default function App() {
   const reset = () => {
     localStorage.removeItem(STORAGE_KEY);
     setStored(loadStoredSettings(null));
-    terminal.replaceActivePreset(clonePresetSettings(DEFAULT_PRESET_SETTINGS), "custom");
+    terminal.updateActivePreset((current) => ({ ...current, settings: clonePresetSettings(DEFAULT_PRESET_SETTINGS), dirty: true }));
     clearPersistence();
   };
   const sessionId = terminal.activeSessionId;
@@ -1174,7 +1169,7 @@ export default function App() {
           presetDisabled={Boolean(activeBrowser)}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
-          onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name }))}
+          onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
         />
       )}
     </main>

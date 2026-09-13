@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -49,6 +49,19 @@ describe('TerminalRenderer', () => {
     // Repeated call with same font should hit cache and not call measureText or createElement again
     expect(measureTextSpy).toHaveBeenCalledTimes(1);
     createElementSpy.mockRestore();
+  });
+
+  it('registers native font bytes for canvas rendering', async () => {
+    const add = vi.fn();
+    const face = { load: vi.fn().mockResolvedValue('loaded-face') };
+    const FontFaceMock = vi.fn(function FontFaceMock() { return face; });
+    const fonts = Object.getOwnPropertyDescriptor(document, 'fonts');
+    vi.stubGlobal('FontFace', FontFaceMock);
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { add } });
+    await loadCanvasFont('Native Test Font', [0, 1, 2]);
+    expect(FontFaceMock).toHaveBeenCalledWith('Native Test Font', expect.any(Uint8Array));
+    expect(add).toHaveBeenCalledWith('loaded-face');
+    if (fonts) Object.defineProperty(document, 'fonts', fonts);
   });
 
   it('applies cell size adjustments without allowing zero-sized cells', () => {

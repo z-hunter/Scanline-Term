@@ -393,6 +393,62 @@ fn summon_hotkey() -> (u32, u32) {
 }
 
 #[cfg(windows)]
+fn system_font_bytes(family: &str) -> Result<Vec<u8>, String> {
+    use windows_sys::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, CreateFontW, DeleteDC, DeleteObject, GetFontData, SelectObject,
+        DEFAULT_CHARSET, GDI_ERROR,
+    };
+
+    if !list_monospace_fonts().iter().any(|item| item == family) {
+        return Err("font is not an available monospace face".into());
+    }
+    let face_name = family.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    unsafe {
+        let dc = CreateCompatibleDC(std::ptr::null_mut());
+        if dc.is_null() {
+            return Err("could not create a font device context".into());
+        }
+        let font = CreateFontW(0, 0, 0, 0, 400, 0, 0, 0, DEFAULT_CHARSET as u32, 0, 0, 0, 0, face_name.as_ptr());
+        if font.is_null() {
+            DeleteDC(dc);
+            return Err("could not select the requested font".into());
+        }
+        let previous = SelectObject(dc, font as _);
+        if previous.is_null() {
+            DeleteObject(font as _);
+            DeleteDC(dc);
+            return Err("could not select the requested font".into());
+        }
+        let size = GetFontData(dc, 0, 0, std::ptr::null_mut(), 0);
+        let result = if size == GDI_ERROR as u32 || size > 64 * 1024 * 1024 {
+            Err("could not read font data".into())
+        } else {
+            let mut bytes = vec![0; size as usize];
+            if GetFontData(dc, 0, 0, bytes.as_mut_ptr().cast(), size) == GDI_ERROR as u32 {
+                Err("could not read font data".into())
+            } else {
+                Ok(bytes)
+            }
+        };
+        SelectObject(dc, previous);
+        DeleteObject(font as _);
+        DeleteDC(dc);
+        result
+    }
+}
+
+#[tauri::command]
+fn load_monospace_font(family: String) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    return system_font_bytes(&family);
+    #[cfg(not(windows))]
+    {
+        let _ = family;
+        Err("system font loading is only available on Windows".into())
+    }
+}
+
+#[cfg(windows)]
 fn is_window_active(window: &tauri::WebviewWindow) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
     if let Ok(hwnd) = window.hwnd() {
@@ -667,7 +723,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }
@@ -679,6 +735,8 @@ mod tests {
         target_argument, terminal_launch, valid_session_id,
         valid_working_directory, LaunchRequest,
     };
+    #[cfg(windows)]
+    use super::system_font_bytes;
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -766,6 +824,12 @@ mod tests {
             }
         }
         std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reads_registered_monospace_font_data() {
+        assert!(!system_font_bytes("Consolas").unwrap().is_empty());
     }
 
     #[test]

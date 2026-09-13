@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { RESOLUTIONS } from '../crt/settings';
 import type { CRTSettings } from '../crt/CRTFilter';
 import type { Resolution } from './TerminalRenderer';
-import { TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
+import { loadCanvasFont, TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
 import { TerminalSession, initialProfile, type TerminalLaunch, type TerminalSize } from './TerminalSession';
 import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
@@ -251,6 +251,17 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
     if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment));
   }, []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const family = activePresetState?.settings.crt.consoleFont ?? defaultPresetRef.current.crt.consoleFont;
+    let cancelled = false;
+    void invoke<number[]>('load_monospace_font', { family }).then((bytes) => loadCanvasFont(family, bytes)).then(() => {
+      if (cancelled) return;
+      renderer.current?.markDirty();
+      if (outputRef.current) resizeSource(outputRef.current);
+    }).catch((reason) => onError(`Could not load ${family}: ${String(reason)}`));
+    return () => { cancelled = true; };
+  }, [activePresetState?.settings.crt.consoleFont, onError, resizeSource]);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, activePresetState?.settings.resolution, activePresetState?.settings.crt.consoleFont, activePresetState?.settings.crt.consoleFontSize, activePresetState?.settings.crt.cellWidthAdjustment, activePresetState?.settings.crt.cellHeightAdjustment]);
   useEffect(() => {
     renderer.current!.markDirty();

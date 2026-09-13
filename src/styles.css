@@ -665,6 +665,24 @@ fieldset {
   padding: 0 12px;
 }
 
+.preset-load-control {
+  display: block;
+  margin-top: 10px;
+  color: #b9d7c1;
+  font-size: 13px;
+}
+
+.preset-load-control select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid #355840;
+  border-radius: 5px;
+  color: #d7f5df;
+  background: #0b130e;
+}
+
 .preset-controls {
   width: 100%;
   min-width: 0;

@@ -478,48 +478,60 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('renders the active tab preset and exposes Save only for dirty state', async () => {
+  it('keeps the loaded preset name while settings are dirty', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
     const onSavePreset = vi.fn();
     const onPresetNameChange = vi.fn();
-    const onLoadPreset = vi.fn();
     await act(async () => {
       root.render(createElement(SettingsPanel, {
         ...defaultProps,
-        presetState: { name: 'default', draftName: 'custom', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: true },
+        presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: true },
         presetNames: ['default', 'custom'],
         onSavePreset,
-        onLoadPreset,
         onPresetNameChange,
       }));
     });
     const input = container.querySelector<HTMLInputElement>('[aria-label="Preset name"]');
-    expect(input?.value).toBe('custom');
-    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+    expect(input?.value).toBe('default');
+    expect(container.querySelector('[data-testid="preset-save"]')).not.toBeNull();
     await act(async () => { setInputValue(input!, 'new-name'); });
     expect(onPresetNameChange).toHaveBeenCalledWith('new-name');
-    onPresetNameChange.mockClear();
-    await act(async () => { setInputValue(input!, 'default'); });
-    expect(onPresetNameChange).toHaveBeenCalledWith('default');
-    expect(onLoadPreset).not.toHaveBeenCalled();
-    await act(async () => {
-      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-      valueSetter?.call(input, 'default');
-      input?.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
-    });
-    expect(onLoadPreset).toHaveBeenCalledWith('default');
     await act(async () => { root.unmount(); });
     container.remove();
   });
 
-  it('renders Save button when settings are dirty or draftName differs from name', async () => {
+  it('loads a preset from the native selector without making manual names ambiguous', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onLoadPreset = vi.fn();
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetState: { name: 'default', draftName: 'DEC VT-100 (1978)', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: false },
+        presetNames: ['default', 'DEC VT-100 (1978)'],
+        onLoadPreset,
+      }));
+    });
+    const load = container.querySelector<HTMLSelectElement>('[aria-label="Load preset"]');
+    expect(load?.options).toHaveLength(3);
+    await act(async () => {
+      load!.value = 'DEC VT-100 (1978)';
+      load!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(onLoadPreset).toHaveBeenCalledWith('DEC VT-100 (1978)');
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
+  it('enables Save only when settings are dirty or draftName differs from name', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    // Clean settings and matching draftName: no Save button
+    // Clean settings and matching draftName: disabled Save button
     await act(async () => {
       root.render(createElement(SettingsPanel, {
         ...defaultProps,
@@ -527,9 +539,9 @@ describe('SettingsPanel font-size editing flow', () => {
         presetNames: ['default', 'custom'],
       }));
     });
-    expect(container.querySelector('.preset-picker button')).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="preset-save"]')?.disabled).toBe(true);
 
-    // Clean settings but draftName differs from name: shows Save button
+    // Clean settings but draftName differs from name: enables Save button
     await act(async () => {
       root.render(createElement(SettingsPanel, {
         ...defaultProps,
@@ -537,9 +549,9 @@ describe('SettingsPanel font-size editing flow', () => {
         presetNames: ['default', 'custom'],
       }));
     });
-    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="preset-save"]')?.disabled).toBe(false);
 
-    // Dirty settings with matching draftName: shows Save button
+    // Dirty settings with matching draftName: enables Save button
     await act(async () => {
       root.render(createElement(SettingsPanel, {
         ...defaultProps,
@@ -547,7 +559,7 @@ describe('SettingsPanel font-size editing flow', () => {
         presetNames: ['default', 'custom'],
       }));
     });
-    expect(container.querySelector('.preset-picker button')).not.toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-testid="preset-save"]')?.disabled).toBe(false);
 
     await act(async () => { root.unmount(); });
     container.remove();

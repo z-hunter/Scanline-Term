@@ -11,10 +11,23 @@ type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight:
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
+const loadedFontFaces = new Map<string, Promise<void>>();
 let measurementContext: CanvasRenderingContext2D | undefined;
 
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
 export function canvasFont(fontSize: number, family: string): string { return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`; }
+export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
+  let loading = loadedFontFaces.get(family);
+  if (!loading) {
+    loading = new FontFace(family, new Uint8Array(bytes)).load().then((face) => {
+      document.fonts.add(face);
+      for (const key of fontMetricsCache.keys()) if (key.endsWith(`:${family}`)) fontMetricsCache.delete(key);
+    });
+    loadedFontFaces.set(family, loading);
+    void loading.catch(() => loadedFontFaces.delete(family));
+  }
+  return loading;
+}
 export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0): { width: number; height: number } {
   const key = `${fontSize}:${family}`;
   const cached = fontMetricsCache.get(key);

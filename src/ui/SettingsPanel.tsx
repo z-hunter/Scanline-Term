@@ -154,6 +154,7 @@ export function SettingsPanel({
 }) {
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
+  const canSavePreset = Boolean(presetState && (presetState.dirty || presetState.draftName !== presetState.name));
   const averageCanvasMs = renderStats.redraws ? renderStats.canvasMs / renderStats.redraws : 0;
   const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
   const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
@@ -242,25 +243,28 @@ export function SettingsPanel({
         <legend>Presets</legend>
         <div className="preset-picker-row">
           <input
-            list="preset-names"
             value={presetState?.draftName ?? ''}
             placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
             aria-label="Preset name"
-            onChange={(event) => {
-              const value = event.target.value;
-              const existing = presetNames.find((name) => name.toLowerCase() === value.trim().toLowerCase());
-              const inputType = (event.nativeEvent as InputEvent).inputType;
-              if (existing && inputType === 'insertReplacementText' && existing.toLowerCase() !== presetState?.draftName.toLowerCase()) onLoadPreset(existing);
-              else onPresetNameChange(value);
-            }}
+            onChange={(event) => onPresetNameChange(event.target.value)}
           />
-          <datalist id="preset-names">
-            {presetNames.map((name) => <option key={name} value={name} />)}
-          </datalist>
-          {presetState && (presetState.dirty || presetState.draftName !== presetState.name) && (
-            <button type="button" onClick={() => onSavePreset(presetState.draftName)}>Save</button>
-          )}
+          <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
         </div>
+        <label className="preset-load-control">
+          Load preset
+          <select
+            aria-label="Load preset"
+            defaultValue=""
+            onChange={(event) => {
+              const name = event.target.value;
+              event.currentTarget.value = '';
+              if (name) onLoadPreset(name);
+            }}
+          >
+            <option value="" disabled>Load preset…</option>
+            {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
       </fieldset>
 
       <label className="resolution-control">
