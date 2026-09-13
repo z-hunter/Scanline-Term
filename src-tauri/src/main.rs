@@ -318,12 +318,15 @@ fn child_process_name(parent_pid: u32) -> Option<String> {
 unsafe extern "system" fn collect_monospace_font(
     logfont: *const windows_sys::Win32::Graphics::Gdi::LOGFONTW,
     metric: *const windows_sys::Win32::Graphics::Gdi::TEXTMETRICW,
-    _: u32,
+    font_type: u32,
     param: windows_sys::Win32::Foundation::LPARAM,
 ) -> i32 {
-    use windows_sys::Win32::Graphics::Gdi::TMPF_FIXED_PITCH;
+    use windows_sys::Win32::Graphics::Gdi::{TMPF_FIXED_PITCH, TRUETYPE_FONTTYPE};
 
     let metric = unsafe { &*metric };
+    if font_type & TRUETYPE_FONTTYPE == 0 {
+        return 1;
+    }
     // GDI already reports the family pitch here.  Comparing the rounded
     // average and maximum widths rejects valid OpenType monospace fonts.
     if metric.tmPitchAndFamily & TMPF_FIXED_PITCH != 0 {
