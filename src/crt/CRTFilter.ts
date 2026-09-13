@@ -20,7 +20,7 @@ const PASSTHROUGH_FS = `
 `;
 
 export function persistenceDecay(persistence: number, elapsedSeconds: number): { decay: number; cutoff: number } {
-  const base = 0.2 + (0.9915 - 0.2) * Math.min(1, Math.max(0, persistence));
+  const base = 0.2 + (0.99432 - 0.2) * Math.min(1, Math.max(0, persistence));
   const halfLife = -Math.LN2 / (60.0 * Math.log(base));
   return {
     decay: Math.exp((-Math.LN2 / halfLife) * elapsedSeconds),
@@ -756,6 +756,11 @@ export class CRTFilter {
                 imageColor += vec3(max(humBand, humTrail) * u_humBar * 0.12);
                 #endif
 
+                #if ENABLE_IMPERFECT_SIGNAL
+                float flicker = 0.985 + 0.025 * globalNoise;
+                imageColor *= mix(1.0, flicker, u_imperfectSignal);
+                #endif
+
                 // Phosphor Afterglow Trail (Soft, translucent trail overlay)
                 #if ENABLE_TRAIL
                 if (u_persistence > 0.0) {
@@ -864,11 +869,6 @@ export class CRTFilter {
                     finalBackground = mix(finalBackground, vec3(backgroundLuma), clamp(u_backgroundDesaturation, 0.0, 1.0));
                 }
                 vec3 color = finalImage * scanline + finalBackground;
-
-                #if ENABLE_IMPERFECT_SIGNAL
-                float flicker = 0.985 + 0.025 * globalNoise;
-                color *= mix(1.0, flicker, u_imperfectSignal);
-                #endif
 
                 // RGB masks belong to color CRTs; monochrome phosphor modes retain their clean tube surface.
                 if (u_colorMode <= 0.5 && u_maskType > 0.5) color *= colorMask();

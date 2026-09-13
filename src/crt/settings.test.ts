@@ -4,8 +4,8 @@ import { DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, load
 
 describe('CRT settings', () => {
   it('decays phosphor history by elapsed time rather than render frames', () => {
-    expect(persistenceDecay(1, 1 / 60).decay).toBeCloseTo(0.9915);
-    expect(persistenceDecay(1, 1).decay).toBeLessThan(0.61);
+    expect(persistenceDecay(1, 1 / 60).decay).toBeCloseTo(0.99432, 5);
+    expect(persistenceDecay(1, 1).decay).toBeLessThan(0.72);
   });
 
   it('compiles only the enabled heavy CRT effects', () => {

@@ -31,6 +31,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
+import { terminalDimensions } from './TerminalRenderer';
 import { adjacentTabId, browserTabColor, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
@@ -126,6 +127,29 @@ describe('browserTabColor', () => {
 });
 
 describe('terminal launch event', () => {
+  it('sizes a first Physical 4:3 session from the output canvas, not a stale source canvas', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    const preset = { version: 1 as const, resolution: 'physical-4x3' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: preset, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); output.width = 1234; output.height = 567;
+    await act(async () => { hookResult.resizeSource(output); });
+    hookResult.renderer.resizeSource(RESOLUTIONS[6], output);
+    await act(async () => { hookResult.openSession(); await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1234, 567, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
+  });
+
   it('starts a new session with the command and working directory from -T', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
@@ -1336,4 +1360,3 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 });
-

@@ -332,7 +332,7 @@ This matters for FAR Manager and other TUIs with a bright coloured background. T
 The current model compares the two source textures only when `sourceChanged` is true and emits the positive part of `previous - current`. This comparison is in output space after curvature and HV Breathing, using a ping-ponged average luma for each raster; when HV Breathing contracts the raster, the exposed physical phosphor points decay naturally. Closing a FAR dialog, moving a selection highlight, or covering shell text with a panel therefore creates a trail; an unchanged panel contributes no new energy and the FBO decays to zero. `clearPersistence()` also drops the source-frame comparison state so a resize cannot create a false first-frame trail.
 
 **Decay calculation** (`persistenceDecay()`):
-- Base = lerp(0.2, 0.9915, persistence)
+- Base = lerp(0.2, 0.99432, persistence); maximum half-life is 1.5× the previous limit
 - Half-life computed from base
 - Decay = exp(-ln2/halfLife × elapsedSeconds) — time-based, not frame-based
 - Cutoff = (30/255) × elapsedSeconds — prevents 8-bit quantization floor from causing permanent burn-in
@@ -372,19 +372,20 @@ The main fragment shader applies all visual effects in order:
 7. Channel switch roll
 8. Edge-dependent RGB beam misconvergence (symmetric R/B channel offset)
 9. Hum-bar raster injection (drawn directly onto imageColor before persistence)
-10. Persistence trail overlay (from Pass 1, incorporating extinguished text and moving Hum-bar afterglow)
-11. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
-12. Phosphor grain/noise texture
-13. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
-14. Beam modulation (luma-dependent scanline width)
-15. Image brightness/contrast correction
-16. Color mode conversion (luma × phosphor tint)
-17. Background desaturation (monochrome modes only)
-18. Composite and Imperfect signal flicker
-19. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
-20. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
-21. Vignette & ambient glass light
-22. Final clamp × 1.1
+10. Imperfect signal flicker (applied directly to imageColor before persistence)
+11. Persistence trail overlay (from Pass 1, incorporating extinguished text) plus a procedural Hum-bar tail scaled by the persistence setting
+12. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
+13. Phosphor grain/noise texture
+14. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
+15. Beam modulation (luma-dependent scanline width)
+16. Image brightness/contrast correction
+17. Color mode conversion (luma × phosphor tint)
+18. Background desaturation (monochrome modes only)
+19. Composite (finalImage × scanline + finalBackground)
+20. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
+21. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
+22. Vignette & ambient glass light
+23. Final clamp × 1.1
 ```
 
 The color CRT mode keeps green as the convergence reference. Edge misconvergence samples red and blue from opposite sides of a centered screen-space field, so the visible ordering reverses across the screen: red appears outward and blue toward the center. `Edge falloff` controls the profile from linear (`1`) to edge-focused (`4`); the strength is measured in physical output pixels and is disabled for monochrome phosphor modes.
