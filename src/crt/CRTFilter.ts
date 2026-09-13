@@ -122,6 +122,7 @@ export class CRTFilter {
   bloomTextureLocation: WebGLUniformLocation | null;
   glowTextureLocation: WebGLUniformLocation | null;
   trailLocation: WebGLUniformLocation | null;
+  trailTexelLocation: WebGLUniformLocation | null;
   persistenceLocation: WebGLUniformLocation | null;
   persistenceIntensityLocation: WebGLUniformLocation | null;
   beamModulationLocation: WebGLUniformLocation | null;
@@ -230,6 +231,7 @@ export class CRTFilter {
       this.bloomTextureLocation = null;
       this.glowTextureLocation = null;
       this.trailLocation = null;
+      this.trailTexelLocation = null;
       this.persistenceLocation = null;
       this.persistenceIntensityLocation = null;
       this.beamModulationLocation = null;
@@ -278,6 +280,7 @@ export class CRTFilter {
     this.bloomTextureLocation = null;
     this.glowTextureLocation = null;
     this.trailLocation = null;
+    this.trailTexelLocation = null;
     this.persistenceLocation = null;
     this.persistenceIntensityLocation = null;
     this.beamModulationLocation = null;
@@ -373,6 +376,7 @@ export class CRTFilter {
     this.bloomTextureLocation = gl.getUniformLocation(program, 'u_bloomTexture');
     this.glowTextureLocation = gl.getUniformLocation(program, 'u_glowTexture');
     this.trailLocation = gl.getUniformLocation(program, 'u_trail');
+    this.trailTexelLocation = gl.getUniformLocation(program, 'u_trailTexel');
     this.persistenceLocation = gl.getUniformLocation(program, 'u_persistence');
     this.persistenceIntensityLocation = gl.getUniformLocation(program, 'u_persistenceIntensity');
     this.beamModulationLocation = gl.getUniformLocation(program, 'u_beamModulation');
@@ -485,6 +489,7 @@ export class CRTFilter {
             uniform float u_imageContrast;
             uniform float u_backgroundDesaturation;
             uniform sampler2D u_trail;
+            uniform vec2 u_trailTexel;
             varying vec2 v_texCoord;
 
             // Curvature
@@ -721,6 +726,9 @@ export class CRTFilter {
                 float humPosition = 1.0 - fract(u_time * 0.08);
                 float humDistance = abs(fract(rasterUV.y - humPosition + 0.5) - 0.5);
                 float humBand = 1.0 - smoothstep(0.006, 0.055, humDistance);
+                float humTrailDist = fract(rasterUV.y - humPosition);
+                float humTrailLength = 0.055 + 0.22 * clamp(u_persistence, 0.0, 1.0);
+                float humTrail = 1.0 - smoothstep(0.006, humTrailLength, humTrailDist);
                 #endif
 
                 #if ENABLE_CHANNEL_SWITCH
@@ -744,11 +752,25 @@ export class CRTFilter {
 
                 vec3 imageColor = vec3(r, g, b);
 
+                #if ENABLE_HUM_BAR
+                imageColor += vec3(max(humBand, humTrail) * u_humBar * 0.12);
+                #endif
+
                 // Phosphor Afterglow Trail (Soft, translucent trail overlay)
                 #if ENABLE_TRAIL
                 if (u_persistence > 0.0) {
                      // History is in physical screen coordinates, after raster geometry.
-                     vec3 trail = texture2D(u_trail, v_texCoord).rgb;
+                     // Two-texel cross blur blends discrete cursor/text impressions
+                     // without softening the active source image.
+                     vec3 trail = texture2D(u_trail, v_texCoord).rgb * 0.25;
+                     trail += texture2D(u_trail, v_texCoord + vec2(u_trailTexel.x, 0.0)).rgb * 0.125;
+                     trail += texture2D(u_trail, v_texCoord - vec2(u_trailTexel.x, 0.0)).rgb * 0.125;
+                     trail += texture2D(u_trail, v_texCoord + vec2(0.0, u_trailTexel.y)).rgb * 0.125;
+                     trail += texture2D(u_trail, v_texCoord - vec2(0.0, u_trailTexel.y)).rgb * 0.125;
+                     trail += texture2D(u_trail, v_texCoord + vec2(2.0 * u_trailTexel.x, 0.0)).rgb * 0.0625;
+                     trail += texture2D(u_trail, v_texCoord - vec2(2.0 * u_trailTexel.x, 0.0)).rgb * 0.0625;
+                     trail += texture2D(u_trail, v_texCoord + vec2(0.0, 2.0 * u_trailTexel.y)).rgb * 0.0625;
+                     trail += texture2D(u_trail, v_texCoord - vec2(0.0, 2.0 * u_trailTexel.y)).rgb * 0.0625;
                      imageColor = max(imageColor, trail * clamp(u_persistenceIntensity, 0.0, 4.0));
                 }
                 #endif
@@ -846,10 +868,6 @@ export class CRTFilter {
                 #if ENABLE_IMPERFECT_SIGNAL
                 float flicker = 0.985 + 0.025 * globalNoise;
                 color *= mix(1.0, flicker, u_imperfectSignal);
-                #endif
-
-                #if ENABLE_HUM_BAR
-                color += applyColorMode(vec3(humBand * u_humBar * 0.12));
                 #endif
 
                 // RGB masks belong to color CRTs; monochrome phosphor modes retain their clean tube surface.
@@ -1009,7 +1027,8 @@ export class CRTFilter {
       }
 
       void main() {
-          vec3 current = sampleScreen(u_current, rasterUV(texture2D(u_currentLuma, vec2(0.5)).r));
+          vec2 currentRasterUV = rasterUV(texture2D(u_currentLuma, vec2(0.5)).r);
+          vec3 current = sampleScreen(u_current, currentRasterUV);
           vec3 history = texture2D(u_history, v_texCoord).rgb;
           
           // Quantization cutoff: subtracting 0.5/255 guarantees 8-bit framebuffers decay to absolute 0
@@ -1020,6 +1039,7 @@ export class CRTFilter {
           // pixel that became dimmer emits a residual phosphor trail.
           vec3 previous = sampleScreen(u_previous, rasterUV(texture2D(u_previousLuma, vec2(0.5)).r));
           vec3 emission = u_sourceChanged > 0.5 ? max(previous - current, vec3(0.0)) * 0.09 : vec3(0.0);
+
           vec3 trail = max(emission, decayedHistory);
 
           // Slight desaturation: phosphor afterglow naturally loses saturation as it decays
@@ -1527,6 +1547,7 @@ export class CRTFilter {
       gl.bindTexture(gl.TEXTURE_2D, activeInputTexture);
       if (this.trailLocation) gl.uniform1i(this.trailLocation, 1);
       if (this.persistenceLocation) gl.uniform1f(this.persistenceLocation, persistence);
+      if (this.trailTexelLocation) gl.uniform2f(this.trailTexelLocation, 1 / this.fboWidth, 1 / this.fboHeight);
       if (this.persistenceIntensityLocation) {
         gl.uniform1f(this.persistenceIntensityLocation, settings.persistenceIntensity);
       }

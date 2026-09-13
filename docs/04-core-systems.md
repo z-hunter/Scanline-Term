@@ -354,7 +354,7 @@ Uses FBOs at `glowResolutionScale` (0.5×).
 4. Vertical blur (second iteration), spread 1.5
 
 Each blur pass uses a 5-tap Gaussian kernel (weights: 0.227027, 0.316216×2, 0.070270×2).
-The Glow blur source is the current image texture before final scanline modulation; the resulting diffuse layer is blended after scanlines, hum-bar, and the RGB mask so it can illuminate scanline gaps like light diffusing through the CRT faceplate.
+The Glow blur source is the current image texture before final scanline modulation; the resulting diffuse layer is blended after scanlines and the RGB mask so it can illuminate scanline gaps like light diffusing through the CRT faceplate.
 
 ### Pass 3: Final CRT Fragment Shader
 
@@ -371,19 +371,20 @@ The main fragment shader applies all visual effects in order:
 6. Hum-bar UV position
 7. Channel switch roll
 8. Edge-dependent RGB beam misconvergence (symmetric R/B channel offset)
-9. Persistence trail overlay (from Pass 1)
-10. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
-11. Phosphor grain/noise texture
-12. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
-13. Beam modulation (luma-dependent scanline width)
-14. Image brightness/contrast correction
-15. Color mode conversion (luma × phosphor tint)
-16. Background desaturation (monochrome modes only)
-17. Composite, Imperfect signal flicker, and Hum-bar light band
-18. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
-19. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
-20. Vignette & ambient glass light
-21. Final clamp × 1.1
+9. Hum-bar raster injection (drawn directly onto imageColor before persistence)
+10. Persistence trail overlay (from Pass 1, incorporating extinguished text and moving Hum-bar afterglow)
+11. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
+12. Phosphor grain/noise texture
+13. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
+14. Beam modulation (luma-dependent scanline width)
+15. Image brightness/contrast correction
+16. Color mode conversion (luma × phosphor tint)
+17. Background desaturation (monochrome modes only)
+18. Composite and Imperfect signal flicker
+19. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
+20. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
+21. Vignette & ambient glass light
+22. Final clamp × 1.1
 ```
 
 The color CRT mode keeps green as the convergence reference. Edge misconvergence samples red and blue from opposite sides of a centered screen-space field, so the visible ordering reverses across the screen: red appears outward and blue toward the center. `Edge falloff` controls the profile from linear (`1`) to edge-focused (`4`); the strength is measured in physical output pixels and is disabled for monochrome phosphor modes.
