@@ -1,6 +1,6 @@
 import type { ColorProfileId } from '../terminal-color-profiles';
 
-export type CRTColorMode = 'color' | 'bw' | 'green' | 'amber' | 'blue';
+export type CRTColorMode = 'color' | 'bw' | 'green' | 'green-p39' | 'amber' | 'blue';
 export type CRTMaskType = 'off' | 'aperture' | 'slot' | 'shadow';
 export type BloomAlgorithm = 'soft' | 'spiral';
 export type BezelGlowMode = 'spill' | 'reflection';
@@ -554,7 +554,8 @@ export class CRTFilter {
                  vec3 phosphorTint = vec3(1.0);
                  if (u_colorMode < 1.5) phosphorTint = vec3(1.0); // B&W, D65 white point (~6500K)
                  else if (u_colorMode < 2.5) phosphorTint = vec3(0.45, 1.0, 0.62); // Green
-                 else if (u_colorMode < 3.5) phosphorTint = vec3(1.1, 0.68, 0.2); // Amber
+                 else if (u_colorMode < 3.5) phosphorTint = vec3(0.25, 1.0, 0.15); // Green (IBM 3278)
+                 else if (u_colorMode < 4.5) phosphorTint = vec3(1.1, 0.68, 0.2); // Amber
                  else phosphorTint = vec3(0.42, 0.72, 1.0); // Phosphor Blue
                  return luma * phosphorTint;
              }
@@ -1503,7 +1504,7 @@ export class CRTFilter {
     if (this.antiAliasedPixelsLocation)
       gl.uniform1f(this.antiAliasedPixelsLocation, settings.antiAliasedPixels !== false ? 1.0 : 0.0);
         if (this.colorModeLocation) {
-      const colorMode = { color: 0, bw: 1, green: 2, amber: 3, blue: 4 }[settings.colorMode] ?? 0;
+      const colorMode = { color: 0, bw: 1, green: 2, 'green-p39': 3, amber: 4, blue: 5 }[settings.colorMode] ?? 0;
       gl.uniform1f(this.colorModeLocation, colorMode);
     }
     if (this.maskTypeLocation) {

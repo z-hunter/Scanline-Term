@@ -393,7 +393,7 @@ fn summon_hotkey() -> (u32, u32) {
 }
 
 #[cfg(windows)]
-fn system_font_bytes(family: &str) -> Result<Vec<u8>, String> {
+fn system_font_bytes(family: &str) -> Result<Option<Vec<u8>>, String> {
     use windows_sys::Win32::Graphics::Gdi::{
         CreateCompatibleDC, CreateFontW, DeleteDC, DeleteObject, GetFontData, SelectObject,
         DEFAULT_CHARSET, GDI_ERROR,
@@ -420,14 +420,18 @@ fn system_font_bytes(family: &str) -> Result<Vec<u8>, String> {
             return Err("could not select the requested font".into());
         }
         let size = GetFontData(dc, 0, 0, std::ptr::null_mut(), 0);
-        let result = if size == GDI_ERROR as u32 || size > 64 * 1024 * 1024 {
-            Err("could not read font data".into())
+        let result = if size == GDI_ERROR as u32 {
+            // Bitmap .fon faces are installed system fonts, but have no SFNT
+            // data for FontFace. Canvas can still select them by family name.
+            Ok(None)
+        } else if size > 64 * 1024 * 1024 {
+            Err("font data is too large".into())
         } else {
             let mut bytes = vec![0; size as usize];
             if GetFontData(dc, 0, 0, bytes.as_mut_ptr().cast(), size) == GDI_ERROR as u32 {
-                Err("could not read font data".into())
+                Ok(None)
             } else {
-                Ok(bytes)
+                Ok(Some(bytes))
             }
         };
         SelectObject(dc, previous);
@@ -438,7 +442,7 @@ fn system_font_bytes(family: &str) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-fn load_monospace_font(family: String) -> Result<Vec<u8>, String> {
+fn load_monospace_font(family: String) -> Result<Option<Vec<u8>>, String> {
     #[cfg(windows)]
     return system_font_bytes(&family);
     #[cfg(not(windows))]
@@ -829,7 +833,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn reads_registered_monospace_font_data() {
-        assert!(!system_font_bytes("Consolas").unwrap().is_empty());
+        assert!(!system_font_bytes("Consolas").unwrap().expect("Consolas must expose SFNT data").is_empty());
     }
 
     #[test]

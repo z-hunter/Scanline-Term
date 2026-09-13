@@ -255,7 +255,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     if (!isTauri()) return;
     const family = activePresetState?.settings.crt.consoleFont ?? defaultPresetRef.current.crt.consoleFont;
     let cancelled = false;
-    void invoke<number[]>('load_monospace_font', { family }).then((bytes) => loadCanvasFont(family, bytes)).then(() => {
+    void invoke<number[] | null>('load_monospace_font', { family }).then((bytes) => bytes ? loadCanvasFont(family, bytes) : undefined).then(() => {
       if (cancelled) return;
       renderer.current?.markDirty();
       if (outputRef.current) resizeSource(outputRef.current);

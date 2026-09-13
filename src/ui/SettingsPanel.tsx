@@ -222,402 +222,403 @@ export function SettingsPanel({
 
       <fieldset className="preset-controls" disabled={presetDisabled}>
 
-      <label className="resolution-control">
-        Virtual resolution
-        <select
-          value={stored.resolution}
-          data-testid="resolution-select"
-          onChange={(event) =>
-            setStored((current) => ({ ...current, resolution: event.target.value as ResolutionId }))
-          }
-        >
-          {RESOLUTIONS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <fieldset className="preset-picker">
-        <legend>Presets</legend>
-        <div className="preset-picker-row">
-          <input
-            value={presetState?.draftName ?? ''}
-            placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
-            aria-label="Preset name"
-            onChange={(event) => onPresetNameChange(event.target.value)}
-          />
-          <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
-        </div>
-        <label className="preset-load-control">
-          Load preset
+        <label className="resolution-control">
+          Virtual resolution
           <select
-            aria-label="Load preset"
-            defaultValue=""
-            onChange={(event) => {
-              const name = event.target.value;
-              event.currentTarget.value = '';
-              if (name) onLoadPreset(name);
-            }}
-          >
-            <option value="" disabled>Load preset…</option>
-            {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </label>
-      </fieldset>
-
-      <label className="resolution-control">
-        ANSI color profile
-        <select
-          value={stored.crt.colorProfile}
-          data-testid="color-profile-select"
-          onChange={(event) =>
-            setStored((current) => ({
-              ...current,
-              crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] },
-            }))
-          }
-        >
-          {COLOR_PROFILES.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profile.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="font-control-row">
-        <label className="resolution-control font-name-control">
-          Console font
-          <select
-            value={stored.crt.consoleFont}
+            value={stored.resolution}
+            data-testid="resolution-select"
             onChange={(event) =>
-              setStored((current) => ({ ...current, crt: { ...current.crt, consoleFont: event.target.value } }))
+              setStored((current) => ({ ...current, resolution: event.target.value as ResolutionId }))
             }
           >
-            {!monospaceFonts.includes(stored.crt.consoleFont) && (
-              <option value={stored.crt.consoleFont}>{stored.crt.consoleFont} (fallback)</option>
-            )}
-            {monospaceFonts.map((font) => (
-              <option key={font} value={font}>
-                {font}
+            {RESOLUTIONS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
               </option>
             ))}
           </select>
         </label>
-        <label className="resolution-control font-size-control">
-          Size
-          <input
-            type="number"
-            min={6}
-            max={32}
-            step={1}
-            value={fontSizeInput}
-            onChange={handleFontSizeChange}
-            onBlur={commitFontSize}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                commitFontSize();
-              }
-            }}
-          />
-        </label>
-      </div>
 
-      <div className="font-control-row">
-        <label className="resolution-control font-size-control">
-          Cell width ±px
-          <input
-            type="number"
-            min={-8}
-            max={16}
-            step={1}
-            value={stored.crt.cellWidthAdjustment}
-            data-testid="cell-width-adjustment"
-            onChange={(event) => handleCellAdjustmentChange('cellWidthAdjustment', event.target.value)}
-          />
-        </label>
-        <label className="resolution-control font-size-control">
-          Cell height ±px
-          <input
-            type="number"
-            min={-8}
-            max={16}
-            step={1}
-            value={stored.crt.cellHeightAdjustment}
-            data-testid="cell-height-adjustment"
-            onChange={(event) => handleCellAdjustmentChange('cellHeightAdjustment', event.target.value)}
-          />
-        </label>
-      </div>
-
-      <fieldset>
-        <legend>CRT</legend>
-        <Switch
-          label="CRT Emulation"
-          checked={stored.crt.crtEmulation}
-          data-testid="control-crtEmulation"
-          onChange={(checked) =>
-            setStored((current) => ({
-              ...current,
-              crt: { ...current.crt, crtEmulation: checked },
-            }))
-          }
-        />
-        {stored.crt.crtEmulation && (
-          <div className="crt-subsections">
-            <fieldset className="knob-group colors-group">
-              <legend>Colors</legend>
-              <div className="font-control-row">
-                <label className="resolution-control font-name-control">
-                  Color mode
-                  <select
-                    value={stored.crt.colorMode}
-                    data-testid="color-mode-select"
-                    onChange={(event) =>
-                      setStored((current) => ({
-                        ...current,
-                        crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
-                      }))
-                    }
-                  >
-                    <option value="color">Color</option>
-                    <option value="bw">B&amp;W</option>
-                    <option value="green">Green</option>
-                    <option value="amber">Amber</option>
-                    <option value="blue">Phosphor Blue</option>
-                  </select>
-                </label>
-                {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
-                  <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
-                    <span>
-                      Surface desat.
-                      <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
-                    </span>
-                    <Knob
-                      label="Background desaturation"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={stored.crt.backgroundDesaturation}
-                      onChange={(value) => update('backgroundDesaturation', value)}
-                    />
-                  </label>
-                )}
-              </div>
-              {stored.crt.colorMode === 'color' && (
-                <div className="font-control-row">
-                  <label className="resolution-control font-name-control">
-                    Color mask
-                    <select
-                      value={stored.crt.maskType}
-                      data-testid="color-mask-select"
-                      onChange={(event) =>
-                        setStored((current) => ({
-                          ...current,
-                          crt: { ...current.crt, maskType: event.target.value as CRTMaskType },
-                        }))
-                      }
-                    >
-                      <option value="off">Off</option>
-                      <option value="aperture">Aperture grille</option>
-                      <option value="slot">Slot mask</option>
-                      <option value="shadow">Shadow mask</option>
-                    </select>
-                  </label>
-                  <label className={`slider-control font-size-control ${stored.crt.maskType === 'off' ? 'disabled' : ''}`} style={{ width: '130px', margin: 0 }}>
-                    <span>
-                      Strength
-                      <output>{formatValue(stored.crt.maskStrength)}</output>
-                    </span>
-                    <Knob
-                      label="Color mask strength"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={stored.crt.maskStrength}
-                      disabled={stored.crt.maskType === 'off'}
-                      onChange={(value) => update('maskStrength', value)}
-                    />
-                  </label>
-                </div>
-              )}
-              {stored.crt.colorMode === 'color' && (
-                <div className="font-control-row convergence-controls">
-                  <label className="slider-control font-size-control" style={{ margin: 0 }}>
-                    <span>
-                      Edge<br />
-                      misconvergence
-                      <output>{formatValue(stored.crt.aberration)} px</output>
-                    </span>
-                    <Knob
-                      label="Edge misconvergence"
-                      min={0}
-                      max={5}
-                      step={0.25}
-                      value={stored.crt.aberration}
-                      onChange={(value) => update('aberration', value)}
-                    />
-                  </label>
-                  <label className={`slider-control font-size-control ${stored.crt.aberration === 0 ? 'disabled' : ''}`} style={{ margin: 0 }}>
-                    <span>
-                      Edge falloff
-                      <output>{formatValue(stored.crt.aberrationFalloff)}</output>
-                    </span>
-                    <Knob
-                      label="Edge falloff"
-                      min={1}
-                      max={4}
-                      step={0.25}
-                      value={stored.crt.aberrationFalloff}
-                      disabled={stored.crt.aberration === 0}
-                      onChange={(value) => update('aberrationFalloff', value)}
-                    />
-                  </label>
-                </div>
-              )}
-            </fieldset>
-            {Object.entries(controls).map(([group, groupControls]) => (
-              <fieldset className="knob-group" key={group}>
-                <legend>{group}</legend>
-                {groupControls.map((control) => {
-                  if (group === 'Light' && control.key === 'bloom') {
-                    return (
-                      <div className="bloom-card" key={control.key}>
-                        <label className="slider-control">
-                          <span>
-                            {control.label}
-                            <output>{formatValue(stored.crt[control.key])}</output>
-                          </span>
-                          <Knob
-                            {...control}
-                            value={stored.crt[control.key]}
-                            onChange={(value) => update(control.key, value)}
-                          />
-                        </label>
-                        <SegmentedControl
-                          value={stored.crt.bloomAlgorithm}
-                          disabled={stored.crt.bloom === 0}
-                          options={[
-                            { value: 'soft', label: 'Soft' },
-                            { value: 'spiral', label: 'Spiral' },
-                          ]}
-                          onChange={(algo) =>
-                            setStored((current) => ({
-                              ...current,
-                              crt: { ...current.crt, bloomAlgorithm: algo },
-                            }))
-                          }
-                        />
-                      </div>
-                    );
-                  }
-                  return (
-                    <label className="slider-control" key={control.key}>
-                      <span>
-                        {control.label}
-                        <output>{formatValue(stored.crt[control.key])}</output>
-                      </span>
-                      <Knob
-                        {...control}
-                        value={stored.crt[control.key]}
-                        onChange={(value) => update(control.key, value)}
-                      />
-                    </label>
-                  );
-                })}
-                {group === 'Temporal' && (
-                  <Switch
-                    label="Channel switch roll"
-                    checked={stored.crt.channelSwitchEffect}
-                    onChange={(checked) =>
-                      setStored((current) => ({
-                        ...current,
-                        crt: { ...current.crt, channelSwitchEffect: checked },
-                      }))
-                    }
-                  />
-                )}
-              </fieldset>
-            ))}
-            <fieldset>
-              <legend>Bezel</legend>
-              <div className="bezel-control-row">
-                <div className="setting-block">
-                  <span className="setting-label">Bezel glow</span>
-                  <SegmentedControl<'off' | BezelGlowMode>
-                    value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
-                    options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
-                    onChange={(value) => setStored((current) => ({
-                      ...current,
-                      crt: value === 'off'
-                        ? { ...current.crt, bezelGlow: false }
-                        : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
-                    }))}
-                  />
-                </div>
-                <label className="slider-control bezel-highlight-control">
-                  <span>
-                    Bezel highlight
-                    <output>{formatValue(stored.crt.bezelHighlight)}</output>
-                  </span>
-                  <Knob
-                    label="Bezel highlight"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={stored.crt.bezelHighlight}
-                    onChange={(value) => update('bezelHighlight', value)}
-                  />
-                </label>
-              </div>
-              <Switch
-                label="Monitor frame"
-                checked={stored.crt.showBezel}
-                onChange={(checked) =>
-                  setStored((current) => ({
-                    ...current,
-                    crt: { ...current.crt, showBezel: checked },
-                  }))
-                }
-              />
-            </fieldset>
+        <fieldset className="preset-picker">
+          <legend>Presets</legend>
+          <div className="preset-picker-row">
+            <input
+              value={presetState?.draftName ?? ''}
+              placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
+              aria-label="Preset name"
+              onChange={(event) => onPresetNameChange(event.target.value)}
+            />
+            <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
           </div>
-        )}
-      </fieldset>
+          <label className="preset-load-control">
+            Load preset
+            <select
+              aria-label="Load preset"
+              defaultValue=""
+              onChange={(event) => {
+                const name = event.target.value;
+                event.currentTarget.value = '';
+                if (name) onLoadPreset(name);
+              }}
+            >
+              <option value="" disabled>Load preset…</option>
+              {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+        </fieldset>
 
-      <fieldset>
-        <legend>Display</legend>
-        <div className="setting-block">
-          <span className="setting-label">Cursor style</span>
-          <SegmentedControl
-            value={stored.crt.cursorStyle}
-            data-testid="cursor-style-segmented"
-            options={[
-              { value: 'block', label: 'Block' },
-              { value: 'underline', label: 'Underline' },
-              { value: 'bar', label: 'Bar' },
-            ]}
-            onChange={(cursorStyle) =>
+        <label className="resolution-control">
+          ANSI color profile
+          <select
+            value={stored.crt.colorProfile}
+            data-testid="color-profile-select"
+            onChange={(event) =>
               setStored((current) => ({
                 ...current,
-                crt: { ...current.crt, cursorStyle },
+                crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] },
+              }))
+            }
+          >
+            {COLOR_PROFILES.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="font-control-row">
+          <label className="resolution-control font-name-control">
+            Console font
+            <select
+              value={stored.crt.consoleFont}
+              onChange={(event) =>
+                setStored((current) => ({ ...current, crt: { ...current.crt, consoleFont: event.target.value } }))
+              }
+            >
+              {!monospaceFonts.includes(stored.crt.consoleFont) && (
+                <option value={stored.crt.consoleFont}>{stored.crt.consoleFont} (fallback)</option>
+              )}
+              {monospaceFonts.map((font) => (
+                <option key={font} value={font}>
+                  {font}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="resolution-control font-size-control">
+            Size
+            <input
+              type="number"
+              min={6}
+              max={32}
+              step={1}
+              value={fontSizeInput}
+              onChange={handleFontSizeChange}
+              onBlur={commitFontSize}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  commitFontSize();
+                }
+              }}
+            />
+          </label>
+        </div>
+
+        <div className="font-control-row">
+          <label className="resolution-control font-size-control">
+            Cell width ±px
+            <input
+              type="number"
+              min={-8}
+              max={16}
+              step={1}
+              value={stored.crt.cellWidthAdjustment}
+              data-testid="cell-width-adjustment"
+              onChange={(event) => handleCellAdjustmentChange('cellWidthAdjustment', event.target.value)}
+            />
+          </label>
+          <label className="resolution-control font-size-control">
+            Cell height ±px
+            <input
+              type="number"
+              min={-8}
+              max={16}
+              step={1}
+              value={stored.crt.cellHeightAdjustment}
+              data-testid="cell-height-adjustment"
+              onChange={(event) => handleCellAdjustmentChange('cellHeightAdjustment', event.target.value)}
+            />
+          </label>
+        </div>
+
+        <fieldset>
+          <legend>CRT</legend>
+          <Switch
+            label="CRT Emulation"
+            checked={stored.crt.crtEmulation}
+            data-testid="control-crtEmulation"
+            onChange={(checked) =>
+              setStored((current) => ({
+                ...current,
+                crt: { ...current.crt, crtEmulation: checked },
               }))
             }
           />
-        </div>
-        <Switch
-          label="Anti-moiré pixels"
-          checked={stored.crt.antiAliasedPixels}
-          onChange={(checked) =>
-            setStored((current) => ({
-              ...current,
-              crt: { ...current.crt, antiAliasedPixels: checked },
-            }))
-          }
-        />
-      </fieldset>
+          {stored.crt.crtEmulation && (
+            <div className="crt-subsections">
+              <fieldset className="knob-group colors-group">
+                <legend>Colors</legend>
+                <div className="font-control-row">
+                  <label className="resolution-control font-name-control">
+                    Color mode
+                    <select
+                      value={stored.crt.colorMode}
+                      data-testid="color-mode-select"
+                      onChange={(event) =>
+                        setStored((current) => ({
+                          ...current,
+                          crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
+                        }))
+                      }
+                    >
+                      <option value="color">Color</option>
+                      <option value="bw">B&amp;W</option>
+                      <option value="green">Green (P31)</option>
+                      <option value="green-p39">Green (P39)</option>
+                      <option value="amber">Amber</option>
+                      <option value="blue">Phosphor Blue</option>
+                    </select>
+                  </label>
+                  {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
+                    <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
+                      <span>
+                        Surface desat.
+                        <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
+                      </span>
+                      <Knob
+                        label="Background desaturation"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={stored.crt.backgroundDesaturation}
+                        onChange={(value) => update('backgroundDesaturation', value)}
+                      />
+                    </label>
+                  )}
+                </div>
+                {stored.crt.colorMode === 'color' && (
+                  <div className="font-control-row">
+                    <label className="resolution-control font-name-control">
+                      Color mask
+                      <select
+                        value={stored.crt.maskType}
+                        data-testid="color-mask-select"
+                        onChange={(event) =>
+                          setStored((current) => ({
+                            ...current,
+                            crt: { ...current.crt, maskType: event.target.value as CRTMaskType },
+                          }))
+                        }
+                      >
+                        <option value="off">Off</option>
+                        <option value="aperture">Aperture grille</option>
+                        <option value="slot">Slot mask</option>
+                        <option value="shadow">Shadow mask</option>
+                      </select>
+                    </label>
+                    <label className={`slider-control font-size-control ${stored.crt.maskType === 'off' ? 'disabled' : ''}`} style={{ width: '130px', margin: 0 }}>
+                      <span>
+                        Strength
+                        <output>{formatValue(stored.crt.maskStrength)}</output>
+                      </span>
+                      <Knob
+                        label="Color mask strength"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={stored.crt.maskStrength}
+                        disabled={stored.crt.maskType === 'off'}
+                        onChange={(value) => update('maskStrength', value)}
+                      />
+                    </label>
+                  </div>
+                )}
+                {stored.crt.colorMode === 'color' && (
+                  <div className="font-control-row convergence-controls">
+                    <label className="slider-control font-size-control" style={{ margin: 0 }}>
+                      <span>
+                        Edge<br />
+                        misconvergence
+                        <output>{formatValue(stored.crt.aberration)} px</output>
+                      </span>
+                      <Knob
+                        label="Edge misconvergence"
+                        min={0}
+                        max={5}
+                        step={0.25}
+                        value={stored.crt.aberration}
+                        onChange={(value) => update('aberration', value)}
+                      />
+                    </label>
+                    <label className={`slider-control font-size-control ${stored.crt.aberration === 0 ? 'disabled' : ''}`} style={{ margin: 0 }}>
+                      <span>
+                        Edge falloff
+                        <output>{formatValue(stored.crt.aberrationFalloff)}</output>
+                      </span>
+                      <Knob
+                        label="Edge falloff"
+                        min={1}
+                        max={4}
+                        step={0.25}
+                        value={stored.crt.aberrationFalloff}
+                        disabled={stored.crt.aberration === 0}
+                        onChange={(value) => update('aberrationFalloff', value)}
+                      />
+                    </label>
+                  </div>
+                )}
+              </fieldset>
+              {Object.entries(controls).map(([group, groupControls]) => (
+                <fieldset className="knob-group" key={group}>
+                  <legend>{group}</legend>
+                  {groupControls.map((control) => {
+                    if (group === 'Light' && control.key === 'bloom') {
+                      return (
+                        <div className="bloom-card" key={control.key}>
+                          <label className="slider-control">
+                            <span>
+                              {control.label}
+                              <output>{formatValue(stored.crt[control.key])}</output>
+                            </span>
+                            <Knob
+                              {...control}
+                              value={stored.crt[control.key]}
+                              onChange={(value) => update(control.key, value)}
+                            />
+                          </label>
+                          <SegmentedControl
+                            value={stored.crt.bloomAlgorithm}
+                            disabled={stored.crt.bloom === 0}
+                            options={[
+                              { value: 'soft', label: 'Soft' },
+                              { value: 'spiral', label: 'Spiral' },
+                            ]}
+                            onChange={(algo) =>
+                              setStored((current) => ({
+                                ...current,
+                                crt: { ...current.crt, bloomAlgorithm: algo },
+                              }))
+                            }
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <label className="slider-control" key={control.key}>
+                        <span>
+                          {control.label}
+                          <output>{formatValue(stored.crt[control.key])}</output>
+                        </span>
+                        <Knob
+                          {...control}
+                          value={stored.crt[control.key]}
+                          onChange={(value) => update(control.key, value)}
+                        />
+                      </label>
+                    );
+                  })}
+                  {group === 'Temporal' && (
+                    <Switch
+                      label="Channel switch roll"
+                      checked={stored.crt.channelSwitchEffect}
+                      onChange={(checked) =>
+                        setStored((current) => ({
+                          ...current,
+                          crt: { ...current.crt, channelSwitchEffect: checked },
+                        }))
+                      }
+                    />
+                  )}
+                </fieldset>
+              ))}
+              <fieldset>
+                <legend>Bezel</legend>
+                <div className="bezel-control-row">
+                  <div className="setting-block">
+                    <span className="setting-label">Bezel glow</span>
+                    <SegmentedControl<'off' | BezelGlowMode>
+                      value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
+                      options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
+                      onChange={(value) => setStored((current) => ({
+                        ...current,
+                        crt: value === 'off'
+                          ? { ...current.crt, bezelGlow: false }
+                          : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
+                      }))}
+                    />
+                  </div>
+                  <label className="slider-control bezel-highlight-control">
+                    <span>
+                      Bezel highlight
+                      <output>{formatValue(stored.crt.bezelHighlight)}</output>
+                    </span>
+                    <Knob
+                      label="Bezel highlight"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={stored.crt.bezelHighlight}
+                      onChange={(value) => update('bezelHighlight', value)}
+                    />
+                  </label>
+                </div>
+                <Switch
+                  label="Monitor frame"
+                  checked={stored.crt.showBezel}
+                  onChange={(checked) =>
+                    setStored((current) => ({
+                      ...current,
+                      crt: { ...current.crt, showBezel: checked },
+                    }))
+                  }
+                />
+              </fieldset>
+            </div>
+          )}
+        </fieldset>
+
+        <fieldset>
+          <legend>Display</legend>
+          <div className="setting-block">
+            <span className="setting-label">Cursor style</span>
+            <SegmentedControl
+              value={stored.crt.cursorStyle}
+              data-testid="cursor-style-segmented"
+              options={[
+                { value: 'block', label: 'Block' },
+                { value: 'underline', label: 'Underline' },
+                { value: 'bar', label: 'Bar' },
+              ]}
+              onChange={(cursorStyle) =>
+                setStored((current) => ({
+                  ...current,
+                  crt: { ...current.crt, cursorStyle },
+                }))
+              }
+            />
+          </div>
+          <Switch
+            label="Anti-moiré pixels"
+            checked={stored.crt.antiAliasedPixels}
+            onChange={(checked) =>
+              setStored((current) => ({
+                ...current,
+                crt: { ...current.crt, antiAliasedPixels: checked },
+              }))
+            }
+          />
+        </fieldset>
       </fieldset>
 
       <fieldset>

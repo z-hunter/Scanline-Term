@@ -140,7 +140,7 @@ Builds the shared Tauri native popup used by the `+` button and terminal-canvas 
 The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game engine.
 
 **Exported types:**
-- `CRTColorMode` — `'color' | 'bw' | 'green' | 'amber' | 'blue'`
+- `CRTColorMode` — `'color' | 'bw' | 'green' | 'green-p39' | 'amber' | 'blue'`
 - `BloomAlgorithm` — `'soft' | 'spiral'`
 - `CursorStyle` — `'block' | 'underline' | 'bar'`
 - `CRTSettings` — Full interface with CRT controls, including Imperfect signal, Hum-bar, and Channel switch roll

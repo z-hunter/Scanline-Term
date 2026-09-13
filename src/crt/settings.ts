@@ -119,7 +119,7 @@ const isResolution = (value: unknown): value is ResolutionId =>
   RESOLUTIONS.some((resolution) => resolution.id === value);
 
 const isColorMode = (value: unknown): value is CRTColorMode =>
-  value === 'color' || value === 'bw' || value === 'green' || value === 'amber' || value === 'blue';
+  value === 'color' || value === 'bw' || value === 'green' || value === 'green-p39' || value === 'amber' || value === 'blue';
 const isMaskType = (value: unknown): value is CRTMaskType =>
   value === 'off' || value === 'aperture' || value === 'slot' || value === 'shadow';
 

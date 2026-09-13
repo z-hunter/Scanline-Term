@@ -152,6 +152,7 @@ describe('CRT settings', () => {
 
   it('accepts a phosphor color mode', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'amber' } })).crt.colorMode).toBe('amber');
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorMode: 'green-p39' } })).crt.colorMode).toBe('green-p39');
   });
 
   it('validates persisted color mask settings', () => {
