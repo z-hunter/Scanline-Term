@@ -527,7 +527,7 @@ unsafe extern "system" fn window_subclass_proc(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED, SIZE_MAXIMIZED,
-        WM_SYSCOMMAND, SC_MINIMIZE, WM_SETFOCUS,
+        WM_SYSCOMMAND, SC_MINIMIZE,
     };
 
     static WAS_MINIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -556,6 +556,7 @@ unsafe extern "system" fn window_subclass_proc(
     let prev = PREV_WNDPROC.load(std::sync::atomic::Ordering::SeqCst);
     let result = CallWindowProcW(std::mem::transmute(prev), hwnd, msg, wparam, lparam);
 
+    /* FAR startup-hang experiment: this re-enters WebView2 focus handling.
     if msg == WM_SETFOCUS {
         if let Some(window) = MAIN_WINDOW.get() {
             focus_webview(window);
@@ -567,7 +568,7 @@ unsafe extern "system" fn window_subclass_proc(
                 focus_webview(&window_clone);
             });
         }
-    }
+    } */
 
     result
 }
@@ -705,6 +706,26 @@ fn close_terminal(state: State<TerminalState>, session_id: SessionId) -> Result<
     Ok(())
 }
 
+#[tauri::command]
+fn confirm_close_with_sessions(app: tauri::AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            MessageBoxW, IDYES, MB_DEFBUTTON2, MB_ICONWARNING, MB_YESNO,
+        };
+
+        let text: Vec<u16> = "Open terminal sessions will be closed.\n\nClose Scanline Term?\0".encode_utf16().collect();
+        let title: Vec<u16> = "Scanline Term\0".encode_utf16().collect();
+        let hwnd = app.get_webview_window("main").and_then(|window| window.hwnd().ok()).map(|hwnd| hwnd.0 as _).unwrap_or(std::ptr::null_mut());
+        unsafe { MessageBoxW(hwnd, text.as_ptr(), title.as_ptr(), MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        true
+    }
+}
+
 fn main() {
     let cwd = std::env::current_dir().unwrap_or_default();
     let (launch, _) = launch_request(&std::env::args().collect::<Vec<_>>(), &cwd.to_string_lossy());
@@ -730,7 +751,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }

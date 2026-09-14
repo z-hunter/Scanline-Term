@@ -219,9 +219,11 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     if (typeof currentWindow.onCloseRequested !== 'function') return;
     let unlisten: (() => void) | undefined;
     void currentWindow.onCloseRequested(async (event) => {
-      if (closingWindow.current || ![...sessions.current.values()].some((record) => record.preset.dirty)) return;
+      if (closingWindow.current) return;
+      const liveSessions = [...sessions.current.values()].some((record) => record.session.live);
+      if (!liveSessions && ![...sessions.current.values()].some((record) => record.preset.dirty)) return;
       event.preventDefault();
-      if (!window.confirm('Close with unsaved preset changes?')) return;
+      if (liveSessions ? !await invoke<boolean>('confirm_close_with_sessions') : !window.confirm('Close with unsaved preset changes?')) return;
       closingWindow.current = true;
       try {
         await currentWindow.close();
@@ -251,9 +253,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
     if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment));
   }, []);
+  const currentPreset = activePresetState?.settings ?? defaultPresetRef.current;
   useEffect(() => {
     if (!isTauri()) return;
-    const family = activePresetState?.settings.crt.consoleFont ?? defaultPresetRef.current.crt.consoleFont;
+    const family = currentPreset.crt.consoleFont;
     let cancelled = false;
     void invoke<number[] | null>('load_monospace_font', { family }).then((bytes) => bytes ? loadCanvasFont(family, bytes) : undefined).then(() => {
       if (cancelled) return;
@@ -261,8 +264,8 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       if (outputRef.current) resizeSource(outputRef.current);
     }).catch((reason) => onError(`Could not load ${family}: ${String(reason)}`));
     return () => { cancelled = true; };
-  }, [activePresetState?.settings.crt.consoleFont, onError, resizeSource]);
-  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, activePresetState?.settings.resolution, activePresetState?.settings.crt.consoleFont, activePresetState?.settings.crt.consoleFontSize, activePresetState?.settings.crt.cellWidthAdjustment, activePresetState?.settings.crt.cellHeightAdjustment]);
+  }, [currentPreset.crt.consoleFont, onError, resizeSource]);
+  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
   useEffect(() => {
     renderer.current!.markDirty();
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
