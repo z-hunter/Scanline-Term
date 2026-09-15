@@ -19,6 +19,8 @@ describe('CRT settings', () => {
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, imperfectSignal: 0, humBar: 0, channelSwitchEffect: true })).toBe(32);
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, ambientGlassLight: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(64);
     expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, bezelHighlight: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(256);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, reflexBar: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(512);
+    expect(crtEffectMask({ persistence: 0, bloom: 0, glow: 0, reflexBarEnabled: false, reflexBar: 1, imperfectSignal: 0, humBar: 0, channelSwitchEffect: false })).toBe(0);
   });
 
   it('keeps final image correction out of HV breathing geometry', () => {
@@ -43,6 +45,11 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.ambientGlassLight).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.bezelHighlight).toBe(0.35);
     expect(DEFAULT_CRT_SETTINGS.bezelThickness).toBe(0);
+    expect(DEFAULT_CRT_SETTINGS.reflexBarEnabled).toBe(false);
+    expect(DEFAULT_CRT_SETTINGS.reflexBar).toBe(0.35);
+    expect(DEFAULT_CRT_SETTINGS.reflexBarPosY).toBe(0.09);
+    expect(DEFAULT_CRT_SETTINGS.reflexBarWidth).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.reflexBarHeight).toBe(0.23);
     expect(DEFAULT_CRT_SETTINGS.channelSwitchEffect).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
@@ -237,6 +244,15 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: 5 } })).crt.bezelThickness).toBe(5);
     expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: 15 } })).crt.bezelThickness).toBe(0);
     expect(loadStoredSettings(JSON.stringify({ crt: { bezelThickness: -1 } })).crt.bezelThickness).toBe(0);
+  });
+
+  it('accepts reflex-bar strength only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBar: 0.4 } })).crt.reflexBar).toBe(0.4);
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBar: 2 } })).crt.reflexBar).toBe(0.35);
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBar: -0.1 } })).crt.reflexBar).toBe(0.35);
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBarWidth: 0.98 } })).crt.reflexBarWidth).toBe(0.98);
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBarWidth: 0.8 } })).crt.reflexBarWidth).toBe(1);
+    expect(loadStoredSettings(JSON.stringify({ crt: { reflexBarEnabled: true } })).crt.reflexBarEnabled).toBe(true);
   });
 
   it('preserves the channel switch roll switch', () => {

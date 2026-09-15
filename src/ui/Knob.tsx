@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 
-export function formatValue(value: number): string { return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''); }
+export function formatValue(value: number): string { return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''); }
 
 export function Knob({ value, min, max, step, label, onChange, disabled }: { value: number; min: number; max: number; step: number; label: string; onChange: (value: number) => void; disabled?: boolean }) {
   const start = useRef<{ y: number; value: number } | null>(null); const ratio = (value - min) / (max - min);

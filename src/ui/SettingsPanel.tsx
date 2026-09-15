@@ -16,6 +16,7 @@ type NumericKey = Exclude<
   | 'showBezel'
   | 'antiAliasedPixels'
   | 'channelSwitchEffect'
+  | 'reflexBarEnabled'
   | 'colorMode'
   | 'maskType'
   | 'bloomAlgorithm'
@@ -27,7 +28,6 @@ const SHOW_TELEMETRY = false;
 const controls: Record<string, { key: NumericKey; label: string; min: number; max: number; step: number }[]> = {
   Geometry: [
     { key: 'curvature', label: 'Curvature', min: 0, max: 0.5, step: 0.01 },
-    { key: 'bezelThickness', label: 'Bezel thickness', min: 0, max: 10, step: 1 },
     { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.05 },
   ],
   Raster: [
@@ -480,7 +480,7 @@ export function SettingsPanel({
                 )}
               </fieldset>
               {Object.entries(controls).map(([group, groupControls]) => (
-                <fieldset className="knob-group" key={group}>
+                <fieldset className={`knob-group ${groupControls.length === 2 ? 'two-columns' : ''}`} key={group}>
                   <legend>{group}</legend>
                   {groupControls.map((control) => {
                     if (group === 'Light' && control.key === 'bloom') {
@@ -528,6 +528,82 @@ export function SettingsPanel({
                       </label>
                     );
                   })}
+                  {group === 'Light' && (
+                    <div className="reflex-subsection">
+                      <div className="reflex-header">
+                        <Switch
+                          label="Reflex-bar"
+                          checked={stored.crt.reflexBarEnabled}
+                          onChange={(checked) =>
+                            setStored((current) => ({
+                              ...current,
+                              crt: { ...current.crt, reflexBarEnabled: checked },
+                            }))
+                          }
+                        />
+                      </div>
+                      {stored.crt.reflexBarEnabled && (
+                        <div className="reflex-control-row active">
+                          <label className="slider-control reflex-bar-control">
+                            <span>
+                              Intensity
+                              <output>{formatValue(stored.crt.reflexBar)}</output>
+                            </span>
+                            <Knob
+                              label="Intensity"
+                              min={0}
+                              max={1}
+                              step={0.05}
+                              value={stored.crt.reflexBar}
+                              onChange={(value) => update('reflexBar', value)}
+                            />
+                          </label>
+                          <label className="slider-control reflex-pos-y-control">
+                            <span>
+                              Vertical pos.
+                              <output>{formatValue(stored.crt.reflexBarPosY)}</output>
+                            </span>
+                            <Knob
+                              label="Vertical pos."
+                              min={0}
+                              max={0.5}
+                              step={0.01}
+                              value={stored.crt.reflexBarPosY}
+                              onChange={(value) => update('reflexBarPosY', value)}
+                            />
+                          </label>
+                          <label className="slider-control reflex-width-control">
+                            <span>
+                              Width
+                              <output>{formatValue(stored.crt.reflexBarWidth)}</output>
+                            </span>
+                            <Knob
+                              label="Width"
+                              min={0.95}
+                              max={1}
+                              step={0.005}
+                              value={stored.crt.reflexBarWidth}
+                              onChange={(value) => update('reflexBarWidth', value)}
+                            />
+                          </label>
+                          <label className="slider-control reflex-height-control">
+                            <span>
+                              Height
+                              <output>{formatValue(stored.crt.reflexBarHeight)}</output>
+                            </span>
+                            <Knob
+                              label="Height"
+                              min={0.05}
+                              max={0.6}
+                              step={0.01}
+                              value={stored.crt.reflexBarHeight}
+                              onChange={(value) => update('reflexBarHeight', value)}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {group === 'Temporal' && (
                     <Switch
                       label="Channel switch roll"
@@ -544,20 +620,34 @@ export function SettingsPanel({
               ))}
               <fieldset>
                 <legend>Bezel</legend>
+                <div className="setting-block">
+                  <span className="setting-label">Bezel glow</span>
+                  <SegmentedControl<'off' | BezelGlowMode>
+                    value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
+                    options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
+                    onChange={(value) => setStored((current) => ({
+                      ...current,
+                      crt: value === 'off'
+                        ? { ...current.crt, bezelGlow: false }
+                        : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
+                    }))}
+                  />
+                </div>
                 <div className="bezel-control-row">
-                  <div className="setting-block">
-                    <span className="setting-label">Bezel glow</span>
-                    <SegmentedControl<'off' | BezelGlowMode>
-                      value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
-                      options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
-                      onChange={(value) => setStored((current) => ({
-                        ...current,
-                        crt: value === 'off'
-                          ? { ...current.crt, bezelGlow: false }
-                          : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
-                      }))}
+                  <label className="slider-control bezel-thickness-control">
+                    <span>
+                      Bezel thickness
+                      <output>{formatValue(stored.crt.bezelThickness)}</output>
+                    </span>
+                    <Knob
+                      label="Bezel thickness"
+                      min={0}
+                      max={10}
+                      step={1}
+                      value={stored.crt.bezelThickness}
+                      onChange={(value) => update('bezelThickness', value)}
                     />
-                  </div>
+                  </label>
                   <label className="slider-control bezel-highlight-control">
                     <span>
                       Bezel highlight

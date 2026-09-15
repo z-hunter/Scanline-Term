@@ -31,6 +31,11 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   ambientGlassLight: 0,
   bezelHighlight: 0.35,
   bezelThickness: 0,
+  reflexBarEnabled: false,
+  reflexBar: 0.35,
+  reflexBarPosY: 0.09,
+  reflexBarWidth: 1,
+  reflexBarHeight: 0.23,
   imperfectSignal: 0,
   humBar: 0,
   channelSwitchEffect: true,
@@ -110,6 +115,10 @@ const numericRanges = {
   ambientGlassLight: [0, 1],
   bezelHighlight: [0, 1],
   bezelThickness: [0, 10],
+  reflexBar: [0, 1],
+  reflexBarPosY: [0, 0.5],
+  reflexBarWidth: [0.95, 1],
+  reflexBarHeight: [0.05, 0.6],
   imperfectSignal: [0, 1],
   humBar: [0, 1],
   maskStrength: [0, 1],
@@ -191,6 +200,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.showBezel === 'boolean') result.crt.showBezel = value.crt.showBezel;
     if (typeof value.crt.crtEmulation === 'boolean') result.crt.crtEmulation = value.crt.crtEmulation;
     if (typeof value.crt.channelSwitchEffect === 'boolean') result.crt.channelSwitchEffect = value.crt.channelSwitchEffect;
+    if (typeof value.crt.reflexBarEnabled === 'boolean') result.crt.reflexBarEnabled = value.crt.reflexBarEnabled;
     if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.consoleFont === 'string' && value.crt.consoleFont.length > 0 && value.crt.consoleFont.length <= 128) {

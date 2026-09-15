@@ -72,6 +72,11 @@ export interface CRTSettings {
   ambientGlassLight: number; // 0.0 to 1.0 (Soft external illumination on the CRT glass)
   bezelHighlight: number; // 0.0 to 1.0 (External light on the inner bezel facet)
   bezelThickness: number; // 0 to 10 pixels (Extra inner bezel thickness)
+  reflexBarEnabled: boolean; // Enable daylight top glass reflex bar
+  reflexBar: number; // 0.0 to 1.0 (Daylight top glass reflex bar)
+  reflexBarPosY: number; // 0.0 to 0.5 (Vertical position from top edge)
+  reflexBarWidth: number; // 0.95 to 1.0 (Horizontal span / width)
+  reflexBarHeight: number; // 0.05 to 0.6 (Vertical thickness / height)
   imperfectSignal: number; // 0.0 to 1.0 (Flicker, jitter and horizontal roll)
   humBar: number; // 0.0 to 1.0 (Travelling glowing hum bar)
   channelSwitchEffect: boolean; // Brief vertical roll when changing terminal tabs
@@ -82,9 +87,10 @@ export interface CRTSettings {
   cursorStyle: CursorStyle;
 }
 
-export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight' | 'bezelHighlight' | 'bezelGlow' | 'bezelGlowMode'>>): number {
+export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight' | 'bezelHighlight' | 'bezelGlow' | 'bezelGlowMode' | 'reflexBar' | 'reflexBarEnabled'>>): number {
   const reflection = settings.bezelGlow && settings.bezelGlowMode === 'reflection';
-  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0) | ((settings.ambientGlassLight ?? 0) > 0 ? 64 : 0) | (reflection ? 128 : 0) | ((settings.bezelHighlight ?? 0) > 0 ? 256 : 0);
+  const reflexOn = (settings.reflexBarEnabled ?? ((settings.reflexBar ?? 0) > 0)) && (settings.reflexBar ?? 0) > 0;
+  return (settings.persistence > 0 ? 1 : 0) | (settings.bloom > 0 ? 2 : 0) | (settings.glow > 0 ? 4 : 0) | (settings.imperfectSignal > 0 ? 8 : 0) | (settings.humBar > 0 ? 16 : 0) | (settings.channelSwitchEffect ? 32 : 0) | ((settings.ambientGlassLight ?? 0) > 0 ? 64 : 0) | (reflection ? 128 : 0) | ((settings.bezelHighlight ?? 0) > 0 ? 256 : 0) | (reflexOn ? 512 : 0);
 }
 
 export class CRTFilter {
@@ -135,6 +141,10 @@ export class CRTFilter {
   channelSwitchLocation: WebGLUniformLocation | null;
   imageLocation: WebGLUniformLocation | null;
   bezelThicknessLocation: WebGLUniformLocation | null = null;
+  reflexBarLocation: WebGLUniformLocation | null = null;
+  reflexBarPosYLocation: WebGLUniformLocation | null = null;
+  reflexBarWidthLocation: WebGLUniformLocation | null = null;
+  reflexBarHeightLocation: WebGLUniformLocation | null = null;
 
   smoothedExpansion: number = 0;
   lastBreathingTime: number = 0;
@@ -244,6 +254,10 @@ export class CRTFilter {
       this.channelSwitchLocation = null;
       this.imageLocation = null;
       this.bezelThicknessLocation = null;
+      this.reflexBarLocation = null;
+      this.reflexBarPosYLocation = null;
+      this.reflexBarWidthLocation = null;
+      this.reflexBarHeightLocation = null;
       this.sourceResolutionLocation = null;
       this.antiAliasedPixelsLocation = null;
       this.colorModeLocation = null;
@@ -293,6 +307,10 @@ export class CRTFilter {
     this.channelSwitchLocation = null;
     this.imageLocation = null;
     this.bezelThicknessLocation = null;
+    this.reflexBarLocation = null;
+    this.reflexBarPosYLocation = null;
+    this.reflexBarWidthLocation = null;
+    this.reflexBarHeightLocation = null;
     this.colorModeLocation = null;
     this.maskTypeLocation = null;
     this.maskStrengthLocation = null;
@@ -352,7 +370,8 @@ export class CRTFilter {
       .replace('#define ENABLE_CHANNEL_SWITCH 0', `#define ENABLE_CHANNEL_SWITCH ${(effectMask >> 5) & 1}`)
       .replace('#define ENABLE_AMBIENT_GLASS 0', `#define ENABLE_AMBIENT_GLASS ${(effectMask >> 6) & 1}`)
       .replace('#define ENABLE_BEZEL_REFLECTION 0', `#define ENABLE_BEZEL_REFLECTION ${(effectMask >> 7) & 1}`)
-      .replace('#define ENABLE_BEZEL_HIGHLIGHT 0', `#define ENABLE_BEZEL_HIGHLIGHT ${(effectMask >> 8) & 1}`);
+      .replace('#define ENABLE_BEZEL_HIGHLIGHT 0', `#define ENABLE_BEZEL_HIGHLIGHT ${(effectMask >> 8) & 1}`)
+      .replace('#define ENABLE_REFLEX_BAR 0', `#define ENABLE_REFLEX_BAR ${(effectMask >> 9) & 1}`);
     const program = this.createProgram(gl, this.crtVsSource, source);
     if (!program) return;
     if (this.program) gl.deleteProgram(this.program);
@@ -385,6 +404,10 @@ export class CRTFilter {
     this.ambientGlassLightLocation = gl.getUniformLocation(program, 'u_ambientGlassLight');
     this.bezelHighlightLocation = gl.getUniformLocation(program, 'u_bezelHighlight');
     this.bezelThicknessLocation = gl.getUniformLocation(program, 'u_bezelThickness');
+    this.reflexBarLocation = gl.getUniformLocation(program, 'u_reflexBar');
+    this.reflexBarPosYLocation = gl.getUniformLocation(program, 'u_reflexBarPosY');
+    this.reflexBarWidthLocation = gl.getUniformLocation(program, 'u_reflexBarWidth');
+    this.reflexBarHeightLocation = gl.getUniformLocation(program, 'u_reflexBarHeight');
     this.imperfectSignalLocation = gl.getUniformLocation(program, 'u_imperfectSignal');
     this.humBarLocation = gl.getUniformLocation(program, 'u_humBar');
     this.channelSwitchLocation = gl.getUniformLocation(program, 'u_channelSwitch');
@@ -451,6 +474,7 @@ export class CRTFilter {
             #define ENABLE_AMBIENT_GLASS 0
             #define ENABLE_BEZEL_REFLECTION 0
             #define ENABLE_BEZEL_HIGHLIGHT 0
+            #define ENABLE_REFLEX_BAR 0
             uniform sampler2D u_image;
             uniform vec2 u_resolution;
             uniform float u_time;
@@ -475,6 +499,10 @@ export class CRTFilter {
             uniform float u_ambientGlassLight;
             uniform float u_bezelHighlight;
             uniform float u_bezelThickness;
+            uniform float u_reflexBar;
+            uniform float u_reflexBarPosY;
+            uniform float u_reflexBarWidth;
+            uniform float u_reflexBarHeight;
             uniform float u_imperfectSignal;
             uniform float u_humBar;
             uniform float u_channelSwitch;
@@ -640,6 +668,15 @@ export class CRTFilter {
                       float highlightResponse = 1.0;
                       if (u_breathingStrength > 0.0) highlightResponse = 0.65 + 0.6 * smoothstep(0.002, 0.06, texture2D(u_lumaTexture, vec2(0.5)).r);
                       finalColor += applyColorMode(vec3(0.38, 0.56, 0.72)) * facetBand * cornerFade * u_bezelHighlight * highlightResponse;
+                      #endif
+
+                      #if ENABLE_REFLEX_BAR
+                      // Top bezel overhang shadow when overhead daylight reflection is active
+                      // Strongly darkens the plastic bezel and ambient facet highlight in the upper quarter
+                      float topDarken = 1.0 - smoothstep(0.0, 0.25, v_texCoord.y);
+                      float shadowDepth = mix(0.75, 0.95, clamp(u_reflexBar, 0.0, 1.0));
+                      float shade = mix(1.0, 1.0 - shadowDepth, topDarken);
+                      finalColor *= shade;
                       #endif
 
                       #if ENABLE_BEZEL_REFLECTION
@@ -897,6 +934,22 @@ export class CRTFilter {
                 float vignette = curvedUV.x * curvedUV.y * (1.0 - curvedUV.x) * (1.0 - curvedUV.y);
                 float vig = pow(vignette * (15.0), 0.25);
                 color *= mix(1.0, vig, u_vignette);
+
+                #if ENABLE_REFLEX_BAR
+                float topMargin = min(0.08, u_reflexBarPosY * 0.88);
+                float vTop = smoothstep(max(0.0, u_reflexBarPosY - topMargin), u_reflexBarPosY, curvedUV.y);
+                float vBottom = 1.0 - smoothstep(u_reflexBarPosY, u_reflexBarPosY + u_reflexBarHeight, curvedUV.y);
+                float vProfile = vTop * vBottom;
+
+                // Smooth width transition between 0.95 (soft edge falloff) and 1.0 (full edge-to-edge)
+                float tWidth = clamp((u_reflexBarWidth - 0.95) / 0.05, 0.0, 1.0);
+                float falloff095 = 1.0 - smoothstep(0.3325, 0.475, abs(curvedUV.x - 0.5));
+                float hProfile = mix(falloff095, 1.0, tWidth);
+
+                vec3 daylight = vec3(0.92, 0.95, 1.0);
+                vec3 reflexLight = daylight * (vProfile * hProfile * u_reflexBar * 0.28);
+                color = 1.0 - (1.0 - color) * (1.0 - reflexLight);
+                #endif
 
                 // Keep the final composite in displayable range.
                 color = clamp(color * 1.1, 0.0, 1.0);
@@ -1351,8 +1404,12 @@ export class CRTFilter {
     const bezelReflection = settings.bezelGlow && settings.bezelGlowMode === 'reflection';
     const imperfectSignal = settings.imperfectSignal || 0.0;
     const humBar = settings.humBar || 0.0;
+    const reflexBar = settings.reflexBarEnabled ? (settings.reflexBar || 0.0) : 0.0;
+    const reflexBarPosY = settings.reflexBarPosY ?? 0.09;
+    const reflexBarWidth = settings.reflexBarWidth ?? 1.0;
+    const reflexBarHeight = settings.reflexBarHeight ?? 0.23;
     const channelSwitchEffect = settings.channelSwitchEffect;
-    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, bezelGlow: settings.bezelGlow, bezelGlowMode: settings.bezelGlowMode, ambientGlassLight, bezelHighlight, imperfectSignal, humBar, channelSwitchEffect }));
+    this.selectCRTProgram(crtEffectMask({ persistence, bloom, glow, bezelGlow: settings.bezelGlow, bezelGlowMode: settings.bezelGlowMode, ambientGlassLight, bezelHighlight, reflexBar, reflexBarEnabled: settings.reflexBarEnabled, imperfectSignal, humBar, channelSwitchEffect }));
     if (!this.program) return;
 
     let activeInputTexture = this.texture;
@@ -1492,6 +1549,14 @@ export class CRTFilter {
     if (this.bezelHighlightLocation) gl.uniform1f(this.bezelHighlightLocation, bezelHighlight);
     if (this.bezelThicknessLocation)
       gl.uniform1f(this.bezelThicknessLocation, settings.bezelThickness ?? 0.0);
+    if (this.reflexBarLocation)
+      gl.uniform1f(this.reflexBarLocation, reflexBar);
+    if (this.reflexBarPosYLocation)
+      gl.uniform1f(this.reflexBarPosYLocation, reflexBarPosY);
+    if (this.reflexBarWidthLocation)
+      gl.uniform1f(this.reflexBarWidthLocation, reflexBarWidth);
+    if (this.reflexBarHeightLocation)
+      gl.uniform1f(this.reflexBarHeightLocation, reflexBarHeight);
     if (this.beamModulationLocation)
       gl.uniform1f(this.beamModulationLocation, settings.beamModulation ?? 0.0);
     if (this.imperfectSignalLocation) gl.uniform1f(this.imperfectSignalLocation, imperfectSignal);

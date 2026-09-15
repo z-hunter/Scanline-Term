@@ -341,11 +341,35 @@ describe('SettingsPanel font-size editing flow', () => {
     const row = bezelFieldset?.querySelector('.bezel-control-row');
     expect(row).not.toBeNull();
 
-    const bezelGlowBlock = row?.querySelector('.setting-block');
+    const bezelGlowBlock = bezelFieldset?.querySelector('.setting-block');
     expect(bezelGlowBlock?.textContent).toContain('Bezel glow');
+
+    const bezelThicknessControl = row?.querySelector('.bezel-thickness-control');
+    expect(bezelThicknessControl?.textContent).toContain('Bezel thickness');
 
     const bezelHighlightControl = row?.querySelector('.bezel-highlight-control');
     expect(bezelHighlightControl?.textContent).toContain('Bezel highlight');
+
+    // Verify Reflex-bar is a subsection inside the Light fieldset
+    const lightFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Light');
+    expect(lightFieldset).toBeDefined();
+
+    const reflexSubsection = lightFieldset?.querySelector('.reflex-subsection');
+    expect(reflexSubsection).not.toBeNull();
+
+    const reflexSwitch = reflexSubsection?.querySelector('.switch-control');
+    expect(reflexSwitch?.textContent).toContain('Reflex-bar');
+
+    // Sub-controls are hidden when reflexBarEnabled is false
+    expect(reflexSubsection?.querySelector('.reflex-bar-control')).toBeNull();
+    expect(reflexSubsection?.querySelector('.reflex-pos-y-control')).toBeNull();
+    expect(reflexSubsection?.querySelector('.reflex-width-control')).toBeNull();
+    expect(reflexSubsection?.querySelector('.reflex-height-control')).toBeNull();
+
+    // Verify Geometry section no longer has Bezel thickness and uses two-columns
+    const geometryFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Geometry');
+    expect(geometryFieldset?.classList.contains('two-columns')).toBe(true);
+    expect(geometryFieldset?.textContent).not.toContain('Bezel thickness');
 
     const glowButtons = bezelGlowBlock?.querySelectorAll('button');
     expect(glowButtons).toHaveLength(3);
@@ -356,6 +380,63 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(setStored).toHaveBeenCalled();
     expect(currentStored.crt.bezelGlow).toBe(true);
     expect(currentStored.crt.bezelGlowMode).toBe('reflection');
+    setStored.mockClear();
+
+    // Adjust Bezel thickness knob
+    const bezelThicknessKnob = bezelThicknessControl?.querySelector('[role="slider"]');
+    await act(async () => {
+      bezelThicknessKnob?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.bezelThickness).toBe(1);
+    setStored.mockClear();
+
+    // Turn Reflex-bar on via switch
+    const reflexSwitchInput = reflexSwitch?.querySelector('input');
+    await act(async () => {
+      reflexSwitchInput?.click();
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.reflexBarEnabled).toBe(true);
+    setStored.mockClear();
+
+    // Rerender with reflexBarEnabled = true
+    currentStored = { ...currentStored, crt: { ...currentStored.crt, reflexBarEnabled: true } };
+    await act(async () => {
+      root.render(
+        createElement(SettingsPanel, {
+          ...defaultProps,
+          stored: currentStored,
+          setStored,
+        }),
+      );
+    });
+
+    const updatedLightFieldset = Array.from(container.querySelectorAll('fieldset')).find(
+      (fs) => fs.querySelector('legend')?.textContent === 'Light',
+    );
+    const updatedReflexSubsection = updatedLightFieldset?.querySelector('.reflex-subsection');
+    expect(updatedReflexSubsection?.querySelector('.reflex-bar-control')).not.toBeNull();
+    expect(updatedReflexSubsection?.querySelector('.reflex-pos-y-control')).not.toBeNull();
+    expect(updatedReflexSubsection?.querySelector('.reflex-width-control')).not.toBeNull();
+    expect(updatedReflexSubsection?.querySelector('.reflex-height-control')).not.toBeNull();
+
+    // Adjust Vertical pos. knob
+    const posKnob = updatedReflexSubsection?.querySelector('.reflex-pos-y-control [role="slider"]');
+    await act(async () => {
+      posKnob?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.reflexBarPosY).toBeCloseTo(0.1);
+    setStored.mockClear();
+
+    // Adjust Width knob
+    const widthKnob = updatedReflexSubsection?.querySelector('.reflex-width-control [role="slider"]');
+    await act(async () => {
+      widthKnob?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+    expect(setStored).toHaveBeenCalled();
+    expect(currentStored.crt.reflexBarWidth).toBeCloseTo(0.995);
     setStored.mockClear();
 
     // Verify Monitor frame switch inside Bezel fieldset is below the bezel-control-row

@@ -315,23 +315,12 @@ fn child_process_name(parent_pid: u32) -> Option<String> {
 }
 
 #[cfg(windows)]
-unsafe extern "system" fn collect_monospace_font(
+unsafe extern "system" fn collect_font(
     logfont: *const windows_sys::Win32::Graphics::Gdi::LOGFONTW,
-    metric: *const windows_sys::Win32::Graphics::Gdi::TEXTMETRICW,
-    font_type: u32,
+    _metric: *const windows_sys::Win32::Graphics::Gdi::TEXTMETRICW,
+    _font_type: u32,
     param: windows_sys::Win32::Foundation::LPARAM,
 ) -> i32 {
-    use windows_sys::Win32::Graphics::Gdi::{TMPF_FIXED_PITCH, TRUETYPE_FONTTYPE};
-
-    let metric = unsafe { &*metric };
-    if font_type & TRUETYPE_FONTTYPE == 0 {
-        return 1;
-    }
-    // GDI already reports the family pitch here.  Comparing the rounded
-    // average and maximum widths rejects valid OpenType monospace fonts.
-    if metric.tmPitchAndFamily & TMPF_FIXED_PITCH != 0 {
-        return 1;
-    }
     let face_name = unsafe { &(*logfont).lfFaceName };
     let length = face_name.iter().position(|&unit| unit == 0).unwrap_or(face_name.len());
     let name = String::from_utf16_lossy(&face_name[..length]);
@@ -358,7 +347,7 @@ fn list_monospace_fonts() -> Vec<String> {
             EnumFontFamiliesExW(
                 dc,
                 &filter,
-                Some(collect_monospace_font),
+                Some(collect_font),
                 &mut fonts as *mut BTreeSet<String> as isize,
                 0,
             );
@@ -398,13 +387,10 @@ fn summon_hotkey() -> (u32, u32) {
 #[cfg(windows)]
 fn system_font_bytes(family: &str) -> Result<Option<Vec<u8>>, String> {
     use windows_sys::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, CreateFontW, DeleteDC, DeleteObject, GetFontData, SelectObject,
-        DEFAULT_CHARSET, GDI_ERROR,
+        CreateCompatibleDC, CreateFontW, DeleteDC, DeleteObject, GetFontData, GetTextFaceW,
+        SelectObject, DEFAULT_CHARSET, GDI_ERROR,
     };
 
-    if !list_monospace_fonts().iter().any(|item| item == family) {
-        return Err("font is not an available monospace face".into());
-    }
     let face_name = family.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
     unsafe {
         let dc = CreateCompatibleDC(std::ptr::null_mut());
@@ -422,8 +408,14 @@ fn system_font_bytes(family: &str) -> Result<Option<Vec<u8>>, String> {
             DeleteDC(dc);
             return Err("could not select the requested font".into());
         }
+        let mut selected_face = [0u16; 64];
+        let selected_length = GetTextFaceW(dc, selected_face.len() as i32, selected_face.as_mut_ptr());
+        let selected_length = selected_face[..selected_length as usize]
+            .iter().position(|&unit| unit == 0).unwrap_or(selected_length as usize);
+        let matches_requested = selected_length > 0
+            && String::from_utf16_lossy(&selected_face[..selected_length]).eq_ignore_ascii_case(family);
         let size = GetFontData(dc, 0, 0, std::ptr::null_mut(), 0);
-        let result = if size == GDI_ERROR as u32 {
+        let result = if !matches_requested || size == GDI_ERROR as u32 {
             // Bitmap .fon faces are installed system fonts, but have no SFNT
             // data for FontFace. Canvas can still select them by family name.
             Ok(None)
