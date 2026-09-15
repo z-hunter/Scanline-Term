@@ -7,6 +7,9 @@ describe('terminal color profiles', () => {
     expect(colorProfile('windows-legacy').colors[4]).toBe('#000080');
     expect(colorProfile('ibm-3279').colors[13]).toBe('#ff00ff');
     expect(colorProfile('commodore-64').colors[11]).toBe('#b84104');
+    expect(colorProfile('commodore-128').colors[3]).toBe('#ee7700');
+    expect(colorProfile('commodore-128').foreground).toBe('#55ff55');
+    expect(colorProfile('commodore-128').background).toBe('#000000');
     expect(colorProfile('cyberpunk').colors[1]).toBe('#8A2458');
     expect(colorProfile('cyberpunk').colors[10]).toBe('#51E946');
     expect(colorProfile('xterm-x11').colors).toHaveLength(256);

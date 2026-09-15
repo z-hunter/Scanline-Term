@@ -12,6 +12,7 @@ type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | u
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
 const loadedFontFaces = new Map<string, Promise<void>>();
+const fontLoadPromises = new Map<string, Promise<void>>();
 let measurementContext: CanvasRenderingContext2D | undefined;
 
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
@@ -28,7 +29,15 @@ export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
   }
   return loading;
 }
-export function canvasFontLoad(family: string): Promise<void> | undefined { return loadedFontFaces.get(family); }
+export function canvasFontLoad(family: string, load?: () => Promise<number[] | null>): Promise<void> | undefined {
+  let loading = fontLoadPromises.get(family) ?? loadedFontFaces.get(family);
+  if (!loading && load) {
+    loading = load().then((bytes) => bytes ? loadCanvasFont(family, bytes) : undefined);
+    fontLoadPromises.set(family, loading);
+    void loading.catch(() => { if (fontLoadPromises.get(family) === loading) fontLoadPromises.delete(family); });
+  }
+  return loading;
+}
 export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0): { width: number; height: number } {
   const key = `${fontSize}:${family}`;
   const cached = fontMetricsCache.get(key);

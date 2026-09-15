@@ -1,4 +1,4 @@
-export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'cyberpunk'] as const;
+export const COLOR_PROFILE_IDS = ['dos-vga', 'windows-legacy', 'windows-campbell', 'xterm-x11', 'solarized-dark', 'ibm-3279', 'commodore-64', 'commodore-128', 'cyberpunk'] as const;
 
 export type ColorProfileId = (typeof COLOR_PROFILE_IDS)[number];
 
@@ -55,6 +55,10 @@ const profiles: TerminalColorProfile[] = [
   {
     id: 'commodore-64', label: 'Commodore 64', foreground: '#5f53fe', background: '#211bae',
     colors: ['#000000', '#be1a24', '#1fd21e', '#dff60a', '#211bae', '#b41ae2', '#30e6c6', '#fdfefc', '#424540', '#fe4a57', '#59fe59', '#b84104', '#5f53fe', '#6a3304', '#70746f', '#a4a7a2'],
+  },
+  {
+    id: 'commodore-128', label: 'Commodore 128 (VDC)', foreground: '#55ff55', background: '#000000',
+    colors: ['#000000', '#dd0000', '#00dd00', '#ee7700', '#0000cc', '#bb11ee', '#22ccbb', '#cccccc', '#666666', '#ff7777', '#77ff99', '#ffff55', '#4455ff', '#ff88ff', '#99ffff', '#ffffff'],
   },
   {
     id: 'cyberpunk', label: 'Cyberpunk', foreground: '#b8b4c4', background: '#080812',

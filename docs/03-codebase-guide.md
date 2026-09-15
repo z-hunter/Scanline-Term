@@ -247,6 +247,7 @@ Defines 8 terminal color profiles:
 | `solarized-dark` | Solarized Dark | Ethan Schoonover's scheme |
 | `ibm-3279` | IBM 3279 | Green/pure 8-color mainframe palette |
 | `commodore-64` | Commodore 64 | Authentic C64 color values |
+| `commodore-128` | Commodore 128 (VDC) | Authentic C128 80-column VDC RGBI palette with green-on-black boot styling |
 | `cyberpunk` | Cyberpunk | Neon accent palette |
 
 | Export | Purpose |

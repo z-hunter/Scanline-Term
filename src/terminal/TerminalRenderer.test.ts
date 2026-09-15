@@ -65,6 +65,25 @@ describe('TerminalRenderer', () => {
     if (fonts) Object.defineProperty(document, 'fonts', fonts);
   });
 
+  it('caches native font loading, including the loader promise', async () => {
+    const loader = vi.fn().mockResolvedValue(null);
+    const first = canvasFontLoad('In-flight Font', loader)!;
+    const second = canvasFontLoad('In-flight Font', vi.fn())!;
+    expect(second).toBe(first);
+    await first;
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(canvasFontLoad('In-flight Font')).toBe(first);
+  });
+
+  it('drops a rejected native font load so the next attempt can retry', async () => {
+    const failed = canvasFontLoad('Retry Font', () => Promise.reject(new Error('load failed')))!;
+    await expect(failed).rejects.toThrow('load failed');
+    expect(canvasFontLoad('Retry Font')).toBeUndefined();
+    const retry = canvasFontLoad('Retry Font', () => Promise.resolve(null));
+    expect(retry).toBeDefined();
+    await retry;
+  });
+
   it('applies cell size adjustments without allowing zero-sized cells', () => {
     const context = { font: '', measureText: () => ({ width: 10, fontBoundingBoxAscent: 12, fontBoundingBoxDescent: 3 }) };
     expect(fontCellSize(14, 'AdjustedFont', context as unknown as CanvasRenderingContext2D, 4, -2)).toEqual({ width: 14, height: 13 });
