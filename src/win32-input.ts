@@ -38,11 +38,14 @@ function keyInfo(event: KeyEvent): Win32Key {
   return [event.keyCode ?? 0, 0];
 }
 
-function controlState(event: KeyEvent): number {
+function controlState(event: KeyEvent, keyDown: boolean): number {
   let state = 0;
-  if (event.ctrlKey) state |= event.code === 'ControlRight' ? 0x04 : 0x08;
-  if (event.altKey) state |= event.code === 'AltRight' ? 0x01 : 0x02;
-  if (event.shiftKey) state |= 0x10;
+  // Browser KeyboardEvents do not consistently include a modifier in its own
+  // keydown event. Win32 consumers need the corresponding control-state bit
+  // to recognize modifier-only KEY_EVENT_RECORDs.
+  if (event.ctrlKey || keyDown && (event.code === 'ControlLeft' || event.code === 'ControlRight')) state |= event.code === 'ControlRight' ? 0x04 : 0x08;
+  if (event.altKey || keyDown && (event.code === 'AltLeft' || event.code === 'AltRight')) state |= event.code === 'AltRight' ? 0x01 : 0x02;
+  if (event.shiftKey || keyDown && (event.code === 'ShiftLeft' || event.code === 'ShiftRight')) state |= 0x10;
   if (event.getModifierState?.('CapsLock')) state |= 0x80;
   if (event.getModifierState?.('NumLock')) state |= 0x20;
   if (event.getModifierState?.('ScrollLock')) state |= 0x40;
@@ -65,5 +68,5 @@ function unicodeCharacter(event: KeyEvent): number {
 /** Encodes the Win32 Input Mode wire format expected by ConPTY. */
 export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
   const [virtualKey, scanCode] = keyInfo(event);
-  return `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event)};1_`;
+  return `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
 }

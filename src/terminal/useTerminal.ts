@@ -69,7 +69,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const [activePresetState, setActivePresetState] = useState<TabPresetState | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
-  const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null);
+  const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null);
   defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const refreshTabColor = useCallback((id: string) => {
@@ -305,44 +305,39 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       ? undefined
       : (activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined);
   useEffect(() => {
-    let pending = false;
-    let sent = false;
-    const forwardedAlt = new Map<string, { event: KeyboardEvent; session: TerminalSession }>();
+    const forwardedAlt = forwardedAltRef.current;
     const isAlt = (event: KeyboardEvent) =>
       event.code === 'AltLeft' || event.code === 'AltRight' || event.key === 'AltGraph';
     const isEnter = (event: KeyboardEvent) =>
       event.code === 'Enter' || event.code === 'NumpadEnter' || event.key === 'Enter';
     const hasAlt = (event: KeyboardEvent) =>
-      event.altKey || alt.current || pending || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')));
-    const replay = () => {
-      const session = getKeyboardSession();
-      const terminal = session?.terminal;
-      if (!session?.live || !terminal) { pending = false; return; }
-      for (const event of pendingAlt.current) {
-        const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
-        if (input) {
-          session.sendInput(input);
-          if (session.win32InputMode) forwardedAlt.set(event.code, { event, session });
-        }
+      event.altKey || alt.current || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')));
+    const releaseForwardedAlt = () => {
+      for (const { event, session } of forwardedAlt.values()) {
+        if (session.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
       }
-      pendingAlt.current = [];
-      pending = false;
-      sent = true;
+      forwardedAlt.clear();
     };
     const down = async (event: KeyboardEvent) => {
       if (isAlt(event)) {
         alt.current = true;
         const session = getKeyboardSession();
-        if (!session) return;
-        pendingAlt.current.push(event);
-        pending = true;
+        const terminal = session?.terminal;
+        if (!session?.live || !terminal) return;
+        // Do not defer Alt until keyup: Windows/WebView2 may consume the
+        // left-Alt keyup while handling the system menu, leaving console apps
+        // with no modifier event at all.
+        const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes);
+        if (input) {
+          session.sendInput(input);
+          if (session.win32InputMode) forwardedAlt.set(event.code, { event, session });
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
         return;
       }
-      if (pending && isEnter(event) && hasAlt(event) && isTauri()) {
-        pendingAlt.current = [];
-        pending = false;
+      if (isEnter(event) && hasAlt(event) && isTauri()) {
+        releaseForwardedAlt();
         suppressAlt.current = true;
         fullscreen.current = true;
         event.preventDefault();
@@ -353,7 +348,6 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
         } catch (reason) { onError(`Fullscreen toggle failed: ${String(reason)}`); }
         return;
       }
-      if (pending) replay();
       if (fullscreen.current && isEnter(event)) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -363,27 +357,18 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       if (isAlt(event)) {
         alt.current = false;
         if (suppressAlt.current) { suppressAlt.current = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
-        if (!pending && !sent) return;
-        if (pending) replay();
-        if (sent) {
-          const targetSession = forwardedAlt.get(event.code)?.session ?? getKeyboardSession();
-          if (targetSession?.live && targetSession.win32InputMode) targetSession.sendInput(win32InputKey(event, false));
-          forwardedAlt.delete(event.code);
-          if (forwardedAlt.size === 0) sent = false;
-        }
+        const targetSession = forwardedAlt.get(event.code)?.session;
+        if (!targetSession) return;
+        if (targetSession.live && targetSession.win32InputMode) targetSession.sendInput(win32InputKey(event, false));
+        forwardedAlt.delete(event.code);
         event.preventDefault();
         event.stopImmediatePropagation();
       }
     };
     const blur = () => {
-      for (const { event, session } of forwardedAlt.values()) {
-        if (session?.live && session.win32InputMode) session.sendInput(win32InputKey(event, false));
-      }
+      releaseForwardedAlt();
       alt.current = false;
       fullscreen.current = false;
-      pending = false;
-      sent = false;
-      forwardedAlt.clear();
       pendingAlt.current = [];
       suppressAlt.current = false;
       renderer.current?.setFocused(false);

@@ -815,14 +815,15 @@ describe('useTerminal closeSession concurrent closures', () => {
 
     const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
 
-    // Trigger Alt+Enter down to engage fullscreen guard; neither Alt event reaches Win32 input.
+    // Alt reaches the terminal immediately; Alt+Enter releases it before toggling fullscreen.
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true }));
       window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', altKey: true, bubbles: true }));
       window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true }));
     });
     expect(mocked.mockSetFullscreen).toHaveBeenCalled();
-    expect(sendInputSpy).not.toHaveBeenCalled();
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;1;2;1_');
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;0;0;1_');
 
     // Trigger blur without a preceding Enter keyup (e.g. focus transition on fullscreen toggle)
     await act(async () => {
@@ -895,7 +896,8 @@ describe('useTerminal closeSession concurrent closures', () => {
     });
 
     expect(mocked.mockSetFullscreen).toHaveBeenCalledTimes(1);
-    expect(sendInputSpy).not.toHaveBeenCalled();
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;1;1;1_');
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;0;0;1_');
 
     mocked.mockSetFullscreen.mockClear();
     sendInputSpy.mockClear();
@@ -909,7 +911,8 @@ describe('useTerminal closeSession concurrent closures', () => {
     });
 
     expect(mocked.mockSetFullscreen).toHaveBeenCalledTimes(1);
-    expect(sendInputSpy).not.toHaveBeenCalled();
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;1;1;1_');
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;0;0;1_');
 
     await act(async () => {
       root.unmount();
