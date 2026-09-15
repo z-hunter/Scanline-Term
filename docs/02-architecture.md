@@ -124,7 +124,7 @@ sequenceDiagram
     Note over Xterm: VT parse → update buffer cells
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
-    Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text on source canvas
+    Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text and cached box-glyph profiles on source canvas
     Canvas->>CRT: filter.render(source, settings, sourceDirty)
     Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
     CRT->>Screen: WebGL draw to output canvas

@@ -58,7 +58,24 @@ fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String>
         }
         let destination = directory.join(source.file_name().ok_or("invalid bundled preset name")?);
         if !destination.exists() {
-            fs::copy(source, destination).map_err(|error| error.to_string())?;
+            let temp_name = format!(
+                "{}.tmp.{}",
+                destination
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("preset.json"),
+                std::process::id()
+            );
+            let temp_path = directory.join(temp_name);
+            let copy_result = fs::copy(&source, &temp_path)
+                .map_err(|error| error.to_string())
+                .and_then(|_| {
+                    fs::rename(&temp_path, &destination).map_err(|error| error.to_string())
+                });
+            if let Err(error) = copy_result {
+                let _ = fs::remove_file(&temp_path);
+                return Err(error);
+            }
         }
     }
     Ok(())

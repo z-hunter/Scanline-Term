@@ -289,11 +289,16 @@ for each row (0..terminal.rows):
     if selection active and cell in range: fillRect(selection highlight)
     if cell has chars and not invisible:
       globalAlpha = cell.isDim() ? 0.6 : 1
-      fillText(chars, x, y)
+      if chars ∈ {│, ┃, ║, ▎}:
+        repeat the cached center-scanline alpha profile through the cell height
+      else:
+        fillText(chars, x, y)
 cursor: blinking block/bar/underline at 2Hz
 ```
 
 **Dirty-driving:** `onWriteParsed()` and cursor movement mark the terminal for comparison, not an automatic full repaint. The renderer snapshots every row's visible cell state and redraws only changed rows plus the old/new cursor row. A scroll, source resize, font/profile change, or selection change invalidates the whole source canvas.
+
+**Continuous vertical glyphs:** The renderer lazily rasterizes `│`, `┃`, `║` and `▎` into a temporary canvas for each font/cell geometry. It extracts the alpha values from the glyph's centre row, groups adjacent pixels with equal alpha, and repeats those runs over the complete cell height. This preserves the selected font's stem thickness, spacing and antialiasing while preventing gaps when neighbouring rows are repainted independently. If canvas readback is unavailable or the profile is empty, rendering falls back to `fillText()`.
 
 ### Color Remapping
 

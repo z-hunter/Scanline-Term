@@ -125,7 +125,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset = clonePresetSettings(defaultPresetRef.current); const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, () => refreshTabColor(id), (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
     sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: 'default', draftName: 'default', settings: preset, dirty: false } }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) renderer.current!.resizeSource(resolution, outputRef.current); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) renderer.current!.resizeSource(resolution, outputRef.current); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
     const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
@@ -251,22 +251,27 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     renderer.current!.resizeSource(resolution, output);
     const source = renderer.current!.sourceCanvas;
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
-    if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment));
+    if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont));
   }, []);
   const currentPreset = activePresetState?.settings ?? defaultPresetRef.current;
   useEffect(() => {
     if (!isTauri()) return;
     const family = currentPreset.crt.consoleFont;
+    const fallbackFont = currentPreset.crt.fallbackFont;
     let cancelled = false;
-    const loading = canvasFontLoad(family, () => invoke<number[] | null>('load_monospace_font', { family }))!;
-    void loading.then(() => {
+    const loadFont = (f: string) => canvasFontLoad(f, () => invoke<number[] | null>('load_monospace_font', { family: f }))!;
+    const loads: Promise<void>[] = [loadFont(family)];
+    if (fallbackFont && fallbackFont !== family) {
+      loads.push(loadFont(fallbackFont));
+    }
+    void Promise.all(loads).then(() => {
       if (cancelled) return;
       renderer.current?.markDirty();
       if (outputRef.current) resizeSource(outputRef.current);
-    }).catch((reason) => onError(`Could not load ${family}: ${String(reason)}`));
+    }).catch((reason) => onError(`Could not load font: ${String(reason)}`));
     return () => { cancelled = true; };
-  }, [currentPreset.crt.consoleFont, onError, resizeSource]);
-  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
+  }, [currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, onError, resizeSource]);
+  useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
   useEffect(() => {
     renderer.current!.markDirty();
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;

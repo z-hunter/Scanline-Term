@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { canvasFont, canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -357,5 +357,23 @@ describe('TerminalRenderer', () => {
     // Regain focus: cursor resets move time and starts solid ON
     renderer.setFocused(true);
     expect(renderer.isCursorBlinkActive()).toBe(true);
+  });
+
+  it('formats canvas font strings with and without fallback font', () => {
+    expect(canvasFont(16, 'MyFont')).toBe('16px "MyFont", Consolas, "Courier New", monospace');
+    expect(canvasFont(14, 'Primary Font', 'Fallback Font')).toBe('14px "Primary Font", "Fallback Font", Consolas, "Courier New", monospace');
+    expect(canvasFont(14, 'Primary Font', '')).toBe('14px "Primary Font", Consolas, "Courier New", monospace');
+    expect(canvasFont(14, 'Primary Font', 'Primary Font')).toBe('14px "Primary Font", Consolas, "Courier New", monospace');
+  });
+
+  it('applies fallback font in draw loop when configured in settings', () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    const terminal = { cols: 2, rows: 2, options: {}, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell(''), getLine: () => ({ getCell: () => cell('A') }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: () => ({ dispose() {} }), onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+
+    renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, consoleFont: 'CustomFont', fallbackFont: 'SecondaryFont' });
+    expect(context.font).toBe('16px "CustomFont", "SecondaryFont", Consolas, "Courier New", monospace');
   });
 });

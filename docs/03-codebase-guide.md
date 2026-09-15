@@ -26,6 +26,8 @@ ScanlineTerm/
 │   │   └── settings.test.ts       # Unit tests for settings validation
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
+│   ├── terminal/TerminalRenderer.ts # dirty-row Canvas 2D renderer and glyph raster profiles
+│   ├── terminal/TerminalRenderer.test.ts # Renderer, metrics and redraw regression tests
 │   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
@@ -89,6 +91,10 @@ ScanlineTerm/
 | [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools. |
 
 ### Frontend Core
+
+#### [`src/terminal/TerminalRenderer.ts`](../src/terminal/TerminalRenderer.ts)
+
+Reads xterm's headless buffer and renders rows to the source Canvas 2D surface. Cached row signatures keep redraws dirty-driven; signatures include both numeric colors and RGB/palette encoding modes. Continuous vertical glyphs `│`, `┃`, `║` and `▎` use a cached alpha profile sampled from the active font and repeated through the complete cell height, with native `fillText()` as the fallback for other glyphs.
 
 #### [`src/App.tsx`](../src/App.tsx)
 

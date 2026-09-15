@@ -11,6 +11,7 @@ type NumericKey = Exclude<
   | 'crtEmulation'
   | 'colorProfile'
   | 'consoleFont'
+  | 'fallbackFont'
   | 'bezelGlow'
   | 'bezelGlowMode'
   | 'showBezel'

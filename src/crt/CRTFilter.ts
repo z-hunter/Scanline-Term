@@ -46,6 +46,7 @@ export interface CRTSettings {
   crtEmulation: boolean;
   colorProfile: ColorProfileId;
   consoleFont: string;
+  fallbackFont?: string;
   consoleFontSize: number;
   cellWidthAdjustment: number; // -8 to +16 pixels added to measured cell width
   cellHeightAdjustment: number; // -8 to +16 pixels added to measured cell height

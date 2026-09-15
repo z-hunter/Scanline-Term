@@ -206,6 +206,13 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.consoleFont === 'string' && value.crt.consoleFont.length > 0 && value.crt.consoleFont.length <= 128) {
       result.crt.consoleFont = value.crt.consoleFont;
     }
+    const rawFallback = value.crt.fallbackFont ?? value.crt.FallbackFont ?? (value as { fallbackFont?: unknown; FallbackFont?: unknown }).fallbackFont ?? (value as { fallbackFont?: unknown; FallbackFont?: unknown }).FallbackFont;
+    if (typeof rawFallback === 'string') {
+      const trimmed = rawFallback.trim();
+      if (trimmed.length > 0 && trimmed.length <= 128) {
+        result.crt.fallbackFont = trimmed;
+      }
+    }
     if (typeof value.crt.antiAliasedPixels === 'boolean') {
       result.crt.antiAliasedPixels = value.crt.antiAliasedPixels;
     }
@@ -243,7 +250,7 @@ export function loadPresetSettings(raw: string): PresetSettings | null {
     if (!parsed || typeof parsed !== 'object') return null;
     const value = parsed as { version?: unknown; resolution?: unknown; crt?: unknown };
     if (value.version !== 1 || !isResolution(value.resolution) || !value.crt || typeof value.crt !== 'object' || Array.isArray(value.crt)) return null;
-    const stored = loadStoredSettings(JSON.stringify({ resolution: value.resolution, crt: value.crt }));
+    const stored = loadStoredSettings(JSON.stringify({ ...value, resolution: value.resolution, crt: value.crt }));
     return presetFromStored(stored);
   } catch {
     return null;

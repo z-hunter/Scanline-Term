@@ -280,6 +280,20 @@ describe('CRT settings', () => {
     expect(preset?.crt.curvature).toBe(DEFAULT_CRT_SETTINGS.curvature);
   });
 
+  it('loads service fallbackFont or FallbackFont from preset and stored settings', () => {
+    const preset1 = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: { consoleFont: 'CustomFont', fallbackFont: 'SecondaryFont' } }));
+    expect(preset1?.crt.consoleFont).toBe('CustomFont');
+    expect(preset1?.crt.fallbackFont).toBe('SecondaryFont');
+
+    const preset2 = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: { consoleFont: 'CustomFont', FallbackFont: 'TertiaryFont' } }));
+    expect(preset2?.crt.consoleFont).toBe('CustomFont');
+    expect(preset2?.crt.fallbackFont).toBe('TertiaryFont');
+
+    const preset3 = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', FallbackFont: 'RootFallbackFont', crt: { consoleFont: 'CustomFont' } }));
+    expect(preset3?.crt.consoleFont).toBe('CustomFont');
+    expect(preset3?.crt.fallbackFont).toBe('RootFallbackFont');
+  });
+
   it('rejects malformed and unsupported presets without a partial state', () => {
     expect(loadPresetSettings('{broken')).toBeNull();
     expect(loadPresetSettings(JSON.stringify({ version: 2, resolution: '640x480', crt: {} }))).toBeNull();

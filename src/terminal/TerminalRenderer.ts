@@ -18,13 +18,22 @@ const fontLoadPromises = new Map<string, Promise<void>>();
 let measurementContext: CanvasRenderingContext2D | undefined;
 
 export function terminalPadding(width: number, height: number): number { return Math.max(2, Math.floor(Math.min(width, height) * 0.01)); }
-export function canvasFont(fontSize: number, family: string): string { return `${fontSize}px "${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", Consolas, "Courier New", monospace`; }
+export function canvasFont(fontSize: number, family: string, fallbackFont?: string): string {
+  const cleanFamily = `"${family.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+  const cleanFallback = fallbackFont && fallbackFont.trim() && fallbackFont.trim() !== family
+    ? `"${fallbackFont.trim().replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", `
+    : '';
+  return `${fontSize}px ${cleanFamily}, ${cleanFallback}Consolas, "Courier New", monospace`;
+}
 export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
   let loading = loadedFontFaces.get(family);
   if (!loading) {
     loading = new FontFace(family, new Uint8Array(bytes)).load().then((face) => {
       document.fonts.add(face);
-      for (const key of fontMetricsCache.keys()) if (key.endsWith(`:${family}`)) fontMetricsCache.delete(key);
+      for (const key of fontMetricsCache.keys()) {
+        const parts = key.split(':');
+        if (parts[1] === family || parts[2] === family || key.endsWith(`:${family}`)) fontMetricsCache.delete(key);
+      }
       boxDrawingProfileCache.clear();
     });
     loadedFontFaces.set(family, loading);
@@ -41,20 +50,20 @@ export function canvasFontLoad(family: string, load?: () => Promise<number[] | n
   }
   return loading;
 }
-export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0): { width: number; height: number } {
-  const key = `${fontSize}:${family}`;
+export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0, fallbackFont?: string): { width: number; height: number } {
+  const key = `${fontSize}:${family}:${fallbackFont ?? ''}`;
   const cached = fontMetricsCache.get(key);
   if (cached) return { width: Math.max(1, cached.width + widthAdjustment), height: Math.max(1, cached.height + heightAdjustment) };
   context ??= (measurementContext ??= document.createElement('canvas').getContext('2d') ?? undefined);
   if (!context) return { width: Math.max(1, Math.ceil(fontSize * 0.6) + widthAdjustment), height: Math.max(1, Math.ceil(fontSize * 1.2) + heightAdjustment) };
-  context.font = canvasFont(fontSize, family);
+  context.font = canvasFont(fontSize, family, fallbackFont);
   const metrics = context.measureText('M');
   const size = { width: Math.ceil(metrics.width), height: Math.ceil((metrics.fontBoundingBoxAscent || metrics.actualBoundingBoxAscent || fontSize) + (metrics.fontBoundingBoxDescent || metrics.actualBoundingBoxDescent || Math.ceil(fontSize * 0.2))) };
   fontMetricsCache.set(key, size);
   return { width: Math.max(1, size.width + widthAdjustment), height: Math.max(1, size.height + heightAdjustment) };
 }
-export function terminalDimensions(width: number, height: number, fontSize: number, family: string, widthAdjustment = 0, heightAdjustment = 0) {
-  const padding = terminalPadding(width, height); const cell = fontCellSize(fontSize, family, undefined, widthAdjustment, heightAdjustment);
+export function terminalDimensions(width: number, height: number, fontSize: number, family: string, widthAdjustment = 0, heightAdjustment = 0, fallbackFont?: string) {
+  const padding = terminalPadding(width, height); const cell = fontCellSize(fontSize, family, undefined, widthAdjustment, heightAdjustment, fallbackFont);
   return { cols: Math.max(20, Math.min(300, Math.floor((width - padding * 2) / cell.width))), rows: Math.max(8, Math.min(150, Math.floor((height - padding * 2) / cell.height))) };
 }
 export function terminalContentOffset(width: number, height: number, cols: number, rows: number, cell: { width: number; height: number }) {
@@ -233,7 +242,7 @@ export class TerminalRenderer {
         v = y / 2 + .5;
       }
     }
-    const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont, undefined, settings.cellWidthAdjustment, settings.cellHeightAdjustment); const offset = terminalContentOffset(this.sourceCanvas.width, this.sourceCanvas.height, terminal.cols, terminal.rows, cell);
+    const cell = fontCellSize(settings.consoleFontSize, settings.consoleFont, undefined, settings.cellWidthAdjustment, settings.cellHeightAdjustment, settings.fallbackFont); const offset = terminalContentOffset(this.sourceCanvas.width, this.sourceCanvas.height, terminal.cols, terminal.rows, cell);
     return { col: Math.max(1, Math.min(terminal.cols, Math.floor((u * this.sourceCanvas.width - offset.x) / cell.width) + 1)), row: Math.max(1, Math.min(terminal.rows, Math.floor((v * this.sourceCanvas.height - offset.y) / cell.height) + 1)) };
   }
   draw(time: number, settings: CRTSettings): boolean {
@@ -253,7 +262,7 @@ export class TerminalRenderer {
     const cursorPhase = this.getCursorBlinkPhase(time);
     if (!this.dirty && cursorPhase === this.lastCursorPhase) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
-    const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx, settings.cellWidthAdjustment, settings.cellHeightAdjustment);
+    const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx, settings.cellWidthAdjustment, settings.cellHeightAdjustment, settings.fallbackFont);
     const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
@@ -264,7 +273,7 @@ export class TerminalRenderer {
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
     if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; return false; }
     const started = performance.now(); let glyphs = 0;
-    ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize);
     if (nextCursorRow !== null) {
       const x = offset.x + cellSize.width * buffer.cursorX;
@@ -305,7 +314,7 @@ export class TerminalRenderer {
     const profile = colorProfile(settings.colorProfile);
     ctx.fillStyle = '#050806';
     ctx.fillRect(0, 0, width, height);
-    ctx.font = canvasFont(size, settings.consoleFont);
+    ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont);
     ctx.textBaseline = 'top';
     const lines = [
       'SCANLINE TERM // CRT DISPLAY DIAGNOSTIC',

@@ -39,6 +39,8 @@
 - Additional dirty triggers: cursor blink phase change, settings changes (font, profile), selection changes, and source canvas resize.
 - The CRT shader's `render(source, settings, sourceChanged)` parameter propagates the dirty flag to skip unnecessary texture re-uploads when only shader uniforms change.
 
+Continuous vertical pseudographic glyphs (`│`, `┃`, `║`, `▎`) use a cached alpha profile from the active font and are repeated to the exact cell height. This keeps their real stem geometry and avoids row-boundary seams introduced by independently repainting changed rows; unsupported glyphs retain the native `fillText()` path.
+
 ---
 
 ## Why Color Profiles Can Have More Than 16 Colors
