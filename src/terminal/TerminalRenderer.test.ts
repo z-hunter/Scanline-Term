@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -61,6 +61,7 @@ describe('TerminalRenderer', () => {
     await loadCanvasFont('Native Test Font', [0, 1, 2]);
     expect(FontFaceMock).toHaveBeenCalledWith('Native Test Font', expect.any(Uint8Array));
     expect(add).toHaveBeenCalledWith('loaded-face');
+    expect(canvasFontLoad('Native Test Font')).toBeDefined();
     if (fonts) Object.defineProperty(document, 'fonts', fonts);
   });
 

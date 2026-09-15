@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { RESOLUTIONS } from '../crt/settings';
 import type { CRTSettings } from '../crt/CRTFilter';
 import type { Resolution } from './TerminalRenderer';
-import { loadCanvasFont, TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
+import { canvasFontLoad, loadCanvasFont, TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor } from './TerminalRenderer';
 import { TerminalSession, initialProfile, type TerminalLaunch, type TerminalSize } from './TerminalSession';
 import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
@@ -258,7 +258,8 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     if (!isTauri()) return;
     const family = currentPreset.crt.consoleFont;
     let cancelled = false;
-    void invoke<number[] | null>('load_monospace_font', { family }).then((bytes) => bytes ? loadCanvasFont(family, bytes) : undefined).then(() => {
+    const loading = canvasFontLoad(family) ?? invoke<number[] | null>('load_monospace_font', { family }).then((bytes) => bytes ? loadCanvasFont(family, bytes) : undefined);
+    void loading.then(() => {
       if (cancelled) return;
       renderer.current?.markDirty();
       if (outputRef.current) resizeSource(outputRef.current);

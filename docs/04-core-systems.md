@@ -465,6 +465,8 @@ The `list_monospace_fonts` Tauri command uses Win32 GDI:
 
 The frontend prepends `"Consolas"` to ensure a fallback is always available.
 
+When a selected TrueType/OpenType face is first used, the frontend requests its SFNT bytes from GDI and registers a `FontFace` for Canvas. The resulting load promise is cached by family name, so returning to a tab that already used the face does not send the full font file through Tauri IPC again. This keeps tab switches responsive for large programming fonts such as Iosevka.
+
 ### Global Summon Hotkey
 
 The persisted `globalHotkeyEnabled` setting invokes `set_global_hotkey_enabled`. When enabled, the Rust-side `tauri-plugin-global-shortcut` registers `Win+~` (`SUPER+Backquote`) with Windows. Pressing it hides Scanline Term only when it is already focused; otherwise it shows and focuses the main window. A registration failure, such as an OS-reserved or already claimed shortcut, is reported to the UI and resets the setting to disabled.

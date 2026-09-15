@@ -28,6 +28,7 @@ export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
   }
   return loading;
 }
+export function canvasFontLoad(family: string): Promise<void> | undefined { return loadedFontFaces.get(family); }
 export function fontCellSize(fontSize: number, family: string, context?: CanvasRenderingContext2D, widthAdjustment = 0, heightAdjustment = 0): { width: number; height: number } {
   const key = `${fontSize}:${family}`;
   const cached = fontMetricsCache.get(key);
