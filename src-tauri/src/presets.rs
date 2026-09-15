@@ -33,6 +33,37 @@ fn presets_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
+fn bundled_presets_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .resource_dir()
+        .ok()
+        .map(|directory| directory.join(PRESET_DIR))
+        .filter(|directory| directory.is_dir())
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join(PRESET_DIR)
+        })
+}
+
+fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String> {
+    let bundled = bundled_presets_path(app);
+    for entry in fs::read_dir(bundled)
+        .map_err(|error| error.to_string())?
+        .flatten()
+    {
+        let source = entry.path();
+        if source.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let destination = directory.join(source.file_name().ok_or("invalid bundled preset name")?);
+        if !destination.exists() {
+            fs::copy(source, destination).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn validate_name(name: &str) -> Result<&str, String> {
     let raw = name;
     let name = raw.trim();
@@ -193,6 +224,7 @@ fn write_value(path: &Path, value: &Value, overwrite: bool) -> Result<bool, Stri
 pub fn list_presets(app: AppHandle) -> Result<PresetCatalog, String> {
     let directory = presets_path(&app)?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    seed_bundled_presets(&app, &directory)?;
     Ok(catalog(&directory))
 }
 

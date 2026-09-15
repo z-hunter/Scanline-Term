@@ -30,12 +30,14 @@
     "targets": ["msi"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": {
-      "resources/conpty/": "conpty/"
+      "resources/conpty/": "conpty/",
+      "resources/presets/": "presets/",
+      "resources/fonts/": "fonts/"
     },
     "windows": {
       "wix": {
         "fragmentPaths": ["wix/path.wxs"],
-        "componentRefs": ["ScanlineTermPath"]
+        "componentRefs": ["ScanlineTermPath", "ScanlineTermFonts"]
       }
     }
   },

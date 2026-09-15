@@ -1071,21 +1071,6 @@ output {
   justify-content: center;
 }
 
-.reset-button {
-  width: 100%;
-  margin-top: 20px;
-  padding: 10px;
-  border: 1px solid #4a875d;
-  border-radius: 6px;
-  color: #d7f5df;
-  background: #163321;
-  cursor: pointer;
-}
-
-.reset-button:hover {
-  background: #204b2d;
-}
-
 footer {
   margin-top: 18px;
   text-align: center;

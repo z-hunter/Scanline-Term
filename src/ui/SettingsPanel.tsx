@@ -128,7 +128,6 @@ export function SettingsPanel({
   fps,
   renderStats,
   appVersion,
-  onReset,
   presetState = null,
   presetNames = [],
   presetDisabled = false,
@@ -144,7 +143,6 @@ export function SettingsPanel({
   fps: number;
   renderStats: RenderStats;
   appVersion: string;
-  onReset: () => void;
   presetState?: TabPresetState | null;
   presetNames?: string[];
   presetDisabled?: boolean;
@@ -779,9 +777,6 @@ export function SettingsPanel({
         />
       </fieldset>
 
-      <button type="button" className="reset-button" onClick={onReset}>
-        Reset defaults
-      </button>
       <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>
     </aside>
   );

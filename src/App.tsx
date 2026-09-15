@@ -231,6 +231,7 @@ export default function App() {
     }
   }, [reportError, terminal]);
   const panelStored: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
+  const showBezel = activePreset.crt.crtEmulation && activePreset.crt.showBezel;
   const setPanelStored = useCallback((action: React.SetStateAction<typeof stored>) => {
     const currentPanel: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
     const next = typeof action === "function" ? action(currentPanel) : action;
@@ -795,12 +796,6 @@ export default function App() {
     observer.observe(display);
     return () => observer.disconnect();
   }, [settingsVisible, aiVisible, outputRef]);
-  const reset = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setStored(loadStoredSettings(null));
-    terminal.updateActivePreset((current) => ({ ...current, settings: clonePresetSettings(DEFAULT_PRESET_SETTINGS), dirty: true }));
-    clearPersistence();
-  };
   const sessionId = terminal.activeSessionId;
   const selection = effectiveAiSelection(
     modelCatalog,
@@ -1098,7 +1093,7 @@ export default function App() {
           <div
             id="terminal-display"
             ref={screenRef}
-            className={`screen-frame${physicalWindow ? " physical-window" : ""}${activePreset.crt.showBezel ? "" : " bezel-hidden"}`}
+            className={`screen-frame${physicalWindow ? " physical-window" : ""}${showBezel ? "" : " bezel-hidden"}`}
             style={screenStyle}
           >
             <canvas
@@ -1163,7 +1158,6 @@ export default function App() {
           fps={fps}
           renderStats={renderStats}
           appVersion={appVersion}
-          onReset={reset}
           presetState={activePresetState}
           presetNames={presets}
           presetDisabled={Boolean(activeBrowser)}

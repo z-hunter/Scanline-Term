@@ -22,7 +22,6 @@ describe('SettingsPanel font-size editing flow', () => {
     fps: 60,
     renderStats: { redraws: 0, canvasMs: 0, glyphs: 0 },
     appVersion: '0.1.3',
-    onReset: vi.fn(),
   };
 
   const setInputValue = (input: HTMLInputElement, value: string) => {

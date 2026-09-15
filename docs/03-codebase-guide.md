@@ -48,6 +48,8 @@ ScanlineTerm/
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
 │   ├── resources/
+│   │   ├── fonts/                 # Non-standard fonts used by canonical presets
+│   │   └── presets/               # Canonical preset JSON files
 │   │   └── conpty/x64/           # Bundled ConPTY DLLs (Windows x64)
 │   ├── icons/                    # Application icons (.ico, .png)
 │   ├── tauri.conf.json           # Tauri build and window configuration
@@ -344,7 +346,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `app.windows[0].width/height` | 1440 × 960 | Default window size |
 | `app.security.csp` | `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Content Security Policy |
 | `bundle.targets` | `["msi"]` | Windows MSI installer |
-| `bundle.resources` | `"resources/conpty/" → "conpty/"` | Bundles ConPTY DLLs |
+| `bundle.resources` | ConPTY, presets, and fonts mapped into the bundle | Runtime and installer resources |
 | `bundle.createUpdaterArtifacts` | `true` | Creates signed updater artifacts and signatures |
 | `plugins.updater` | GitHub Releases `latest.json` | Verifies and installs signed releases |
 | `bundle.windows.wix` | `wix/path.wxs` | Adds the installation directory to the system `PATH`; removed on uninstall |

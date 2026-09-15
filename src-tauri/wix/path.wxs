@@ -1,5 +1,10 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
+    <DirectoryRef Id="TARGETDIR">
+      <Directory Id="WindowsFolder" Name="Windows">
+        <Directory Id="FontsFolder" Name="Fonts" />
+      </Directory>
+    </DirectoryRef>
     <DirectoryRef Id="INSTALLDIR">
         <Component Id="ScanlineTermPath" Guid="55c52bf9-6608-4d1b-9019-3fd06596a91a" Win64="yes">
           <CreateFolder />
@@ -11,6 +16,20 @@
           Part="last"
           System="yes"
           Permanent="no" />
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="FontsFolder">
+      <Component Id="ScanlineTermFonts" Guid="016282cd-64a0-422f-a3cf-f41c31feb18f" Win64="yes">
+        <File Id="ScanlineTermFontDec" Source="..\..\..\..\resources\fonts\_decterm.ttf" KeyPath="yes" TrueType="yes" />
+        <File Id="ScanlineTermFont3270" Source="..\..\..\..\resources\fonts\3270 Semi-Narrow 500.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontMda" Source="..\..\..\..\resources\fonts\Ac437_IBM_MDA.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontVga" Source="..\..\..\..\resources\fonts\Ac437_IBM_VGA_9x16.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontRobotron" Source="..\..\..\..\resources\fonts\Ac437_Robotron.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontCommodore" Source="..\..\..\..\resources\fonts\commodore-128.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevka" Source="..\..\..\..\resources\fonts\IosevkaTermSlabNerdFontMono-Regular.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontNouveau" Source="..\..\..\..\resources\fonts\Nouveau_IBM_Stretch.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontFixedsys" Source="..\..\..\..\resources\fonts\ofont.ru_Fixedsys.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontOrator" Source="..\..\..\..\resources\fonts\OratorStd.otf" TrueType="yes" />
       </Component>
     </DirectoryRef>
   </Fragment>

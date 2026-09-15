@@ -34,6 +34,38 @@ describe('TerminalRenderer', () => {
     expect(context.fillText).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['│', '▎'])('repeats the measured vertical raster through the cell for %s', (chars) => {
+    const pixels = new Uint8ClampedArray(8 * 4); pixels[2 * 4 + 3] = 128; pixels[3 * 4 + 3] = 128; pixels[5 * 4 + 3] = 255; pixels[6 * 4 + 3] = 255;
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), getImageData: vi.fn(() => ({ data: pixels })), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = { getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false };
+    const terminal = { cols: 1, rows: 1, options: {}, _core: { coreService: { isCursorHidden: true } }, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: () => ({ dispose() {} }), onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 20, height: 20 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+
+    expect(renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, cellHeightAdjustment: 2 })).toBe(true);
+    expect(context.fillText).toHaveBeenCalledTimes(1); // profile extraction canvas
+    expect(context.getImageData).toHaveBeenCalledWith(0, 6, 8, 1);
+    expect(context.fillRect).toHaveBeenCalledWith(8, 4, 2, 12);
+    expect(context.fillRect).toHaveBeenCalledWith(11, 4, 2, 12);
+  });
+
+  it('redraws when a cell changes color mode with the same numeric colors', () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    let rgb = true;
+    const cell = { getChars: () => 'A', getWidth: () => 1, getFgColor: () => 1, getBgColor: () => 2, isFgRGB: () => rgb, isBgRGB: () => rgb, isFgPalette: () => !rgb, isBgPalette: () => !rgb, isInverse: () => false, isDim: () => false, isInvisible: () => false };
+    let parsed = () => {};
+    const terminal = { cols: 1, rows: 1, options: {}, _core: { coreService: { isCursorHidden: true } }, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+
+    expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true);
+    context.fillText.mockClear();
+    rgb = false;
+    parsed();
+    expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(context.fillText).toHaveBeenCalledTimes(1);
+  });
+
   it('memoizes fontCellSize and reuses measurement context when none is supplied', () => {
     const measureTextSpy = vi.fn().mockReturnValue({ width: 10, fontBoundingBoxAscent: 12, fontBoundingBoxDescent: 3 });
     const mockCtx = { font: '', measureText: measureTextSpy };

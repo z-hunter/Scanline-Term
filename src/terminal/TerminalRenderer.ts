@@ -11,6 +11,8 @@ type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight:
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
+type BoxDrawingRun = { offset: number; width: number; alpha: number };
+const boxDrawingProfileCache = new Map<string, BoxDrawingRun[] | null>();
 const loadedFontFaces = new Map<string, Promise<void>>();
 const fontLoadPromises = new Map<string, Promise<void>>();
 let measurementContext: CanvasRenderingContext2D | undefined;
@@ -23,6 +25,7 @@ export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
     loading = new FontFace(family, new Uint8Array(bytes)).load().then((face) => {
       document.fonts.add(face);
       for (const key of fontMetricsCache.keys()) if (key.endsWith(`:${family}`)) fontMetricsCache.delete(key);
+      boxDrawingProfileCache.clear();
     });
     loadedFontFaces.set(family, loading);
     void loading.catch(() => loadedFontFaces.delete(family));
@@ -62,6 +65,42 @@ function cellColor(cell: IBufferCell, foreground: boolean, profile: TerminalColo
   if (foreground ? cell.isFgRGB() : cell.isBgRGB()) return remapLegacyRgb(profile, `#${value.toString(16).padStart(6, '0')}`);
   if (foreground ? cell.isFgPalette() : cell.isBgPalette()) return profileColor(profile, value);
   return foreground ? profile.foreground : profile.background;
+}
+
+function continuousVerticalProfile(ctx: CanvasRenderingContext2D, chars: string, x: number, cell: { width: number; height: number }): BoxDrawingRun[] | null {
+  if (chars !== '│' && chars !== '┃' && chars !== '║' && chars !== '▎') return null;
+  const width = Math.max(1, Math.ceil(cell.width));
+  const height = Math.max(1, Math.ceil(cell.height));
+  const phase = x - Math.floor(x);
+  const key = `${ctx.font}:${chars}:${width}:${height}:${phase.toFixed(3)}`;
+  if (boxDrawingProfileCache.has(key)) return boxDrawingProfileCache.get(key) ?? null;
+  try {
+    const sample = document.createElement('canvas'); sample.width = width; sample.height = height;
+    const sampleCtx = sample.getContext('2d', { willReadFrequently: true });
+    if (!sampleCtx) { boxDrawingProfileCache.set(key, null); return null; }
+    sampleCtx.font = ctx.font; sampleCtx.textAlign = 'left'; sampleCtx.textBaseline = 'middle'; sampleCtx.fillStyle = '#fff'; sampleCtx.fillText(chars, phase, height / 2);
+    // ponytail: one center scanline; sample several rows only if a font proves non-uniform stems.
+    const pixels = sampleCtx.getImageData(0, Math.floor(height / 2), width, 1).data;
+    const runs: BoxDrawingRun[] = [];
+    for (let offset = 0; offset < width; offset += 1) {
+      const alpha = pixels[offset * 4 + 3] / 255;
+      if (!alpha) continue;
+      const previous = runs[runs.length - 1];
+      if (previous && previous.offset + previous.width === offset && previous.alpha === alpha) previous.width += 1;
+      else runs.push({ offset, width: 1, alpha });
+    }
+    boxDrawingProfileCache.set(key, runs.length ? runs : null); return runs.length ? runs : null;
+  } catch {
+    boxDrawingProfileCache.set(key, null); return null;
+  }
+}
+
+function drawContinuousVertical(ctx: CanvasRenderingContext2D, chars: string, x: number, top: number, cell: { width: number; height: number }): boolean {
+  const profile = continuousVerticalProfile(ctx, chars, x, cell);
+  if (!profile) return false;
+  const left = Math.floor(x); const height = Math.max(1, Math.ceil(cell.height));
+  for (const run of profile) { ctx.globalAlpha *= run.alpha; ctx.fillRect(left + run.offset, top, run.width, height); ctx.globalAlpha /= run.alpha; }
+  return true;
 }
 
 function rgb(value: string): [number, number, number] {
@@ -248,13 +287,13 @@ export class TerminalRenderer {
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
     if (!line) return '';
     let signature = '';
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())};`; }
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())};`; }
     return signature;
   }
   private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }): number {
     const y = offset.y + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return 0;
     const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1; let glyphs = 0;
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { glyphs += 1; ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; ctx.fillText(chars, x, y); } }
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { glyphs += 1; ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (!drawContinuousVertical(ctx, chars, x, Math.floor(y - cellSize.height / 2), cellSize)) ctx.fillText(chars, x, y); } }
     return glyphs;
   }
   private drawMock(time: number, settings: CRTSettings): void {

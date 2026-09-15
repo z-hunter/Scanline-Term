@@ -13,6 +13,8 @@
 | **Microsoft C++ Build Tools** | MSVC linker and Windows SDK | Visual Studio Build Tools or full VS |
 | **WebView2 Runtime** | Tauri 2 rendering engine | Pre-installed on Windows 10/11; [download](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
 | **ConPTY DLLs** | Bundled in `src-tauri/resources/conpty/x64/` | Included in repository |
+| **Canonical presets** | Bundled in `src-tauri/resources/presets/` | Seeded into the user's app config on first launch |
+| **Preset fonts** | Bundled in `src-tauri/resources/fonts/` | Installed by the Windows MSI into `%WINDIR%\Fonts` |
 | **Codex CLI** (`>= 0.152.1`) | Optional AI assistant app-server | Install Codex and ensure `codex` is on `PATH` |
 
 ### Windows-Specific Notes
@@ -141,7 +143,7 @@ default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'
 
 - `'unsafe-inline'` for styles: Required because React and the settings panel use inline styles (e.g., the knob's `--knob-progress` CSS custom property).
 - No `'unsafe-eval'` — no dynamic code execution.
-- No external resources — all assets are bundled.
+- Runtime assets are bundled: ConPTY files, canonical presets, and the non-Windows fonts used by those presets.
 
 ### localStorage
 
