@@ -13,6 +13,7 @@
     "core:window:allow-set-fullscreen",
     "core:menu:allow-new",
     "core:menu:allow-popup",
+    "dialog:default",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://**" }]

@@ -57,6 +57,7 @@ Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Menu+N: create a terminal tab; Menu+B: create a browser tab; Menu+W: close the active tab.
 - Menu+1 through Menu+9: select that numbered tab; Menu+Right or Menu+>: next tab; Menu+Left or Menu+<: previous tab; Menu+Tab: return to the previously active tab.
 - Menu+V: paste clipboard text into the terminal. Menu+C: start copy mode, then drag to select and copy terminal text. Middle-click and drag also selects text.
+- Menu+I: choose a local PNG or JPG and place it over the active terminal tab; drag images to move them and use the mouse wheel to scale them.
 - Menu+PageUp or Menu+PageDown (or Menu+J / Menu+K): scroll terminal history by a page. Menu+J/K also scrolls the AI panel when it has focus.
 - Alt+Enter: toggle fullscreen in the desktop application.
 - Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.

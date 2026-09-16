@@ -376,4 +376,15 @@ describe('TerminalRenderer', () => {
     renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, consoleFont: 'CustomFont', fallbackFont: 'SecondaryFont' });
     expect(context.font).toBe('16px "CustomFont", "SecondaryFont", Consolas, "Courier New", monospace');
   });
+
+  it('hit-tests the topmost normalized image', () => {
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 100, height: 100 }, document.createElement('canvas'));
+    const image = (id: string, x: number): import('./TerminalRenderer').TerminalImage => ({ id, src: '', image: {} as HTMLImageElement, x, y: .2, width: .4, height: .4, baseWidth: .4, baseHeight: .4 });
+    const bottom = image('bottom', .1); const top = image('top', .2);
+    renderer.setImages([bottom, top]);
+    expect(renderer.imageAtSourcePoint(30, 30)).toBe(top);
+    expect(renderer.imageAtSourcePoint(12, 30)).toBe(bottom);
+    expect(renderer.imageAtSourcePoint(90, 90)).toBeNull();
+  });
 });

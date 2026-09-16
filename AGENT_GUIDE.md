@@ -140,6 +140,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Fix copy/paste** | `App.tsx` (clipboard handlers) | `App.tsx` | `tauri:dev` manual test |
 | **Change Codex assistant, tools, model or effort selection** | `docs/10-ai-assistant.md`, `App.tsx`, `ai/CodexClient.ts`, `ai/chatMessages.ts`, `ai/modelSelection.ts`, `src/ai/protocol.ts`, `src/ui/AiPanel.tsx`, `terminal/TerminalSession.ts`, `src-tauri/src/codex.rs`, `src-tauri/capabilities/default.json`, `package.json` | Varies | `npm test`, `cargo test`, `tauri:dev`: sign-in, catalog fallback, per-tab running state/streaming, two-tab selection/routing, VT/Win32 input |
 | **Change browser home configuration or tab theming** | `src/ui/HomeDashboard.tsx`, `terminal/useTerminal.ts`, `src-tauri/src/home.rs`, `src-tauri/src/browser.rs`, `src-tauri/src/main.rs` | Same files plus docs | `npm test`, `cargo test`, `tauri:dev`: create/load/save/reload, invalid JSON, backup recovery, home → web navigation, page-color event and in-page navigation |
+| **Add terminal tab images** | `terminal/TerminalRenderer.ts`, `terminal/useTerminal.ts`, `crt/useCRT.ts`, Tauri dialog/asset configuration | Same frontend + Tauri files plus docs | `npm test`, `cargo check`, `tauri:dev`: Menu+I, PNG/JPG load, drag, wheel scale, context-menu delete, tab isolation, CRT on/off |
 
 ---
 

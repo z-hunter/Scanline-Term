@@ -273,7 +273,7 @@ All clipboard access uses the browser/WebView's `navigator.clipboard` API. This 
 
 ### Canvas 2D Drawing (`drawTerminal()`)
 
-The terminal is drawn to an offscreen source canvas at the virtual resolution (e.g., 640×480), not at physical pixel resolution (unless "Physical" mode is selected).
+The terminal is drawn to an offscreen source canvas at the virtual resolution (e.g., 640×480), not at physical pixel resolution (unless "Physical" mode is selected). The active terminal tab may also own an in-memory list of local PNG/JPG images. `Menu+I` opens the native Tauri dialog; the selected path is fetched into a `Blob` and assigned a `blob:` URL so drawing remains origin-clean for WebGL. The renderer copies the terminal canvas to a same-sized compositing canvas and draws those images over it in normalized screen coordinates; the composited canvas is the input to both the CRT and non-CRT output paths. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it.
 
 **Drawing algorithm (simplified):**
 

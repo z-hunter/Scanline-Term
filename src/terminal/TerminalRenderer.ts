@@ -7,6 +7,7 @@ export type CopySelection = { start: CopyPoint; end: CopyPoint };
 export type Resolution = { id: string; width?: number; height?: number };
 export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
 export type TabColor = { background: string; foreground: string };
+export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 
@@ -170,6 +171,7 @@ export function terminalAverageLuma(terminal: Terminal, profile: TerminalColorPr
 
 export class TerminalRenderer {
   readonly sourceCanvas = document.createElement('canvas');
+  readonly compositedCanvas = document.createElement('canvas');
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
   private dirty = true;
@@ -186,6 +188,8 @@ export class TerminalRenderer {
   private lastCursorX = -1;
   private lastCursorY = -1;
   private cursorMoved = false;
+  private images: TerminalImage[] = [];
+  private imagesDirty = true;
 
   bindTerminal(terminal: Terminal | null): void {
     this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
@@ -195,7 +199,22 @@ export class TerminalRenderer {
     const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;
     const height = resolution.id.startsWith('physical') ? output.height || 1 : resolution.height || 1;
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
-    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.markDirty(); return true;
+    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.markDirty(); this.imagesDirty = true; return true;
+  }
+  setImages(images: TerminalImage[]): void { this.images = images; this.imagesDirty = true; this.markDirty(); }
+  markImagesDirty(): void { this.imagesDirty = true; }
+  imageAtSourcePoint(x: number, y: number): TerminalImage | null {
+    for (let index = this.images.length - 1; index >= 0; index -= 1) { const image = this.images[index]; const left = image.x * this.sourceCanvas.width; const top = image.y * this.sourceCanvas.height; const width = image.width * this.sourceCanvas.width; const height = image.height * this.sourceCanvas.height; if (x >= left && y >= top && x <= left + width && y <= top + height) return image; }
+    return null;
+  }
+  sourcePointAt(clientX: number, clientY: number, output: HTMLCanvasElement, settings: CRTSettings): { x: number; y: number } | null {
+    const rect = output.getBoundingClientRect(); if (!rect.width || !rect.height) return null;
+    let u = (clientX - rect.left) / rect.width; let v = (clientY - rect.top) / rect.height;
+    if (settings.crtEmulation) {
+      if ((settings.bezelThickness ?? 0) > 0) { const insetX = settings.bezelThickness / (output.width || rect.width); const insetY = settings.bezelThickness / (output.height || rect.height); u = (u - insetX) / Math.max(0.0001, 1 - 2 * insetX); v = (v - insetY) / Math.max(0.0001, 1 - 2 * insetY); }
+      if (settings.curvature > 0) { let x = (u - .5) * 2 * (1 + settings.curvature * .1); let y = (v - .5) * 2 * (1 + settings.curvature * .1); x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5; y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5; u = x / 2 + .5; v = y / 2 + .5; }
+    }
+    return { x: u * this.sourceCanvas.width, y: v * this.sourceCanvas.height };
   }
   setFocused(focused: boolean): void {
     if (this.focused === focused) return;
@@ -247,7 +266,7 @@ export class TerminalRenderer {
   }
   draw(time: number, settings: CRTSettings): boolean {
     const source = this.sourceCanvas; const terminal = this.terminal;
-    if (!terminal) { this.drawMock(time, settings); return true; }
+    if (!terminal) { this.drawMock(time, settings); this.composeImages(); return true; }
     const buffer = terminal.buffer.active;
     const cursorX = buffer.cursorX;
     const cursorY = buffer.cursorY;
@@ -260,7 +279,7 @@ export class TerminalRenderer {
       this.dirty = true;
     }
     const cursorPhase = this.getCursorBlinkPhase(time);
-    if (!this.dirty && cursorPhase === this.lastCursorPhase) return false;
+    if (!this.dirty && cursorPhase === this.lastCursorPhase && !this.imagesDirty) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx, settings.cellWidthAdjustment, settings.cellHeightAdjustment, settings.fallbackFont);
     const cell = buffer.getNullCell();
@@ -271,7 +290,7 @@ export class TerminalRenderer {
     const changedRows = new Set<number>(); const nextSignatures: string[] = [];
     if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
-    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; return false; }
+    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; if (this.imagesDirty) { this.composeImages(); return true; } return false; }
     const started = performance.now(); let glyphs = 0;
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize);
@@ -291,7 +310,14 @@ export class TerminalRenderer {
       }
     }
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
-    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.composeImages(); this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
+  }
+  private composeImages(): void {
+    const ctx = this.compositedCanvas.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') { this.imagesDirty = false; return; }
+    if (this.compositedCanvas.width !== this.sourceCanvas.width || this.compositedCanvas.height !== this.sourceCanvas.height) { this.compositedCanvas.width = this.sourceCanvas.width; this.compositedCanvas.height = this.sourceCanvas.height; }
+    ctx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); ctx.drawImage(this.sourceCanvas, 0, 0);
+    for (const image of this.images) if (image.image.complete && image.image.naturalWidth > 0) ctx.drawImage(image.image, image.x * this.sourceCanvas.width, image.y * this.sourceCanvas.height, image.width * this.sourceCanvas.width, image.height * this.sourceCanvas.height);
+    this.imagesDirty = false;
   }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
     if (!line) return '';
@@ -353,5 +379,5 @@ export class TerminalRenderer {
       }
     }
   }
-  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; }
+  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
 }

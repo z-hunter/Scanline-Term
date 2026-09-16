@@ -728,6 +728,7 @@ fn main() {
         .manage(codex::CodexState::default())
         .manage(LaunchState(launch))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let icon = Image::from_bytes(include_bytes!("../icons/32x32 - Copy.png"))?;
             let window = app.get_webview_window("main").ok_or("main window is unavailable")?;

@@ -36,7 +36,8 @@ graph TB
     ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
     CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
     Settings["settings.ts<br/>localStorage persistence"]
-    SourceCanvas["Source canvas<br/>(virtual resolution)"]
+    SourceCanvas["Terminal canvas<br/>(virtual resolution)"]
+    ImageComposite["Image compositor canvas<br/>(terminal + tab images)"]
     OutputCanvas["Output canvas<br/>(physical pixels)"]
   end
 
@@ -72,14 +73,17 @@ graph TB
   TerminalSession --> Xterm
   TerminalRenderer --> Xterm
   TerminalRenderer --> SourceCanvas
+  TerminalRenderer --> ImageComposite
 
   UseCRT --> TerminalRenderer
   UseCRT --> CRTFilter
-  SourceCanvas --> CRTFilter
+  ImageComposite --> CRTFilter
   CRTFilter --> OutputCanvas
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```
+
+Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then the shared renderer draws it on the normalized virtual-resolution compositing canvas before the CRT filter.
 
 ## Execution Boundary
 
@@ -125,7 +129,8 @@ sequenceDiagram
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
     Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text and cached box-glyph profiles on source canvas
-    Canvas->>CRT: filter.render(source, settings, sourceDirty)
+    Canvas->>Canvas: compose tab images over the terminal canvas
+    Canvas->>CRT: filter.render(composited source, settings, sourceDirty)
     Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
     CRT->>Screen: WebGL draw to output canvas
 ```

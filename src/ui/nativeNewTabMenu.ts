@@ -26,3 +26,8 @@ export async function showNativeNewTabMenu({
   });
   await menu.popup();
 }
+
+export async function showNativeImageMenu({ onDelete }: { onDelete: () => void }) {
+  const menu = await Menu.new({ items: [{ id: 'scanline-delete-image', text: 'Delete image', action: onDelete }] });
+  await menu.popup();
+}

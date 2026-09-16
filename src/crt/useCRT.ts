@@ -21,7 +21,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       ctx2d = output.getContext('2d', { alpha: false });
     }
 
-    let raf = 0; let reported = false; let breathingPrimed = false; let count = 0; let started = performance.now();
+    let raf = 0; let reported = false; let renderFailed = false; let breathingPrimed = false; let count = 0; let started = performance.now();
     
     const resize = () => { 
       const rect = output.getBoundingClientRect(); 
@@ -40,11 +40,11 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
         if (filter) {
           if (!filter.isValid() && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); } 
           if (!breathingPrimed && renderer.hasMeasuredLuma) { filter.restartBreathing(); breathingPrimed = true; }
-          if (filter.isValid()) filter.render(renderer.sourceCanvas, settingsRef.current, changed);
+          if (filter.isValid() && !renderFailed) try { filter.render(renderer.compositedCanvas, settingsRef.current, changed); } catch (reason) { renderFailed = true; onError(`CRT render failed: ${String(reason)}`); }
         } else if (ctx2d) {
           if (changed) {
             ctx2d.imageSmoothingEnabled = settingsRef.current.antiAliasedPixels !== false;
-            ctx2d.drawImage(renderer.sourceCanvas, 0, 0, output.width, output.height);
+            ctx2d.drawImage(renderer.compositedCanvas, 0, 0, output.width, output.height);
           }
         }
         count += 1; 
