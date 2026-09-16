@@ -13,7 +13,7 @@
     "bloom": 0.55,
     "bloomAlgorithm": "soft",
     "breathing": 1,
-    "cellHeightAdjustment": 5,
+    "cellHeightAdjustment": 4,
     "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "blue",

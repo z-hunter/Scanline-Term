@@ -1,5 +1,6 @@
 {
   "crt": {
+    "FallbackFont": "Nouveau IBM Stretch",
     "aberration": 1.25,
     "aberrationFalloff": 3,
     "ambientGlassLight": 0.7000000000000001,
@@ -13,7 +14,7 @@
     "bloom": 0,
     "bloomAlgorithm": "soft",
     "breathing": 0.55,
-    "cellHeightAdjustment": 1,
+    "cellHeightAdjustment": 0,
     "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "green-p39",

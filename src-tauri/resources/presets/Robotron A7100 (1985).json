@@ -1,5 +1,6 @@
 {
   "crt": {
+    "FallbackFont": "Nouveau IBM Stretch",
     "aberration": 0,
     "aberrationFalloff": 2,
     "ambientGlassLight": 0.8,
