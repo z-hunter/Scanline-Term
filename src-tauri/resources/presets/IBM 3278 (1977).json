@@ -24,7 +24,7 @@
     "cursorStyle": "underline",
     "curvature": 0.07,
     "glow": 0.6000000000000001,
-    "humBar": 0.15000000000000002,
+    "humBar": 0.1,
     "imageBrightness": 1.2000000000000002,
     "imageContrast": 1.2000000000000002,
     "imperfectSignal": 0.05,

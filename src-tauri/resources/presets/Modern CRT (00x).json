@@ -39,7 +39,7 @@
     "reflexBarPosY": 0.03,
     "reflexBarWidth": 0.99,
     "scanlineCount": 370,
-    "scanlineIntensity": 0.35000000000000003,
+    "scanlineIntensity": 0.30000000000000004,
     "showBezel": false,
     "vignette": 0.30000000000000004
   },
