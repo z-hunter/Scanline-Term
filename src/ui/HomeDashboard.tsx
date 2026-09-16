@@ -31,13 +31,13 @@ const defaultHomeConfig = (): HomeConfig => ({
 });
 
 const urlValue = (value: string) => {
-  const candidate = /^(?:https?|file):\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
+  const candidate = /^(?:https?:\/\/|file:\/)/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
   const parsed = new URL(candidate);
   if (!/^(?:https?|file):$/.test(parsed.protocol)) throw new Error('URL must use http, https, or file');
   return parsed.toString();
 };
 
-const isLikelyUrl = (value: string) => /^(?:https?|file):\/\//i.test(value) || /^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:\/.*)?$/i.test(value);
+const isLikelyUrl = (value: string) => /^(?:https?:\/\/|file:\/)/i.test(value) || /^[\w.-]+\.[a-z]{2,}(?::\/.*)?$/i.test(value);
 
 const promptValue = (label: string, initial: string) => {
   const value = window.prompt(label, initial);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canvasFont, canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { applyTabColorMode, canvasFont, canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
@@ -145,6 +145,12 @@ describe('TerminalRenderer', () => {
     const terminal = { cols: 2, rows: 1, buffer: { active: { viewportY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } } };
     expect(terminalAverageColor(terminal as never, colorProfile('dos-vga'))).toEqual({ background: '#ffffff', foreground: '#101a14' });
     expect(terminalAverageLuma(terminal as never, colorProfile('dos-vga'))).toBeCloseTo(1);
+  });
+
+  it('applies the CRT phosphor tint to tab colors without canvas readback', () => {
+    expect(applyTabColorMode('#808080', 'green')).toBe('#5d8068');
+    expect(applyTabColorMode('#808080', 'amber')).toBe('#866c4d');
+    expect(applyTabColorMode('#ff0000', 'bw', 1)).toBe('#363636');
   });
 
   it('uses the full source raster for breathing luma, not a single glyph cell', () => {

@@ -1,5 +1,5 @@
 import type { IBufferCell, Terminal } from '@xterm/xterm';
-import type { CRTSettings } from '../crt/CRTFilter';
+import type { CRTColorMode, CRTSettings } from '../crt/CRTFilter';
 import { colorProfile, profileColor, remapLegacyRgb, type TerminalColorProfile } from '../terminal-color-profiles';
 
 export type CopyPoint = { row: number; column: number };
@@ -117,7 +117,17 @@ function rgb(value: string): [number, number, number] {
   return [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)];
 }
 
-export function terminalAverageColor(terminal: Terminal, profile: TerminalColorProfile): TabColor {
+export function applyTabColorMode(background: string, colorMode: CRTColorMode = 'color', backgroundDesaturation = 0.5): string {
+  if (colorMode === 'color') return background;
+  const [red, green, blue] = rgb(background).map((channel) => channel / 255) as [number, number, number];
+  const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+  const tint = { bw: [1, 1, 1], green: [.45, 1, .62], 'green-p39': [.25, 1, .15], amber: [1.1, .68, .2], blue: [.42, .72, 1] }[colorMode] ?? [1, 1, 1];
+  const desaturation = Math.min(1, Math.max(0, backgroundDesaturation));
+  const channels = tint.map((channel) => luma * channel * (1 - desaturation) + luma * desaturation).map((channel) => Math.round(Math.min(1, channel) * 255));
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function terminalAverageColor(terminal: Terminal, profile: TerminalColorProfile, colorMode: CRTColorMode = 'color', backgroundDesaturation = 0.5): TabColor {
   const buffer = terminal.buffer.active; const cell = buffer.getNullCell(); const total = [0, 0, 0]; let count = 0;
   for (let row = 0; row < terminal.rows; row += 1) {
     const line = buffer.getLine(buffer.viewportY + row); if (!line) continue;
@@ -130,8 +140,8 @@ export function terminalAverageColor(terminal: Terminal, profile: TerminalColorP
       count += 1;
     }
   }
-  const average = total.map((channel) => Math.round(channel / Math.max(1, count))); const background = `#${average.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
-  const luminance = (average[0] * 299 + average[1] * 587 + average[2] * 114) / 1000;
+  const average = total.map((channel) => Math.round(channel / Math.max(1, count))); const background = applyTabColorMode(`#${average.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`, colorMode, backgroundDesaturation);
+  const [red, green, blue] = rgb(background); const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
   return { background, foreground: luminance > 145 ? '#101a14' : '#d7f5df' };
 }
 

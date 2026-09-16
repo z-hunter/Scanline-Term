@@ -79,7 +79,8 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       colorFrames.current.delete(id);
       const terminal = sessions.current.get(id)?.session.terminal;
       if (!terminal) return;
-      const color = terminalAverageColor(terminal, initialProfile(sessions.current.get(id)?.preset.settings.crt.colorProfile ?? defaultPresetRef.current.crt.colorProfile));
+      const crt = sessions.current.get(id)?.preset.settings.crt ?? defaultPresetRef.current.crt;
+      const color = terminalAverageColor(terminal, initialProfile(crt.colorProfile), crt.colorMode, crt.backgroundDesaturation);
       updateTab(id, (current) => ({ ...current, ...color }));
     });
     colorFrames.current.set(id, frame);
@@ -162,7 +163,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [onError, selectSession, updateTab]);
   const navigateBrowser = useCallback((id: string, value: string) => {
-    const url = /^(?:https?|file):\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
+    const url = /^(?:https?:\/\/|file:\/)/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
     try { const parsed = new URL(url); if (!/^(?:https?|file):$/.test(parsed.protocol)) throw new Error('URL must use http, https, or file'); } catch (reason) { onError(`Invalid browser URL: ${String(reason)}`); return; }
     setAddressTabId(null);
     const command = browsers.current.has(id) ? 'navigate_browser' : 'create_browser';
@@ -205,7 +206,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     }
   }, [onError, selectSession, updateTab]);
   useEffect(() => { if (!isTauri()) return; void invoke<string[]>('list_monospace_fonts').then((items) => setFonts([...new Set(['Consolas', ...items])])).catch((reason) => onError(`Could not list system fonts: ${String(reason)}`)); }, [onError]);
-  useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, activePresetState?.settings.crt.colorProfile]);
+  useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, activePresetState?.settings.crt.colorProfile, activePresetState?.settings.crt.colorMode, activePresetState?.settings.crt.backgroundDesaturation]);
   useEffect(() => {
     if (!ready) return;
     let active = true;
