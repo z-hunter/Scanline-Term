@@ -114,8 +114,8 @@ pub fn validate_config(config: &HomeConfig) -> Result<(), String> {
             validate_text(&link.url, "link URL", 2048)?;
             let parsed =
                 Url::parse(&link.url).map_err(|_| format!("invalid link URL: {}", link.url))?;
-            if !matches!(parsed.scheme(), "http" | "https") {
-                return Err("home links must use http or https".into());
+            if !matches!(parsed.scheme(), "http" | "https" | "file") {
+                return Err("home links must use http, https, or file".into());
             }
             if let Some(shortcut) = &link.shortcut {
                 if shortcut.chars().count() != 1
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn rejects_unsafe_links_and_duplicate_shortcuts() {
         let mut config = default_config();
-        config.categories[0].links[0].url = "file:///secret".into();
+        config.categories[0].links[0].url = "ftp://secret".into();
         assert!(validate_config(&config).is_err());
         config.categories[0].links[0] = HomeLink {
             title: "One".into(),

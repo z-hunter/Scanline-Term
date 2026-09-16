@@ -42,7 +42,7 @@ Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title 
 
 ### Command-line launch
 
-`scanline-term [target] [-P <path>]` starts the first tab. An existing `.htm`, `.html` or `.pdf` target opens in the embedded browser; an existing directory opens the default shell there; other file paths or executable names run as commands. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [-P <path>]` is routed to the existing application and opens the requested browser document or terminal session in a new tab.
+`scanline-term [target] [-P <path>]` starts the first tab. An existing local file, including a `file:///…` URI, opens in the embedded browser; an existing directory opens the default shell there; other file paths or executable names run as commands. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [-P <path>]` is routed to the existing application and opens the requested browser file or terminal session in a new tab.
 
 ---
 
@@ -180,7 +180,7 @@ The `+` tab button and terminal canvas suppress the browser's default context me
 
 ### Browser Home Dashboard
 
-Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView. The page provides categorized links, local filtering, direct URL opening, single-key shortcuts, browser-style `F` hints for every visible link/button/input, and a minimal editor. While hints are active, their `asdfghjkl` labels take precedence over link shortcuts; `Esc` closes the mode and `F5` is consumed so the home panel cannot reload the application. Its source of truth is `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, loaded and saved by `home::load_home_config` and `home::save_home_config`; filesystem access is kept on the Rust side. A successful link navigation promotes the tab to a native browser child. On every native page load, the injected browser script reads `meta[name=theme-color]` or the document background and sends a validated `browser-color` event; the frontend chooses a readable tab foreground and applies the reported background. The same update occurs for subsequent in-page navigation. Loading performs a one-time v1-to-v2 migration for the bundled default links; the MVP otherwise has no file watcher, cloud sync, general merge logic, or multi-page dashboard.
+Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView. The page provides categorized HTTP(S) and `file:///` links, local filtering, direct URL opening, single-key shortcuts, browser-style `F` hints for every visible link/button/input, and a minimal editor. While hints are active, their `asdfghjkl` labels take precedence over link shortcuts; `Esc` closes the mode and `F5` is consumed so the home panel cannot reload the application. Its source of truth is `%APPDATA%\\com.zhunter.scanlineterm\\home.json`, loaded and saved by `home::load_home_config` and `home::save_home_config`; filesystem access is kept on the Rust side. A successful link navigation promotes the tab to a native browser child. On every native page load, the injected browser script reads `meta[name=theme-color]` or the document background and sends a validated `browser-color` event; the frontend chooses a readable tab foreground and applies the reported background. The same update occurs for subsequent in-page navigation. Loading performs a one-time v1-to-v2 migration for the bundled default links; the MVP otherwise has no file watcher, cloud sync, general merge logic, or multi-page dashboard.
 
 ### Key-Repeat Handling
 

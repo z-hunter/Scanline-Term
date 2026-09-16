@@ -137,10 +137,10 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
 
 fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
     if let Some(target) = target_argument(args) {
-        if let Some(value) = browser::browser_url(target).ok().map(Into::into).or_else(|| {
+        if let Some(value) = browser::browser_target_url(target).ok().map(Into::into).or_else(|| {
             let path = Path::new(target);
             let path = if path.is_absolute() { path.to_path_buf() } else { Path::new(cwd).join(path) };
-            browser::local_document_url(&path).map(Into::into)
+            browser::local_file_url(&path).map(Into::into)
         }) {
             return (LaunchRequest::Browser { url: value }, false);
         }
@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn routes_existing_local_documents_to_the_browser() {
+    fn routes_existing_local_files_to_the_browser() {
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -833,7 +833,7 @@ mod tests {
             std::env::temp_dir().join(format!("scanline-term-launch-test-{}", timestamp));
         std::fs::create_dir(&test_dir).unwrap();
 
-        for extension in ["htm", "html", "PDF"] {
+        for extension in ["htm", "html", "PDF", "txt"] {
             let file = test_dir.join(format!("test.{extension}"));
             std::fs::write(&file, "<h1>test</h1>").unwrap();
             let args = vec!["scanline-term".into(), "-T".into(), file.to_string_lossy().into_owned()];
@@ -843,6 +843,11 @@ mod tests {
                 LaunchRequest::Browser { url } => assert!(url.starts_with("file:///")),
                 _ => panic!("expected browser launch request"),
             }
+
+            let args = vec!["scanline-term".into(), url::Url::from_file_path(&file).unwrap().into()];
+            let (request, in_tab) = launch_request(&args, "C:\\work");
+            assert!(!in_tab);
+            assert!(matches!(request, LaunchRequest::Browser { .. }));
         }
         std::fs::remove_dir_all(test_dir).unwrap();
     }
