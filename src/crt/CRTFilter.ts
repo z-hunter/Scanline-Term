@@ -916,6 +916,9 @@ export class CRTFilter {
                 #if ENABLE_GLOW
                 if (u_glow > 0.0) {
                      vec3 glowSum = texture2D(u_glowTexture, rasterUV).rgb;
+                     float glowInBounds = step(0.0, rasterUV.x) * step(rasterUV.x, 1.0)
+                         * step(0.0, rasterUV.y) * step(rasterUV.y, 1.0);
+                     glowSum *= glowInBounds;
 
                      // Slight desaturation: diffuse light scattered inside thick CRT faceplate glass is less chromatic
                      float glowLuma = dot(glowSum, vec3(0.2126, 0.7152, 0.0722));
