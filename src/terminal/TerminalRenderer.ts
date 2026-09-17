@@ -211,8 +211,11 @@ export class TerminalRenderer {
   private images: TerminalImage[] = [];
   private imagesDirty = true;
   private scrollTransition: ScrollTransition | null = null;
+  private scrollTargetReady = false;
   private scrollStarted = false;
   private scrollCellHeight = 16;
+  private scrollContentTop = 0;
+  private scrollContentBottom = 0;
 
   bindTerminal(terminal: Terminal | null): void {
     this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
@@ -228,15 +231,31 @@ export class TerminalRenderer {
   markImagesDirty(): void { this.imagesDirty = true; }
   beginScroll(fromViewportY: number, toViewportY: number): boolean {
     if (!this.terminal || fromViewportY === toViewportY || this.terminal.buffer.active !== this.terminal.buffer.normal) return false;
+    if (this.scrollTransition) this.cancelScroll();
     const from = this.scrollFromCanvas.getContext('2d');
     if (!from || typeof from.drawImage !== 'function') return false;
     from.drawImage(this.compositedCanvas, 0, 0);
     const distance = Math.abs(toViewportY - fromViewportY);
     this.scrollTransition = { fromViewportY, toViewportY, startedAt: performance.now() / 1000, duration: Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)), distance };
+    this.scrollTargetReady = false;
     this.scrollStarted = true;
     return true;
   }
-  cancelScroll(): void { this.scrollTransition = null; this.scrollStarted = false; }
+  cancelScroll(): void {
+    if (this.scrollTransition && this.scrollTargetReady) {
+      const output = this.compositedCanvas.getContext('2d');
+      if (output && typeof output.drawImage === 'function') {
+        if (typeof output.clearRect === 'function') {
+          output.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height);
+        }
+        output.drawImage(this.scrollTargetCanvas, 0, 0);
+      }
+      this.markDirty();
+    }
+    this.scrollTransition = null;
+    this.scrollTargetReady = false;
+    this.scrollStarted = false;
+  }
   consumeScrollStart(): boolean { const started = this.scrollStarted; this.scrollStarted = false; return started; }
   get isScrollAnimating(): boolean { return this.scrollTransition !== null; }
   imageAtSourcePoint(x: number, y: number): TerminalImage | null {
@@ -322,6 +341,8 @@ export class TerminalRenderer {
     this.scrollCellHeight = cellSize.height;
     const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
+    this.scrollContentTop = offset.y;
+    this.scrollContentBottom = offset.y + terminal.rows * cellSize.height;
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
     const cursorVisible = this.isCursorVisibleAt(time, buffer, core?.coreService?.isCursorHidden === true);
     const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
@@ -357,6 +378,7 @@ export class TerminalRenderer {
     ctx.clearRect(0, 0, destination.width, destination.height); ctx.drawImage(this.sourceCanvas, 0, 0);
     for (const image of this.images) if (image.image.complete && image.image.naturalWidth > 0) ctx.drawImage(image.image, image.x * this.sourceCanvas.width, image.y * this.sourceCanvas.height, image.width * this.sourceCanvas.width, image.height * this.sourceCanvas.height);
     this.imagesDirty = false;
+    if (destination === this.scrollTargetCanvas) this.scrollTargetReady = true;
   }
   private renderScroll(time: number): boolean {
     const transition = this.scrollTransition;
@@ -366,17 +388,25 @@ export class TerminalRenderer {
     if (!targetCtx || !outputCtx || typeof outputCtx.drawImage !== 'function') { this.cancelScroll(); return false; }
     const progress = Math.min(1, Math.max(0, (time - transition.startedAt) / transition.duration));
     const eased = 1 - Math.pow(1 - progress, 3);
-    const distance = Math.min(this.sourceCanvas.height, transition.distance * this.lineHeight());
+    const distance = Math.min(this.scrollContentBottom - this.scrollContentTop, transition.distance * this.lineHeight());
+    const offset = distance * eased;
+    const smoothing = outputCtx.imageSmoothingEnabled;
+    outputCtx.imageSmoothingEnabled = false;
     outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height);
-    outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); outputCtx.clip();
+    outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop); outputCtx.clip();
     if (transition.toViewportY > transition.fromViewportY) {
-      outputCtx.drawImage(this.scrollFromCanvas, 0, -distance * eased);
-      outputCtx.drawImage(this.scrollTargetCanvas, 0, this.sourceCanvas.height - distance, this.sourceCanvas.width, distance, 0, this.sourceCanvas.height - distance * eased, this.sourceCanvas.width, distance);
+      outputCtx.drawImage(this.scrollFromCanvas, 0, -offset);
+      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentBottom - offset, this.compositedCanvas.width, offset); outputCtx.clip();
+      outputCtx.drawImage(this.scrollTargetCanvas, 0, distance - offset);
+      outputCtx.restore();
     } else {
-      outputCtx.drawImage(this.scrollFromCanvas, 0, distance * eased);
-      outputCtx.drawImage(this.scrollTargetCanvas, 0, 0, this.sourceCanvas.width, distance, 0, -distance + distance * eased, this.sourceCanvas.width, distance);
+      outputCtx.drawImage(this.scrollFromCanvas, 0, offset);
+      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentTop, this.compositedCanvas.width, offset); outputCtx.clip();
+      outputCtx.drawImage(this.scrollTargetCanvas, 0, offset - distance);
+      outputCtx.restore();
     }
     outputCtx.restore();
+    outputCtx.imageSmoothingEnabled = smoothing;
     if (progress >= 1) { outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); outputCtx.drawImage(targetCtx.canvas, 0, 0); this.cancelScroll(); }
     return true;
   }

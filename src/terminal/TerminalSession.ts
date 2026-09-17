@@ -162,9 +162,8 @@ export class TerminalSession {
             terminal.write(Uint8Array.from(event.payload.data), () => {
               const toViewportY = buffer.viewportY;
               const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
-              if (normalBuffer && !wasAtBottom) terminal.scrollToBottom();
               this.sequence++;
-              this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : buffer.viewportY, autoScroll });
+              this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : fromViewportY, autoScroll });
             });
           }
         }),

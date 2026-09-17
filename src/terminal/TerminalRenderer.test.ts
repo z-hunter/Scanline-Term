@@ -21,7 +21,7 @@ describe('TerminalRenderer', () => {
   });
 
   it('tracks a scroll transition and cancels it safely', () => {
-    const context = { drawImage: vi.fn() };
+    const context = { drawImage: vi.fn(), clearRect: vi.fn() };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
     const normal = { viewportY: 0, baseY: 0 };
     const terminal = {
@@ -37,8 +37,10 @@ describe('TerminalRenderer', () => {
     expect(renderer.beginScroll(0, 1)).toBe(true);
     expect(renderer.isScrollAnimating).toBe(true);
     expect(renderer.consumeScrollStart()).toBe(true);
+    context.drawImage.mockClear();
     renderer.cancelScroll();
     expect(renderer.isScrollAnimating).toBe(false);
+    expect(context.drawImage).not.toHaveBeenCalled();
   });
 
   it('redraws only a changed terminal row', () => {

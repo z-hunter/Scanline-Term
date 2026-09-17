@@ -172,4 +172,62 @@ describe('TerminalSession', () => {
       vi.useRealTimers();
     }
   });
+
+  it('preserves scrollback position and reports no autoscroll when output arrives while not at bottom', async () => {
+    const onOutput = vi.fn();
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), onOutput, vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    const terminal = session.terminal!;
+
+    // Fill buffer with enough lines so there's scrollback
+    await new Promise<void>((resolve) => terminal.write(Array.from({ length: 50 }, (_, i) => `line ${i}\r\n`).join(''), resolve));
+    terminal.scrollToTop();
+    const initialViewportY = terminal.buffer.active.viewportY;
+    expect(initialViewportY).toBe(0);
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+
+    const scrollToBottomSpy = vi.spyOn(terminal, 'scrollToBottom');
+    onOutput.mockClear();
+
+    mocked.handlers.get('terminal-output')!({
+      payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode('new background line\r\n')) },
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    expect(scrollToBottomSpy).not.toHaveBeenCalled();
+    expect(terminal.buffer.active.viewportY).toBe(0);
+    expect(onOutput).toHaveBeenCalledWith({
+      fromViewportY: 0,
+      toViewportY: 0,
+      autoScroll: false,
+    });
+    session.dispose();
+  });
+
+  it('reports autoscroll when output arrives while at bottom and viewport advances', async () => {
+    const onOutput = vi.fn();
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), onOutput, vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    const terminal = session.terminal!;
+
+    // Ensure we are at bottom
+    terminal.scrollToBottom();
+    const fromViewportY = terminal.buffer.active.viewportY;
+    onOutput.mockClear();
+
+    mocked.handlers.get('terminal-output')!({
+      payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode(Array.from({ length: 30 }, (_, i) => `line ${i}\r\n`).join(''))) },
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+
+    expect(onOutput).toHaveBeenCalledWith({
+      fromViewportY,
+      toViewportY: expect.any(Number),
+      autoScroll: true,
+    });
+    expect(onOutput.mock.calls[0][0].toViewportY).toBeGreaterThan(fromViewportY);
+    session.dispose();
+  });
 });
