@@ -38,6 +38,7 @@ export type TerminalObservation = {
 };
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
+export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 
 const sessions = new Map<string, TerminalSession>();
 export const terminalSession = (id: string) => sessions.get(id);
@@ -103,7 +104,7 @@ export class TerminalSession {
     private readonly onError: (message: string) => void,
     private readonly onState: (live: boolean, size: TerminalSize) => void,
     private readonly onExit: () => void,
-    private readonly onOutput: () => void,
+    private readonly onOutput: (scroll?: TerminalOutputScroll) => void,
     private readonly onTitle: (title: string) => void,
     private readonly onProcessName: (name: string) => void,
   ) {
@@ -153,11 +154,19 @@ export class TerminalSession {
     try {
       this.unlisten = await Promise.all([
         listen<TerminalOutput>("terminal-output", (event) => {
-          if (event.payload.sessionId === this.id)
+          if (event.payload.sessionId === this.id) {
+            const buffer = terminal.buffer.active;
+            const fromViewportY = buffer.viewportY;
+            const wasAtBottom = buffer.viewportY === buffer.baseY;
+            const normalBuffer = buffer === terminal.buffer.normal;
             terminal.write(Uint8Array.from(event.payload.data), () => {
+              const toViewportY = buffer.viewportY;
+              const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
+              if (normalBuffer && !wasAtBottom) terminal.scrollToBottom();
               this.sequence++;
-              this.onOutput();
+              this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : buffer.viewportY, autoScroll });
             });
+          }
         }),
         listen<TerminalExit>("terminal-exit", (event) => {
           if (event.payload.sessionId !== this.id || this.disposed) return;

@@ -712,6 +712,13 @@ export function SettingsPanel({
 
       <fieldset>
         <legend>UI</legend>
+        <Switch
+          label="Smooth scrollback"
+          checked={stored.smoothScrollback}
+          onChange={(checked) =>
+            setStored((current) => ({ ...current, smoothScrollback: checked }))
+          }
+        />
         <div className="setting-block">
           <span className="setting-label">Tab placement</span>
           <SegmentedControl

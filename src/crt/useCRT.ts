@@ -37,7 +37,9 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     const render = (now: number) => { 
       if (enabledRef.current) { 
         const changed = renderer.draw(now / 1000, settingsRef.current); 
+        const scrollStarted = renderer.consumeScrollStart();
         if (filter) {
+          if (scrollStarted) filter.clearPersistence();
           if (!filter.isValid() && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); } 
           if (!breathingPrimed && renderer.hasMeasuredLuma) { filter.restartBreathing(); breathingPrimed = true; }
           if (filter.isValid() && !renderFailed) try { filter.render(renderer.compositedCanvas, settingsRef.current, changed); } catch (reason) { renderFailed = true; onError(`CRT render failed: ${String(reason)}`); }

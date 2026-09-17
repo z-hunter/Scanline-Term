@@ -148,6 +148,7 @@ export default function App() {
     defaultPreset,
     ready: presetsReady,
     defaultShell: stored.defaultShell,
+    smoothScrollback: stored.smoothScrollback,
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
@@ -360,6 +361,7 @@ export default function App() {
       showSettingsPanel: stored.showSettingsPanel,
       showAiPanel: stored.showAiPanel,
       defaultShell: stored.defaultShell,
+      smoothScrollback: stored.smoothScrollback,
     }));
   }, [stored]);
   useEffect(() => {

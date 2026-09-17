@@ -130,6 +130,12 @@ describe('CRT settings', () => {
     expect(invalid.autoUpdateEnabled).toBe(true);
   });
 
+  it('defaults and validates smooth scrollback', () => {
+    expect(loadStoredSettings(null).smoothScrollback).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ smoothScrollback: true })).smoothScrollback).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ smoothScrollback: 'yes' })).smoothScrollback).toBe(false);
+  });
+
   it('accepts virtual screens in all supported aspect ratios', () => {
     expect(loadStoredSettings(JSON.stringify({ resolution: '640x480' })).resolution).toBe('640x480');
     expect(loadStoredSettings(JSON.stringify({ resolution: '1280x800' })).resolution).toBe('1280x800');

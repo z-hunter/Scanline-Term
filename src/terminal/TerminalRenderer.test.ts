@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Terminal } from '@xterm/xterm';
 import { applyTabColorMode, canvasFont, canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
@@ -19,6 +20,27 @@ describe('TerminalRenderer', () => {
     }
   });
 
+  it('tracks a scroll transition and cancels it safely', () => {
+    const context = { drawImage: vi.fn() };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const normal = { viewportY: 0, baseY: 0 };
+    const terminal = {
+      buffer: { active: normal, normal },
+      onCursorMove: () => ({ dispose() {} }),
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: () => ({ dispose() {} }),
+    };
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+
+    expect(renderer.beginScroll(0, 1)).toBe(true);
+    expect(renderer.isScrollAnimating).toBe(true);
+    expect(renderer.consumeScrollStart()).toBe(true);
+    renderer.cancelScroll();
+    expect(renderer.isScrollAnimating).toBe(false);
+  });
+
   it('redraws only a changed terminal row', () => {
     const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
@@ -32,6 +54,54 @@ describe('TerminalRenderer', () => {
     rows[0][0] = cell('X'); parsed();
     expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
     expect(context.fillText).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders static text attributes and decorations', () => {
+    const fillRect = vi.fn();
+    const fillText = vi.fn();
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect, fillText, measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const cell = {
+      getChars: () => 'A', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0,
+      isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false,
+      isInverse: () => false, isDim: () => false, isInvisible: () => false,
+      isBold: () => 1, isItalic: () => 1, isUnderline: () => 1, isStrikethrough: () => 1, isOverline: () => 1,
+    };
+    const terminal = { cols: 1, rows: 1, options: {}, _core: { coreService: { isCursorHidden: true } }, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: () => ({ dispose() {} }), onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 20, height: 20 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+
+    renderer.draw(0, DEFAULT_CRT_SETTINGS);
+
+    expect(context.font).toMatch(/^italic bold 16px/);
+    expect(fillText).toHaveBeenCalledWith('A', expect.any(Number), expect.any(Number));
+    expect(fillRect.mock.calls.filter((call) => call[2] === 8 && call[3] === 1)).toHaveLength(3);
+  });
+
+  it('redraws when only a text attribute changes', () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    let bold = false;
+    const cell = { getChars: () => 'A', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false, isBold: () => Number(bold), isItalic: () => 0, isUnderline: () => 0, isStrikethrough: () => 0, isOverline: () => 0 };
+    let parsed = () => {};
+    const terminal = { cols: 1, rows: 1, options: {}, _core: { coreService: { isCursorHidden: true } }, buffer: { active: { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) } }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 20, height: 20 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+
+    renderer.draw(0, DEFAULT_CRT_SETTINGS); context.fillText.mockClear(); bold = true; parsed();
+
+    expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(context.fillText).toHaveBeenCalledTimes(1);
+    expect(context.font).toMatch(/^bold 16px/);
+  });
+
+  it('renders attributes from a real xterm buffer', async () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const terminal = new Terminal({ cols: 4, rows: 1 });
+    await new Promise<void>((resolve) => terminal.write('\x1b[1;3;4;9;53mA', resolve));
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 40, height: 20 }, document.createElement('canvas')); renderer.bindTerminal(terminal);
+
+    expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(context.font).toMatch(/^italic bold 16px/);
   });
 
   it.each(['│', '▎'])('repeats the measured vertical raster through the cell for %s', (chars) => {

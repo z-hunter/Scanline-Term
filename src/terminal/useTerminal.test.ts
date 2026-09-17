@@ -847,6 +847,78 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
+  it('does not forward Alt+F4 to terminal session, does not prevent default, and releases forwarded Alt', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const activeId = hookResult.activeTabId!;
+    const session = terminalSession(activeId);
+    expect(session).toBeDefined();
+    if (session) {
+      session.win32InputMode = true;
+    }
+
+    const sendInputSpy = vi.spyOn(TerminalSession.prototype, 'sendInput');
+
+    const f4DownEvent = new KeyboardEvent('keydown', { code: 'F4', key: 'F4', altKey: true, bubbles: true, cancelable: true });
+    const f4UpEvent = new KeyboardEvent('keyup', { code: 'F4', key: 'F4', altKey: true, bubbles: true, cancelable: true });
+
+    // Press Alt, then F4, then release F4, then release Alt
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true }));
+      window.dispatchEvent(f4DownEvent);
+      window.dispatchEvent(f4UpEvent);
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'AltLeft', key: 'Alt', bubbles: true, cancelable: true }));
+    });
+
+    // Alt down was forwarded, and when F4 was pressed, forwarded Alt was released
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;1;2;1_');
+    expect(sendInputSpy).toHaveBeenCalledWith('\x1b[18;56;0;0;0;1_');
+
+    // F4 itself was NOT sent to session in any form
+    expect(sendInputSpy).not.toHaveBeenCalledWith(expect.stringContaining('115;62'));
+
+    // Default was not prevented on F4 down or up so window close handler receives it
+    expect(f4DownEvent.defaultPrevented).toBe(false);
+    expect(f4UpEvent.defaultPrevented).toBe(false);
+
+    // Releasing Alt did not trigger duplicate Alt release
+    const altUpCalls = sendInputSpy.mock.calls.filter((call) => call[0] === '\x1b[18;56;0;0;0;1_');
+    expect(altUpCalls).toHaveLength(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
+
   it('toggles fullscreen on Right-Alt (AltGr) with Enter and NumpadEnter without requiring event.altKey', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

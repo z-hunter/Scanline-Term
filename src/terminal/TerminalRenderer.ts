@@ -10,6 +10,7 @@ export type TabColor = { background: string; foreground: string };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
+type ScrollTransition = { fromViewportY: number; toViewportY: number; startedAt: number; duration: number; distance: number };
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
 type BoxDrawingRun = { offset: number; width: number; alpha: number };
@@ -25,6 +26,13 @@ export function canvasFont(fontSize: number, family: string, fallbackFont?: stri
     ? `"${fallbackFont.trim().replaceAll('\\', '\\\\').replaceAll('"', '\\"')}", `
     : '';
   return `${fontSize}px ${cleanFamily}, ${cleanFallback}Consolas, "Courier New", monospace`;
+}
+
+type CellAttribute = 'isBold' | 'isItalic' | 'isUnderline' | 'isStrikethrough' | 'isOverline';
+const CELL_ATTRIBUTES: CellAttribute[] = ['isBold', 'isItalic', 'isUnderline', 'isStrikethrough', 'isOverline'];
+function cellAttribute(cell: IBufferCell, attribute: CellAttribute): boolean {
+  const value = cell[attribute];
+  return typeof value === 'function' && value.call(cell) !== 0;
 }
 export function loadCanvasFont(family: string, bytes: number[]): Promise<void> {
   let loading = loadedFontFaces.get(family);
@@ -182,6 +190,8 @@ export function terminalAverageLuma(terminal: Terminal, profile: TerminalColorPr
 export class TerminalRenderer {
   readonly sourceCanvas = document.createElement('canvas');
   readonly compositedCanvas = document.createElement('canvas');
+  private readonly scrollFromCanvas = document.createElement('canvas');
+  private readonly scrollTargetCanvas = document.createElement('canvas');
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
   private dirty = true;
@@ -200,19 +210,35 @@ export class TerminalRenderer {
   private cursorMoved = false;
   private images: TerminalImage[] = [];
   private imagesDirty = true;
+  private scrollTransition: ScrollTransition | null = null;
+  private scrollStarted = false;
+  private scrollCellHeight = 16;
 
   bindTerminal(terminal: Terminal | null): void {
-    this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
+    this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
     if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
     const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;
     const height = resolution.id.startsWith('physical') ? output.height || 1 : resolution.height || 1;
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
-    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.markDirty(); this.imagesDirty = true; return true;
+    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.scrollFromCanvas.width = width; this.scrollFromCanvas.height = height; this.scrollTargetCanvas.width = width; this.scrollTargetCanvas.height = height; this.cancelScroll(); this.markDirty(); this.imagesDirty = true; return true;
   }
   setImages(images: TerminalImage[]): void { this.images = images; this.imagesDirty = true; this.markDirty(); }
   markImagesDirty(): void { this.imagesDirty = true; }
+  beginScroll(fromViewportY: number, toViewportY: number): boolean {
+    if (!this.terminal || fromViewportY === toViewportY || this.terminal.buffer.active !== this.terminal.buffer.normal) return false;
+    const from = this.scrollFromCanvas.getContext('2d');
+    if (!from || typeof from.drawImage !== 'function') return false;
+    from.drawImage(this.compositedCanvas, 0, 0);
+    const distance = Math.abs(toViewportY - fromViewportY);
+    this.scrollTransition = { fromViewportY, toViewportY, startedAt: performance.now() / 1000, duration: Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)), distance };
+    this.scrollStarted = true;
+    return true;
+  }
+  cancelScroll(): void { this.scrollTransition = null; this.scrollStarted = false; }
+  consumeScrollStart(): boolean { const started = this.scrollStarted; this.scrollStarted = false; return started; }
+  get isScrollAnimating(): boolean { return this.scrollTransition !== null; }
   imageAtSourcePoint(x: number, y: number): TerminalImage | null {
     for (let index = this.images.length - 1; index >= 0; index -= 1) { const image = this.images[index]; const left = image.x * this.sourceCanvas.width; const top = image.y * this.sourceCanvas.height; const width = image.width * this.sourceCanvas.width; const height = image.height * this.sourceCanvas.height; if (x >= left && y >= top && x <= left + width && y <= top + height) return image; }
     return null;
@@ -278,6 +304,7 @@ export class TerminalRenderer {
     const source = this.sourceCanvas; const terminal = this.terminal;
     if (!terminal) { this.drawMock(time, settings); this.composeImages(); return true; }
     const buffer = terminal.buffer.active;
+    if (this.scrollTransition && buffer.viewportY !== this.scrollTransition.toViewportY) { this.cancelScroll(); this.markDirty(); }
     const cursorX = buffer.cursorX;
     const cursorY = buffer.cursorY;
     const cursorMoved = cursorX !== this.lastCursorX || cursorY !== this.lastCursorY || this.cursorMoved;
@@ -289,9 +316,10 @@ export class TerminalRenderer {
       this.dirty = true;
     }
     const cursorPhase = this.getCursorBlinkPhase(time);
-    if (!this.dirty && cursorPhase === this.lastCursorPhase && !this.imagesDirty) return false;
+    if (!this.dirty && cursorPhase === this.lastCursorPhase && !this.imagesDirty && !this.scrollTransition) return false;
     const ctx = source.getContext('2d'); if (!ctx) return false;
     const profile = colorProfile(settings.colorProfile); const cellSize = fontCellSize(settings.consoleFontSize, settings.consoleFont, ctx, settings.cellWidthAdjustment, settings.cellHeightAdjustment, settings.fallbackFont);
+    this.scrollCellHeight = cellSize.height;
     const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
@@ -300,10 +328,11 @@ export class TerminalRenderer {
     const changedRows = new Set<number>(); const nextSignatures: string[] = [];
     if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
-    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; if (this.imagesDirty) { this.composeImages(); return true; } return false; }
+    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; if (this.imagesDirty || this.scrollTransition) this.composeImages(this.scrollTransition ? this.scrollTargetCanvas : this.compositedCanvas); return this.renderScroll(time); }
     const started = performance.now(); let glyphs = 0;
-    ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize);
+    const baseFont = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont);
+    ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = baseFont; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize, baseFont);
     if (nextCursorRow !== null) {
       const x = offset.x + cellSize.width * buffer.cursorX;
       const y = offset.y + cellSize.height * buffer.cursorY;
@@ -320,25 +349,53 @@ export class TerminalRenderer {
       }
     }
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
-    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.composeImages(); this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return true;
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.composeImages(this.scrollTransition ? this.scrollTargetCanvas : this.compositedCanvas); const animated = this.renderScroll(time); this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return animated || true;
   }
-  private composeImages(): void {
-    const ctx = this.compositedCanvas.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') { this.imagesDirty = false; return; }
-    if (this.compositedCanvas.width !== this.sourceCanvas.width || this.compositedCanvas.height !== this.sourceCanvas.height) { this.compositedCanvas.width = this.sourceCanvas.width; this.compositedCanvas.height = this.sourceCanvas.height; }
-    ctx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); ctx.drawImage(this.sourceCanvas, 0, 0);
+  private composeImages(destination = this.compositedCanvas): void {
+    const ctx = destination.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') { this.imagesDirty = false; return; }
+    if (destination.width !== this.sourceCanvas.width || destination.height !== this.sourceCanvas.height) { destination.width = this.sourceCanvas.width; destination.height = this.sourceCanvas.height; }
+    ctx.clearRect(0, 0, destination.width, destination.height); ctx.drawImage(this.sourceCanvas, 0, 0);
     for (const image of this.images) if (image.image.complete && image.image.naturalWidth > 0) ctx.drawImage(image.image, image.x * this.sourceCanvas.width, image.y * this.sourceCanvas.height, image.width * this.sourceCanvas.width, image.height * this.sourceCanvas.height);
     this.imagesDirty = false;
   }
+  private renderScroll(time: number): boolean {
+    const transition = this.scrollTransition;
+    if (!transition) return false;
+    const targetCtx = this.scrollTargetCanvas.getContext('2d');
+    const outputCtx = this.compositedCanvas.getContext('2d');
+    if (!targetCtx || !outputCtx || typeof outputCtx.drawImage !== 'function') { this.cancelScroll(); return false; }
+    const progress = Math.min(1, Math.max(0, (time - transition.startedAt) / transition.duration));
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const distance = Math.min(this.sourceCanvas.height, transition.distance * this.lineHeight());
+    outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height);
+    outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); outputCtx.clip();
+    if (transition.toViewportY > transition.fromViewportY) {
+      outputCtx.drawImage(this.scrollFromCanvas, 0, -distance * eased);
+      outputCtx.drawImage(this.scrollTargetCanvas, 0, this.sourceCanvas.height - distance, this.sourceCanvas.width, distance, 0, this.sourceCanvas.height - distance * eased, this.sourceCanvas.width, distance);
+    } else {
+      outputCtx.drawImage(this.scrollFromCanvas, 0, distance * eased);
+      outputCtx.drawImage(this.scrollTargetCanvas, 0, 0, this.sourceCanvas.width, distance, 0, -distance + distance * eased, this.sourceCanvas.width, distance);
+    }
+    outputCtx.restore();
+    if (progress >= 1) { outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); outputCtx.drawImage(targetCtx.canvas, 0, 0); this.cancelScroll(); }
+    return true;
+  }
+  private lineHeight(): number { return this.scrollCellHeight; }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
     if (!line) return '';
     let signature = '';
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())};`; }
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); const attributes = CELL_ATTRIBUTES.map((attribute) => Number(cellAttribute(current, attribute))).join(''); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())}${attributes};`; }
     return signature;
   }
-  private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }): number {
+  private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, baseFont: string): number {
     const y = offset.y + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return 0;
     const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1; let glyphs = 0;
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(x + cellSize.width * current.getWidth()) - Math.floor(x), Math.ceil(cellSize.height)); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(Math.floor(x), Math.floor(y - cellSize.height / 2), Math.ceil(cellSize.width * current.getWidth()), Math.ceil(cellSize.height)); } const chars = current.getChars(); if (chars && !current.isInvisible()) { glyphs += 1; ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (!drawContinuousVertical(ctx, chars, x, Math.floor(y - cellSize.height / 2), cellSize)) ctx.fillText(chars, x, y); } }
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; const left = Math.floor(x); const top = Math.floor(y - cellSize.height / 2); const width = Math.ceil(cellSize.width * current.getWidth()); const height = Math.ceil(cellSize.height); if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(left, top, width, height); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(left, top, width, height); } const chars = current.getChars(); const invisible = current.isInvisible(); const bold = cellAttribute(current, 'isBold'); const italic = cellAttribute(current, 'isItalic'); const underline = cellAttribute(current, 'isUnderline'); const strikethrough = cellAttribute(current, 'isStrikethrough'); const overline = cellAttribute(current, 'isOverline'); if (!invisible && (chars || underline || strikethrough || overline)) { ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (chars) { ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${baseFont}`; }
+      if (chars) { if (!drawContinuousVertical(ctx, chars, x, top, cellSize)) ctx.fillText(chars, x, y); glyphs += 1; }
+      if (overline) ctx.fillRect(left, top, width, 1);
+      if (strikethrough) ctx.fillRect(left, top + Math.floor(height / 2), width, 1);
+      if (underline) ctx.fillRect(left, top + height - 1, width, 1);
+    } }
     return glyphs;
   }
   private drawMock(time: number, settings: CRTSettings): void {
@@ -389,5 +446,5 @@ export class TerminalRenderer {
       }
     }
   }
-  dispose(): void { this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
+  dispose(): void { this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
 }
