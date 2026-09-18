@@ -133,7 +133,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
     if (session.terminal) session.terminal.options.cursorStyle = preset.crt.cursorStyle;
     renderer.current!.bindTerminal(session.terminal);
-    void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' }));
+    void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' })).catch((reason) => { updateTab(id, (current) => ({ ...current, title: `${current.ordinal}. Failed`, status: 'failed' })); onError(`Terminal startup failed: ${String(reason)}`); });
   }, [onError, refreshTabColor, selectSession, updateTab]);
   const addImage = useCallback(async () => {
     const id = activeRef.current; const record = id ? sessions.current.get(id) : undefined;

@@ -75,7 +75,7 @@ describe('TerminalRenderer', () => {
     renderer.draw(0, DEFAULT_CRT_SETTINGS);
 
     expect(context.font).toMatch(/^italic bold 16px/);
-    expect(fillText).toHaveBeenCalledWith('A', expect.any(Number), expect.any(Number));
+    expect(fillText).toHaveBeenCalledWith('A', expect.any(Number), expect.any(Number), expect.any(Number));
     expect(fillRect.mock.calls.filter((call) => call[2] === 8 && call[3] === 1)).toHaveLength(3);
   });
 

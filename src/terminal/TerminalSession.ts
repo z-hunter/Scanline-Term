@@ -1,3 +1,4 @@
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -121,6 +122,7 @@ export class TerminalSession {
       cols: size.cols,
       rows: size.rows,
       scrollback: 1000,
+      allowProposedApi: true,
       theme: { foreground: profile.foreground, background: profile.background },
     });
     this.terminal = terminal;
@@ -152,6 +154,8 @@ export class TerminalSession {
       }),
     );
     try {
+      terminal.loadAddon(new Unicode11Addon());
+      terminal.unicode.activeVersion = "11";
       this.unlisten = await Promise.all([
         listen<TerminalOutput>("terminal-output", (event) => {
           if (event.payload.sessionId === this.id) {
