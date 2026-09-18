@@ -25,6 +25,7 @@ import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerm
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
+import { ScrollbackScrollbar } from "./ui/ScrollbackScrollbar";
 import { HomeDashboard } from "./ui/HomeDashboard";
 import {
   appendAgentDelta,
@@ -1108,6 +1109,7 @@ export default function App() {
               aria-label={terminal.live ? "Windows console" : "CRT display"}
               {...terminal.canvasProps}
             />
+            {!activeBrowser && <ScrollbackScrollbar state={terminal.scrollback} onScrollTo={terminal.scrollToLine} />}
             <span className="frame-status">
               {terminal.size.cols} × {terminal.size.rows}
             </span>

@@ -7,6 +7,19 @@ import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 afterEach(() => vi.restoreAllMocks());
 
 describe('TerminalRenderer', () => {
+  it('forwards xterm scroll events to the bound callback', () => {
+    let scrolled: (viewportY: number) => void = () => {};
+    const terminal = {
+      onCursorMove: () => ({ dispose() {} }),
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: (listener: (viewportY: number) => void) => { scrolled = listener; return { dispose() {} }; },
+    };
+    const onScroll = vi.fn();
+    new TerminalRenderer().bindTerminal(terminal as never, onScroll);
+    scrolled(42);
+    expect(onScroll).toHaveBeenCalledWith(42);
+  });
+
   it('centers the rendered grid after cell dimensions are rounded', () => {
     expect(terminalContentOffset(100, 103, 8, 8, { width: 10, height: 10 })).toEqual({ x: 10, y: 11 });
   });

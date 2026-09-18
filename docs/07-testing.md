@@ -108,6 +108,9 @@ Run: `cd src-tauri && cargo test`
 - [ ] `npm test` — `terminal-mouse.test.ts` passes
 - [ ] In a mouse-aware app (e.g., `less`, FAR Manager): click, drag, scroll — events received correctly
 - [ ] Wheel scrolls terminal scrollback in normal mode (not in alternate screen)
+- [ ] Long output preserves 10,000 scrollback lines; wheel and Menu+PageUp/PageDown/Menu+J/K show the border scrollbar with correct thumb size and position
+- [ ] With smooth scrollback enabled, a slow scrollbar-thumb drag animates while a fast drag moves immediately; the thumb remains visible during drag and fades after two seconds
+- [ ] Scrollbar stays hidden for ordinary output, alternate-screen applications, mouse-tracking wheel input, browser tabs, and tabs without history
 - [ ] Copy mode: Menu+C → click+drag → text selected → text copied to clipboard
 - [ ] Middle button click starts selection
 - [ ] Mouse coordinates match expected cells (verify in a TUI app that shows cursor position)

@@ -121,7 +121,7 @@ export class TerminalSession {
     const terminal = new Terminal({
       cols: size.cols,
       rows: size.rows,
-      scrollback: 1000,
+      scrollback: 10000,
       allowProposedApi: true,
       theme: { foreground: profile.foreground, background: profile.background },
     });

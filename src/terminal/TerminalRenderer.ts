@@ -217,9 +217,9 @@ export class TerminalRenderer {
   private scrollContentTop = 0;
   private scrollContentBottom = 0;
 
-  bindTerminal(terminal: Terminal | null): void {
+  bindTerminal(terminal: Terminal | null, onScroll?: (viewportY: number) => void): void {
     this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
-    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll(() => this.markDirty()));
+    if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll((viewportY) => { this.markDirty(); onScroll?.(viewportY); }));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
     const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;

@@ -28,7 +28,7 @@ ScanlineTerm/
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
 │   ├── terminal/TerminalRenderer.ts # dirty-row Canvas 2D renderer and glyph raster profiles
 │   ├── terminal/TerminalRenderer.test.ts # Renderer, metrics and redraw regression tests
-│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, native menu, layoutFit and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, ScrollbackScrollbar, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -140,6 +140,10 @@ Renders the dependency-free home page for a blank browser tab. It loads and save
 #### [`src/ui/nativeNewTabMenu.ts`](../src/ui/nativeNewTabMenu.ts)
 
 Builds the shared Tauri native popup used by the `+` button and terminal-canvas context menu. It owns the three menu actions and the configured-shell submenu so browser and terminal entry points stay identical. The native popup is required when a browser child WebView2 is visible because CSS menus in the main WebView cannot overlap that native surface.
+
+#### [`src/ui/ScrollbackScrollbar.tsx`](../src/ui/ScrollbackScrollbar.tsx)
+
+Renders the transient scrollback indicator in the screen-frame border. It owns thumb geometry, pointer-capture dragging, accessibility values, and the two-second fade timer; xterm scroll position remains owned by `terminal/useTerminal.ts`.
 
 ---
 

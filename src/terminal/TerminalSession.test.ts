@@ -178,6 +178,7 @@ describe('TerminalSession', () => {
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), onOutput, vi.fn(), vi.fn());
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
     const terminal = session.terminal!;
+    expect(terminal.options.scrollback).toBe(10000);
 
     // Fill buffer with enough lines so there's scrollback
     await new Promise<void>((resolve) => terminal.write(Array.from({ length: 50 }, (_, i) => `line ${i}\r\n`).join(''), resolve));

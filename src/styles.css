@@ -450,12 +450,41 @@ canvas:focus,
   position: relative;
   width: min(100%, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333)));
   aspect-ratio: var(--screen-ratio, 1.3333333333);
-  overflow: hidden;
+  overflow: visible;
   border: 12px solid #1d2822;
   border-radius: 20px;
   background: #030604;
   box-shadow: 0 0 0 2px #314238, 0 20px 80px #000, inset 0 0 28px #000;
 }
+
+.scrollback-scrollbar {
+  position: absolute;
+  z-index: 4;
+  top: 12px;
+  right: -8px;
+  bottom: 12px;
+  width: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+
+.scrollback-scrollbar.is-visible { opacity: 1; pointer-events: auto; }
+
+.scrollback-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  width: 4px;
+  min-height: 24px;
+  border-radius: 3px;
+  background: #8cc69a;
+  box-shadow: 0 0 5px #79b889;
+  cursor: grab;
+  touch-action: none;
+}
+
+.scrollback-scrollbar-thumb:active { cursor: grabbing; }
 
 .terminal-workspace-left .screen-frame {
   position: absolute;

@@ -30,6 +30,8 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 
 The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits its UUID with output and exit events, so every tab keeps an independent xterm scrollback buffer. The frontend reuses one source canvas and CRT filter: selecting a tab normally clears phosphor persistence, preventing a previous tab's afterglow from appearing on the next one. The optional Channel switch roll deliberately preserves it so the previous source decays naturally over the new one. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent.
 
+Each xterm session preserves 10,000 scrollback lines. User-driven normal-buffer scrolling (wheel or the existing Menu+PageUp/PageDown and Menu+J/K shortcuts) publishes the active session's viewport/base/row counts to `ui/ScrollbackScrollbar.tsx`. The indicator is not activated by ordinary output, alternate-screen applications, or mouse-tracking wheel events. Its thumb uses pointer capture and calls xterm `scrollToLine()` while dragging; when smooth scrollback is enabled, slow drags reuse the canvas transition while fast drags switch to the immediate path. It fades after two seconds of inactivity.
+
 Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
 
 ### Per-tab visual settings and presets

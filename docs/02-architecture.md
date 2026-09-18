@@ -85,6 +85,8 @@ graph TB
 
 Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then the shared renderer draws it on the normalized virtual-resolution compositing canvas before the CRT filter.
 
+The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
+
 ## Execution Boundary
 
 ### Codex app-server experiment
@@ -210,6 +212,8 @@ sequenceDiagram
         App->>Invoke: invoke("write_terminal", { input })
     else Normal Mode (scrollback)
         App->>App: terminal.scrollLines(±3)
+        App->>Scrollbar: update viewport/base/rows snapshot
+        Scrollbar-->>App: pointer-capture drag → terminal.scrollToLine()
     else Context menu
         App->>App: preventDefault()
         App->>NativeMenu: showNativeNewTabMenu()
