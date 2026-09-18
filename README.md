@@ -49,7 +49,7 @@ Summon Scanline Term from anywhere in Windows with a single keystroke. When you'
 
 ### 5. AI Terminal Assistant
 
-Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can see the terminal session and safely execute commands in your tab with human-in-the-loop confirmation.
+Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can only see the terminal session and execute commands in it.
 
 ![Scanline Term](public/Screenshot_24.png)
 
@@ -57,15 +57,15 @@ Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The
 
 ### 6. Ultra-Lightweight & Fast
 
-Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~9 MB**, launches instantly, and stays lightweight on system resources.
+Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~15 MB**, launches instantly, and stays lightweight on system resources.
 
 ---
 
 ## Display Profiles & Virtual Resolutions
 
-Scanline Term includes a real-time **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
+Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
 
-* **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Apple II, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
+* **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
 * **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
   * **VGA** (640 × 480)
   * **SVGA** (800 × 600)

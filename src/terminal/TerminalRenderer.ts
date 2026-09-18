@@ -245,10 +245,10 @@ export class TerminalRenderer {
     if (this.scrollTransition && this.scrollTargetReady) {
       const output = this.compositedCanvas.getContext('2d');
       if (output && typeof output.drawImage === 'function') {
-        if (typeof output.clearRect === 'function') {
-          output.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height);
-        }
+        output.save(); output.beginPath(); output.rect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop); output.clip();
+        output.clearRect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop);
         output.drawImage(this.scrollTargetCanvas, 0, 0);
+        output.restore();
       }
       this.markDirty();
     }
@@ -392,8 +392,8 @@ export class TerminalRenderer {
     const offset = distance * eased;
     const smoothing = outputCtx.imageSmoothingEnabled;
     outputCtx.imageSmoothingEnabled = false;
-    outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height);
     outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop); outputCtx.clip();
+    outputCtx.clearRect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop);
     if (transition.toViewportY > transition.fromViewportY) {
       outputCtx.drawImage(this.scrollFromCanvas, 0, -offset);
       outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentBottom - offset, this.compositedCanvas.width, offset); outputCtx.clip();
@@ -407,7 +407,7 @@ export class TerminalRenderer {
     }
     outputCtx.restore();
     outputCtx.imageSmoothingEnabled = smoothing;
-    if (progress >= 1) { outputCtx.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); outputCtx.drawImage(targetCtx.canvas, 0, 0); this.cancelScroll(); }
+    if (progress >= 1) this.cancelScroll();
     return true;
   }
   private lineHeight(): number { return this.scrollCellHeight; }
