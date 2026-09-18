@@ -352,6 +352,7 @@ describe('SettingsPanel font-size editing flow', () => {
     // Verify Reflex-bar is a subsection inside the Light fieldset
     const lightFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Light');
     expect(lightFieldset).toBeDefined();
+    expect(lightFieldset?.querySelector('.knob[aria-label="Glow radius"]')).not.toBeNull();
 
     const reflexSubsection = lightFieldset?.querySelector('.reflex-subsection');
     expect(reflexSubsection).not.toBeNull();
@@ -369,6 +370,9 @@ describe('SettingsPanel font-size editing flow', () => {
     const geometryFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Geometry');
     expect(geometryFieldset?.classList.contains('two-columns')).toBe(true);
     expect(geometryFieldset?.textContent).not.toContain('Bezel thickness');
+
+    const temporalFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Temporal');
+    expect(temporalFieldset?.querySelector('.knob[aria-label="Afterglow energy"]')).not.toBeNull();
 
     const glowButtons = bezelGlowBlock?.querySelectorAll('button');
     expect(glowButtons).toHaveLength(3);
@@ -457,7 +461,6 @@ describe('SettingsPanel font-size editing flow', () => {
     setStored.mockClear();
 
     // Verify Channel switch roll is inside the Temporal fieldset
-    const temporalFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Temporal');
     expect(temporalFieldset?.textContent).toContain('Channel switch roll');
 
     // Toggle Channel switch roll

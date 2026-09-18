@@ -63,7 +63,9 @@ export interface CRTSettings {
   bloom: number; // 0.0 to 1.0 (Halation intensity)
   bloomAlgorithm: BloomAlgorithm;
   glow: number; // 0.0 to 2.0 (Ambient screen glow)
+  glowRadius: number; // 1.0 to 6.0 (Wide glow radius)
   persistence: number; // 0.0 to 1.0 (Phosphor trail / afterglow)
+  persistenceEnergy: number; // 0.0 to 0.5 (Initial energy of extinguished phosphors)
   persistenceIntensity: number; // 0.0 to 4.0 (Visible phosphor trail intensity)
   imageBrightness: number; // 0.5 to 1.5 (Image-only final correction)
   imageContrast: number; // 0.5 to 1.5 (Image-only final correction)
@@ -167,6 +169,7 @@ export class CRTFilter {
   accumBreathingStrengthLocation: WebGLUniformLocation | null = null;
   accumDecayLocation: WebGLUniformLocation | null = null;
   accumCutoffLocation: WebGLUniformLocation | null = null;
+  accumEmissionLocation: WebGLUniformLocation | null = null;
 
   fboA: WebGLFramebuffer | null = null;
   fboB: WebGLFramebuffer | null = null;
@@ -1052,6 +1055,7 @@ export class CRTFilter {
       uniform sampler2D u_previousLuma;
       uniform float u_decay;
       uniform float u_cutoff;
+      uniform float u_emission;
       uniform float u_sourceChanged;
       uniform float u_curvature;
       uniform float u_breathingStrength;
@@ -1096,7 +1100,7 @@ export class CRTFilter {
           // A static background is already present in the direct image. Only a
           // pixel that became dimmer emits a residual phosphor trail.
           vec3 previous = sampleScreen(u_previous, rasterUV(texture2D(u_previousLuma, vec2(0.5)).r));
-          vec3 emission = u_sourceChanged > 0.5 ? max(previous - current, vec3(0.0)) * 0.09 : vec3(0.0);
+          vec3 emission = u_sourceChanged > 0.5 ? max(previous - current, vec3(0.0)) * u_emission : vec3(0.0);
 
           vec3 trail = max(emission, decayedHistory);
 
@@ -1124,6 +1128,7 @@ export class CRTFilter {
       this.accumBreathingStrengthLocation = gl.getUniformLocation(this.accumProgram, 'u_breathingStrength');
       this.accumDecayLocation = gl.getUniformLocation(this.accumProgram, 'u_decay');
       this.accumCutoffLocation = gl.getUniformLocation(this.accumProgram, 'u_cutoff');
+      this.accumEmissionLocation = gl.getUniformLocation(this.accumProgram, 'u_emission');
     }
 
     const blurFsSource = `
@@ -1401,8 +1406,12 @@ export class CRTFilter {
     }
 
     const persistence = settings.persistence || 0.0;
+    const persistenceEnergy = settings.persistenceEnergy ?? 0.09;
     const bloom = settings.bloom || 0.0;
     const glow = settings.glow || 0.0;
+    const glowRadius = settings.glowRadius ?? 3.0;
+    const glowPassPairs = Math.max(3, Math.ceil(glowRadius));
+    const glowSpread = 1.25 + glowRadius * 0.125;
     const ambientGlassLight = settings.ambientGlassLight || 0.0;
     const bezelHighlight = settings.bezelHighlight || 0.0;
     const bezelReflection = settings.bezelGlow && settings.bezelGlowMode === 'reflection';
@@ -1470,6 +1479,7 @@ export class CRTFilter {
 
       if (this.accumDecayLocation) gl.uniform1f(this.accumDecayLocation, decay);
       if (this.accumCutoffLocation) gl.uniform1f(this.accumCutoffLocation, cutoff);
+      if (this.accumEmissionLocation) gl.uniform1f(this.accumEmissionLocation, persistenceEnergy);
       if (this.accumSourceChangedLocation) gl.uniform1f(this.accumSourceChangedLocation, sourceChangedWithPrevious ? 1 : 0);
       if (this.accumCurvatureLocation) gl.uniform1f(this.accumCurvatureLocation, settings.curvature);
       if (this.accumBezelThicknessLocation) gl.uniform1f(this.accumBezelThicknessLocation, settings.bezelThickness ?? 0.0);
@@ -1500,13 +1510,14 @@ export class CRTFilter {
           bloomTexture = this.bloomTexB;
         }
         if ((glow > 0.0 || bezelReflection) && this.glowFboA && this.glowFboB && this.glowTexA && this.glowTexB) {
-          // Two small separable passes approximate a wide Gaussian without sparse ghost copies.
+          // Repeat a dense, small Gaussian kernel instead of separating a few samples so
+          // a wide glow remains continuous rather than turning into copied glyphs.
           // Keep dark profile backgrounds out of the Glow source; only image pixels should emit light.
-          this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.08, 1.5);
-          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
-          if (glow > 0.0 || bezelReflection) {
-            this.blur(this.glowTexB, width, height, this.glowFboA, 1, 0, 0.0, 1.5);
-            this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, 1.5);
+          this.blur(this.texture, sourceCanvas.width, sourceCanvas.height, this.glowFboA, 1, 0, 0.08, glowSpread);
+          this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, glowSpread);
+          for (let pair = 1; pair < glowPassPairs; pair += 1) {
+            this.blur(this.glowTexB, width, height, this.glowFboA, 1, 0, 0.0, glowSpread);
+            this.blur(this.glowTexA, width, height, this.glowFboB, 0, 1, 0.0, glowSpread);
           }
           glowTexture = this.glowTexB;
         }

@@ -1434,4 +1434,139 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove();
     vi.restoreAllMocks();
   });
+
+  it('restricts wheel intent to terminal canvas and clears pending intent when viewportY does not change', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
+
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onError = vi.fn();
+    const onToggleSettings = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({
+        settings: DEFAULT_CRT_SETTINGS,
+        resolution: RESOLUTIONS[1],
+        onError,
+        onToggleSettings,
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(TestComponent));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.id = 'terminal-canvas';
+    canvas.width = 640;
+    canvas.height = 400;
+    container.appendChild(canvas);
+    await act(async () => {
+      hookResult.resizeSource(canvas);
+    });
+
+    expect(hookResult.tabs.length).toBeGreaterThan(0);
+    const tabId = hookResult.tabs[0].id;
+    const session = terminalSession(tabId);
+    expect(session).toBeDefined();
+    const terminal = session!.terminal!;
+
+    await new Promise<void>((resolve) => terminal.write(Array.from({ length: 60 }, (_, i) => `line ${i}\r\n`).join(''), resolve));
+
+    expect(terminal.buffer.active.baseY).toBeGreaterThan(0);
+    expect(terminal.buffer.active.viewportY).toBe(terminal.buffer.active.baseY);
+    expect(hookResult.scrollback).toBeNull();
+
+    // 1. Wheel event targeting a non-canvas element
+    const nonCanvas = document.createElement('div');
+    container.appendChild(nonCanvas);
+    const nonCanvasWheel = new WheelEvent('wheel', { deltaY: -100, bubbles: true });
+    await act(async () => {
+      nonCanvas.dispatchEvent(nonCanvasWheel);
+    });
+
+    await act(async () => {
+      terminal.scrollLines(-5);
+      terminal.scrollToBottom();
+    });
+    expect(hookResult.scrollback).toBeNull();
+
+    // 2. Wheel event on canvas that leaves viewportY unchanged (scrolling down while already at bottom)
+    const downWheel = new WheelEvent('wheel', { deltaY: 100, bubbles: true });
+    await act(async () => {
+      canvas.dispatchEvent(downWheel);
+      hookResult.canvasProps.onWheel({
+        deltaY: 100,
+        preventDefault: vi.fn(),
+        currentTarget: canvas,
+        clientX: 10,
+        clientY: 10,
+      } as unknown as React.WheelEvent<HTMLCanvasElement>);
+    });
+
+    await act(async () => {
+      terminal.scrollLines(-5);
+      terminal.scrollToBottom();
+    });
+    expect(hookResult.scrollback).toBeNull();
+
+    // 3. Wheel event on canvas that actually scrolls terminal up
+    const upWheel = new WheelEvent('wheel', { deltaY: -100, bubbles: true });
+    await act(async () => {
+      canvas.dispatchEvent(upWheel);
+      hookResult.canvasProps.onWheel({
+        deltaY: -100,
+        preventDefault: vi.fn(),
+        currentTarget: canvas,
+        clientX: 10,
+        clientY: 10,
+      } as unknown as React.WheelEvent<HTMLCanvasElement>);
+    });
+
+    expect(hookResult.scrollback).not.toBeNull();
+    const activityAfterScroll = hookResult.scrollback!.activity;
+    expect(activityAfterScroll).toBeGreaterThan(0);
+
+    // Later output-driven scroll does not increment user activity
+    await act(async () => {
+      terminal.scrollToBottom();
+    });
+    expect(hookResult.scrollback?.activity).toBe(activityAfterScroll);
+
+    // 4. Keyboard PageUp when already at top of scrollback
+    await act(async () => {
+      terminal.scrollToLine(0);
+    });
+    expect(terminal.buffer.active.viewportY).toBe(0);
+
+    const contextMenuKey = new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true });
+    const pageUpKey = new KeyboardEvent('keydown', { code: 'PageUp', bubbles: true, cancelable: true });
+
+    await act(async () => {
+      window.dispatchEvent(contextMenuKey);
+      window.dispatchEvent(pageUpKey);
+    });
+
+    const activityBefore = hookResult.scrollback?.activity ?? 0;
+    await act(async () => {
+      terminal.scrollToBottom();
+    });
+    expect(hookResult.scrollback?.activity).toBe(activityBefore);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.restoreAllMocks();
+  });
 });
+

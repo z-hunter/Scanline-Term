@@ -39,6 +39,7 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
   Light: [
     { key: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05 },
     { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
+    { key: 'glowRadius', label: 'Glow radius', min: 1, max: 6, step: 0.25 },
     { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
   ],
   'Final image': [
@@ -48,6 +49,7 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
+    { key: 'persistenceEnergy', label: 'Afterglow energy', min: 0, max: 0.5, step: 0.01 },
     { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 4, step: 0.05 },
     { key: 'breathing', label: 'HV breathing', min: 0, max: 1, step: 0.05 },
     { key: 'imperfectSignal', label: 'Imperfect signal', min: 0, max: 1, step: 0.05 },

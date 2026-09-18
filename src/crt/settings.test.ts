@@ -52,7 +52,9 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.reflexBarHeight).toBe(0.23);
     expect(DEFAULT_CRT_SETTINGS.channelSwitchEffect).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.glow).toBe(1);
+    expect(DEFAULT_CRT_SETTINGS.glowRadius).toBe(3);
     expect(DEFAULT_CRT_SETTINGS.persistence).toBe(0.9);
+    expect(DEFAULT_CRT_SETTINGS.persistenceEnergy).toBe(0.09);
     expect(DEFAULT_CRT_SETTINGS.persistenceIntensity).toBe(1.8);
     expect(DEFAULT_CRT_SETTINGS.imageBrightness).toBe(1);
     expect(DEFAULT_CRT_SETTINGS.imageContrast).toBe(1);
@@ -150,9 +152,19 @@ describe('CRT settings', () => {
     expect(loaded.crt.persistenceIntensity).toBe(2);
   });
 
+  it('accepts only safe afterglow energy values', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { persistenceEnergy: 0.25 } })).crt.persistenceEnergy).toBe(0.25);
+    expect(loadStoredSettings(JSON.stringify({ crt: { persistenceEnergy: 0.6 } })).crt.persistenceEnergy).toBe(0.09);
+  });
+
   it('accepts the expanded glow intensity range', () => {
     const loaded = loadStoredSettings(JSON.stringify({ crt: { glow: 2 } }));
     expect(loaded.crt.glow).toBe(2);
+  });
+
+  it('accepts only safe glow radius values', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { glowRadius: 6 } })).crt.glowRadius).toBe(6);
+    expect(loadStoredSettings(JSON.stringify({ crt: { glowRadius: 7 } })).crt.glowRadius).toBe(3);
   });
 
   it('validates edge misconvergence falloff', () => {
