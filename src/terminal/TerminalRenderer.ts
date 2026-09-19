@@ -10,7 +10,64 @@ export type TabColor = { background: string; foreground: string };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
-type ScrollTransition = { fromViewportY: number; toViewportY: number; startedAt: number; duration: number; distance: number };
+export type ScrollCandidate = { deltaRows: number; topRow: number; bottomRow: number; overlapRows: number };
+export type ScrollDetection = { candidate: ScrollCandidate | null; maxExactOverlap: number; maxExactDelta: number | null; rejection: string | null };
+type ScrollTransition = { deltaRows: number; topRow: number; bottomRow: number; startedAt: number; duration: number; distance: number; kind: 'normal' | 'tui'; expectedViewportY?: number };
+type TextOverlap = { deltaRows: number; overlapRows: number; samples: string[] };
+
+const MIN_SCROLL_OVERLAP = 4;
+const MIN_SCROLL_TEXT_ROWS = 3;
+// Set to true temporarily when investigating a missed smooth-scroll candidate.
+const SMOOTH_SCROLL_DIAGNOSTICS = false;
+
+function rowHasText(signature: string): boolean { return signature.includes(':') ? /:[^,\s;]/.test(signature) : /\S/.test(signature); }
+
+export function inspectVerticalScroll(previous: readonly string[], next: readonly string[]): ScrollDetection {
+  if (!previous.length || previous.length !== next.length) return { candidate: null, maxExactOverlap: 0, maxExactDelta: null, rejection: 'different-row-count' };
+  // ponytail: O(rows²) shift scan keeps the MVP exact; optimize only if profiling shows large grids need it.
+  const candidates: ScrollCandidate[] = [];
+  let maxExactOverlap = 0; let maxExactDelta: number | null = null;
+  let ambiguousRuns = false; let insufficientText = false; let unchangedIncoming = false;
+  const maxDelta = previous.length - MIN_SCROLL_OVERLAP;
+  for (let delta = -maxDelta; delta <= maxDelta; delta += 1) {
+    if (!delta) continue;
+    let runStart = -1;
+    const runs: { start: number; end: number }[] = [];
+    const finish = (runEnd: number) => {
+      if (runStart >= 0) runs.push({ start: runStart, end: runEnd });
+    };
+    for (let row = 0; row <= next.length; row += 1) {
+      const matches = row < next.length && row + delta >= 0 && row + delta < previous.length && next[row] === previous[row + delta];
+      if (matches) { if (runStart < 0) runStart = row; }
+      else { finish(row); runStart = -1; }
+    }
+    const longest = Math.max(...runs.map((run) => run.end - run.start), 0);
+    const bestRuns = runs.filter((run) => run.end - run.start === longest);
+    if (longest > maxExactOverlap) { maxExactOverlap = longest; maxExactDelta = delta; }
+    if (longest < MIN_SCROLL_OVERLAP) continue;
+    if (bestRuns.length !== 1) { ambiguousRuns = true; continue; }
+    const run = bestRuns[0];
+    const overlap = next.slice(run.start, run.end);
+    const textRows = overlap.filter(rowHasText);
+    if (textRows.length < MIN_SCROLL_TEXT_ROWS) { insufficientText = true; continue; }
+    const topRow = Math.min(run.start, run.start + delta);
+    const bottomRow = Math.max(run.end, run.end + delta);
+    let incomingChanged = false;
+    const incomingStart = delta > 0 ? run.end : run.start + delta;
+    const incomingEnd = delta > 0 ? run.end + delta : run.start;
+    for (let row = incomingStart; row < incomingEnd; row += 1) {
+      if (next[row] !== previous[row]) { incomingChanged = true; break; }
+    }
+    if (incomingChanged) candidates.push({ deltaRows: delta, topRow, bottomRow, overlapRows: longest }); else unchangedIncoming = true;
+  }
+  candidates.sort((a, b) => b.overlapRows - a.overlapRows || Math.abs(a.deltaRows) - Math.abs(b.deltaRows));
+  const best = candidates[0];
+  const candidate = best && (!candidates[1] || best.overlapRows >= candidates[1].overlapRows + 2) ? best : null;
+  const rejection = candidate ? null : candidates.length > 1 ? 'ambiguous-candidates' : ambiguousRuns ? 'ambiguous-run' : insufficientText ? 'fewer-than-three-text-rows' : unchangedIncoming ? 'unchanged-incoming-band' : maxExactOverlap < MIN_SCROLL_OVERLAP ? 'no-four-row-exact-overlap' : 'no-eligible-candidate';
+  return { candidate, maxExactOverlap, maxExactDelta, rejection };
+}
+
+export function detectVerticalScroll(previous: readonly string[], next: readonly string[]): ScrollCandidate | null { return inspectVerticalScroll(previous, next).candidate; }
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
 type BoxDrawingRun = { offset: number; width: number; alpha: number };
@@ -198,6 +255,15 @@ export class TerminalRenderer {
   private fullDirty = true;
   private focused = true;
   private rowSignatures: string[] = [];
+  private rowTexts: string[] = [];
+  private scrollDiagnostics: string[] = [];
+  private snapshotCols = -1;
+  private snapshotRows = -1;
+  private snapshotViewportY = -1;
+  private snapshotBaseY = -1;
+  private snapshotBuffer: unknown = null;
+  private terminalOutputDirty = false;
+  private smoothScrollingEnabled = false;
   private cursorRow: number | null = null;
   private disposables: { dispose(): void }[] = [];
   private stats: RenderStats = { redraws: 0, canvasMs: 0, glyphs: 0 };
@@ -215,28 +281,44 @@ export class TerminalRenderer {
   private scrollStarted = false;
   private scrollCellHeight = 16;
   private scrollContentTop = 0;
-  private scrollContentBottom = 0;
 
   bindTerminal(terminal: Terminal | null, onScroll?: (viewportY: number) => void): void {
-    this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
+    this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
     if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll((viewportY) => { this.markDirty(); onScroll?.(viewportY); }));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
     const width = resolution.id.startsWith('physical') ? output.width || 1 : resolution.width || 1;
     const height = resolution.id.startsWith('physical') ? output.height || 1 : resolution.height || 1;
-    if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) return false;
-    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.scrollFromCanvas.width = width; this.scrollFromCanvas.height = height; this.scrollTargetCanvas.width = width; this.scrollTargetCanvas.height = height; this.cancelScroll(); this.markDirty(); this.imagesDirty = true; return true;
+    this.cancelScroll();
+    if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) { this.markDirty(); return false; }
+    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.scrollFromCanvas.width = width; this.scrollFromCanvas.height = height; this.scrollTargetCanvas.width = width; this.scrollTargetCanvas.height = height; this.markDirty(); this.imagesDirty = true; return true;
   }
-  setImages(images: TerminalImage[]): void { this.images = images; this.imagesDirty = true; this.markDirty(); }
-  markImagesDirty(): void { this.imagesDirty = true; }
+  setImages(images: TerminalImage[]): void { this.cancelScroll(); this.images = images; this.imagesDirty = true; this.markDirty(); }
+  markImagesDirty(): void { this.cancelScroll(); this.imagesDirty = true; }
+  setSmoothScrollingEnabled(enabled: boolean): void {
+    this.smoothScrollingEnabled = enabled;
+    if (!enabled && this.scrollTransition) this.cancelScroll();
+  }
+  exportSmoothScrollDiagnostics(): string { return JSON.stringify({ version: 1, entries: this.scrollDiagnostics.map((entry) => JSON.parse(entry)) }, null, 2); }
+  private recordSmoothScrollDiagnostic(entry: Record<string, unknown>): void {
+    if (!SMOOTH_SCROLL_DIAGNOSTICS) return;
+    this.scrollDiagnostics.push(JSON.stringify({ at: new Date().toISOString(), ...entry }));
+    if (this.scrollDiagnostics.length > 60) this.scrollDiagnostics.shift();
+  }
   beginScroll(fromViewportY: number, toViewportY: number): boolean {
     if (!this.terminal || fromViewportY === toViewportY || this.terminal.buffer.active !== this.terminal.buffer.normal) return false;
-    if (this.scrollTransition) this.cancelScroll();
+    const started = this.startScroll(toViewportY - fromViewportY, 0, this.terminal.rows, 'normal');
+    if (started && this.scrollTransition) this.scrollTransition.expectedViewportY = toViewportY;
+    return started;
+  }
+  private startScroll(deltaRows: number, topRow: number, bottomRow: number, kind: 'normal' | 'tui'): boolean {
+    if (!this.terminal || !deltaRows || bottomRow <= topRow) return false;
     const from = this.scrollFromCanvas.getContext('2d');
     if (!from || typeof from.drawImage !== 'function') return false;
-    from.drawImage(this.compositedCanvas, 0, 0);
-    const distance = Math.abs(toViewportY - fromViewportY);
-    this.scrollTransition = { fromViewportY, toViewportY, startedAt: performance.now() / 1000, duration: Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)), distance };
+    if (this.scrollTransition) this.cancelScroll();
+    from.drawImage(this.sourceCanvas, 0, 0);
+    const distance = Math.abs(deltaRows);
+    this.scrollTransition = { deltaRows, topRow, bottomRow, startedAt: performance.now() / 1000, duration: Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)), distance, kind };
     this.scrollTargetReady = false;
     this.scrollStarted = true;
     return true;
@@ -245,12 +327,13 @@ export class TerminalRenderer {
     if (this.scrollTransition && this.scrollTargetReady) {
       const output = this.compositedCanvas.getContext('2d');
       if (output && typeof output.drawImage === 'function') {
-        output.save(); output.beginPath(); output.rect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop); output.clip();
-        output.clearRect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop);
+        const top = this.scrollContentTop + this.scrollTransition.topRow * this.scrollCellHeight;
+        const bottom = this.scrollContentTop + this.scrollTransition.bottomRow * this.scrollCellHeight;
+        output.save(); output.beginPath(); output.rect(0, top, this.compositedCanvas.width, bottom - top); output.clip();
+        output.clearRect(0, top, this.compositedCanvas.width, bottom - top);
         output.drawImage(this.scrollTargetCanvas, 0, 0);
         output.restore();
       }
-      this.markDirty();
     }
     this.scrollTransition = null;
     this.scrollTargetReady = false;
@@ -278,7 +361,7 @@ export class TerminalRenderer {
     this.markDirty();
   }
   markDirty(): void { this.dirty = true; this.fullDirty = true; }
-  private markTerminalDirty(): void { this.dirty = true; }
+  private markTerminalDirty(): void { this.dirty = true; this.terminalOutputDirty = true; }
   private markCursorMoved(): void { this.cursorMoved = true; this.dirty = true; }
   isCursorBlinkActive(): boolean { return this.focused; }
   getCursorBlinkPhase(time: number): number {
@@ -295,7 +378,7 @@ export class TerminalRenderer {
   get averageLuma(): number { return this.sourceLuma; }
   get hasMeasuredLuma(): boolean { return this.hasMeasuredSourceLuma; }
   consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
-  setSelection(selection: CopySelection | null): void { this.selection = selection; this.markDirty(); }
+  setSelection(selection: CopySelection | null): void { if (selection || this.selection) this.cancelScroll(); this.selection = selection; this.markDirty(); }
   cellAtPoint(clientX: number, clientY: number, output: HTMLCanvasElement, settings: CRTSettings) {
     const terminal = this.terminal; if (!terminal) return null;
     const rect = output.getBoundingClientRect(); if (!rect.width || !rect.height) return null;
@@ -321,9 +404,22 @@ export class TerminalRenderer {
   }
   draw(time: number, settings: CRTSettings): boolean {
     const source = this.sourceCanvas; const terminal = this.terminal;
-    if (!terminal) { this.drawMock(time, settings); this.composeImages(); return true; }
+    if (!terminal) { this.drawMock(time, settings); this.composeTerminal(this.compositedCanvas); this.composeImages(); return true; }
     const buffer = terminal.buffer.active;
-    if (this.scrollTransition && buffer.viewportY !== this.scrollTransition.toViewportY) { this.cancelScroll(); this.markDirty(); }
+    if (this.snapshotBuffer !== buffer) {
+      this.cancelScroll();
+      this.snapshotBuffer = buffer;
+      this.rowSignatures = [];
+      this.rowTexts = [];
+      this.snapshotCols = -1;
+      this.snapshotRows = -1;
+      this.snapshotViewportY = -1;
+      this.snapshotBaseY = -1;
+      this.terminalOutputDirty = false;
+      this.dirty = true;
+      this.fullDirty = true;
+    }
+    if (this.scrollTransition?.kind === 'normal' && buffer.viewportY !== this.scrollTransition.expectedViewportY) { this.cancelScroll(); this.markDirty(); }
     const cursorX = buffer.cursorX;
     const cursorY = buffer.cursorY;
     const cursorMoved = cursorX !== this.lastCursorX || cursorY !== this.lastCursorY || this.cursorMoved;
@@ -342,43 +438,72 @@ export class TerminalRenderer {
     const cell = buffer.getNullCell();
     const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cellSize);
     this.scrollContentTop = offset.y;
-    this.scrollContentBottom = offset.y + terminal.rows * cellSize.height;
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
     const cursorVisible = this.isCursorVisibleAt(time, buffer, core?.coreService?.isCursorHidden === true);
     const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
-    const changedRows = new Set<number>(); const nextSignatures: string[] = [];
-    if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const signature = this.rowSignature(buffer.getLine(buffer.viewportY + row), terminal.cols, cell); nextSignatures.push(signature); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
+    const changedRows = new Set<number>(); const nextSignatures: string[] = []; const nextTexts: string[] = [];
+    if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const line = buffer.getLine(buffer.viewportY + row); const signature = this.rowSignature(line, terminal.cols, cell); nextSignatures.push(signature); nextTexts.push(this.rowText(line, terminal.cols, cell)); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
-    if (changedRows.size === 0) { this.dirty = false; this.fullDirty = false; this.lastCursorPhase = cursorPhase; if (this.imagesDirty || this.scrollTransition) this.composeImages(this.scrollTransition ? this.scrollTargetCanvas : this.compositedCanvas); return this.renderScroll(time); }
+    const previousSignatures = this.rowSignatures;
+    const stableNormalViewport = buffer === terminal.buffer.normal && buffer.viewportY === buffer.baseY && buffer.viewportY === this.snapshotViewportY && buffer.baseY === this.snapshotBaseY;
+    if (this.terminalOutputDirty) {
+      const base = { buffer: buffer === terminal.buffer.alternate ? 'alternate' : buffer === terminal.buffer.normal ? 'normal' : 'other', cols: terminal.cols, rows: terminal.rows, viewportY: buffer.viewportY, baseY: buffer.baseY, previousViewportY: this.snapshotViewportY, previousBaseY: this.snapshotBaseY, fullDirty: this.fullDirty, selection: Boolean(this.selection), smoothEnabled: this.smoothScrollingEnabled };
+      if (!this.smoothScrollingEnabled) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'disabled' });
+      else if (this.fullDirty) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'full-repaint' });
+      else if (this.selection) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'selection-active' });
+      else if (this.snapshotBuffer !== buffer || this.snapshotCols !== terminal.cols || this.snapshotRows !== terminal.rows || previousSignatures.length !== nextSignatures.length) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'snapshot-mismatch', previousRows: previousSignatures.length });
+      else if (buffer !== terminal.buffer.alternate && !stableNormalViewport) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'normal-viewport-or-scrollback-changed' });
+      else {
+        const detection = inspectVerticalScroll(previousSignatures, nextSignatures);
+        const textOverlap = detection.candidate ? null : this.longestTextOverlap(this.rowTexts, nextTexts);
+        this.recordSmoothScrollDiagnostic({ ...base, outcome: detection.candidate ? 'animated' : 'rejected', candidate: detection.candidate, exactOverlap: { rows: detection.maxExactOverlap, deltaRows: detection.maxExactDelta }, textOverlap, reason: detection.rejection });
+        if (detection.candidate) this.startScroll(detection.candidate.deltaRows, detection.candidate.topRow, detection.candidate.bottomRow, 'tui');
+      }
+    }
+    if (changedRows.size === 0) {
+      this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false; this.lastCursorPhase = cursorPhase;
+      if (this.scrollTransition && !this.scrollTargetReady) this.composeTerminal(this.scrollTargetCanvas);
+      if (this.scrollTransition) this.renderScroll(time); else this.composeTerminal(this.compositedCanvas);
+      this.drawCursor(this.compositedCanvas.getContext('2d'), settings, profile, offset, cellSize, buffer, nextCursorRow);
+      this.composeImages();
+      return Boolean(this.scrollTransition);
+    }
     const started = performance.now(); let glyphs = 0;
     const baseFont = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont);
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = baseFont; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize, baseFont);
-    if (nextCursorRow !== null) {
-      const x = offset.x + cellSize.width * buffer.cursorX;
-      const y = offset.y + cellSize.height * buffer.cursorY;
-      ctx.fillStyle = profile.cursor ?? profile.foreground;
-      const cursorStyle = settings.cursorStyle ?? terminal.options.cursorStyle ?? 'block';
-      if (cursorStyle === 'underline') {
-        const underlineHeight = Math.max(2, Math.round(cellSize.height * 0.1));
-        ctx.fillRect(x, y + cellSize.height - underlineHeight, cellSize.width, underlineHeight);
-      } else if (cursorStyle === 'bar') {
-        const barWidth = Math.max(2, Math.min(cellSize.width, terminal.options.cursorWidth ?? cellSize.width * 0.15));
-        ctx.fillRect(x, y, barWidth, Math.ceil(cellSize.height));
-      } else {
-        ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
-      }
-    }
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
-    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.composeImages(this.scrollTransition ? this.scrollTargetCanvas : this.compositedCanvas); const animated = this.renderScroll(time); this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return animated || true;
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.rowTexts = nextTexts.length ? nextTexts : this.rowTexts; if (nextSignatures.length) { this.snapshotCols = terminal.cols; this.snapshotRows = terminal.rows; this.snapshotViewportY = buffer.viewportY; this.snapshotBaseY = buffer.baseY; } this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false;
+    if (this.scrollTransition) this.composeTerminal(this.scrollTargetCanvas); else this.composeTerminal(this.compositedCanvas);
+    const animated = this.renderScroll(time);
+    this.drawCursor(this.compositedCanvas.getContext('2d'), settings, profile, offset, cellSize, buffer, nextCursorRow);
+    this.composeImages();
+    this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return animated || true;
   }
-  private composeImages(destination = this.compositedCanvas): void {
-    const ctx = destination.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') { this.imagesDirty = false; return; }
+  private composeTerminal(destination = this.compositedCanvas): void {
+    const ctx = destination.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') return;
     if (destination.width !== this.sourceCanvas.width || destination.height !== this.sourceCanvas.height) { destination.width = this.sourceCanvas.width; destination.height = this.sourceCanvas.height; }
     ctx.clearRect(0, 0, destination.width, destination.height); ctx.drawImage(this.sourceCanvas, 0, 0);
+    if (destination === this.scrollTargetCanvas) this.scrollTargetReady = true;
+  }
+  private composeImages(): void {
+    const ctx = this.compositedCanvas.getContext('2d'); if (!ctx || typeof ctx.drawImage !== 'function') { this.imagesDirty = false; return; }
     for (const image of this.images) if (image.image.complete && image.image.naturalWidth > 0) ctx.drawImage(image.image, image.x * this.sourceCanvas.width, image.y * this.sourceCanvas.height, image.width * this.sourceCanvas.width, image.height * this.sourceCanvas.height);
     this.imagesDirty = false;
-    if (destination === this.scrollTargetCanvas) this.scrollTargetReady = true;
+  }
+  private drawCursor(ctx: CanvasRenderingContext2D | null, settings: CRTSettings, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, buffer: { cursorX: number; cursorY: number }, cursorRow: number | null): void {
+    if (!ctx || cursorRow === null) return;
+    const x = offset.x + cellSize.width * buffer.cursorX;
+    const y = offset.y + cellSize.height * buffer.cursorY;
+    ctx.fillStyle = profile.cursor ?? profile.foreground;
+    const cursorStyle = settings.cursorStyle ?? this.terminal?.options.cursorStyle ?? 'block';
+    if (cursorStyle === 'underline') {
+      const underlineHeight = Math.max(2, Math.round(cellSize.height * 0.1));
+      ctx.fillRect(x, y + cellSize.height - underlineHeight, cellSize.width, underlineHeight);
+    } else if (cursorStyle === 'bar') {
+      const barWidth = Math.max(2, Math.min(cellSize.width, this.terminal?.options.cursorWidth ?? cellSize.width * 0.15));
+      ctx.fillRect(x, y, barWidth, Math.ceil(cellSize.height));
+    } else ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
   }
   private renderScroll(time: number): boolean {
     const transition = this.scrollTransition;
@@ -386,22 +511,25 @@ export class TerminalRenderer {
     const targetCtx = this.scrollTargetCanvas.getContext('2d');
     const outputCtx = this.compositedCanvas.getContext('2d');
     if (!targetCtx || !outputCtx || typeof outputCtx.drawImage !== 'function') { this.cancelScroll(); return false; }
+    this.composeTerminal(this.compositedCanvas);
     const progress = Math.min(1, Math.max(0, (time - transition.startedAt) / transition.duration));
     const eased = 1 - Math.pow(1 - progress, 3);
-    const distance = Math.min(this.scrollContentBottom - this.scrollContentTop, transition.distance * this.lineHeight());
-    const offset = distance * eased;
+    const top = Math.floor(this.scrollContentTop + transition.topRow * this.scrollCellHeight);
+    const bottom = Math.ceil(this.scrollContentTop + transition.bottomRow * this.scrollCellHeight);
+    const distance = Math.min(bottom - top, Math.round(transition.distance * this.lineHeight()));
+    const offset = Math.round(distance * eased);
     const smoothing = outputCtx.imageSmoothingEnabled;
     outputCtx.imageSmoothingEnabled = false;
-    outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop); outputCtx.clip();
-    outputCtx.clearRect(0, this.scrollContentTop, this.compositedCanvas.width, this.scrollContentBottom - this.scrollContentTop);
-    if (transition.toViewportY > transition.fromViewportY) {
+    outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, top, this.compositedCanvas.width, bottom - top); outputCtx.clip();
+    outputCtx.clearRect(0, top, this.compositedCanvas.width, bottom - top);
+    if (transition.deltaRows > 0) {
       outputCtx.drawImage(this.scrollFromCanvas, 0, -offset);
-      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentBottom - offset, this.compositedCanvas.width, offset); outputCtx.clip();
+      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, bottom - offset, this.compositedCanvas.width, offset); outputCtx.clip();
       outputCtx.drawImage(this.scrollTargetCanvas, 0, distance - offset);
       outputCtx.restore();
     } else {
       outputCtx.drawImage(this.scrollFromCanvas, 0, offset);
-      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, this.scrollContentTop, this.compositedCanvas.width, offset); outputCtx.clip();
+      outputCtx.save(); outputCtx.beginPath(); outputCtx.rect(0, top, this.compositedCanvas.width, offset); outputCtx.clip();
       outputCtx.drawImage(this.scrollTargetCanvas, 0, offset - distance);
       outputCtx.restore();
     }
@@ -411,6 +539,26 @@ export class TerminalRenderer {
     return true;
   }
   private lineHeight(): number { return this.scrollCellHeight; }
+  private rowText(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
+    if (!line) return '';
+    let text = '';
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; text += current.getChars() || ' '.repeat(current.getWidth()); }
+    return text.trimEnd().slice(0, 240);
+  }
+  private longestTextOverlap(previous: readonly string[], next: readonly string[]): TextOverlap | null {
+    if (previous.length !== next.length) return null;
+    let best: { deltaRows: number; start: number; overlapRows: number } | null = null;
+    for (let delta = 1 - previous.length; delta < previous.length; delta += 1) {
+      if (!delta) continue;
+      let start = -1;
+      for (let row = 0; row <= next.length; row += 1) {
+        const matches = row < next.length && row + delta >= 0 && row + delta < previous.length && next[row] === previous[row + delta];
+        if (matches && start < 0) start = row;
+        if (!matches && start >= 0) { const overlapRows = row - start; if (!best || overlapRows > best.overlapRows) best = { deltaRows: delta, start, overlapRows }; start = -1; }
+      }
+    }
+    return best && best.overlapRows >= MIN_SCROLL_OVERLAP ? { deltaRows: best.deltaRows, overlapRows: best.overlapRows, samples: next.slice(best.start, best.start + best.overlapRows).filter(Boolean).slice(0, 6) } : null;
+  }
   private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
     if (!line) return '';
     let signature = '';
@@ -476,5 +624,5 @@ export class TerminalRenderer {
       }
     }
   }
-  dispose(): void { this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
+  dispose(): void { this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
 }

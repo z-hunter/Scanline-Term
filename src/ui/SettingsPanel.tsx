@@ -137,6 +137,7 @@ export function SettingsPanel({
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
+  // getSmoothScrollDiagnostics = () => '',
 }: {
   stored: StoredSettings;
   setStored: Dispatch<SetStateAction<StoredSettings>>;
@@ -152,6 +153,7 @@ export function SettingsPanel({
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
+  // getSmoothScrollDiagnostics?: () => string;
 }) {
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
@@ -159,6 +161,8 @@ export function SettingsPanel({
   const averageCanvasMs = renderStats.redraws ? renderStats.canvasMs / renderStats.redraws : 0;
   const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
   const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
+  // const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
+  // const copySmoothScrollDiagnostics = () => void navigator.clipboard.writeText(getSmoothScrollDiagnostics()).then(() => setScrollDiagnosticsCopied(true)).catch(() => setScrollDiagnosticsCopied(false));
 
   if (stored.crt.consoleFontSize !== prevFontSize) {
     setPrevFontSize(stored.crt.consoleFontSize);
@@ -715,12 +719,16 @@ export function SettingsPanel({
       <fieldset>
         <legend>UI</legend>
         <Switch
-          label="Smooth scrollback"
+          label="Smooth terminal scrolling"
           checked={stored.smoothScrollback}
           onChange={(checked) =>
             setStored((current) => ({ ...current, smoothScrollback: checked }))
           }
         />
+        {/* <div className="setting-block">
+          <span className="setting-label">Smooth scroll diagnostics</span>
+          <button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
+        </div> */}
         <div className="setting-block">
           <span className="setting-label">Tab placement</span>
           <SegmentedControl

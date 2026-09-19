@@ -72,7 +72,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const [activePresetState, setActivePresetState] = useState<TabPresetState | null>(null); const [scrollback, setScrollback] = useState<ScrollbackScrollbarState | null>(null);
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
   const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const smoothScrollbackRef = useRef(smoothScrollback); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const imageDrag = useRef<{ image: TerminalImage; x: number; y: number } | null>(null); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null); const scrollbackActivity = useRef(0); const scrollbackRef = useRef<ScrollbackScrollbarState | null>(null); const scrollIntentRef = useRef(false);
-  defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
+  defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; renderer.current.setSmoothScrollingEnabled(smoothScrollback); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const publishScrollback = useCallback((id: string, terminal: TerminalSession['terminal'], userInitiated: boolean, viewportY?: number) => {
     const buffer = terminal?.buffer.active;
@@ -312,14 +312,15 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     }
     void Promise.all(loads).then(() => {
       if (cancelled) return;
-      renderer.current?.markDirty();
+      renderer.current?.cancelScroll(); renderer.current?.markDirty();
       if (outputRef.current) resizeSource(outputRef.current);
     }).catch((reason) => onError(`Could not load font: ${String(reason)}`));
     return () => { cancelled = true; };
   }, [currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, onError, resizeSource]);
   useEffect(() => { const output = outputRef.current; if (output) resizeSource(output); }, [resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
+  useEffect(() => { renderer.current?.cancelScroll(); renderer.current?.markDirty(); }, [currentPreset.crt]);
   useEffect(() => {
-    renderer.current!.markDirty();
+    renderer.current!.cancelScroll(); renderer.current!.markDirty();
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
     if (session?.terminal) session.terminal.options.cursorStyle = settingsRef.current.cursorStyle;
   }, [activePresetState?.settings.crt.cursorStyle, activePresetState?.settings.crt.breathing]);

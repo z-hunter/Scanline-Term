@@ -1,12 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Terminal } from '@xterm/xterm';
-import { applyTabColorMode, canvasFont, canvasFontLoad, fontCellSize, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { applyTabColorMode, canvasFont, canvasFontLoad, detectVerticalScroll, fontCellSize, inspectVerticalScroll, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('TerminalRenderer', () => {
+  it('detects unambiguous vertical shifts in either direction', () => {
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['B', 'C', 'D', 'E', 'F', 'G'])).toMatchObject({ deltaRows: 1, topRow: 0, bottomRow: 6, overlapRows: 5 });
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['Z', 'A', 'B', 'C', 'D', 'E'])).toMatchObject({ deltaRows: -1, topRow: 0, bottomRow: 6, overlapRows: 5 });
+    expect(detectVerticalScroll(['header', 'A', 'B', 'B', 'C', 'D', 'E', 'F'], ['A', 'B', 'B', 'C', 'D', 'E', 'F', 'tail'])).toMatchObject({ deltaRows: 1, overlapRows: 7 });
+  });
+
+  it('rejects weak or ambiguous scroll evidence', () => {
+    expect(detectVerticalScroll(['', 'A', '', 'B', '', ''], ['A', '', 'B', '', '', 'X'])).toBeNull();
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['B', 'C', 'X', 'E', 'F', 'G'])).toBeNull();
+    expect(detectVerticalScroll(['A', 'B', 'C'], ['B', 'C', 'D'])).toBeNull();
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'X', 'A', 'B', 'C', 'D', 'Y'], ['B', 'C', 'D', 'X', 'Q', 'B', 'C', 'D', 'Y', 'Z'])).toBeNull();
+    expect(detectVerticalScroll(['A', 'A', 'A', 'A', 'A', 'A'], ['A', 'A', 'A', 'A', 'A', 'X'])).toBeNull();
+  });
+
+  it('reports the detector rejection for diagnostics', () => {
+    expect(inspectVerticalScroll(['A', 'B', 'C'], ['B', 'C', 'D'])).toMatchObject({ candidate: null, rejection: 'no-four-row-exact-overlap' });
+  });
+
   it('forwards xterm scroll events to the bound callback', () => {
     let scrolled: (viewportY: number) => void = () => {};
     const terminal = {
@@ -54,6 +72,37 @@ describe('TerminalRenderer', () => {
     renderer.cancelScroll();
     expect(renderer.isScrollAnimating).toBe(false);
     expect(context.drawImage).not.toHaveBeenCalled();
+  });
+
+  it('animates an unambiguous alternate-buffer output shift', () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', imageSmoothingEnabled: true, fillRect: vi.fn(), fillText: vi.fn(), drawImage: vi.fn(), clearRect: vi.fn(), save: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), restore: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const makeCell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    const alternate = { viewportY: 0, baseY: 0, cursorX: -1, cursorY: -1, getNullCell: () => makeCell(''), getLine: (row: number) => ({ getCell: () => makeCell(rows[row] ?? '') }) };
+    let rows = ['A', 'B', 'C', 'D', 'E', 'F']; let parsed = () => {};
+    const terminal = { cols: 1, rows: 6, options: {}, buffer: { active: alternate, alternate, normal: {} }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 120 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never); renderer.setSmoothScrollingEnabled(true);
+    renderer.draw(0, DEFAULT_CRT_SETTINGS);
+    rows = ['B', 'C', 'D', 'E', 'F', 'G']; parsed();
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], rows)).not.toBeNull();
+    expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(renderer.isScrollAnimating).toBe(true);
+  });
+
+  it('animates stable normal-buffer TUI shifts but not scrollback growth', () => {
+    const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', imageSmoothingEnabled: true, fillRect: vi.fn(), fillText: vi.fn(), drawImage: vi.fn(), clearRect: vi.fn(), save: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), restore: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const makeCell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    let rows = ['A', 'B', 'C', 'D', 'E', 'F']; let parsed = () => {};
+    const normal = { viewportY: 7, baseY: 7, cursorX: -1, cursorY: -1, getNullCell: () => makeCell(''), getLine: (row: number) => ({ getCell: () => makeCell(rows[row - normal.viewportY] ?? '') }) };
+    const terminal = { cols: 1, rows: 6, options: {}, buffer: { active: normal, normal, alternate: {} }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { parsed = listener; return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 120 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never); renderer.setSmoothScrollingEnabled(true);
+    renderer.draw(0, DEFAULT_CRT_SETTINGS);
+    rows = ['B', 'C', 'D', 'E', 'F', 'G']; parsed(); renderer.draw(.1, DEFAULT_CRT_SETTINGS);
+    expect(renderer.isScrollAnimating).toBe(true);
+    renderer.cancelScroll();
+    rows = ['C', 'D', 'E', 'F', 'G', 'H']; normal.viewportY = normal.baseY = 8; parsed(); renderer.draw(.2, DEFAULT_CRT_SETTINGS);
+    expect(renderer.isScrollAnimating).toBe(false);
   });
 
   it('redraws only a changed terminal row', () => {
