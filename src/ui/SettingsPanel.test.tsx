@@ -36,6 +36,16 @@ describe('SettingsPanel font-size editing flow', () => {
     input.dispatchEvent(new Event('blur'));
   };
 
+  it('shows the TUI heuristic switch only with smooth terminal scrolling', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, defaultProps)); });
+    expect(container.textContent).not.toContain('Heuristic TUI scrolling');
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, stored: { ...defaultProps.stored, smoothScrollback: true } })); });
+    expect(container.textContent).toContain('Heuristic TUI scrolling');
+    root.unmount(); container.remove();
+  });
+
   it('retains local string value while editing and persists clamped value on blur', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

@@ -75,6 +75,7 @@ export type AppSettings = {
   showAiPanel: boolean;
   defaultShell: string;
   smoothScrollback: boolean;
+  smoothTuiScrolling: boolean;
 };
 
 export type StoredSettings = AppSettings & {
@@ -162,6 +163,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     showAiPanel: false,
     defaultShell: '',
     smoothScrollback: false,
+    smoothTuiScrolling: true,
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -180,6 +182,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       showAiPanel?: unknown;
       defaultShell?: unknown;
       smoothScrollback?: unknown;
+      smoothTuiScrolling?: unknown;
       crt?: Record<string, unknown>;
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
@@ -192,6 +195,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
+    if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

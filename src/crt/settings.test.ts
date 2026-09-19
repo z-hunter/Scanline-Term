@@ -136,6 +136,9 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(null).smoothScrollback).toBe(false);
     expect(loadStoredSettings(JSON.stringify({ smoothScrollback: true })).smoothScrollback).toBe(true);
     expect(loadStoredSettings(JSON.stringify({ smoothScrollback: 'yes' })).smoothScrollback).toBe(false);
+    expect(loadStoredSettings(null).smoothTuiScrolling).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: false })).smoothTuiScrolling).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: 'no' })).smoothTuiScrolling).toBe(true);
   });
 
   it('accepts virtual screens in all supported aspect ratios', () => {

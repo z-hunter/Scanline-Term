@@ -10,20 +10,21 @@ export type TabColor = { background: string; foreground: string };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
-export type ScrollCandidate = { deltaRows: number; topRow: number; bottomRow: number; overlapRows: number };
+export type ScrollCandidate = { deltaRows: number; topRow: number; bottomRow: number; overlapRows: number; matchTopRow: number; matchBottomRow: number; presentationMismatchRows: number[] };
 export type ScrollDetection = { candidate: ScrollCandidate | null; maxExactOverlap: number; maxExactDelta: number | null; rejection: string | null };
 type ScrollTransition = { deltaRows: number; topRow: number; bottomRow: number; startedAt: number; duration: number; distance: number; kind: 'normal' | 'tui'; expectedViewportY?: number };
 type TextOverlap = { deltaRows: number; overlapRows: number; samples: string[] };
 
 const MIN_SCROLL_OVERLAP = 4;
 const MIN_SCROLL_TEXT_ROWS = 3;
-// Set to true temporarily when investigating a missed smooth-scroll candidate.
+const MAX_PRESENTATION_MISMATCH_ROWS = 2;
+// Enable temporarily when investigating a missed smooth-scroll candidate.
 const SMOOTH_SCROLL_DIAGNOSTICS = false;
 
 function rowHasText(signature: string): boolean { return signature.includes(':') ? /:[^,\s;]/.test(signature) : /\S/.test(signature); }
 
-export function inspectVerticalScroll(previous: readonly string[], next: readonly string[]): ScrollDetection {
-  if (!previous.length || previous.length !== next.length) return { candidate: null, maxExactOverlap: 0, maxExactDelta: null, rejection: 'different-row-count' };
+export function inspectVerticalScroll(previous: readonly string[], next: readonly string[], previousContent = previous, nextContent = next): ScrollDetection {
+  if (!previous.length || previous.length !== next.length || previousContent.length !== previous.length || nextContent.length !== next.length) return { candidate: null, maxExactOverlap: 0, maxExactDelta: null, rejection: 'different-row-count' };
   // ponytail: O(rows²) shift scan keeps the MVP exact; optimize only if profiling shows large grids need it.
   const candidates: ScrollCandidate[] = [];
   let maxExactOverlap = 0; let maxExactDelta: number | null = null;
@@ -31,19 +32,25 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
   const maxDelta = previous.length - MIN_SCROLL_OVERLAP;
   for (let delta = -maxDelta; delta <= maxDelta; delta += 1) {
     if (!delta) continue;
-    let runStart = -1;
-    const runs: { start: number; end: number }[] = [];
+    let runStart = -1; let exactStart = -1; let presentationMismatchRows: number[] = [];
+    const runs: { start: number; end: number; presentationMismatchRows: number[] }[] = [];
     const finish = (runEnd: number) => {
-      if (runStart >= 0) runs.push({ start: runStart, end: runEnd });
+      if (runStart >= 0 && presentationMismatchRows.length <= MAX_PRESENTATION_MISMATCH_ROWS) runs.push({ start: runStart, end: runEnd, presentationMismatchRows });
+    };
+    const finishExact = (runEnd: number) => {
+      if (exactStart >= 0 && runEnd - exactStart > maxExactOverlap) { maxExactOverlap = runEnd - exactStart; maxExactDelta = delta; }
     };
     for (let row = 0; row <= next.length; row += 1) {
-      const matches = row < next.length && row + delta >= 0 && row + delta < previous.length && next[row] === previous[row + delta];
-      if (matches) { if (runStart < 0) runStart = row; }
-      else { finish(row); runStart = -1; }
+      const inRange = row < next.length && row + delta >= 0 && row + delta < previous.length;
+      const exact = inRange && next[row] === previous[row + delta];
+      const presentationOnly = inRange && !exact && nextContent[row] === previousContent[row + delta];
+      if (exact) { if (exactStart < 0) exactStart = row; } else { finishExact(row); exactStart = -1; }
+      if (exact || presentationOnly) { if (runStart < 0) { runStart = row; presentationMismatchRows = []; } if (presentationOnly) presentationMismatchRows.push(row); }
+      else { finish(row); runStart = -1; presentationMismatchRows = []; }
     }
+    finishExact(next.length);
     const longest = Math.max(...runs.map((run) => run.end - run.start), 0);
     const bestRuns = runs.filter((run) => run.end - run.start === longest);
-    if (longest > maxExactOverlap) { maxExactOverlap = longest; maxExactDelta = delta; }
     if (longest < MIN_SCROLL_OVERLAP) continue;
     if (bestRuns.length !== 1) { ambiguousRuns = true; continue; }
     const run = bestRuns[0];
@@ -58,7 +65,7 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
     for (let row = incomingStart; row < incomingEnd; row += 1) {
       if (next[row] !== previous[row]) { incomingChanged = true; break; }
     }
-    if (incomingChanged) candidates.push({ deltaRows: delta, topRow, bottomRow, overlapRows: longest }); else unchangedIncoming = true;
+    if (incomingChanged) candidates.push({ deltaRows: delta, topRow, bottomRow, overlapRows: longest, matchTopRow: run.start, matchBottomRow: run.end, presentationMismatchRows: run.presentationMismatchRows }); else unchangedIncoming = true;
   }
   candidates.sort((a, b) => b.overlapRows - a.overlapRows || Math.abs(a.deltaRows) - Math.abs(b.deltaRows));
   const best = candidates[0];
@@ -67,7 +74,7 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
   return { candidate, maxExactOverlap, maxExactDelta, rejection };
 }
 
-export function detectVerticalScroll(previous: readonly string[], next: readonly string[]): ScrollCandidate | null { return inspectVerticalScroll(previous, next).candidate; }
+export function detectVerticalScroll(previous: readonly string[], next: readonly string[], previousContent = previous, nextContent = next): ScrollCandidate | null { return inspectVerticalScroll(previous, next, previousContent, nextContent).candidate; }
 
 const fontMetricsCache = new Map<string, { width: number; height: number }>();
 type BoxDrawingRun = { offset: number; width: number; alpha: number };
@@ -255,6 +262,7 @@ export class TerminalRenderer {
   private fullDirty = true;
   private focused = true;
   private rowSignatures: string[] = [];
+  private rowContentSignatures: string[] = [];
   private rowTexts: string[] = [];
   private scrollDiagnostics: string[] = [];
   private snapshotCols = -1;
@@ -283,7 +291,7 @@ export class TerminalRenderer {
   private scrollContentTop = 0;
 
   bindTerminal(terminal: Terminal | null, onScroll?: (viewportY: number) => void): void {
-    this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
+    this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.rowContentSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
     if (terminal) this.disposables.push(terminal.onCursorMove(() => this.markCursorMoved()), terminal.onWriteParsed(() => this.markTerminalDirty()), terminal.onScroll((viewportY) => { this.markDirty(); onScroll?.(viewportY); }));
   }
   resizeSource(resolution: Resolution, output: HTMLCanvasElement): boolean {
@@ -410,6 +418,7 @@ export class TerminalRenderer {
       this.cancelScroll();
       this.snapshotBuffer = buffer;
       this.rowSignatures = [];
+      this.rowContentSignatures = [];
       this.rowTexts = [];
       this.snapshotCols = -1;
       this.snapshotRows = -1;
@@ -441,8 +450,8 @@ export class TerminalRenderer {
     const core = (terminal as unknown as { _core?: { coreService?: { isCursorHidden?: boolean } } })._core;
     const cursorVisible = this.isCursorVisibleAt(time, buffer, core?.coreService?.isCursorHidden === true);
     const nextCursorRow = cursorVisible && buffer.cursorY >= 0 && buffer.cursorY < terminal.rows ? buffer.cursorY : null;
-    const changedRows = new Set<number>(); const nextSignatures: string[] = []; const nextTexts: string[] = [];
-    if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const line = buffer.getLine(buffer.viewportY + row); const signature = this.rowSignature(line, terminal.cols, cell); nextSignatures.push(signature); nextTexts.push(this.rowText(line, terminal.cols, cell)); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
+    const changedRows = new Set<number>(); const nextSignatures: string[] = []; const nextContentSignatures: string[] = []; const nextTexts: string[] = [];
+    if (this.dirty) for (let row = 0; row < terminal.rows; row += 1) { const line = buffer.getLine(buffer.viewportY + row); const signature = this.rowSignature(line, terminal.cols, cell); nextSignatures.push(signature); nextContentSignatures.push(this.rowSignature(line, terminal.cols, cell, true)); nextTexts.push(this.rowText(line, terminal.cols, cell)); if (this.fullDirty || signature !== this.rowSignatures[row]) changedRows.add(row); }
     if (this.cursorRow !== null) changedRows.add(this.cursorRow); if (nextCursorRow !== null) changedRows.add(nextCursorRow);
     const previousSignatures = this.rowSignatures;
     const stableNormalViewport = buffer === terminal.buffer.normal && buffer.viewportY === buffer.baseY && buffer.viewportY === this.snapshotViewportY && buffer.baseY === this.snapshotBaseY;
@@ -454,9 +463,9 @@ export class TerminalRenderer {
       else if (this.snapshotBuffer !== buffer || this.snapshotCols !== terminal.cols || this.snapshotRows !== terminal.rows || previousSignatures.length !== nextSignatures.length) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'snapshot-mismatch', previousRows: previousSignatures.length });
       else if (buffer !== terminal.buffer.alternate && !stableNormalViewport) this.recordSmoothScrollDiagnostic({ ...base, outcome: 'skipped', reason: 'normal-viewport-or-scrollback-changed' });
       else {
-        const detection = inspectVerticalScroll(previousSignatures, nextSignatures);
+        const detection = inspectVerticalScroll(previousSignatures, nextSignatures, this.rowContentSignatures, nextContentSignatures);
         const textOverlap = detection.candidate ? null : this.longestTextOverlap(this.rowTexts, nextTexts);
-        this.recordSmoothScrollDiagnostic({ ...base, outcome: detection.candidate ? 'animated' : 'rejected', candidate: detection.candidate, exactOverlap: { rows: detection.maxExactOverlap, deltaRows: detection.maxExactDelta }, textOverlap, reason: detection.rejection });
+        this.recordSmoothScrollDiagnostic({ ...base, outcome: detection.candidate ? 'animated' : 'rejected', candidate: detection.candidate, boundaries: detection.candidate ? this.scrollBoundaryRows(detection.candidate, previousSignatures, this.rowTexts, nextSignatures, nextTexts) : null, exactOverlap: { rows: detection.maxExactOverlap, deltaRows: detection.maxExactDelta }, textOverlap, reason: detection.rejection });
         if (detection.candidate) this.startScroll(detection.candidate.deltaRows, detection.candidate.topRow, detection.candidate.bottomRow, 'tui');
       }
     }
@@ -473,7 +482,7 @@ export class TerminalRenderer {
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = baseFont; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize, baseFont);
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
-    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.rowTexts = nextTexts.length ? nextTexts : this.rowTexts; if (nextSignatures.length) { this.snapshotCols = terminal.cols; this.snapshotRows = terminal.rows; this.snapshotViewportY = buffer.viewportY; this.snapshotBaseY = buffer.baseY; } this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false;
+    this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.rowContentSignatures = nextContentSignatures.length ? nextContentSignatures : this.rowContentSignatures; this.rowTexts = nextTexts.length ? nextTexts : this.rowTexts; if (nextSignatures.length) { this.snapshotCols = terminal.cols; this.snapshotRows = terminal.rows; this.snapshotViewportY = buffer.viewportY; this.snapshotBaseY = buffer.baseY; } this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false;
     if (this.scrollTransition) this.composeTerminal(this.scrollTargetCanvas); else this.composeTerminal(this.compositedCanvas);
     const animated = this.renderScroll(time);
     this.drawCursor(this.compositedCanvas.getContext('2d'), settings, profile, offset, cellSize, buffer, nextCursorRow);
@@ -559,10 +568,20 @@ export class TerminalRenderer {
     }
     return best && best.overlapRows >= MIN_SCROLL_OVERLAP ? { deltaRows: best.deltaRows, overlapRows: best.overlapRows, samples: next.slice(best.start, best.start + best.overlapRows).filter(Boolean).slice(0, 6) } : null;
   }
-  private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell): string {
+  private scrollBoundaryRows(candidate: ScrollCandidate, previous: readonly string[], previousTexts: readonly string[], next: readonly string[], nextTexts: readonly string[]) {
+    const rows = new Set<number>();
+    for (const boundary of [candidate.matchTopRow, candidate.matchBottomRow]) for (let row = boundary - 2; row <= boundary + 2; row += 1) if (row >= 0 && row < next.length) rows.add(row);
+    return [...rows].sort((a, b) => a - b).map((newRow) => {
+      const oldRow = newRow + candidate.deltaRows;
+      const oldText = oldRow >= 0 && oldRow < previousTexts.length ? previousTexts[oldRow] : null;
+      const sameSignature = oldRow >= 0 && oldRow < previous.length && next[newRow] === previous[oldRow];
+      return { newRow, oldRow, newText: nextTexts[newRow], oldText, sameText: oldText === nextTexts[newRow], sameSignature };
+    });
+  }
+  private rowSignature(line: BufferLine | undefined, cols: number, cell: IBufferCell, contentOnly = false): string {
     if (!line) return '';
     let signature = '';
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); const attributes = CELL_ATTRIBUTES.map((attribute) => Number(cellAttribute(current, attribute))).join(''); signature += `${chars.length}:${chars},${current.getWidth()},${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}${Number(current.isDim())}${Number(current.isInvisible())}${attributes};`; }
+    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); const attributes = CELL_ATTRIBUTES.map((attribute) => Number(cellAttribute(current, attribute))).join(''); const colors = `${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}`; const presentation = contentOnly ? '' : `${colors}${Number(current.isDim())}${attributes}`; signature += `${chars.length}:${chars},${current.getWidth()},${presentation}${Number(current.isInvisible())};`; }
     return signature;
   }
   private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, baseFont: string): number {
@@ -624,5 +643,5 @@ export class TerminalRenderer {
       }
     }
   }
-  dispose(): void { this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
+  dispose(): void { this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = null; this.rowSignatures = []; this.rowContentSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.images = []; this.imagesDirty = true; }
 }

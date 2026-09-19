@@ -150,6 +150,7 @@ export default function App() {
     ready: presetsReady,
     defaultShell: stored.defaultShell,
     smoothScrollback: stored.smoothScrollback,
+    smoothTuiScrolling: stored.smoothTuiScrolling,
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
@@ -363,6 +364,7 @@ export default function App() {
       showAiPanel: stored.showAiPanel,
       defaultShell: stored.defaultShell,
       smoothScrollback: stored.smoothScrollback,
+      smoothTuiScrolling: stored.smoothTuiScrolling,
     }));
   }, [stored]);
   useEffect(() => {
@@ -1169,6 +1171,7 @@ export default function App() {
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
+          getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
         />
       )}
     </main>

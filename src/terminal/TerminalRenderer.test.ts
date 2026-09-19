@@ -8,9 +8,11 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('TerminalRenderer', () => {
   it('detects unambiguous vertical shifts in either direction', () => {
-    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['B', 'C', 'D', 'E', 'F', 'G'])).toMatchObject({ deltaRows: 1, topRow: 0, bottomRow: 6, overlapRows: 5 });
-    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['Z', 'A', 'B', 'C', 'D', 'E'])).toMatchObject({ deltaRows: -1, topRow: 0, bottomRow: 6, overlapRows: 5 });
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['B', 'C', 'D', 'E', 'F', 'G'])).toMatchObject({ deltaRows: 1, topRow: 0, bottomRow: 6, overlapRows: 5, matchTopRow: 0, matchBottomRow: 5 });
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['Z', 'A', 'B', 'C', 'D', 'E'])).toMatchObject({ deltaRows: -1, topRow: 0, bottomRow: 6, overlapRows: 5, matchTopRow: 1, matchBottomRow: 6 });
     expect(detectVerticalScroll(['header', 'A', 'B', 'B', 'C', 'D', 'E', 'F'], ['A', 'B', 'B', 'C', 'D', 'E', 'F', 'tail'])).toMatchObject({ deltaRows: 1, overlapRows: 7 });
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], ['B', 'C', 'D*', 'E', 'F', 'G', 'H', 'I'], ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'])).toMatchObject({ deltaRows: 1, overlapRows: 7, presentationMismatchRows: [2] });
+    expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'], ['B*', 'C', 'D*', 'E', 'F*', 'G', 'H', 'I', 'J', 'K'], ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'], ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'])).toBeNull();
   });
 
   it('rejects weak or ambiguous scroll evidence', () => {
