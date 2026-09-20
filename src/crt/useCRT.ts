@@ -42,7 +42,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
           if (!breathingPrimed && renderer.hasMeasuredLuma) { filter.restartBreathing(); breathingPrimed = true; }
           if (filter.isValid() && !renderFailed) try { filter.render(renderer.compositedCanvas, settingsRef.current, changed); } catch (reason) { renderFailed = true; onError(`CRT render failed: ${String(reason)}`); }
         } else if (ctx2d) {
-          if (changed) {
+          if (changed || renderer.isScrollAnimating) {
             ctx2d.imageSmoothingEnabled = settingsRef.current.antiAliasedPixels !== false;
             ctx2d.drawImage(renderer.compositedCanvas, 0, 0, output.width, output.height);
           }
