@@ -154,6 +154,7 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+'** | Toggle keyboard focus between terminal and AI assistant | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+V** | Paste from clipboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+C** | Enter copy mode | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+/** | Open terminal-buffer search | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+B** | Create a browser tab with the local home dashboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+W** | Close the active terminal or browser tab | `terminal/useTerminal.ts` keyboard handler |
@@ -161,6 +162,8 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+→ / Menu+>** | Select the next tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+← / Menu+<** | Select the previous tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+Tab** | Toggle to the previously active tab | `terminal/useTerminal.ts` keyboard handler |
+
+When search is open, the DOM search field owns text input and does not forward it to ConPTY. Matches are highlighted in `TerminalRenderer` before the CRT pipeline; the compact search field is a DOM overlay above the output canvas. `Enter`/`n` advance and `N` reverses through cyclic matches. Normal-buffer searches include scrollback, while alternate-buffer searches are limited to the current screen.
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding. A lone Menu press is forwarded to the active Win32 Input Mode terminal as a deferred down/up pair when it is released; this preserves application shortcuts while allowing console applications to observe `VK_APPS`. Standard VT has no equivalent Menu sequence.
 

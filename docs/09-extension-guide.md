@@ -159,6 +159,16 @@ A color profile defines a 16-color (or 256-color) palette for the terminal.
 - [ ] `event.repeat` is checked to prevent rapid re-triggering
 - [ ] `event.preventDefault()` and `event.stopPropagation()` are called
 
+### Terminal Buffer Search
+
+Terminal search is split across three frontend responsibilities:
+
+- [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts) performs literal smart-case matching and returns physical line/cell ranges. Normal-buffer searches include scrollback; alternate-buffer searches use only the current viewport.
+- [`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts) owns transient query state, Menu+/ interception, cyclic navigation, scroll-to-match, and terminal-input suppression while search is open.
+- [`src/terminal/TerminalRenderer.ts`](../src/terminal/TerminalRenderer.ts) renders normal and active match highlights before the CRT pipeline; [`src/App.tsx`](../src/App.tsx) renders the compact DOM input above the CRT canvas.
+
+When extending search, preserve the distinction between absolute buffer line coordinates and viewport row coordinates. Keep the query overlay out of the canvas so it remains readable with CRT curvature, scanlines, and persistence enabled.
+
 ---
 
 ## Adding a Native Command / Event
@@ -268,6 +278,7 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Menu+' | Toggle terminal/AI focus | `focus()` |
 | Menu+V | Paste from clipboard | `navigator.clipboard.readText()` → `sendInput()` |
 | Menu+C | Enter copy mode | `copyModeRef.current = true` |
+| Menu+/ | Open terminal-buffer search | `openSearch()` |
 | Menu+N | Create a new terminal tab | `openSession()` |
 | Menu+1…9 | Select a numbered terminal tab | `selectSession()` |
 | Menu+→ / Menu+> | Select next tab | `selectSession()` |

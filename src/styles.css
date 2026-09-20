@@ -524,6 +524,38 @@ canvas:focus,
 
 .output-canvas.browser-hidden { visibility: hidden; }
 
+.terminal-search {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(42%, 360px);
+  min-width: 180px;
+  padding: 5px 7px;
+  border: 1px solid #6b9f76;
+  border-radius: 4px;
+  color: #d7f5df;
+  background: #07100edd;
+  box-shadow: 0 3px 14px #000b;
+  font: 13px/1.2 ui-monospace, Consolas, monospace;
+}
+
+.terminal-search-prefix { color: #7dffae; }
+.terminal-search-input {
+  min-width: 0;
+  flex: 1;
+  padding: 2px 3px;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+.terminal-search-count { color: #9ccca9; font-size: 11px; white-space: nowrap; }
+
 .browser-address {
   position: absolute;
   z-index: 3;

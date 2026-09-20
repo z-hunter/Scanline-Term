@@ -33,6 +33,7 @@ ScanlineTerm/
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
 │   ├── terminal/terminal-input.ts # VT key encoding (standard terminal mode)
+│   ├── terminal/terminal-search.ts # Literal smart-case search over xterm buffers
 │   ├── terminal/terminal-input.test.ts # Unit tests for VT key encoding
 │   ├── win32-input.ts             # Win32 Input Mode key encoding
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
@@ -95,6 +96,10 @@ ScanlineTerm/
 #### [`src/terminal/TerminalRenderer.ts`](../src/terminal/TerminalRenderer.ts)
 
 Reads xterm's headless buffer and renders rows to the terminal Canvas 2D surface. Cached row signatures keep redraws dirty-driven; signatures include both numeric colors and RGB/palette encoding modes. A second compositing canvas draws the active tab's in-memory local images over the terminal frame before CRT processing. Continuous vertical glyphs `│`, `┃`, `║` and `▎` use a cached alpha profile sampled from the active font and repeated through the complete cell height, with native `fillText()` as the fallback for other glyphs.
+
+#### [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts)
+
+Pure xterm-buffer search helpers. Normal-buffer searches include scrollback; alternate-buffer searches inspect only the current viewport. Matches are literal with smart-case matching and expose physical line/cell ranges for renderer highlighting and navigation.
 
 #### [`src/App.tsx`](../src/App.tsx)
 

@@ -32,6 +32,7 @@ graph TB
     Xterm["@xterm/xterm<br/>headless VT parser"]
     TermInput["terminal/terminal-input.ts<br/>VT key encoding"]
     Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
+    Search["terminal-search.ts<br/>xterm buffer matching"]
     TermMouse["terminal/terminal-mouse.ts<br/>mouse event encoding"]
     ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
     CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
@@ -67,6 +68,7 @@ graph TB
   UseTerminal --> TerminalRenderer
   UseTerminal --> TermInput
   UseTerminal --> Win32Input
+  UseTerminal --> Search
   UseTerminal --> TermMouse
   UseTerminal --> ColorProfiles
 
@@ -79,6 +81,7 @@ graph TB
   UseCRT --> CRTFilter
   ImageComposite --> CRTFilter
   CRTFilter --> OutputCanvas
+  Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```

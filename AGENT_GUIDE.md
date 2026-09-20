@@ -121,6 +121,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add a color profile** | `terminal-color-profiles.ts`, `settings.ts` | `terminal-color-profiles.ts` | `npm test`, visual in dev |
 | **Add a CRT effect** | `CRTFilter.ts`, `settings.ts`, `App.tsx` | All three | `npm test`, visual in dev |
 | **Add a keyboard shortcut** | `terminal/useTerminal.ts`, `terminal/terminal-input.ts` | `terminal/useTerminal.ts` | `npm test`, `tauri:dev` manual test |
+| **Add terminal-buffer search** | `terminal/terminal-search.ts`, `terminal/useTerminal.ts`, `terminal/TerminalRenderer.ts`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: Menu+/, normal scrollback, alternate screen, Enter/n/N/Esc, CRT on/off |
 | **Add a global hotkey** | `main.rs`, `App.tsx`, `settings.ts`, `SettingsPanel.tsx` | Rust registration + persisted UI setting | `cargo test`, `npm test`, `tauri:dev`: enable, hide, restore, conflict |
 | **Add a Tauri command** | `main.rs`, `App.tsx` | Both | `cargo test`, `tauri:dev` |
 | **Change font handling** | `App.tsx` (fontCellSize, terminalDimensions), `main.rs` (list_monospace_fonts) | Varies | `tauri:dev`, resize test |
@@ -173,6 +174,7 @@ npm run tauri:build
 - CRT shader: [`src/crt/CRTFilter.ts`](./src/crt/CRTFilter.ts)
 - Settings: [`src/crt/settings.ts`](./src/crt/settings.ts)
 - VT input: [`src/terminal/terminal-input.ts`](./src/terminal/terminal-input.ts)
+- Terminal search: [`src/terminal/terminal-search.ts`](./src/terminal/terminal-search.ts)
 - Win32 input: [`src/win32-input.ts`](./src/win32-input.ts)
 - Mouse: [`src/terminal/terminal-mouse.ts`](./src/terminal/terminal-mouse.ts)
 - Scrollback UI: [`src/ui/ScrollbackScrollbar.tsx`](./src/ui/ScrollbackScrollbar.tsx)

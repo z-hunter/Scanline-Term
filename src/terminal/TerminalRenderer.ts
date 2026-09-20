@@ -1,5 +1,6 @@
 import type { IBufferCell, Terminal } from '@xterm/xterm';
 import type { CRTColorMode, CRTSettings } from '../crt/CRTFilter';
+import type { TerminalSearchMatch } from './terminal-search';
 import { colorProfile, profileColor, remapLegacyRgb, type TerminalColorProfile } from '../terminal-color-profiles';
 
 export type CopyPoint = { row: number; column: number };
@@ -261,6 +262,8 @@ export class TerminalRenderer {
   private readonly scrollFrameCanvas = document.createElement('canvas');
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
+  private searchMatches: TerminalSearchMatch[] = [];
+  private activeSearchMatch = -1;
   private dirty = true;
   private fullDirty = true;
   private focused = true;
@@ -450,6 +453,11 @@ export class TerminalRenderer {
   get hasMeasuredLuma(): boolean { return this.hasMeasuredSourceLuma; }
   consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
   setSelection(selection: CopySelection | null): void { if (selection || this.selection) this.cancelScroll(); this.selection = selection; this.markDirty(); }
+  setSearchMatches(matches: TerminalSearchMatch[], activeIndex = -1): void {
+    this.searchMatches = matches;
+    this.activeSearchMatch = activeIndex;
+    this.markDirty();
+  }
   cellAtPoint(clientX: number, clientY: number, output: HTMLCanvasElement, settings: CRTSettings) {
     const terminal = this.terminal; if (!terminal) return null;
     const rect = output.getBoundingClientRect(); if (!rect.width || !rect.height) return null;
@@ -652,12 +660,15 @@ export class TerminalRenderer {
   private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, baseFont: string): number {
     const y = offset.y + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return 0;
     const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1; let glyphs = 0;
-    for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; const left = Math.floor(x); const top = Math.floor(y - cellSize.height / 2); const width = Math.ceil(cellSize.width * current.getWidth()); const height = Math.ceil(cellSize.height); if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(left, top, width, height); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(left, top, width, height); } const chars = current.getChars(); const invisible = current.isInvisible(); const bold = cellAttribute(current, 'isBold'); const italic = cellAttribute(current, 'isItalic'); const underline = cellAttribute(current, 'isUnderline'); const strikethrough = cellAttribute(current, 'isStrikethrough'); const overline = cellAttribute(current, 'isOverline'); if (!invisible && (chars || underline || strikethrough || overline)) { ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (chars) { ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${baseFont}`; }
-      if (chars) { if (!drawContinuousVertical(ctx, chars, x, top, cellSize)) ctx.fillText(chars, x, y, width); glyphs += 1; }
-      if (overline) ctx.fillRect(left, top, width, 1);
-      if (strikethrough) ctx.fillRect(left, top + Math.floor(height / 2), width, 1);
-      if (underline) ctx.fillRect(left, top + height - 1, width, 1);
-    } }
+    for (let column = 0; column < cols; column += 1) {
+      const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; const left = Math.floor(x); const top = Math.floor(y - cellSize.height / 2); const width = Math.ceil(cellSize.width * current.getWidth()); const height = Math.ceil(cellSize.height); if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(left, top, width, height); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(left, top, width, height); } const searchIndex = this.searchMatches.findIndex((match) => match.line === viewportY + row && column >= match.startColumn && column < match.endColumn); if (searchIndex >= 0) { ctx.globalAlpha = 1; ctx.fillStyle = searchIndex === this.activeSearchMatch ? 'rgba(255, 208, 92, 0.78)' : 'rgba(255, 208, 92, 0.34)'; ctx.fillRect(left, top, width, height); } const chars = current.getChars(); const invisible = current.isInvisible(); const bold = cellAttribute(current, 'isBold'); const italic = cellAttribute(current, 'isItalic'); const underline = cellAttribute(current, 'isUnderline'); const strikethrough = cellAttribute(current, 'isStrikethrough'); const overline = cellAttribute(current, 'isOverline'); if (!invisible && (chars || underline || strikethrough || overline)) {
+        ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (chars) { ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${baseFont}`; }
+        if (chars) { if (!drawContinuousVertical(ctx, chars, x, top, cellSize)) ctx.fillText(chars, x, y, width); glyphs += 1; }
+        if (overline) ctx.fillRect(left, top, width, 1);
+        if (strikethrough) ctx.fillRect(left, top + Math.floor(height / 2), width, 1);
+        if (underline) ctx.fillRect(left, top + height - 1, width, 1);
+      }
+    }
     return glyphs;
   }
   private drawMock(time: number, settings: CRTSettings): void {
@@ -683,7 +694,7 @@ export class TerminalRenderer {
       `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`,
     ];
     lines.forEach((text, i) => {
-      ctx.fillStyle = ['#7dffae','#4ecf83','#9affbd','#62db91','#78c9ff','#ffd166','#ff8a80'][i % 7];
+      ctx.fillStyle = ['#7dffae', '#4ecf83', '#9affbd', '#62db91', '#78c9ff', '#ffd166', '#ff8a80'][i % 7];
       ctx.fillText(text, size, size + line * i);
     });
     const promptY = size + line * lines.length;

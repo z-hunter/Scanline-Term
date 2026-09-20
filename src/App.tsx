@@ -172,6 +172,10 @@ export default function App() {
     } as CSSProperties);
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (terminal.search.open) window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [terminal.search.open]);
   const refreshPresets = useCallback(async () => {
     if (!isTauri()) return;
     try {
@@ -1111,6 +1115,20 @@ export default function App() {
               aria-label={terminal.live ? "Windows console" : "CRT display"}
               {...terminal.canvasProps}
             />
+            {!activeBrowser && terminal.search.open && <div className="terminal-search" role="search" aria-label="Search terminal buffer">
+              <span className="terminal-search-prefix">/</span>
+              <input
+                ref={searchInputRef}
+                className="terminal-search-input"
+                value={terminal.search.query}
+                onChange={(event) => terminal.setSearchQuery(event.currentTarget.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); terminal.moveSearch(1); (event.currentTarget as HTMLInputElement).blur(); } }}
+                aria-label="Search terminal buffer"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <span className="terminal-search-count">{terminal.search.matches.length ? `${terminal.search.activeIndex + 1}/${terminal.search.matches.length}` : '0'}</span>
+            </div>}
             {!activeBrowser && <ScrollbackScrollbar state={terminal.scrollback} onScrollTo={terminal.scrollToLine} />}
             <span className="frame-status">
               {terminal.size.cols} × {terminal.size.rows}
