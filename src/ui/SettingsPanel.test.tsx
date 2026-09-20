@@ -20,7 +20,6 @@ describe('SettingsPanel font-size editing flow', () => {
     shells: [],
     terminalSize: { cols: 80, rows: 24 },
     fps: 60,
-    renderStats: { redraws: 0, canvasMs: 0, glyphs: 0 },
     appVersion: '0.1.3',
   };
 
@@ -43,6 +42,9 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(container.textContent).not.toContain('Heuristic TUI scrolling');
     await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, stored: { ...defaultProps.stored, smoothScrollback: true } })); });
     expect(container.textContent).toContain('Heuristic TUI scrolling');
+    expect(container.textContent).not.toContain('Smooth scroll diagnostics');
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, smoothScrollDiagnosticsEnabled: true })); });
+    expect(container.textContent).toContain('Smooth scroll diagnostics');
     root.unmount(); container.remove();
   });
 

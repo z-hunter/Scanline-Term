@@ -37,10 +37,11 @@ import { CodexClient } from "./ai/CodexClient";
 import type { CodexModel } from "./ai/protocol";
 import {
   effectiveAiSelection,
-  modelSupportsEffort,
+  supportsEffort,
   type AiSelection,
 } from "./ai/modelSelection";
 import { terminalSession } from "./terminal/TerminalSession";
+import { SMOOTH_SCROLL_DIAGNOSTICS } from "./terminal/TerminalRenderer";
 import "./styles.css";
 
 const STORAGE_KEY = "scanline-term.settings.v1";
@@ -261,7 +262,7 @@ export default function App() {
     onResizeSource: terminal.resizeSource,
     enabled: !activeBrowser,
   });
-  const { clearPersistence, outputRef, fps, renderStats, startChannelSwitch } = crt;
+  const { clearPersistence, outputRef, fps, startChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
   useEffect(() => {
     if (!isTauri()) return;
@@ -828,7 +829,7 @@ export default function App() {
         current[sessionId],
       );
       const effort =
-        currentSelection && modelSupportsEffort(model, currentSelection.effort)
+        currentSelection && supportsEffort(model, currentSelection.effort)
           ? currentSelection.effort
           : model.defaultReasoningEffort;
       return { ...current, [sessionId]: { model: model.id, effort } };
@@ -837,7 +838,7 @@ export default function App() {
   const selectEffort = (effort: string) => {
     if (!sessionId || !selection) return;
     const model = modelCatalog.find((item) => item.id === selection.model);
-    if (!model || !modelSupportsEffort(model, effort)) return;
+    if (!model || !supportsEffort(model, effort)) return;
     setModelSelections((current) => ({
       ...current,
       [sessionId]: { model: model.id, effort },
@@ -1117,12 +1118,12 @@ export default function App() {
             />
             {!activeBrowser && terminal.search.open && <div className="terminal-search" role="search" aria-label="Search terminal buffer">
               <span className="terminal-search-prefix">/</span>
+              <span className="terminal-search-label">{terminal.search.direction === -1 ? 'Find back' : 'Find'}</span>
               <input
                 ref={searchInputRef}
                 className="terminal-search-input"
                 value={terminal.search.query}
-                onChange={(event) => terminal.setSearchQuery(event.currentTarget.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); terminal.moveSearch(1); (event.currentTarget as HTMLInputElement).blur(); } }}
+                onInput={(event) => terminal.setSearchQuery(event.currentTarget.value)}
                 aria-label="Search terminal buffer"
                 spellCheck={false}
                 autoComplete="off"
@@ -1181,7 +1182,6 @@ export default function App() {
           shells={shells}
           terminalSize={terminal.size}
           fps={fps}
-          renderStats={renderStats}
           appVersion={appVersion}
           presetState={activePresetState}
           presetNames={presets}
@@ -1189,6 +1189,7 @@ export default function App() {
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
+          smoothScrollDiagnosticsEnabled={SMOOTH_SCROLL_DIAGNOSTICS}
           getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
         />
       )}

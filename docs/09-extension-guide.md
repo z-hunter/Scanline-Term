@@ -279,6 +279,7 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Menu+V | Paste from clipboard | `navigator.clipboard.readText()` → `sendInput()` |
 | Menu+C | Enter copy mode | `copyModeRef.current = true` |
 | Menu+/ | Open terminal-buffer search | `openSearch()` |
+| Menu+Shift+/ | Open reverse terminal-buffer search | `openSearch(-1)` |
 | Menu+N | Create a new terminal tab | `openSession()` |
 | Menu+1…9 | Select a numbered terminal tab | `selectSession()` |
 | Menu+→ / Menu+> | Select next tab | `selectSession()` |

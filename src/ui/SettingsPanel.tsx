@@ -3,7 +3,6 @@ import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from '../c
 import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
-import type { RenderStats } from '../terminal/TerminalRenderer';
 import type { ShellInfo } from '../terminal/useTerminal';
 
 type NumericKey = Exclude<
@@ -23,8 +22,6 @@ type NumericKey = Exclude<
   | 'bloomAlgorithm'
   | 'cursorStyle'
 >;
-
-const SHOW_TELEMETRY = false;
 
 const controls: Record<string, { key: NumericKey; label: string; min: number; max: number; step: number }[]> = {
   Geometry: [
@@ -129,7 +126,6 @@ export function SettingsPanel({
   shells,
   terminalSize,
   fps,
-  renderStats,
   appVersion,
   presetState = null,
   presetNames = [],
@@ -137,6 +133,7 @@ export function SettingsPanel({
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
+  smoothScrollDiagnosticsEnabled = false,
   getSmoothScrollDiagnostics = () => '',
 }: {
   stored: StoredSettings;
@@ -145,7 +142,6 @@ export function SettingsPanel({
   shells: ShellInfo[];
   terminalSize: { cols: number; rows: number };
   fps: number;
-  renderStats: RenderStats;
   appVersion: string;
   presetState?: TabPresetState | null;
   presetNames?: string[];
@@ -153,12 +149,12 @@ export function SettingsPanel({
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
+  smoothScrollDiagnosticsEnabled?: boolean;
   getSmoothScrollDiagnostics?: () => string;
 }) {
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
   const canSavePreset = Boolean(presetState && (presetState.dirty || presetState.draftName !== presetState.name));
-  const averageCanvasMs = renderStats.redraws ? renderStats.canvasMs / renderStats.redraws : 0;
   const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
   const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
@@ -215,13 +211,6 @@ export function SettingsPanel({
         <h1>CRT display lab</h1>
         <p className="display-status">
           CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows} · FPS: {fps}
-          {SHOW_TELEMETRY && (
-            <>
-              <br />
-              REDRAWS: {renderStats.redraws * 2}/s · CANVAS: {averageCanvasMs.toFixed(1)} ms · GLYPHS:{' '}
-              {renderStats.glyphs * 2}/s
-            </>
-          )}
         </p>
       </header>
 
@@ -730,10 +719,10 @@ export function SettingsPanel({
           checked={stored.smoothTuiScrolling}
           onChange={(checked) => setStored((current) => ({ ...current, smoothTuiScrolling: checked }))}
         />}
-        <div className="setting-block">
+        {smoothScrollDiagnosticsEnabled && <div className="setting-block">
           <span className="setting-label">Smooth scroll diagnostics</span>
           <button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
-        </div>
+        </div>}
         <div className="setting-block">
           <span className="setting-label">Tab placement</span>
           <SegmentedControl

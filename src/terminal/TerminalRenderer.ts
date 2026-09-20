@@ -6,7 +6,6 @@ import { colorProfile, profileColor, remapLegacyRgb, type TerminalColorProfile }
 export type CopyPoint = { row: number; column: number };
 export type CopySelection = { start: CopyPoint; end: CopyPoint };
 export type Resolution = { id: string; width?: number; height?: number };
-export type RenderStats = { redraws: number; canvasMs: number; glyphs: number };
 export type TabColor = { background: string; foreground: string };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight: number; padding: number };
@@ -22,7 +21,7 @@ const MAX_PRESENTATION_MISMATCH_ROWS = 2;
 const SMOOTH_SCROLL_PIXELS_PER_SECOND = 240;
 const FAST_SCROLL_THRESHOLD_ROWS = 6;
 // Enable temporarily when investigating a missed smooth-scroll candidate.
-const SMOOTH_SCROLL_DIAGNOSTICS = false;
+export const SMOOTH_SCROLL_DIAGNOSTICS = false;
 
 function rowHasText(signature: string): boolean { return signature.includes(':') ? /:[^,\s;]/.test(signature) : /\S/.test(signature); }
 
@@ -192,6 +191,26 @@ function rgb(value: string): [number, number, number] {
   return [Number.parseInt(value.slice(1, 3), 16), Number.parseInt(value.slice(3, 5), 16), Number.parseInt(value.slice(5, 7), 16)];
 }
 
+function relativeLuminance(value: string): number {
+  return rgb(value).reduce((total, channel) => {
+    const normalized = channel / 255;
+    return total + (normalized <= .03928 ? normalized / 12.92 : Math.pow((normalized + .055) / 1.055, 2.4));
+  }, 0) as number;
+}
+
+export function accessibleTextColor(foreground: string, background: string): string {
+  const foregroundLuma = relativeLuminance(foreground); const backgroundLuma = relativeLuminance(background);
+  const contrast = (Math.max(foregroundLuma, backgroundLuma) + .05) / (Math.min(foregroundLuma, backgroundLuma) + .05);
+  if (contrast >= 4.5) return foreground;
+  const blackContrast = (backgroundLuma + .05) / .05; const whiteContrast = 1.05 / (backgroundLuma + .05);
+  return blackContrast >= whiteContrast ? '#000000' : '#ffffff';
+}
+
+function blendColor(background: string, foreground: string, alpha: number): string {
+  const base = rgb(background); const overlay = rgb(foreground);
+  return `#${base.map((channel, index) => Math.round(channel * (1 - alpha) + overlay[index] * alpha).toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function applyTabColorMode(background: string, colorMode: CRTColorMode = 'color', backgroundDesaturation = 0.5): string {
   if (colorMode === 'color') return background;
   const [red, green, blue] = rgb(background).map((channel) => channel / 255) as [number, number, number];
@@ -263,6 +282,7 @@ export class TerminalRenderer {
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
   private searchMatches: TerminalSearchMatch[] = [];
+  private searchMatchesByLine = new Map<number, { match: TerminalSearchMatch; index: number }[]>();
   private activeSearchMatch = -1;
   private dirty = true;
   private fullDirty = true;
@@ -280,7 +300,6 @@ export class TerminalRenderer {
   private smoothScrollingEnabled = false;
   private cursorRow: number | null = null;
   private disposables: { dispose(): void }[] = [];
-  private stats: RenderStats = { redraws: 0, canvasMs: 0, glyphs: 0 };
   private sourceLuma = 0.12;
   private hasMeasuredSourceLuma = false;
   private lastCursorPhase = -1;
@@ -451,10 +470,16 @@ export class TerminalRenderer {
   }
   get averageLuma(): number { return this.sourceLuma; }
   get hasMeasuredLuma(): boolean { return this.hasMeasuredSourceLuma; }
-  consumeStats(): RenderStats { const stats = this.stats; this.stats = { redraws: 0, canvasMs: 0, glyphs: 0 }; return stats; }
   setSelection(selection: CopySelection | null): void { if (selection || this.selection) this.cancelScroll(); this.selection = selection; this.markDirty(); }
   setSearchMatches(matches: TerminalSearchMatch[], activeIndex = -1): void {
+    this.cancelScroll();
     this.searchMatches = matches;
+    this.searchMatchesByLine = new Map();
+    matches.forEach((match, index) => {
+      const entries = this.searchMatchesByLine.get(match.line) ?? [];
+      entries.push({ match, index });
+      this.searchMatchesByLine.set(match.line, entries);
+    });
     this.activeSearchMatch = activeIndex;
     this.markDirty();
   }
@@ -548,17 +573,16 @@ export class TerminalRenderer {
       this.composeImages();
       return Boolean(this.scrollTransition);
     }
-    const started = performance.now(); let glyphs = 0;
     const baseFont = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont);
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = baseFont; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    for (const row of changedRows) glyphs += this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize, baseFont);
+    for (const row of changedRows) this.drawRow(ctx, buffer.getLine(buffer.viewportY + row), row, terminal.cols, buffer.viewportY, cell, profile, offset, cellSize, baseFont);
     if (nextSignatures.length) { this.sourceLuma = terminalAverageLuma(terminal, profile, { width: source.width, height: source.height, cellWidth: cellSize.width, cellHeight: cellSize.height, padding: terminalPadding(source.width, source.height) }); this.hasMeasuredSourceLuma = true; }
     this.rowSignatures = nextSignatures.length ? nextSignatures : this.rowSignatures; this.rowContentSignatures = nextContentSignatures.length ? nextContentSignatures : this.rowContentSignatures; this.rowTexts = nextTexts.length ? nextTexts : this.rowTexts; if (nextSignatures.length) { this.snapshotCols = terminal.cols; this.snapshotRows = terminal.rows; this.snapshotViewportY = buffer.viewportY; this.snapshotBaseY = buffer.baseY; } this.cursorRow = nextCursorRow; this.lastCursorPhase = cursorPhase; this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false;
     if (this.scrollTransition) this.composeTerminal(this.scrollTargetCanvas); else this.composeTerminal(this.compositedCanvas);
     const animated = this.renderScroll(time);
     this.drawCursor(this.compositedCanvas.getContext('2d'), settings, profile, offset, cellSize, buffer, nextCursorRow);
     this.composeImages();
-    this.stats.redraws += 1; this.stats.canvasMs += performance.now() - started; this.stats.glyphs += glyphs; return animated || true;
+    return animated || true;
   }
   private composeTerminal(destination = this.compositedCanvas): void {
     const ctx = destination.getContext('2d'); if (!ctx || typeof ctx.clearRect !== 'function' || typeof ctx.drawImage !== 'function') return;
@@ -657,19 +681,19 @@ export class TerminalRenderer {
     for (let column = 0; column < cols; column += 1) { const current = line.getCell(column, cell); if (!current) { signature += ';'; continue; } const chars = current.getChars(); const attributes = CELL_ATTRIBUTES.map((attribute) => Number(cellAttribute(current, attribute))).join(''); const colors = `${current.getFgColor()},${current.getBgColor()},${Number(current.isFgRGB())}${Number(current.isBgRGB())}${Number(current.isFgPalette())}${Number(current.isBgPalette())},${Number(current.isInverse())}`; const presentation = contentOnly ? '' : `${colors}${Number(current.isDim())}${attributes}`; signature += `${chars.length}:${chars},${current.getWidth()},${presentation}${Number(current.isInvisible())};`; }
     return signature;
   }
-  private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, baseFont: string): number {
-    const y = offset.y + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return 0;
-    const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1; let glyphs = 0;
+  private drawRow(ctx: CanvasRenderingContext2D, line: BufferLine | undefined, row: number, cols: number, viewportY: number, cell: IBufferCell, profile: TerminalColorProfile, offset: { x: number; y: number }, cellSize: { width: number; height: number }, baseFont: string): void {
+    const y = offset.y + cellSize.height * (row + .5); ctx.globalAlpha = 1; ctx.fillStyle = profile.background; ctx.fillRect(0, Math.floor(y - cellSize.height / 2), this.sourceCanvas.width, Math.ceil(cellSize.height)); if (!line) return;
+    const selectionStart = this.selection ? this.selection.start.row * cols + this.selection.start.column : -1; const selectionEnd = this.selection ? this.selection.end.row * cols + this.selection.end.column : -1;
+    const lineSearchMatches = this.searchMatchesByLine.get(viewportY + row) ?? [];
     for (let column = 0; column < cols; column += 1) {
-      const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; const left = Math.floor(x); const top = Math.floor(y - cellSize.height / 2); const width = Math.ceil(cellSize.width * current.getWidth()); const height = Math.ceil(cellSize.height); if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(left, top, width, height); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(left, top, width, height); } const searchIndex = this.searchMatches.findIndex((match) => match.line === viewportY + row && column >= match.startColumn && column < match.endColumn); if (searchIndex >= 0) { ctx.globalAlpha = 1; ctx.fillStyle = searchIndex === this.activeSearchMatch ? 'rgba(255, 208, 92, 0.78)' : 'rgba(255, 208, 92, 0.34)'; ctx.fillRect(left, top, width, height); } const chars = current.getChars(); const invisible = current.isInvisible(); const bold = cellAttribute(current, 'isBold'); const italic = cellAttribute(current, 'isItalic'); const underline = cellAttribute(current, 'isUnderline'); const strikethrough = cellAttribute(current, 'isStrikethrough'); const overline = cellAttribute(current, 'isOverline'); if (!invisible && (chars || underline || strikethrough || overline)) {
+      const current = line.getCell(column, cell); if (!current || current.getWidth() === 0) continue; let fg = cellColor(current, true, profile); let bg = cellColor(current, false, profile); if (current.isInverse()) [fg, bg] = [bg, fg]; const x = offset.x + cellSize.width * column; const left = Math.floor(x); const top = Math.floor(y - cellSize.height / 2); const width = Math.ceil(cellSize.width * current.getWidth()); const height = Math.ceil(cellSize.height); if (bg !== profile.background) { ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(left, top, width, height); } const point = (viewportY + row) * cols + column; if (this.selection && point >= Math.min(selectionStart, selectionEnd) && point <= Math.max(selectionStart, selectionEnd)) { ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(125, 210, 255, 0.42)'; ctx.fillRect(left, top, width, height); } const searchEntry = lineSearchMatches.find((entry) => column >= entry.match.startColumn && column < entry.match.endColumn); if (searchEntry) { const searchAlpha = searchEntry.index === this.activeSearchMatch ? .78 : .34; ctx.globalAlpha = 1; ctx.fillStyle = searchEntry.index === this.activeSearchMatch ? 'rgba(255, 208, 92, 0.78)' : 'rgba(255, 208, 92, 0.34)'; ctx.fillRect(left, top, width, height); fg = accessibleTextColor(fg, blendColor(bg, '#ffd05c', searchAlpha)); } const chars = current.getChars(); const invisible = current.isInvisible(); const bold = cellAttribute(current, 'isBold'); const italic = cellAttribute(current, 'isItalic'); const underline = cellAttribute(current, 'isUnderline'); const strikethrough = cellAttribute(current, 'isStrikethrough'); const overline = cellAttribute(current, 'isOverline'); if (!invisible && (chars || underline || strikethrough || overline)) {
         ctx.globalAlpha = current.isDim() ? .6 : 1; ctx.fillStyle = fg; if (chars) { ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${baseFont}`; }
-        if (chars) { if (!drawContinuousVertical(ctx, chars, x, top, cellSize)) ctx.fillText(chars, x, y, width); glyphs += 1; }
+        if (chars) { if (!drawContinuousVertical(ctx, chars, x, top, cellSize)) ctx.fillText(chars, x, y, width); }
         if (overline) ctx.fillRect(left, top, width, 1);
         if (strikethrough) ctx.fillRect(left, top + Math.floor(height / 2), width, 1);
         if (underline) ctx.fillRect(left, top + height - 1, width, 1);
       }
     }
-    return glyphs;
   }
   private drawMock(time: number, settings: CRTSettings): void {
     const ctx = this.sourceCanvas.getContext('2d');

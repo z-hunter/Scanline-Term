@@ -544,6 +544,7 @@ canvas:focus,
 }
 
 .terminal-search-prefix { color: #7dffae; }
+.terminal-search-label { color: #9ccca9; white-space: nowrap; }
 .terminal-search-input {
   min-width: 0;
   flex: 1;

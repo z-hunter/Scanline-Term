@@ -1,12 +1,10 @@
 /* eslint-disable react-hooks/refs */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CRTFilter, type CRTSettings } from './CRTFilter';
-import type { RenderStats, Resolution, TerminalRenderer } from '../terminal/TerminalRenderer';
-
-const TELEMETRY_ENABLED = false;
+import type { Resolution, TerminalRenderer } from '../terminal/TerminalRenderer';
 
 export function useCRT({ settings, resolution, renderer, onError, onResizeSource, enabled = true }: { settings: CRTSettings; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement) => void; enabled?: boolean }) {
-  const outputRef = useRef<HTMLCanvasElement>(null); const filterRef = useRef<CRTFilter | null>(null); const settingsRef = useRef(settings); const [fps, setFps] = useState(0); const [renderStats, setRenderStats] = useState<RenderStats>({ redraws: 0, canvasMs: 0, glyphs: 0 });
+  const outputRef = useRef<HTMLCanvasElement>(null); const filterRef = useRef<CRTFilter | null>(null); const settingsRef = useRef(settings); const [fps, setFps] = useState(0);
   settingsRef.current = settings;
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   useEffect(() => { 
@@ -52,7 +50,6 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       } 
       if (now - started >= 500) { 
         setFps(Math.round(count * 1000 / (now - started))); 
-        if (TELEMETRY_ENABLED) setRenderStats(renderer.consumeStats()); 
         count = 0; started = now; 
       } 
       raf = requestAnimationFrame(render); 
@@ -69,5 +66,5 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
   useEffect(() => { filterRef.current?.clearPersistence(); }, [resolution]);
   const clearPersistence = useCallback(() => filterRef.current?.clearPersistence(), []);
   const startChannelSwitch = useCallback(() => filterRef.current?.startChannelSwitch(), []);
-  return { outputRef, fps, renderStats, clearPersistence, startChannelSwitch };
+  return { outputRef, fps, clearPersistence, startChannelSwitch };
 }

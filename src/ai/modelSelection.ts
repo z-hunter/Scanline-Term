@@ -5,7 +5,7 @@ const PREFERRED_EFFORT = "medium";
 
 export type AiSelection = { model: string; effort: string };
 
-function supportsEffort(model: CodexModel, effort: string): boolean {
+export function supportsEffort(model: CodexModel, effort: string): boolean {
   return model.supportedReasoningEfforts.some(
     (option) => option.reasoningEffort === effort,
   );
@@ -40,8 +40,4 @@ export function effectiveAiSelection(
         : model.defaultReasoningEffort,
     };
   return defaultAiSelection(models);
-}
-
-export function modelSupportsEffort(model: CodexModel, effort: string): boolean {
-  return supportsEffort(model, effort);
 }

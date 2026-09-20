@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Terminal } from '@xterm/xterm';
-import { applyTabColorMode, canvasFont, canvasFontLoad, detectVerticalScroll, fontCellSize, inspectVerticalScroll, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
+import { accessibleTextColor, applyTabColorMode, canvasFont, canvasFontLoad, detectVerticalScroll, fontCellSize, inspectVerticalScroll, loadCanvasFont, terminalAverageColor, terminalAverageLuma, terminalContentOffset, terminalDimensions, TerminalRenderer } from './TerminalRenderer';
 import { colorProfile } from '../terminal-color-profiles';
 import { DEFAULT_CRT_SETTINGS } from '../crt/settings';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('TerminalRenderer', () => {
+  it('chooses readable text colors for search highlights', () => {
+    expect(accessibleTextColor('#ffffff', '#000000')).toBe('#ffffff');
+    expect(accessibleTextColor('#ffffff', '#ffd05c')).toBe('#000000');
+    expect(accessibleTextColor('#000000', '#ffd05c')).toBe('#000000');
+  });
+
   it('detects unambiguous vertical shifts in either direction', () => {
     expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['B', 'C', 'D', 'E', 'F', 'G'])).toMatchObject({ deltaRows: 1, topRow: 0, bottomRow: 6, overlapRows: 5, matchTopRow: 0, matchBottomRow: 5 });
     expect(detectVerticalScroll(['A', 'B', 'C', 'D', 'E', 'F'], ['Z', 'A', 'B', 'C', 'D', 'E'])).toMatchObject({ deltaRows: -1, topRow: 0, bottomRow: 6, overlapRows: 5, matchTopRow: 1, matchBottomRow: 6 });

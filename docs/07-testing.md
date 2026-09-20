@@ -89,9 +89,11 @@ Run: `cd src-tauri && cargo test`
 - [ ] Menu+V pastes from clipboard
 - [ ] Menu+C enters copy mode (verify visual feedback)
 - [ ] Menu+/ opens the search overlay without sending `/` to the terminal
+- [ ] Menu+Shift+/ opens `Find back`; Enter/`n` move upward and `N` reverses direction
 - [ ] Search input updates matches immediately, highlights all visible results, and shows the active/total counter
 - [ ] Search covers normal-buffer scrollback; alternate-buffer search stays on the current screen
 - [ ] Enter and `n` advance through cyclic matches, `N` moves backward, and `Esc` closes search and restores terminal input
+- [ ] Enter returns focus to the terminal canvas; repeating Menu+/ or Menu+Shift+/ focuses the search field again
 - [ ] In a Win32 Input Mode console application, press and release Menu alone; verify it receives the Context Menu / Apps key, then verify Menu+S and Menu+arrow remain application shortcuts
 - [ ] Menu+N creates a new tab; Menu+1…9 selects the matching numbered tab
 - [ ] Numpad keys work in application keypad mode (if applicable)
