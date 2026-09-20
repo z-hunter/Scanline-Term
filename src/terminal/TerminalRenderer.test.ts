@@ -118,6 +118,9 @@ describe('TerminalRenderer', () => {
 
     expect(renderer.isScrollAnimating).toBe(true);
     expect(context.drawImage).toHaveBeenCalledTimes(1);
+    expect(context.drawImage.mock.calls[0][0]).not.toBe(renderer.compositedCanvas);
+    expect(context.drawImage.mock.calls[0][0]).toBe((renderer as unknown as { scrollFrameCanvas: HTMLCanvasElement }).scrollFrameCanvas);
+    expect((renderer as unknown as { scrollTransition: { fromPosition?: number } }).scrollTransition?.fromPosition).toBeCloseTo(0, 1);
   });
 
   it('animates an unambiguous alternate-buffer output shift', () => {

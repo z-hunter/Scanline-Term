@@ -258,6 +258,7 @@ export class TerminalRenderer {
   readonly compositedCanvas = document.createElement('canvas');
   private readonly scrollFromCanvas = document.createElement('canvas');
   private readonly scrollTargetCanvas = document.createElement('canvas');
+  private readonly scrollFrameCanvas = document.createElement('canvas');
   private terminal: Terminal | null = null;
   private selection: CopySelection | null = null;
   private dirty = true;
@@ -301,7 +302,7 @@ export class TerminalRenderer {
     const height = resolution.id.startsWith('physical') ? output.height || 1 : resolution.height || 1;
     this.cancelScroll();
     if (this.sourceCanvas.width === width && this.sourceCanvas.height === height) { this.markDirty(); return false; }
-    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.scrollFromCanvas.width = width; this.scrollFromCanvas.height = height; this.scrollTargetCanvas.width = width; this.scrollTargetCanvas.height = height; this.markDirty(); this.imagesDirty = true; return true;
+    this.sourceCanvas.width = width; this.sourceCanvas.height = height; this.compositedCanvas.width = width; this.compositedCanvas.height = height; this.scrollFromCanvas.width = width; this.scrollFromCanvas.height = height; this.scrollTargetCanvas.width = width; this.scrollTargetCanvas.height = height; this.scrollFrameCanvas.width = width; this.scrollFrameCanvas.height = height; this.markDirty(); this.imagesDirty = true; return true;
   }
   setImages(images: TerminalImage[]): void { this.cancelScroll(); this.images = images; this.imagesDirty = true; this.markDirty(); }
   markImagesDirty(): void { this.cancelScroll(); this.imagesDirty = true; }
@@ -365,7 +366,7 @@ export class TerminalRenderer {
     if (!this.terminal || !deltaRows || bottomRow <= topRow) return false;
     const existing = this.scrollTransition;
     const sameKind = existing?.kind === kind;
-    const initialPosition = fromPosition ?? (sameKind && existing ? this.scrollPosition(existing) : 0);
+    const initialPosition = sameKind && existing ? this.scrollPosition(existing) : (fromPosition ?? 0);
     const targetPosition = toPosition ?? (sameKind && existing ? (existing.toPosition ?? initialPosition) + deltaRows : initialPosition + deltaRows);
     let capturedVisual = false;
     if (existing && this.canRetargetScroll(existing, kind, targetPosition, topRow, bottomRow)) {
@@ -375,7 +376,7 @@ export class TerminalRenderer {
     if (existing) {
       const from = this.scrollFromCanvas.getContext('2d');
       if (!from || typeof from.drawImage !== 'function') return false;
-      from.drawImage(this.compositedCanvas, 0, 0);
+      from.drawImage(this.scrollFrameCanvas, 0, 0);
       capturedVisual = true;
       this.cancelScroll();
     }
@@ -383,7 +384,11 @@ export class TerminalRenderer {
     if (!from || typeof from.drawImage !== 'function') return false;
     const distance = Math.abs(targetPosition - initialPosition);
     const accelerated = fast || distance > FAST_SCROLL_THRESHOLD_ROWS;
-    if (!capturedVisual) from.drawImage(this.sourceCanvas, 0, 0);
+    if (!capturedVisual) {
+      from.drawImage(this.sourceCanvas, 0, 0);
+      const frame = this.scrollFrameCanvas.getContext('2d');
+      if (frame && typeof frame.drawImage === 'function') frame.drawImage(this.sourceCanvas, 0, 0);
+    }
     this.scrollTransition = { deltaRows: targetPosition - initialPosition, topRow, bottomRow, startedAt: performance.now() / 1000, duration: this.scrollDuration(distance, accelerated), distance, kind, fromPosition: initialPosition, toPosition: targetPosition, fast: accelerated };
     this.scrollTargetReady = false;
     this.scrollStarted = true;
@@ -602,6 +607,8 @@ export class TerminalRenderer {
     }
     outputCtx.restore();
     outputCtx.imageSmoothingEnabled = smoothing;
+    const frame = this.scrollFrameCanvas.getContext('2d');
+    if (frame && typeof frame.drawImage === 'function') frame.drawImage(this.compositedCanvas, 0, 0);
     if (progress >= 1) this.cancelScroll();
     return true;
   }
