@@ -105,6 +105,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ globalHotkeyEnabled: 'yes' })).globalHotkeyEnabled).toBe(true);
   });
 
+  it('defaults and validates the summon slide switch', () => {
+    expect(loadStoredSettings(null).slideFromTop).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ slideFromTop: false })).slideFromTop).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ slideFromTop: 'yes' })).slideFromTop).toBe(true);
+  });
+
   it('preserves the selected default shell', () => {
     expect(loadStoredSettings(null).defaultShell).toBe('');
     expect(loadStoredSettings(JSON.stringify({ defaultShell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' })).defaultShell).toContain('pwsh.exe');
@@ -139,6 +145,12 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(null).smoothTuiScrolling).toBe(true);
     expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: false })).smoothTuiScrolling).toBe(false);
     expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: 'no' })).smoothTuiScrolling).toBe(true);
+  });
+
+  it('defaults and validates the terminal RMB menu switch', () => {
+    expect(loadStoredSettings(null).rmbMenuInTerm).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ rmbMenuInTerm: false })).rmbMenuInTerm).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ rmbMenuInTerm: 'yes' })).rmbMenuInTerm).toBe(true);
   });
 
   it('accepts virtual screens in all supported aspect ratios', () => {

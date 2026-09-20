@@ -7,7 +7,7 @@ use std::{
     mem::size_of,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicI32, AtomicU64, Ordering},
         mpsc::{self, Sender},
         Mutex,
     },
@@ -377,6 +377,16 @@ fn operating_system() -> String {
 const SUMMON_HOTKEY_ID: i32 = 1;
 #[cfg(windows)]
 static SUMMON_HOTKEY_ENABLED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static SLIDE_FROM_TOP_ENABLED: AtomicBool = AtomicBool::new(true);
+#[cfg(windows)]
+static SUMMON_ANIMATION_GENERATION: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static SUMMON_HIDING: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static SUMMON_TARGET_X: AtomicI32 = AtomicI32::new(i32::MIN);
+#[cfg(windows)]
+static SUMMON_TARGET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 
 #[cfg(windows)]
 fn summon_hotkey() -> (u32, u32) {
@@ -476,6 +486,85 @@ fn focus_webview(window: &tauri::WebviewWindow) {
     }
 }
 
+#[cfg(windows)]
+fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, GetWindowRect, SetWindowPos, WINDOWPLACEMENT, SWP_NOACTIVATE,
+        SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, ShowWindow, SW_HIDE, SW_RESTORE,
+    };
+
+    let Ok(hwnd) = window.hwnd() else { return; };
+    let hwnd = hwnd.0 as usize;
+    let mut rect = windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    let mut placement = WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        flags: 0,
+        showCmd: 0,
+        ptMinPosition: windows_sys::Win32::Foundation::POINT { x: 0, y: 0 },
+        ptMaxPosition: windows_sys::Win32::Foundation::POINT { x: 0, y: 0 },
+        rcNormalPosition: windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 },
+    };
+    let mut monitor = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, rcMonitor: windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 }, rcWork: windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 }, dwFlags: 0 };
+    unsafe {
+        if GetWindowRect(hwnd as _, &mut rect) == 0 || GetWindowPlacement(hwnd as _, &mut placement) == 0 { return; }
+        let monitor_handle = MonitorFromWindow(hwnd as _, MONITOR_DEFAULTTONEAREST);
+        if monitor_handle.is_null() || GetMonitorInfoW(monitor_handle, &mut monitor) == 0 { return; }
+    }
+
+    let normal = placement.rcNormalPosition;
+    let normal_is_visible = normal.right > monitor.rcWork.left
+        && normal.left < monitor.rcWork.right
+        && normal.bottom > monitor.rcWork.top
+        && normal.top < monitor.rcWork.bottom;
+    let default_x = if normal_is_visible { normal.left } else { monitor.rcWork.left + 32 };
+    let default_y = if normal_is_visible { normal.top } else { monitor.rcWork.top + 32 };
+    let target_x = if showing { let saved = SUMMON_TARGET_X.load(Ordering::SeqCst); if saved == i32::MIN { default_x } else { saved } } else { SUMMON_TARGET_X.store(rect.left, Ordering::SeqCst); rect.left };
+    let target_y = if showing { let saved = SUMMON_TARGET_Y.load(Ordering::SeqCst); if saved == i32::MIN { default_y } else { saved } } else { SUMMON_TARGET_Y.store(rect.top, Ordering::SeqCst); rect.top };
+    let height = rect.bottom - rect.top;
+    let hidden_y = monitor.rcMonitor.top - height + 8;
+    let from = if showing { hidden_y } else { rect.top };
+    let to = if showing { target_y } else { hidden_y };
+    let generation = SUMMON_ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    if showing {
+        SUMMON_HIDING.store(false, Ordering::SeqCst);
+        unsafe {
+            ShowWindow(hwnd as _, SW_RESTORE);
+            SetWindowPos(hwnd as _, std::ptr::null_mut(), target_x, from, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
+        }
+        let _ = window.set_focus();
+        focus_webview(window);
+        let _ = window.app_handle().emit("window-summoned", ());
+    } else {
+        SUMMON_HIDING.store(true, Ordering::SeqCst);
+    }
+
+    let window = window.clone();
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let duration = std::time::Duration::from_millis(180);
+        loop {
+            if SUMMON_ANIMATION_GENERATION.load(Ordering::SeqCst) != generation { return; }
+            let progress = (started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
+            let eased = 1.0 - (1.0 - progress).powi(3);
+            let y = from + ((to - from) as f32 * eased) as i32;
+            unsafe { SetWindowPos(hwnd as _, std::ptr::null_mut(), target_x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER); }
+            if progress >= 1.0 { break; }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+        if SUMMON_ANIMATION_GENERATION.load(Ordering::SeqCst) != generation { return; }
+        if !showing {
+            unsafe {
+                ShowWindow(hwnd as _, SW_HIDE);
+            }
+        } else {
+            focus_webview(&window);
+        }
+    });
+}
+
 #[cfg(not(windows))]
 fn is_window_active(window: &tauri::WebviewWindow) -> bool {
     window.is_focused().unwrap_or(false)
@@ -498,6 +587,15 @@ fn restore_and_focus_window(window: &tauri::WebviewWindow) {
 }
 
 fn toggle_summon_window(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    if SLIDE_FROM_TOP_ENABLED.load(Ordering::SeqCst) {
+        if window.is_visible().unwrap_or(false) && is_window_active(window) {
+            slide_summon_window(window, false);
+        } else {
+            slide_summon_window(window, true);
+        }
+        return;
+    }
     if window.is_visible().unwrap_or(false) && is_window_active(window) {
         let _ = window.hide();
     } else {
@@ -531,9 +629,10 @@ unsafe extern "system" fn window_subclass_proc(
         return 0;
     }
 
-    if msg == WM_SYSCOMMAND && ((wparam & 0xFFF0) as u32) == SC_MINIMIZE {
+    if !SUMMON_HIDING.load(std::sync::atomic::Ordering::SeqCst)
+        && msg == WM_SYSCOMMAND && ((wparam & 0xFFF0) as u32) == SC_MINIMIZE {
         WAS_MINIMIZED.store(true, std::sync::atomic::Ordering::SeqCst);
-    } else if msg == WM_SIZE {
+    } else if !SUMMON_HIDING.load(std::sync::atomic::Ordering::SeqCst) && msg == WM_SIZE {
         if wparam == SIZE_MINIMIZED as usize {
             WAS_MINIMIZED.store(true, std::sync::atomic::Ordering::SeqCst);
         } else if (wparam == SIZE_RESTORED as usize || wparam == SIZE_MAXIMIZED as usize)
@@ -578,10 +677,12 @@ fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool, slide_from_top: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
+
+        SLIDE_FROM_TOP_ENABLED.store(slide_from_top, Ordering::SeqCst);
 
         let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
         let hwnd = window.hwnd().map_err(|error| error.to_string())?;
@@ -599,7 +700,7 @@ fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(),
         }
     }
     #[cfg(not(windows))]
-    let _ = (app, enabled);
+    let _ = (app, enabled, slide_from_top);
     Ok(())
 }
 

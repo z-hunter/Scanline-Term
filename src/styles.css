@@ -649,9 +649,8 @@ footer,
   letter-spacing: .12em;
 }
 
-.error {
-  color: #ff9b9b;
-}
+.error-toasts { position: fixed; right: 18px; bottom: 18px; z-index: 2147483647; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 36px)); }
+.error-toast { padding: 10px 12px; color: #ffe5e5; background: #671d1d; border: 1px solid #d05a5a; border-radius: 5px; box-shadow: 0 6px 18px #0009; font: inherit; text-align: left; cursor: pointer; }
 
 .update-notice {
   display: flex;

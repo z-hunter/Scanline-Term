@@ -24,6 +24,11 @@ type NumericKey = Exclude<
 >;
 
 const controls: Record<string, { key: NumericKey; label: string; min: number; max: number; step: number }[]> = {
+  'Final image': [
+    { key: 'imageBrightness', label: 'Brightness', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'imageContrast', label: 'Contrast', min: 0.5, max: 1.5, step: 0.05 },
+    { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
+  ],
   Geometry: [
     { key: 'curvature', label: 'Curvature', min: 0, max: 0.5, step: 0.01 },
     { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.05 },
@@ -38,11 +43,6 @@ const controls: Record<string, { key: NumericKey; label: string; min: number; ma
     { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
     { key: 'glowRadius', label: 'Glow radius', min: 1, max: 6, step: 0.25 },
     { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
-  ],
-  'Final image': [
-    { key: 'imageBrightness', label: 'Brightness', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'imageContrast', label: 'Contrast', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
   ],
   Temporal: [
     { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
@@ -130,6 +130,7 @@ export function SettingsPanel({
   presetState = null,
   presetNames = [],
   presetDisabled = false,
+  browserTabActive = false,
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
@@ -146,6 +147,7 @@ export function SettingsPanel({
   presetState?: TabPresetState | null;
   presetNames?: string[];
   presetDisabled?: boolean;
+  browserTabActive?: boolean;
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
@@ -207,14 +209,38 @@ export function SettingsPanel({
   return (
     <aside className="settings-panel">
       <header>
-        <p className="eyebrow">SCANLINE TERM</p>
-        <h1>CRT display lab</h1>
-        <p className="display-status">
-          CONSOLE BUFFER: {terminalSize.cols} × {terminalSize.rows} · FPS: {fps}
-        </p>
+        <p className="eyebrow">SETTINGS</p>
+        <p className="display-status">{browserTabActive ? 'BROWSER TAB' : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
       </header>
 
-      <fieldset className="preset-controls" disabled={presetDisabled}>
+      {!browserTabActive && <fieldset className="preset-controls" disabled={presetDisabled}>
+
+        <fieldset className="preset-picker">
+          <legend>Presets</legend>
+          <div className="preset-picker-row">
+            <input
+              value={presetState?.draftName ?? ''}
+              placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
+              aria-label="Preset name"
+              onChange={(event) => onPresetNameChange(event.target.value)}
+            />
+            <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
+          </div>
+          <label className="preset-load-control">
+            <select
+              aria-label="Load preset"
+              defaultValue=""
+              onChange={(event) => {
+                const name = event.target.value;
+                event.currentTarget.value = '';
+                if (name) onLoadPreset(name);
+              }}
+            >
+              <option value="" disabled>Load preset…</option>
+              {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+        </fieldset>
 
         <label className="resolution-control">
           Virtual resolution
@@ -232,34 +258,6 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
-
-        <fieldset className="preset-picker">
-          <legend>Presets</legend>
-          <div className="preset-picker-row">
-            <input
-              value={presetState?.draftName ?? ''}
-              placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
-              aria-label="Preset name"
-              onChange={(event) => onPresetNameChange(event.target.value)}
-            />
-            <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
-          </div>
-          <label className="preset-load-control">
-            Load preset
-            <select
-              aria-label="Load preset"
-              defaultValue=""
-              onChange={(event) => {
-                const name = event.target.value;
-                event.currentTarget.value = '';
-                if (name) onLoadPreset(name);
-              }}
-            >
-              <option value="" disabled>Load preset…</option>
-              {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-        </fieldset>
 
         <label className="resolution-control">
           ANSI color profile
@@ -674,6 +672,18 @@ export function SettingsPanel({
 
         <fieldset>
           <legend>Display</legend>
+          <Switch
+            label="Smooth terminal scrolling"
+            checked={stored.smoothScrollback}
+            onChange={(checked) =>
+              setStored((current) => ({ ...current, smoothScrollback: checked }))
+            }
+          />
+          {stored.smoothScrollback && <Switch
+            label="Heuristic TUI scrolling"
+            checked={stored.smoothTuiScrolling}
+            onChange={(checked) => setStored((current) => ({ ...current, smoothTuiScrolling: checked }))}
+          />}
           <div className="setting-block">
             <span className="setting-label">Cursor style</span>
             <SegmentedControl
@@ -703,26 +713,19 @@ export function SettingsPanel({
             }
           />
         </fieldset>
-      </fieldset>
+      </fieldset>}
 
       <fieldset>
         <legend>UI</legend>
-        <Switch
-          label="Smooth terminal scrolling"
-          checked={stored.smoothScrollback}
-          onChange={(checked) =>
-            setStored((current) => ({ ...current, smoothScrollback: checked }))
-          }
-        />
-        {stored.smoothScrollback && <Switch
-          label="Heuristic TUI scrolling"
-          checked={stored.smoothTuiScrolling}
-          onChange={(checked) => setStored((current) => ({ ...current, smoothTuiScrolling: checked }))}
-        />}
         {smoothScrollDiagnosticsEnabled && <div className="setting-block">
           <span className="setting-label">Smooth scroll diagnostics</span>
           <button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
         </div>}
+        <Switch
+          label="RMB menu in term."
+          checked={stored.rmbMenuInTerm}
+          onChange={(checked) => setStored((current) => ({ ...current, rmbMenuInTerm: checked }))}
+        />
         <div className="setting-block">
           <span className="setting-label">Tab placement</span>
           <SegmentedControl
@@ -753,6 +756,11 @@ export function SettingsPanel({
             setStored((current) => ({ ...current, globalHotkeyEnabled: checked }))
           }
         />
+        {stored.globalHotkeyEnabled && <Switch
+          label="Slide from top"
+          checked={stored.slideFromTop}
+          onChange={(checked) => setStored((current) => ({ ...current, slideFromTop: checked }))}
+        />}
         <label className="resolution-control">
           Settings scale
           <select

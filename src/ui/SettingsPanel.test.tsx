@@ -48,6 +48,21 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('shows only UI and System settings for a browser tab', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, browserTabActive: true })); });
+    expect(container.textContent).toContain('SETTINGS');
+    expect(container.textContent).toContain('BROWSER TAB');
+    expect(container.textContent).not.toContain('CONSOLE BUFFER');
+    expect(container.textContent).not.toContain('CRT display lab');
+    expect(container.querySelector('legend')?.textContent).toBe('UI');
+    expect(Array.from(container.querySelectorAll('legend')).map((legend) => legend.textContent)).toEqual(['UI', 'System']);
+    expect(container.textContent).not.toContain('Presets');
+    expect(container.textContent).not.toContain('Virtual resolution');
+    root.unmount(); container.remove();
+  });
+
   it('retains local string value while editing and persists clamped value on blur', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

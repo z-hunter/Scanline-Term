@@ -179,6 +179,34 @@ describe('TerminalTabs', () => {
     container.remove();
   });
 
+  it('opens the tab menu across the panel but excludes settings and AI buttons', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TerminalTabs, {
+      tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew: vi.fn(),
+      onToggleSettings: vi.fn(), onToggleAi: vi.fn(), aiVisible: true,
+    })));
+
+    const panel = container.querySelector('.terminal-tabs')!;
+    const panelEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    await act(async () => panel.dispatchEvent(panelEvent));
+    expect(panelEvent.defaultPrevented).toBe(true);
+    expect(container.querySelector('.new-tab-menu')).not.toBeNull();
+    expect(container.querySelectorAll('[role="menuitem"]')[0].textContent).toContain('[menu-N]');
+    expect(container.querySelectorAll('[role="menuitem"]')[1].textContent).toContain('[menu-B]');
+
+    await act(async () => document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    const aiButton = container.querySelector<HTMLButtonElement>('.tabs-ai-button')!;
+    const aiEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    await act(async () => aiButton.dispatchEvent(aiEvent));
+    expect(aiEvent.defaultPrevented).toBe(true);
+    expect(container.querySelector('.new-tab-menu')).toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
   it('renders top placement with tabs, new-tab button, and tabs-actions in container', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

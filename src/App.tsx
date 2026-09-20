@@ -44,6 +44,18 @@ import { terminalSession } from "./terminal/TerminalSession";
 import { SMOOTH_SCROLL_DIAGNOSTICS } from "./terminal/TerminalRenderer";
 import "./styles.css";
 
+type ErrorToast = { id: number; message: string; resetKey: number };
+
+function ErrorToast({ message, resetKey, onDismiss }: { message: string; resetKey: number; onDismiss: () => void }) {
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  useEffect(() => {
+    const timer = window.setTimeout(() => onDismissRef.current(), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [resetKey]);
+  return <button type="button" className="error-toast" role="alert" onClick={onDismiss}>{message}</button>;
+}
+
 const STORAGE_KEY = "scanline-term.settings.v1";
 function terminalAssistantInstructions(operatingSystem: string): string {
   return `You are the AI assistant for Scanline Term, a terminal application running on the user's ${operatingSystem} computer.
@@ -97,7 +109,7 @@ export default function App() {
   const tabsRef = useRef<HTMLDivElement>(null);
   const startChannelSwitchRef = useRef<() => void>(() => {});
   const preservePersistenceForChannelSwitchRef = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorToasts, setErrorToasts] = useState<ErrorToast[]>([]);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updateInstalling, setUpdateInstalling] = useState(false);
   const [windowSize, setWindowSize] = useState(() => ({
@@ -129,7 +141,15 @@ export default function App() {
   const activeTurns = useRef(new Map<string, string>());
   const interruptedTurns = useRef(new Set<string>());
   const seenStreamDeltas = useRef(new Map<string, Set<string>>());
-  const reportError = useCallback((message: string) => setError(message), []);
+  const nextToastId = useRef(0);
+  const reportError = useCallback((message: string) => {
+    setErrorToasts((current) => {
+      const existing = current.find((toast) => toast.message === message);
+      if (existing) return current.map((toast) => toast.id === existing.id ? { ...toast, resetKey: toast.resetKey + 1 } : toast);
+      return [...current, { id: nextToastId.current++, message, resetKey: 0 }];
+    });
+  }, []);
+  const dismissError = useCallback((id: number) => setErrorToasts((current) => current.filter((toast) => toast.id !== id)), []);
   const toggleSettings = useCallback(
     () =>
       setStored((current) => ({
@@ -152,6 +172,7 @@ export default function App() {
     defaultShell: stored.defaultShell,
     smoothScrollback: stored.smoothScrollback,
     smoothTuiScrolling: stored.smoothTuiScrolling,
+    rmbMenuInTerm: stored.rmbMenuInTerm,
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
@@ -363,6 +384,7 @@ export default function App() {
       tabPlacement: stored.tabPlacement,
       hideTabsWhenSingleSession: stored.hideTabsWhenSingleSession,
       globalHotkeyEnabled: stored.globalHotkeyEnabled,
+      slideFromTop: stored.slideFromTop,
       autoUpdateEnabled: stored.autoUpdateEnabled,
       settingsScale: stored.settingsScale,
       showSettingsPanel: stored.showSettingsPanel,
@@ -383,11 +405,11 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!isTauri()) return;
-    void invoke("set_global_hotkey_enabled", { enabled: stored.globalHotkeyEnabled }).catch((reason) => {
+    void invoke("set_global_hotkey_enabled", { enabled: stored.globalHotkeyEnabled, slideFromTop: stored.slideFromTop }).catch((reason) => {
       reportError(`Global Win+~ hotkey ${stored.globalHotkeyEnabled ? "registration" : "removal"} failed: ${String(reason)}`);
       setStored((current) => ({ ...current, globalHotkeyEnabled: !stored.globalHotkeyEnabled }));
     });
-  }, [reportError, stored.globalHotkeyEnabled]);
+  }, [reportError, stored.globalHotkeyEnabled, stored.slideFromTop]);
   useEffect(() => {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
@@ -1137,11 +1159,9 @@ export default function App() {
             {activeBrowser?.page === "home" && <HomeDashboard tabId={activeBrowser.id} onNavigate={terminal.navigateBrowser} onError={reportError} />}
           </div>
         </div>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
+        <div className="error-toasts" aria-live="assertive">
+          {errorToasts.map((toast) => <ErrorToast key={toast.id} message={toast.message} resetKey={toast.resetKey} onDismiss={() => dismissError(toast.id)} />)}
+        </div>
         {availableUpdate && (
           <div className="update-notice" role="status">
             <span>Update {availableUpdate.version} is available.</span>
@@ -1186,6 +1206,7 @@ export default function App() {
           presetState={activePresetState}
           presetNames={presets}
           presetDisabled={Boolean(activeBrowser)}
+          browserTabActive={Boolean(activeBrowser)}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}

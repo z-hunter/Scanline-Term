@@ -69,6 +69,7 @@ export type AppSettings = {
   tabPlacement: TabPlacement;
   hideTabsWhenSingleSession: boolean;
   globalHotkeyEnabled: boolean;
+  slideFromTop: boolean;
   autoUpdateEnabled: boolean;
   settingsScale: number;
   showSettingsPanel: boolean;
@@ -76,6 +77,7 @@ export type AppSettings = {
   defaultShell: string;
   smoothScrollback: boolean;
   smoothTuiScrolling: boolean;
+  rmbMenuInTerm: boolean;
 };
 
 export type StoredSettings = AppSettings & {
@@ -157,6 +159,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     tabPlacement: 'top',
     hideTabsWhenSingleSession: false,
     globalHotkeyEnabled: true,
+    slideFromTop: true,
     autoUpdateEnabled: true,
     settingsScale: 0.9,
     showSettingsPanel: false,
@@ -164,6 +167,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     defaultShell: '',
     smoothScrollback: false,
     smoothTuiScrolling: true,
+    rmbMenuInTerm: true,
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -176,6 +180,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       tabPlacement?: unknown;
       hideTabsWhenSingleSession?: unknown;
       globalHotkeyEnabled?: unknown;
+      slideFromTop?: unknown;
       autoUpdateEnabled?: unknown;
       settingsScale?: unknown;
       showSettingsPanel?: unknown;
@@ -183,12 +188,14 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       defaultShell?: unknown;
       smoothScrollback?: unknown;
       smoothTuiScrolling?: unknown;
+      rmbMenuInTerm?: unknown;
       crt?: Record<string, unknown>;
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
     if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsWhenSingleSession = value.hideTabsWhenSingleSession;
     if (typeof value.globalHotkeyEnabled === 'boolean') result.globalHotkeyEnabled = value.globalHotkeyEnabled;
+    if (typeof value.slideFromTop === 'boolean') result.slideFromTop = value.slideFromTop;
     if (typeof value.autoUpdateEnabled === 'boolean') result.autoUpdateEnabled = value.autoUpdateEnabled;
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
@@ -196,6 +203,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
     if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;
+    if (typeof value.rmbMenuInTerm === 'boolean') result.rmbMenuInTerm = value.rmbMenuInTerm;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

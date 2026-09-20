@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type Ref } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import type { TabPlacement } from '../crt/settings';
 import type { ShellInfo, WorkspaceTab } from '../terminal/useTerminal';
-import { showNativeNewTabMenu } from './nativeNewTabMenu';
+import { showNativeTabMenu } from './nativeNewTabMenu';
 
 export function TerminalTabs({
   tabs,
@@ -49,7 +49,7 @@ export function TerminalTabs({
     document.addEventListener('keydown', closeOnKey);
     return () => { document.removeEventListener('mousedown', closeOnMouse); document.removeEventListener('keydown', closeOnKey); };
   }, [newTabMenuOpen]);
-  const openNativeNewTabMenu = () => void showNativeNewTabMenu({ onNew, onNewBrowser, onNewShell, shells }).catch(() => setNewTabMenuOpen(true));
+  const openNativeNewTabMenu = () => void showNativeTabMenu({ onNew, onNewBrowser, onNewShell, shells }).catch(() => setNewTabMenuOpen(true));
   const selectByKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const previous = placement === 'top' ? 'ArrowLeft' : 'ArrowUp'; const next = placement === 'top' ? 'ArrowRight' : 'ArrowDown';
     let target = index;
@@ -60,16 +60,21 @@ export function TerminalTabs({
     else return;
     event.preventDefault(); onSelect(tabs[target].id); document.getElementById(`terminal-tab-${tabs[target].id}`)?.focus();
   };
-  return <div ref={panelRef} className={`terminal-tabs terminal-tabs-${placement}`}>
+  const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as Element).closest('.tabs-actions')) { event.preventDefault(); return; }
+    event.preventDefault();
+    if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true);
+  };
+  return <div ref={panelRef} className={`terminal-tabs terminal-tabs-${placement}`} onContextMenu={openContextMenu}>
     {!hideTabList && <div className="terminal-tab-list" role="tablist" aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}>{tabs.map((tab, index) => <div className={`terminal-tab terminal-tab-${tab.status}${tab.id === activeId ? ' active' : ''}`} key={tab.id} style={{ '--tab-background': tab.background, '--tab-foreground': tab.foreground } as CSSProperties} onMouseEnter={() => onSelect(tab.id)}>
       <button id={`terminal-tab-${tab.id}`} type="button" role="tab" aria-selected={tab.id === activeId} aria-controls="terminal-display" tabIndex={tab.id === activeId ? 0 : -1} onClick={() => onSelect(tab.id)} onKeyDown={(event) => selectByKey(event, index)}>{tab.title}</button>
       <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} disabled={tab.status === 'starting' && tab.kind !== 'browser'} onClick={() => onClose(tab.id)}>×</button>
     </div>)}</div>}
     <div ref={newTabControlRef} className="new-tab-control">
-      <button type="button" className="new-tab-button" aria-label="New terminal tab" aria-haspopup="menu" aria-expanded={newTabMenuOpen} onClick={() => { onNew(); setNewTabMenuOpen(false); }} onContextMenu={(event) => { event.preventDefault(); if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true); }}>+</button>
+      <button type="button" className="new-tab-button" aria-label="New terminal tab" aria-haspopup="menu" aria-expanded={newTabMenuOpen} onClick={() => { onNew(); setNewTabMenuOpen(false); }}>+</button>
       {newTabMenuOpen && <div className="new-tab-menu" role="menu" aria-label="New tab options">
-        <button type="button" role="menuitem" onClick={() => { onNew(); setNewTabMenuOpen(false); }}>New Terminal tab</button>
-        <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab</button>
+        <button type="button" role="menuitem" onClick={() => { onNew(); setNewTabMenuOpen(false); }}>New Terminal tab [menu-N]</button>
+        <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab [menu-B]</button>
         {shells.length > 0 && <>
           <div className="new-tab-menu-label">Shells</div>
           {shells.map((shell) => <button key={shell.command} type="button" role="menuitem" onClick={() => { onNewShell(shell.command); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
@@ -81,7 +86,7 @@ export function TerminalTabs({
         type="button"
         className={`tabs-ai-button${aiVisible ? ' active' : ''}`}
         aria-label="Toggle AI assistant"
-        title="Toggle AI assistant"
+        title="Toggle AI Assistant [menu-A]"
         aria-pressed={aiVisible}
         onClick={onToggleAi}
       >
@@ -91,7 +96,7 @@ export function TerminalTabs({
         type="button"
         className={`tabs-settings-button${settingsVisible ? ' active' : ''}`}
         aria-label="Toggle settings"
-        title="Toggle settings"
+        title="Toggle Settings [menu-S]"
         aria-pressed={settingsVisible}
         onClick={onToggleSettings}
       >
