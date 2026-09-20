@@ -12,12 +12,14 @@ type LumaFrame = { width: number; height: number; cellWidth: number; cellHeight:
 type BufferLine = { getCell(column: number, cell?: IBufferCell): IBufferCell | undefined };
 export type ScrollCandidate = { deltaRows: number; topRow: number; bottomRow: number; overlapRows: number; matchTopRow: number; matchBottomRow: number; presentationMismatchRows: number[] };
 export type ScrollDetection = { candidate: ScrollCandidate | null; maxExactOverlap: number; maxExactDelta: number | null; rejection: string | null };
-type ScrollTransition = { deltaRows: number; topRow: number; bottomRow: number; startedAt: number; duration: number; distance: number; kind: 'normal' | 'tui'; expectedViewportY?: number };
+type ScrollTransition = { deltaRows: number; topRow: number; bottomRow: number; startedAt: number; duration: number; distance: number; kind: 'normal' | 'tui'; expectedViewportY?: number; fromPosition?: number; toPosition?: number; fast?: boolean };
 type TextOverlap = { deltaRows: number; overlapRows: number; samples: string[] };
 
 const MIN_SCROLL_OVERLAP = 4;
 const MIN_SCROLL_TEXT_ROWS = 3;
 const MAX_PRESENTATION_MISMATCH_ROWS = 2;
+const SMOOTH_SCROLL_PIXELS_PER_SECOND = 240;
+const FAST_SCROLL_THRESHOLD_ROWS = 6;
 // Enable temporarily when investigating a missed smooth-scroll candidate.
 const SMOOTH_SCROLL_DIAGNOSTICS = false;
 
@@ -315,18 +317,63 @@ export class TerminalRenderer {
   }
   beginScroll(fromViewportY: number, toViewportY: number): boolean {
     if (!this.terminal || fromViewportY === toViewportY || this.terminal.buffer.active !== this.terminal.buffer.normal) return false;
-    const started = this.startScroll(toViewportY - fromViewportY, 0, this.terminal.rows, 'normal');
+    const existing = this.scrollTransition;
+    if (existing?.kind === 'normal') {
+      this.retargetScroll(existing, toViewportY, 0, this.terminal.rows);
+      existing.expectedViewportY = toViewportY;
+      return true;
+    }
+    const started = this.startScroll(toViewportY - fromViewportY, 0, this.terminal.rows, 'normal', Math.abs(toViewportY - fromViewportY) > FAST_SCROLL_THRESHOLD_ROWS, fromViewportY, toViewportY);
     if (started && this.scrollTransition) this.scrollTransition.expectedViewportY = toViewportY;
     return started;
   }
-  private startScroll(deltaRows: number, topRow: number, bottomRow: number, kind: 'normal' | 'tui'): boolean {
+  private scrollDuration(distance: number, fast: boolean): number {
+    const pixels = Math.max(1, distance * this.lineHeight());
+    return fast ? Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)) : Math.max(0.1, pixels / SMOOTH_SCROLL_PIXELS_PER_SECOND);
+  }
+  private scrollProgress(transition: ScrollTransition): number {
+    return Math.min(1, Math.max(0, (performance.now() / 1000 - transition.startedAt) / Math.max(0.001, transition.duration)));
+  }
+  private scrollPosition(transition: ScrollTransition): number {
+    const from = transition.fromPosition ?? 0;
+    const to = transition.toPosition ?? from + transition.deltaRows;
+    const progress = this.scrollProgress(transition);
+    const eased = transition.fast ? 1 - Math.pow(1 - progress, 3) : progress;
+    return from + (to - from) * eased;
+  }
+  private retargetScroll(transition: ScrollTransition, targetPosition: number, topRow: number, bottomRow: number): void {
+    const now = performance.now() / 1000;
+    const visualPosition = this.scrollPosition(transition);
+    const fromPosition = transition.fromPosition ?? 0;
+    const distance = Math.abs(targetPosition - fromPosition);
+    const fast = Boolean(transition.fast) || Math.abs(targetPosition - visualPosition) > FAST_SCROLL_THRESHOLD_ROWS;
+    transition.deltaRows = targetPosition - fromPosition;
+    transition.topRow = topRow;
+    transition.bottomRow = bottomRow;
+    transition.toPosition = targetPosition;
+    transition.distance = distance;
+    transition.fast = fast;
+    transition.duration = this.scrollDuration(distance, fast);
+    const fraction = distance === 0 ? 1 : Math.min(1, Math.max(0, (visualPosition - fromPosition) / (targetPosition - fromPosition)));
+    const progress = fast ? 1 - Math.cbrt(1 - fraction) : fraction;
+    transition.startedAt = now - progress * transition.duration;
+    this.scrollTargetReady = false;
+  }
+  private startScroll(deltaRows: number, topRow: number, bottomRow: number, kind: 'normal' | 'tui', fast = false, fromPosition?: number, toPosition?: number): boolean {
     if (!this.terminal || !deltaRows || bottomRow <= topRow) return false;
+    const existing = this.scrollTransition;
+    if (existing) {
+      this.retargetScroll(existing, (existing.toPosition ?? 0) + deltaRows, topRow, bottomRow);
+      return true;
+    }
     const from = this.scrollFromCanvas.getContext('2d');
     if (!from || typeof from.drawImage !== 'function') return false;
-    if (this.scrollTransition) this.cancelScroll();
+    const initialPosition = fromPosition ?? 0;
+    const targetPosition = toPosition ?? initialPosition + deltaRows;
+    const distance = Math.abs(targetPosition - initialPosition);
+    const accelerated = fast || distance > FAST_SCROLL_THRESHOLD_ROWS;
     from.drawImage(this.sourceCanvas, 0, 0);
-    const distance = Math.abs(deltaRows);
-    this.scrollTransition = { deltaRows, topRow, bottomRow, startedAt: performance.now() / 1000, duration: Math.min(0.24, Math.max(0.1, 0.1 + distance * 0.012)), distance, kind };
+    this.scrollTransition = { deltaRows: targetPosition - initialPosition, topRow, bottomRow, startedAt: performance.now() / 1000, duration: this.scrollDuration(distance, accelerated), distance, kind, fromPosition: initialPosition, toPosition: targetPosition, fast: accelerated };
     this.scrollTargetReady = false;
     this.scrollStarted = true;
     return true;
@@ -522,7 +569,7 @@ export class TerminalRenderer {
     if (!targetCtx || !outputCtx || typeof outputCtx.drawImage !== 'function') { this.cancelScroll(); return false; }
     this.composeTerminal(this.compositedCanvas);
     const progress = Math.min(1, Math.max(0, (time - transition.startedAt) / transition.duration));
-    const eased = 1 - Math.pow(1 - progress, 3);
+    const eased = transition.fast ? 1 - Math.pow(1 - progress, 3) : progress;
     const top = Math.floor(this.scrollContentTop + transition.topRow * this.scrollCellHeight);
     const bottom = Math.ceil(this.scrollContentTop + transition.bottomRow * this.scrollCellHeight);
     const distance = Math.min(bottom - top, Math.round(transition.distance * this.lineHeight()));
