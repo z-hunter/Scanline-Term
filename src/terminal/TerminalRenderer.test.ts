@@ -98,6 +98,28 @@ describe('TerminalRenderer', () => {
     expect(context.drawImage).not.toHaveBeenCalled();
   });
 
+  it('captures the current frame for an incompatible scroll direction', () => {
+    const context = { drawImage: vi.fn(), clearRect: vi.fn() };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const normal = { viewportY: 0, baseY: 0 };
+    const terminal = {
+      buffer: { active: normal, normal },
+      onCursorMove: () => ({ dispose() {} }),
+      onWriteParsed: () => ({ dispose() {} }),
+      onScroll: () => ({ dispose() {} }),
+    };
+    const renderer = new TerminalRenderer();
+    renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas'));
+    renderer.bindTerminal(terminal as never);
+    renderer.beginScroll(0, 3);
+    context.drawImage.mockClear();
+
+    renderer.beginScroll(3, 0);
+
+    expect(renderer.isScrollAnimating).toBe(true);
+    expect(context.drawImage).toHaveBeenCalledTimes(1);
+  });
+
   it('animates an unambiguous alternate-buffer output shift', () => {
     const context = { fillStyle: '', globalAlpha: 1, font: '', textAlign: 'left', textBaseline: 'middle', imageSmoothingEnabled: true, fillRect: vi.fn(), fillText: vi.fn(), drawImage: vi.fn(), clearRect: vi.fn(), save: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), restore: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);

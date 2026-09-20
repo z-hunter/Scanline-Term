@@ -317,12 +317,6 @@ export class TerminalRenderer {
   }
   beginScroll(fromViewportY: number, toViewportY: number): boolean {
     if (!this.terminal || fromViewportY === toViewportY || this.terminal.buffer.active !== this.terminal.buffer.normal) return false;
-    const existing = this.scrollTransition;
-    if (existing?.kind === 'normal') {
-      this.retargetScroll(existing, toViewportY, 0, this.terminal.rows);
-      existing.expectedViewportY = toViewportY;
-      return true;
-    }
     const started = this.startScroll(toViewportY - fromViewportY, 0, this.terminal.rows, 'normal', Math.abs(toViewportY - fromViewportY) > FAST_SCROLL_THRESHOLD_ROWS, fromViewportY, toViewportY);
     if (started && this.scrollTransition) this.scrollTransition.expectedViewportY = toViewportY;
     return started;
@@ -359,20 +353,37 @@ export class TerminalRenderer {
     transition.startedAt = now - progress * transition.duration;
     this.scrollTargetReady = false;
   }
+  private canRetargetScroll(transition: ScrollTransition, kind: 'normal' | 'tui', targetPosition: number, topRow: number, bottomRow: number): boolean {
+    if (transition.kind !== kind || transition.topRow !== topRow || transition.bottomRow !== bottomRow) return false;
+    const from = transition.fromPosition ?? 0;
+    const previousTarget = transition.toPosition ?? from + transition.deltaRows;
+    const direction = Math.sign(previousTarget - from);
+    const nextDirection = Math.sign(targetPosition - from);
+    return direction !== 0 && nextDirection === direction && (direction > 0 ? targetPosition >= previousTarget : targetPosition <= previousTarget);
+  }
   private startScroll(deltaRows: number, topRow: number, bottomRow: number, kind: 'normal' | 'tui', fast = false, fromPosition?: number, toPosition?: number): boolean {
     if (!this.terminal || !deltaRows || bottomRow <= topRow) return false;
     const existing = this.scrollTransition;
-    if (existing) {
-      this.retargetScroll(existing, (existing.toPosition ?? 0) + deltaRows, topRow, bottomRow);
+    const sameKind = existing?.kind === kind;
+    const initialPosition = fromPosition ?? (sameKind && existing ? this.scrollPosition(existing) : 0);
+    const targetPosition = toPosition ?? (sameKind && existing ? (existing.toPosition ?? initialPosition) + deltaRows : initialPosition + deltaRows);
+    let capturedVisual = false;
+    if (existing && this.canRetargetScroll(existing, kind, targetPosition, topRow, bottomRow)) {
+      this.retargetScroll(existing, targetPosition, topRow, bottomRow);
       return true;
+    }
+    if (existing) {
+      const from = this.scrollFromCanvas.getContext('2d');
+      if (!from || typeof from.drawImage !== 'function') return false;
+      from.drawImage(this.compositedCanvas, 0, 0);
+      capturedVisual = true;
+      this.cancelScroll();
     }
     const from = this.scrollFromCanvas.getContext('2d');
     if (!from || typeof from.drawImage !== 'function') return false;
-    const initialPosition = fromPosition ?? 0;
-    const targetPosition = toPosition ?? initialPosition + deltaRows;
     const distance = Math.abs(targetPosition - initialPosition);
     const accelerated = fast || distance > FAST_SCROLL_THRESHOLD_ROWS;
-    from.drawImage(this.sourceCanvas, 0, 0);
+    if (!capturedVisual) from.drawImage(this.sourceCanvas, 0, 0);
     this.scrollTransition = { deltaRows: targetPosition - initialPosition, topRow, bottomRow, startedAt: performance.now() / 1000, duration: this.scrollDuration(distance, accelerated), distance, kind, fromPosition: initialPosition, toPosition: targetPosition, fast: accelerated };
     this.scrollTargetReady = false;
     this.scrollStarted = true;
