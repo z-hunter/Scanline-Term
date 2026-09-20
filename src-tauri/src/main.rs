@@ -384,6 +384,8 @@ static SUMMON_ANIMATION_GENERATION: AtomicU64 = AtomicU64::new(0);
 #[cfg(windows)]
 static SUMMON_HIDING: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
+static SUMMON_SHOWING: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
 static SUMMON_TARGET_X: AtomicI32 = AtomicI32::new(i32::MIN);
 #[cfg(windows)]
 static SUMMON_TARGET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
@@ -521,14 +523,26 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         && normal.top < monitor.rcWork.bottom;
     let default_x = if normal_is_visible { normal.left } else { monitor.rcWork.left + 32 };
     let default_y = if normal_is_visible { normal.top } else { monitor.rcWork.top + 32 };
-    let target_x = if showing { let saved = SUMMON_TARGET_X.load(Ordering::SeqCst); if saved == i32::MIN { default_x } else { saved } } else { SUMMON_TARGET_X.store(rect.left, Ordering::SeqCst); rect.left };
-    let target_y = if showing { let saved = SUMMON_TARGET_Y.load(Ordering::SeqCst); if saved == i32::MIN { default_y } else { saved } } else { SUMMON_TARGET_Y.store(rect.top, Ordering::SeqCst); rect.top };
+    let preserve_saved_target = !showing && SUMMON_SHOWING.load(Ordering::SeqCst);
+    let saved_x = SUMMON_TARGET_X.load(Ordering::SeqCst);
+    let saved_y = SUMMON_TARGET_Y.load(Ordering::SeqCst);
+    let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
+    let saved_is_visible = saved_x != i32::MIN && saved_y != i32::MIN
+        && saved_x + width > monitor.rcWork.left && saved_x < monitor.rcWork.right
+        && saved_y + height > monitor.rcWork.top && saved_y < monitor.rcWork.bottom;
+    let target_x = if !showing && !preserve_saved_target {
+        SUMMON_TARGET_X.store(rect.left, Ordering::SeqCst); rect.left
+    } else if saved_is_visible { saved_x } else { default_x };
+    let target_y = if !showing && !preserve_saved_target {
+        SUMMON_TARGET_Y.store(rect.top, Ordering::SeqCst); rect.top
+    } else if saved_is_visible { saved_y } else { default_y };
     let hidden_y = monitor.rcMonitor.top - height + 8;
     let from = if showing { hidden_y } else { rect.top };
     let to = if showing { target_y } else { hidden_y };
     let generation = SUMMON_ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     if showing {
+        SUMMON_SHOWING.store(true, Ordering::SeqCst);
         SUMMON_HIDING.store(false, Ordering::SeqCst);
         unsafe {
             ShowWindow(hwnd as _, SW_RESTORE);
@@ -538,6 +552,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         focus_webview(window);
         let _ = window.app_handle().emit("window-summoned", ());
     } else {
+        SUMMON_SHOWING.store(false, Ordering::SeqCst);
         SUMMON_HIDING.store(true, Ordering::SeqCst);
     }
 
@@ -560,6 +575,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
                 ShowWindow(hwnd as _, SW_HIDE);
             }
         } else {
+            SUMMON_SHOWING.store(false, Ordering::SeqCst);
             focus_webview(&window);
         }
     });

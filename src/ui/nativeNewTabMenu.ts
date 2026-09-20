@@ -36,7 +36,7 @@ export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse
     ...(await newTabItems({ onNewBrowser, ...actions })),
     { id: 'scanline-find', text: 'Find [menu-/]', action: onFind },
     { id: 'scanline-find-back', text: 'Find back [menu-shift-/]', action: onFindBack },
-    { id: 'scanline-copy-by-mouse', text: 'Select and copy by mouse [menu-S]', action: onCopyByMouse },
+    { id: 'scanline-copy-by-mouse', text: 'Select and copy by mouse [menu-C]', action: onCopyByMouse },
     separator,
     { id: 'scanline-term-home', text: 'Scanline Term home', action: () => onNewBrowser('https://github.com/z-hunter/Scanline-Term') },
   ] });

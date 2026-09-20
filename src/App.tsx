@@ -385,6 +385,7 @@ export default function App() {
       hideTabsWhenSingleSession: stored.hideTabsWhenSingleSession,
       globalHotkeyEnabled: stored.globalHotkeyEnabled,
       slideFromTop: stored.slideFromTop,
+      rmbMenuInTerm: stored.rmbMenuInTerm,
       autoUpdateEnabled: stored.autoUpdateEnabled,
       settingsScale: stored.settingsScale,
       showSettingsPanel: stored.showSettingsPanel,
