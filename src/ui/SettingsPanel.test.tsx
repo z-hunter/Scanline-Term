@@ -14,6 +14,8 @@ describe('SettingsPanel font-size editing flow', () => {
         ...DEFAULT_CRT_SETTINGS,
         consoleFontSize: 14,
       },
+      smoothScrollback: false,
+      smoothTuiScrolling: false,
     },
     setStored: vi.fn(),
     monospaceFonts: ['Consolas', 'Lucida Console'],
