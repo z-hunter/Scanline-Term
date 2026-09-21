@@ -4,6 +4,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/z.hunter)
 
 ![Scanline Term](src-tauri/icons/icon.png)
 
@@ -266,7 +267,7 @@ npm run tauri:build -- --bundles msi
 
 ---
 
-![Buy me a coffee](public/qr-code.png)
+<img src="public/qr-code.png" alt="Buy me a coffee" width="250">
 
 ## License
 
