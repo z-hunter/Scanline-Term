@@ -7,9 +7,8 @@
 
 ![Scanline Term](src-tauri/icons/icon.png)
 
-**Scanline Term** is a "retro-futuristic" Windows terminal emulator.
+**Scanline Term** is a "retro-futuristic" Windows terminal emulator, featuring:
 
-Why?
 - Instant response, GPU rendering, multithreading
 - Physical CRT screen simulation (toggleable)
 - Smooth pixel-by-pixel line scrolling, even in TUI applications
