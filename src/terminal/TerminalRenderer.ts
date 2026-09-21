@@ -319,6 +319,12 @@ export class TerminalRenderer {
   private scrollStarted = false;
   private scrollCellHeight = 16;
   private scrollContentTop = 0;
+  private readonly logo = new Image();
+
+  constructor() {
+    this.logo.src = '/icon.png';
+    this.logo.onload = () => this.markDirty();
+  }
 
   bindTerminal(terminal: Terminal | null, onScroll?: (viewportY: number) => void): void {
     this.cancelScroll(); this.disposables.forEach((item) => item.dispose()); this.disposables = []; this.terminal = terminal; this.rowSignatures = []; this.rowContentSignatures = []; this.rowTexts = []; this.snapshotCols = -1; this.snapshotRows = -1; this.snapshotViewportY = -1; this.snapshotBaseY = -1; this.snapshotBuffer = null; this.terminalOutputDirty = false; this.cursorRow = null; this.hasMeasuredSourceLuma = false; this.lastCursorPhase = -1; this.lastCursorMoveTime = 0; this.lastCursorX = -1; this.lastCursorY = -1; this.cursorMoved = false; this.markDirty();
@@ -712,6 +718,10 @@ export class TerminalRenderer {
     const profile = colorProfile(settings.colorProfile);
     ctx.fillStyle = '#050806';
     ctx.fillRect(0, 0, width, height);
+    if (this.logo.complete && this.logo.naturalWidth > 0 && typeof ctx.drawImage === 'function') {
+      const logoSize = Math.min(256, width, height);
+      ctx.drawImage(this.logo, (width - logoSize) / 2, (height - logoSize) / 2, logoSize, logoSize);
+    }
     ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont);
     ctx.textBaseline = 'top';
     const lines = [
