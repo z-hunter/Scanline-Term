@@ -266,7 +266,7 @@ npm run tauri:build -- --bundles msi
 
 ---
 
-![Buy me a coffee](assets/qr-code.png)
+![Buy me a coffee](public/assets/qr-code.png)
 
 ## License
 
