@@ -1,4 +1,4 @@
-# Scanline Term
+# Scanline Term - The Past’s Future
 
 [![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
@@ -7,9 +7,19 @@
 
 ![Scanline Term](src-tauri/icons/icon.png)
 
-**Scanline Term** is a "retro-futuristic" Windows terminal emulator that renders live console sessions through a physically-modelled WebGL CRT simulation pipeline.
+**Scanline Term** is a "retro-futuristic" Windows terminal emulator.
 
-Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+Why?
+- Instant response, GPU rendering, multithreading
+- Physical CRT screen simulation (toggleable)
+- Smooth pixel-by-pixel line scrolling, even in TUI applications
+- Lightweight and native
+- Historical and custom presets for various terminals and screens
+- Built-in mini web browser
+- Built-in AI assistant
+- Open Source
+
+Combining the raw nostalgia of cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, vim-like search, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
 ---
 
