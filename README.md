@@ -121,7 +121,7 @@ Embedded WebView2 browser tabs feature a keyboard-first, Vim-inspired navigation
 Scanline Term can be invoked from the command prompt, PowerShell, terminal scripts, or Windows shortcuts with custom arguments:
 
 ```sh
-sterm [options] [target]
+sterm [options] [target] [arguments...]
 ```
 
 ### Command line Arguments
@@ -137,6 +137,7 @@ The optional `[target]` argument is automatically detected and routed:
 
 * **Directory Path** (`.` or `C:\path\to\dir`): Launches the default shell in the specified directory.
 * **Command or Executable** (`pwsh`, `cmd.exe`, `C:\tools\app.exe`): Launches the given command or console program directly.
+  Arguments after the executable are passed to it unchanged.
 * **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded WebView2 browser tab.
 * **Local document** (`C:\docs\manual.html`, `.htm`, `.html` or `.pdf`): Opens the existing file in an embedded browser tab.
 
@@ -152,6 +153,9 @@ sterm C:\Projects\MyProject
 # Launch PowerShell with an explicit working directory
 sterm -P C:\Projects\MyProject pwsh
 
+# Launch an executable with arguments
+sterm C:\Tools\watcher.exe --port 8080 --verbose
+
 # Open a new tab in an existing Scanline Term window
 sterm -T pwsh
 
@@ -161,6 +165,9 @@ sterm -T C:\Docs\manual.pdf
 
 # Open a new tab with working directory set
 sterm -T -P C:\Projects\MyProject
+
+# Open an executable with arguments in a new tab
+sterm -T C:\Tools\watcher.exe --port 8080
 
 # Open documentation directly in the built-in CRT browser
 sterm https://docs.rs

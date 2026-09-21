@@ -10,7 +10,7 @@ import { terminalKey } from "./terminal-input";
 import { win32InputKey } from "../win32-input";
 
 export type TerminalSize = { cols: number; rows: number };
-export type TerminalLaunch = { command?: string | null; cwd?: string | null };
+export type TerminalLaunch = { command?: string | null; args?: string[] | null; cwd?: string | null };
 export type TerminalInputAction =
   | { kind: "text"; text: string; submit?: boolean }
   | {
@@ -183,10 +183,13 @@ export class TerminalSession {
         launch &&
         typeof launch === "object" &&
         !("nativeEvent" in launch) &&
-        ("command" in launch || "cwd" in launch)
+        ("command" in launch || "args" in launch || "cwd" in launch)
           ? {
               command:
                 typeof launch.command === "string" ? launch.command : null,
+              ...(Array.isArray(launch.args) && launch.args.length > 0 && {
+                args: launch.args.filter((argument): argument is string => typeof argument === "string"),
+              }),
               cwd: typeof launch.cwd === "string" ? launch.cwd : null,
             }
           : undefined;

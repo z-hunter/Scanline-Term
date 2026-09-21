@@ -301,7 +301,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `collect_monospace_font()` | Win32 `EnumFontFamiliesExW` callback; filters by `TMPF_FIXED_PITCH`, skips `@`-prefixed and empty names |
 | **`#[tauri::command] list_monospace_fonts()`** | Enumerates all system monospace fonts using GDI; returns `Vec<String>` sorted via `BTreeSet` |
 | **`#[tauri::command] list_available_shells()`** | Finds Command Prompt, Windows PowerShell, PowerShell and Git Bash from standard locations and `PATH`; returns display names and executable paths |
-| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command and working directory, falling back to `%ComSpec%` when the requested shell cannot start |
+| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command, argument list and working directory, falling back to `%ComSpec%` when the requested shell cannot start |
 | **`#[tauri::command] initial_terminal_launch()`** | Returns the parsed launch request for the first terminal tab |
 | **`#[tauri::command] write_terminal(state, session_id, input)`** | Clones the target session's `mpsc::Sender`, sends `input.into_bytes()` |
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
@@ -318,7 +318,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | Command | Parameters | Returns | Called from |
 |---------|------------|---------|------------|
 | `start_terminal` | `sessionId, cols: u16, rows: u16, launch?` | executable filename | Create a terminal tab |
-| `initial_terminal_launch` | — | `{ command?, cwd? }` | First terminal tab |
+| `initial_terminal_launch` | — | `{ command?, args?, cwd? }` | First terminal tab |
 | `write_terminal` | `sessionId, input: String` | `Result<(), String>` | `sendInput()`, keyboard/mouse handlers |
 | `resize_terminal` | `sessionId, cols: u16, rows: u16` | `Result<(), String>` | Resize all live tabs after display changes |
 | `active_terminal_process` | `sessionId` | `Option<String>` | Poll active child process for the tab-title fallback |
@@ -339,7 +339,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 |-------|---------|----------|
 | `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
 | `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
-| `terminal-launch` | `{ command?, cwd? }` | Opens a new tab after a second `-T` invocation |
+| `terminal-launch` | `{ command?, args?, cwd? }` | Opens a new tab after a second `-T` invocation |
 | `browser-title` | `{ sessionId, title }` | Updates a native browser tab title from the document title |
 | `browser-color` | `{ sessionId, background }` | Updates a native browser tab color from the page theme/background |
 | `browser-shortcut` | `{ sessionId, code }` | Routes an allow-listed Menu shortcut from a native browser child |
