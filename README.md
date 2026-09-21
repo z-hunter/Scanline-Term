@@ -1,4 +1,4 @@
-# Scanline Term
+# Scanline Term - The Past’s Future
 
 [![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
@@ -7,9 +7,18 @@
 
 ![Scanline Term](src-tauri/icons/icon.png)
 
-**Scanline Term** is a "retro-futuristic" Windows terminal emulator that renders live console sessions through a physically-modelled WebGL CRT simulation pipeline.
+**Scanline Term** is a "retro-futuristic" Windows terminal emulator, featuring:
 
-Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, an embedded keyboard-centric web browser, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+- Instant response, GPU rendering, multithreading
+- Physical CRT screen simulation (toggleable)
+- Smooth pixel-by-pixel line scrolling, even in TUI applications
+- Lightweight and native
+- Historical and custom presets for various terminals and screens
+- Built-in mini web browser
+- Built-in AI assistant
+- Open Source
+
+Combining the raw nostalgia of cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, vim-like search, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
 ---
 
@@ -19,11 +28,11 @@ Combining the raw nostalgia of 1980s cathode-ray tube monitors with modern power
 
 Scanline Term features a custom multi-pass WebGL shader pipeline extracted from our [*Scanline* game engine](https://github.com/z-hunter/Quest). It accurately simulates physical CRT phenomena:
 
-* **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
-* **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
-* **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
-* **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
-* **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
+- **Sinc-integrated Fourier scanlines** with dynamic electron beam modulation.
+- **Phosphor persistence & ghosting trails** with ping-pong framebuffers and adjustable decay rates.
+- **Multi-pass bloom & phosphor halation** (soft and spiral diffusion algorithms).
+- **Physical glass distortion**: adjustable spherical barrel curvature, corner vignetting, and bezel ambient glow.
+- **Hardware breathing & electrical fluctuations**: HV deflection breathing under heavy load, anti-moiré filtering, and phosphor grain/noise.
 
 ![Scanline Term](assets/screenshot.png)
 
@@ -31,15 +40,15 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 
 Keep your hands on the keyboard and stay in the zone:
 
-* **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
-* **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
+- **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
+- **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
 
 ### 3. Native Windows ConPTY Engine
 
 Built specifically for Windows with Rust and native APIs:
 
-* **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
-* **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
+- **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
+- **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
 
 ![Scanline Term](public/Screenshot_23.png)
 
@@ -65,12 +74,12 @@ Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer i
 
 Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
 
-* **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
-* **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
-  * **VGA** (640 × 480)
-  * **SVGA** (800 × 600)
-  * **XGA** (1024 × 768)
-  * **Native** (Full resolution)
+- **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
+- **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
+  - **VGA** (640 × 480)
+  - **SVGA** (800 × 600)
+  - **XGA** (1024 × 768)
+  - **Native** (Full resolution)
 
 ---
 
@@ -135,11 +144,11 @@ sterm [options] [target] [arguments...]
 
 The optional `[target]` argument is automatically detected and routed:
 
-* **Directory Path** (`.` or `C:\path\to\dir`): Launches the default shell in the specified directory.
-* **Command or Executable** (`pwsh`, `cmd.exe`, `C:\tools\app.exe`): Launches the given command or console program directly.
+- **Directory Path** (`.` or `C:\path\to\dir`): Launches the default shell in the specified directory.
+- **Command or Executable** (`pwsh`, `cmd.exe`, `C:\tools\app.exe`): Launches the given command or console program directly.
   Arguments after the executable are passed to it unchanged.
-* **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded WebView2 browser tab.
-* **Local document** (`C:\docs\manual.html`, `.htm`, `.html` or `.pdf`): Opens the existing file in an embedded browser tab.
+- **HTTP / HTTPS URL** (`https://...` or `http://...`): Opens the URL directly in an embedded WebView2 browser tab.
+- **Local document** (`C:\docs\manual.html`, `.htm`, `.html` or `.pdf`): Opens the existing file in an embedded browser tab.
 
 ### Practical Examples
 
@@ -183,9 +192,9 @@ Download the latest pre-compiled Windows Installer (**MSI**) from the Releases p
 
 Run the `.msi` installer shown in the downloaded release assets. System requirements:
 
-* Windows 10 (version 17763+) or Windows 11 (64-bit)
-* [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
-* *(Optional)* [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) on `PATH` if using the AI Terminal Assistant.
+- Windows 10 (version 17763+) or Windows 11 (64-bit)
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
+- *(Optional)* [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) on `PATH` if using the AI Terminal Assistant.
 
 ---
 
@@ -216,10 +225,10 @@ Run the `.msi` installer shown in the downloaded release assets. System requirem
 
 For in-depth architectural details, check our comprehensive documentation in [`docs/`](./docs/README.md):
 
-* [Architecture & Data Flow](./docs/02-architecture.md)
-* [Core Systems & Shaders](./docs/04-core-systems.md)
-* [Design Decisions](./docs/05-design-decisions.md)
-* [Codex Terminal Assistant Guide](./docs/10-ai-assistant.md)
+- [Architecture & Data Flow](./docs/02-architecture.md)
+- [Core Systems & Shaders](./docs/04-core-systems.md)
+- [Design Decisions](./docs/05-design-decisions.md)
+- [Codex Terminal Assistant Guide](./docs/10-ai-assistant.md)
 
 ---
 
@@ -256,6 +265,8 @@ npm run tauri:build -- --bundles msi
 ```
 
 ---
+
+![Buy me a coffee](assets/qr-code.png)
 
 ## License
 
