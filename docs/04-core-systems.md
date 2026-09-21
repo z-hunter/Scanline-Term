@@ -44,7 +44,7 @@ Applications can name their tab with the standard OSC 0 or OSC 2 terminal-title 
 
 ### Command-line launch
 
-`scanline-term [target] [arguments...] [-P <path>]` starts the first tab. An existing local file, including a `file:///…` URI, opens in the embedded browser; an existing directory opens the default shell there; other file paths or executable names run as commands, with the following arguments passed unchanged. `-P` explicitly sets the command's existing working directory. A second `scanline-term -T [target] [arguments...] [-P <path>]` is routed to the existing application and opens the requested browser file or terminal session in a new tab.
+`scanline-term [options] [target] [arguments...]` starts the first tab. `-T` and `-P <path>` are launcher options before the target; `--` can explicitly end launcher-option parsing. An existing local file, including a `file:///…` URI, opens in the embedded browser; an existing directory opens the default shell there; other file paths or executable names run as commands, with the following arguments passed unchanged. A second `scanline-term -T [target] [arguments...]` is routed to the existing application and opens the requested browser file or terminal session in a new tab.
 
 ---
 

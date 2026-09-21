@@ -105,6 +105,7 @@ fn target_argument_index(args: &[String]) -> Option<usize> {
     while index < args.len() {
         let argument = &args[index];
         match argument.as_str() {
+            "--" => return (index + 1 < args.len()).then_some(index + 1),
             "-T" => index += 1,
             "-P" => index += 2,
             _ => return Some(index),
@@ -120,13 +121,13 @@ fn target_argument(args: &[String]) -> Option<&str> {
 fn command_arguments(args: &[String]) -> Vec<String> {
     let Some(target_index) = target_argument_index(args) else { return Vec::new() };
     let mut result = Vec::new();
-    let mut arguments = args.iter().enumerate().skip(target_index + 1);
-    while let Some((index, argument)) = arguments.next() {
-        match argument.as_str() {
-            "-T" => {}
-            "-P" => { let _ = arguments.next(); }
-            _ => result.push(args[index].clone()),
+    let mut delimiter_seen = false;
+    for argument in args.iter().skip(target_index + 1) {
+        if !delimiter_seen && argument == "--" {
+            delimiter_seen = true;
+            continue;
         }
+        result.push(argument.clone());
     }
     result
 }
@@ -134,13 +135,16 @@ fn command_arguments(args: &[String]) -> Vec<String> {
 fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
     let mut launch_in_tab = false;
     let mut explicit_cwd = None;
-    let mut arguments = args.iter().skip(1);
-    while let Some(argument) = arguments.next() {
+    let mut index = 1;
+    while index < args.len() {
+        let argument = &args[index];
         match argument.as_str() {
             "-T" => launch_in_tab = true,
-            "-P" => explicit_cwd = arguments.next().cloned(),
-            _ => {}
+            "-P" => explicit_cwd = args.get(index + 1).cloned(),
+            "--" => break,
+            _ => break,
         }
+        index += if argument == "-P" { 2 } else { 1 };
     }
     let target = target_argument(args);
     let target_path = target.map(|target| {
@@ -1062,11 +1066,21 @@ mod tests {
 
     #[test]
     fn parses_terminal_launch_arguments() {
-        let args = vec!["scanline-term".into(), "pwsh".into(), "-NoLogo".into(), "-Command".into(), "Write-Host hello".into(), "-P".into(), "C:\\temp".into(), "-T".into()];
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), "C:\\temp".into(), "pwsh".into(), "-NoLogo".into(), "-Command".into(), "Write-Host hello".into(), "-P".into(), "literal".into(), "-T".into()];
         let (launch, in_tab) = terminal_launch(&args, "C:\\work");
         assert_eq!(launch.command.as_deref(), Some("pwsh"));
-        assert_eq!(launch.args, ["-NoLogo", "-Command", "Write-Host hello"]);
+        assert_eq!(launch.args, ["-NoLogo", "-Command", "Write-Host hello", "-P", "literal", "-T"]);
         assert_eq!(launch.cwd.as_deref(), Some("C:\\temp"));
+        assert!(in_tab);
+    }
+
+    #[test]
+    fn stops_launch_option_parsing_at_delimiter() {
+        let args = vec!["scanline-term".into(), "-T".into(), "--".into(), "pwsh".into(), "-P".into(), "literal".into(), "-T".into()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        assert_eq!(launch.command.as_deref(), Some("pwsh"));
+        assert_eq!(launch.args, ["-P", "literal", "-T"]);
+        assert_eq!(launch.cwd, None);
         assert!(in_tab);
     }
 
