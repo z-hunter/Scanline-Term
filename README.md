@@ -103,7 +103,11 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + Tab`** | Alternate Tab | Toggle back to the previously active tab |
 | **`Menu + V`** | Paste | Paste clipboard text into the active shell |
 | **`Menu + C`** | Copy Mode | Activate rectangular screen selection and copy mode |
+| **`Menu + /`** | Find in Terminal | Open terminal-buffer search; type a query, then use `Enter` or `n` for the next match |
+| **`Menu + Shift + /`** | Find Back in Terminal | Open reverse terminal-buffer search; `Enter` or `n` moves to the previous match |
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
+
+While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
 
 ### Browser Tab Keyboard Navigation
 
