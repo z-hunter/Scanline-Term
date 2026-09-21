@@ -46,6 +46,7 @@ export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
   maskType: 'off',
   maskStrength: 0.3,
   cursorStyle: 'block',
+  cursorBrightness: 0,
 });
 
 export const RESOLUTIONS = [
@@ -130,6 +131,7 @@ const numericRanges = {
   imperfectSignal: [0, 1],
   humBar: [0, 1],
   maskStrength: [0, 1],
+  cursorBrightness: [0, 1],
 } as const;
 
 const isResolution = (value: unknown): value is ResolutionId =>
@@ -165,7 +167,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     showSettingsPanel: false,
     showAiPanel: false,
     defaultShell: '',
-    smoothScrollback: false,
+    smoothScrollback: true,
     smoothTuiScrolling: true,
     rmbMenuInTerm: true,
     crt: { ...DEFAULT_CRT_SETTINGS },

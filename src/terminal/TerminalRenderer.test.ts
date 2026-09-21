@@ -414,7 +414,7 @@ describe('TerminalRenderer', () => {
     fillRectSpy.mockClear();
     renderer.markDirty();
     renderer.draw(0, { ...DEFAULT_CRT_SETTINGS, cursorStyle: 'block' });
-    const blockCall = fillRectSpy.mock.calls.find((call) => call[2] === 8 && call[3] === 10);
+    const blockCall = fillRectSpy.mock.calls.find((call) => call[2] === 8 && call[3] === 8);
     expect(blockCall).toBeDefined();
   });
 
@@ -459,14 +459,14 @@ describe('TerminalRenderer', () => {
     // Initial frame at t = 0: cursor at (0, 0) should be drawn (visible)
     fillRectSpy.mockClear();
     expect(renderer.draw(0, DEFAULT_CRT_SETTINGS)).toBe(true);
-    // Cursor fillRect should be called with width=8, height=10
-    expect(fillRectSpy.mock.calls.some((c) => c[0] === 20 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+    // Cursor leaves a one-pixel gap above and below its cell.
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 20 && c[1] === 16 && c[2] === 8 && c[3] === 8)).toBe(true);
 
     // After remaining stationary for > 0.5s (t = 0.55): cursor blinks off
     fillRectSpy.mockClear();
     expect(renderer.draw(0.55, DEFAULT_CRT_SETTINGS)).toBe(true);
     // Row 0 background is cleared/redrawn, but cursor is NOT drawn
-    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(false);
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 8)).toBe(false);
 
     // Cursor moves while in the "off" phase: t = 0.60, cursorX = 1
     terminalBuffer.cursorX = 1;
@@ -474,21 +474,21 @@ describe('TerminalRenderer', () => {
     fillRectSpy.mockClear();
     expect(renderer.draw(0.60, DEFAULT_CRT_SETTINGS)).toBe(true);
     // Cursor MUST immediately be visible at col 1 (x = 28)
-    expect(fillRectSpy.mock.calls.some((c) => c[0] === 28 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 28 && c[1] === 16 && c[2] === 8 && c[3] === 8)).toBe(true);
 
     // Continue moving (t = 0.70, cursorX = 2): stays visible
     terminalBuffer.cursorX = 2;
     onCursorMoveCallback();
     fillRectSpy.mockClear();
     expect(renderer.draw(0.70, DEFAULT_CRT_SETTINGS)).toBe(true);
-    expect(fillRectSpy.mock.calls.some((c) => c[0] === 36 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 36 && c[1] === 16 && c[2] === 8 && c[3] === 8)).toBe(true);
 
     // Continue moving (t = 0.80, cursorX = 3): stays visible
     terminalBuffer.cursorX = 3;
     onCursorMoveCallback();
     fillRectSpy.mockClear();
     expect(renderer.draw(0.80, DEFAULT_CRT_SETTINGS)).toBe(true);
-    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 16 && c[2] === 8 && c[3] === 8)).toBe(true);
 
     // Stop moving at t = 0.80. At t = 1.10 (0.3s after stopping, < 0.5s): still visible, no redraw needed
     expect(renderer.draw(1.10, DEFAULT_CRT_SETTINGS)).toBe(false);
@@ -496,12 +496,12 @@ describe('TerminalRenderer', () => {
     // At t = 1.35 (> 0.5s after stopping at 0.80): blinks off
     fillRectSpy.mockClear();
     expect(renderer.draw(1.35, DEFAULT_CRT_SETTINGS)).toBe(true);
-    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(false);
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 8)).toBe(false);
 
     // At t = 1.85 (> 1.0s after stopping at 0.80): blinks on again
     fillRectSpy.mockClear();
     expect(renderer.draw(1.85, DEFAULT_CRT_SETTINGS)).toBe(true);
-    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 15 && c[2] === 8 && c[3] === 10)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[0] === 44 && c[1] === 16 && c[2] === 8 && c[3] === 8)).toBe(true);
   });
 
   it('pauses cursor blinking when unfocused and keeps cursor solid visible', () => {
@@ -543,7 +543,7 @@ describe('TerminalRenderer', () => {
     // When drawn while unfocused, cursor is solid ON
     fillRectSpy.mockClear();
     expect(renderer.draw(0.75, DEFAULT_CRT_SETTINGS)).toBe(true);
-    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 10)).toBe(true);
+    expect(fillRectSpy.mock.calls.some((c) => c[2] === 8 && c[3] === 8)).toBe(true);
 
     // Subsequent draws while unfocused and idle return false (no blink redraws)
     expect(renderer.draw(1.25, DEFAULT_CRT_SETTINGS)).toBe(false);

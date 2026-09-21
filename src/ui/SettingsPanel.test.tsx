@@ -376,15 +376,18 @@ describe('SettingsPanel font-size editing flow', () => {
     const bezelHighlightControl = row?.querySelector('.bezel-highlight-control');
     expect(bezelHighlightControl?.textContent).toContain('Bezel highlight');
 
-    // Verify Reflex-bar is a subsection inside the Light fieldset
+    // Verify Reflex-bar shares the Ambient glass light row in the Light fieldset.
     const lightFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Light');
     expect(lightFieldset).toBeDefined();
     expect(lightFieldset?.querySelector('.knob[aria-label="Glow radius"]')).not.toBeNull();
 
+    const ambientGlassLight = lightFieldset?.querySelector('.knob[aria-label="Ambient glass light"]');
+    expect(ambientGlassLight).not.toBeNull();
+
     const reflexSubsection = lightFieldset?.querySelector('.reflex-subsection');
     expect(reflexSubsection).not.toBeNull();
 
-    const reflexSwitch = reflexSubsection?.querySelector('.switch-control');
+    const reflexSwitch = lightFieldset?.querySelector('.reflex-bar-switch');
     expect(reflexSwitch?.textContent).toContain('Reflex-bar');
 
     // Sub-controls are hidden when reflexBarEnabled is false

@@ -211,6 +211,11 @@ function blendColor(background: string, foreground: string, alpha: number): stri
   return `#${base.map((channel, index) => Math.round(channel * (1 - alpha) + overlay[index] * alpha).toString(16).padStart(2, '0')).join('')}`;
 }
 
+function brightenColor(color: string, amount: number): string {
+  if (amount <= 0 || !/^#[0-9a-f]{6}$/i.test(color)) return color;
+  return `#${rgb(color).map((channel) => Math.min(255, Math.round(channel * (1 + amount))).toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function applyTabColorMode(background: string, colorMode: CRTColorMode = 'color', backgroundDesaturation = 0.5): string {
   if (colorMode === 'color') return background;
   const [red, green, blue] = rgb(background).map((channel) => channel / 255) as [number, number, number];
@@ -599,15 +604,18 @@ export class TerminalRenderer {
     if (!ctx || cursorRow === null) return;
     const x = offset.x + cellSize.width * buffer.cursorX;
     const y = offset.y + cellSize.height * buffer.cursorY;
-    ctx.fillStyle = profile.cursor ?? profile.foreground;
+    ctx.fillStyle = brightenColor(profile.cursor ?? profile.foreground, settings.cursorBrightness ?? 0);
     const cursorStyle = settings.cursorStyle ?? this.terminal?.options.cursorStyle ?? 'block';
     if (cursorStyle === 'underline') {
       const underlineHeight = Math.max(2, Math.round(cellSize.height * 0.1));
-      ctx.fillRect(x, y + cellSize.height - underlineHeight, cellSize.width, underlineHeight);
+      ctx.fillRect(x, y + Math.ceil(cellSize.height) - underlineHeight - 1, cellSize.width, underlineHeight);
     } else if (cursorStyle === 'bar') {
       const barWidth = Math.max(2, Math.min(cellSize.width, this.terminal?.options.cursorWidth ?? cellSize.width * 0.15));
       ctx.fillRect(x, y, barWidth, Math.ceil(cellSize.height));
-    } else ctx.fillRect(x, y, cellSize.width, Math.ceil(cellSize.height));
+    } else {
+      const height = Math.max(1, Math.ceil(cellSize.height) - 2);
+      ctx.fillRect(x, y + 1, cellSize.width, height);
+    }
   }
   private renderScroll(time: number): boolean {
     const transition = this.scrollTransition;
@@ -731,15 +739,15 @@ export class TerminalRenderer {
       const cursorW = ctx.measureText('M').width;
       const cursorH = size;
       const cursorStyle = settings.cursorStyle ?? 'block';
-      ctx.fillStyle = profile.cursor ?? '#7dffae';
+      ctx.fillStyle = brightenColor(profile.cursor ?? '#7dffae', settings.cursorBrightness ?? 0);
       if (cursorStyle === 'underline') {
         const h = Math.max(2, Math.round(cursorH * 0.12));
-        ctx.fillRect(cursorX, promptY + cursorH - h, cursorW, h);
+        ctx.fillRect(cursorX, promptY + cursorH - h - 1, cursorW, h);
       } else if (cursorStyle === 'bar') {
         const w = Math.max(2, Math.min(cursorW, cursorW * 0.2));
         ctx.fillRect(cursorX, promptY, w, cursorH);
       } else {
-        ctx.fillRect(cursorX, promptY, cursorW, cursorH);
+        ctx.fillRect(cursorX, promptY + 1, cursorW, Math.max(1, cursorH - 2));
       }
     }
   }

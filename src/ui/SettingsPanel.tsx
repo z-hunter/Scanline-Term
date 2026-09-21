@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { Fragment, useState, type Dispatch, type SetStateAction } from 'react';
 import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from '../crt/CRTFilter';
 import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import { COLOR_PROFILES } from '../terminal-color-profiles';
@@ -58,12 +58,13 @@ type SwitchProps = {
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  className?: string;
   'data-testid'?: string;
 };
 
-function Switch({ label, checked, onChange, 'data-testid': testId }: SwitchProps) {
+function Switch({ label, checked, onChange, className, 'data-testid': testId }: SwitchProps) {
   return (
-    <label className="switch-control">
+    <label className={`switch-control${className ? ` ${className}` : ''}`}>
       <span className="switch-label">{label}</span>
       <span className="switch-toggle">
         <input
@@ -506,7 +507,7 @@ export function SettingsPanel({
                         </div>
                       );
                     }
-                    return (
+                    const slider = (
                       <label className="slider-control" key={control.key}>
                         <span>
                           {control.label}
@@ -519,21 +520,28 @@ export function SettingsPanel({
                         />
                       </label>
                     );
+                    if (group === 'Light' && control.key === 'ambientGlassLight') {
+                      return (
+                        <Fragment key={control.key}>
+                          {slider}
+                          <Switch
+                            className="reflex-bar-switch"
+                            label="Reflex-bar"
+                            checked={stored.crt.reflexBarEnabled}
+                            onChange={(checked) =>
+                              setStored((current) => ({
+                                ...current,
+                                crt: { ...current.crt, reflexBarEnabled: checked },
+                              }))
+                            }
+                          />
+                        </Fragment>
+                      );
+                    }
+                    return slider;
                   })}
                   {group === 'Light' && (
                     <div className="reflex-subsection">
-                      <div className="reflex-header">
-                        <Switch
-                          label="Reflex-bar"
-                          checked={stored.crt.reflexBarEnabled}
-                          onChange={(checked) =>
-                            setStored((current) => ({
-                              ...current,
-                              crt: { ...current.crt, reflexBarEnabled: checked },
-                            }))
-                          }
-                        />
-                      </div>
                       {stored.crt.reflexBarEnabled && (
                         <div className="reflex-control-row active">
                           <label className="slider-control reflex-bar-control">
@@ -702,6 +710,20 @@ export function SettingsPanel({
               }
             />
           </div>
+          <label className="slider-control">
+            <span>
+              Cursor brightness
+              <output>{formatValue(stored.crt.cursorBrightness)}</output>
+            </span>
+            <Knob
+              label="Cursor brightness"
+              min={0}
+              max={1}
+              step={0.05}
+              value={stored.crt.cursorBrightness}
+              onChange={(value) => update('cursorBrightness', value)}
+            />
+          </label>
           <Switch
             label="Anti-moiré pixels"
             checked={stored.crt.antiAliasedPixels}

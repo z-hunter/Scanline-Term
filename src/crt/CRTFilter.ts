@@ -88,6 +88,7 @@ export interface CRTSettings {
   maskType: CRTMaskType;
   maskStrength: number;
   cursorStyle: CursorStyle;
+  cursorBrightness: number; // 0.0 to 1.0 additional brightness relative to the profile cursor color
 }
 
 export function crtEffectMask(settings: Pick<CRTSettings, 'persistence' | 'bloom' | 'glow' | 'imperfectSignal' | 'humBar' | 'channelSwitchEffect'> & Partial<Pick<CRTSettings, 'ambientGlassLight' | 'bezelHighlight' | 'bezelGlow' | 'bezelGlowMode' | 'reflexBar' | 'reflexBarEnabled'>>): number {

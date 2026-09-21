@@ -1104,8 +1104,10 @@ output {
   border-top: 1px solid #233b2b;
 }
 
-.reflex-header {
-  margin: 0;
+.knob-group > .switch-control.reflex-bar-switch {
+  grid-column: auto;
+  align-self: center;
+  margin: 6px 0 2px;
 }
 
 .reflex-control-row {

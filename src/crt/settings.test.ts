@@ -64,6 +64,7 @@ describe('CRT settings', () => {
     expect(DEFAULT_CRT_SETTINGS.maskType).toBe('off');
     expect(DEFAULT_CRT_SETTINGS.maskStrength).toBe(0.3);
     expect(DEFAULT_CRT_SETTINGS.cursorStyle).toBe('block');
+    expect(DEFAULT_CRT_SETTINGS.cursorBrightness).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.crtEmulation).toBe(true);
     expect(DEFAULT_CRT_SETTINGS.aberration).toBe(0);
     expect(DEFAULT_CRT_SETTINGS.aberrationFalloff).toBe(2);
@@ -139,9 +140,9 @@ describe('CRT settings', () => {
   });
 
   it('defaults and validates smooth scrollback', () => {
-    expect(loadStoredSettings(null).smoothScrollback).toBe(false);
+    expect(loadStoredSettings(null).smoothScrollback).toBe(true);
     expect(loadStoredSettings(JSON.stringify({ smoothScrollback: true })).smoothScrollback).toBe(true);
-    expect(loadStoredSettings(JSON.stringify({ smoothScrollback: 'yes' })).smoothScrollback).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ smoothScrollback: 'yes' })).smoothScrollback).toBe(true);
     expect(loadStoredSettings(null).smoothTuiScrolling).toBe(true);
     expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: false })).smoothTuiScrolling).toBe(false);
     expect(loadStoredSettings(JSON.stringify({ smoothTuiScrolling: 'no' })).smoothTuiScrolling).toBe(true);
@@ -303,6 +304,11 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'bar' } })).crt.cursorStyle).toBe('bar');
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 'invalid' } })).crt.cursorStyle).toBe('block');
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 123 } })).crt.cursorStyle).toBe('block');
+  });
+
+  it('accepts cursor brightness only within its safe range', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorBrightness: 0.5 } })).crt.cursorBrightness).toBe(0.5);
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorBrightness: 2 } })).crt.cursorBrightness).toBe(0);
   });
 
   it('loads a versioned preset and fills newly added fields from defaults', () => {
