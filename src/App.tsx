@@ -343,8 +343,10 @@ export default function App() {
               search?.focus();
               search?.select();
             } else {
-              outputRef.current?.blur();
-              outputRef.current?.focus();
+              terminal.renderer?.setFocused(true);
+              const output = outputRef.current;
+              output?.blur();
+              output?.focus();
             }
           });
           attempts++;
@@ -354,18 +356,19 @@ export default function App() {
     };
 
     void listen("window-summoned", enforceFocus).then((f) => { unlisten = f; });
+    if (terminal.live) enforceFocus();
 
     // Also keep onFocusChanged for alt-tabbing
     const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (focused) enforceFocus();
-      else terminal.renderer?.setFocused(false);
+      else if (document.activeElement !== outputRef.current) terminal.renderer?.setFocused(false);
     });
 
     return () => {
       unlisten?.();
       void unlistenFocus.then((f) => f());
     };
-  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, terminal.renderer, outputRef]);
+  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     try {
       const models = await codex.listModels();

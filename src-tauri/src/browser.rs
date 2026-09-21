@@ -9,6 +9,12 @@ fn trace(app: &tauri::AppHandle, stage: &str, session_id: &str, detail: impl ser
 #[derive(Default)]
 pub struct BrowserState(pub Mutex<BrowserStore>);
 
+impl BrowserState {
+    pub fn has_active_browser(&self) -> bool {
+        self.0.lock().map(|state| state.active.is_some()).unwrap_or(true)
+    }
+}
+
 #[derive(Default)]
 pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, active: Option<BrowserId>, bounds: Option<BrowserBounds> }
 

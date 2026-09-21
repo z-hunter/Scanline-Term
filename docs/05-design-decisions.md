@@ -124,13 +124,17 @@ Continuous vertical pseudographic glyphs (`│`, `┃`, `║`, `▎`) use a cach
 
 ## Why Global Hotkeys and Window Focus Are Managed in Rust
 
-**Decision:** The `Win-~` global hotkey toggle logic, including checking if the window is active and manually focusing the WebView child window, is implemented synchronously in `main.rs` using native Windows APIs (`GetForegroundWindow`, `EnumChildWindows`, `SetFocus`), rather than deferring to the React frontend.
+**Decision:** The `Win-~` global hotkey toggle logic, including checking if the window is active and manually focusing the visible WebView child window, is implemented synchronously in `main.rs` using native Windows APIs (`GetForegroundWindow`, `GetWindow`, `SetFocus`), rather than deferring to the React frontend.
 
 **Rationale:**
 - **OS Foreground Privileges:** When a global hotkey is pressed, Windows temporarily grants the handling thread the privilege to change the foreground window. If this event is forwarded to the frontend and the frontend responds with an asynchronous IPC command (`invoke("summon_window")`), this privilege is lost. The OS will block the background process from stealing focus, causing the app to flash in the taskbar instead of appearing.
-- **WebView2 Focus Bug:** In Tauri on Windows, calling `window.set_focus()` only focuses the top-level parent HWND. The nested WebView2 child window does not automatically receive keyboard input focus. We must use `EnumChildWindows` to find the child HWND and call `SetFocus` on it directly.
-- **Alt-Tab and App Activation:** To ensure the terminal automatically regains focus when switching back to the app (e.g., via Alt-Tab or clicking the taskbar), we subclass the main window to intercept the `WM_SETFOCUS` message. When the main window receives focus, we wait for the default window procedure to run, and then forcibly refocus the nested WebView2 child.
+- **WebView2 Focus Bug:** In Tauri on Windows, calling `window.set_focus()` only focuses the top-level parent HWND. The nested WebView2 child window does not automatically receive keyboard input focus. We scan direct children for the visible WebView and call `SetFocus` on it directly, avoiding hidden browser children.
+- **Alt-Tab and App Activation:** To ensure the terminal automatically regains focus when switching back to the app (e.g., via Alt-Tab or clicking the taskbar), we subclass the main window and react to `WM_ACTIVATE` after the default procedure has run. The activation path refocuses the visible terminal WebView2 child.
 - **Frontend Sync:** Even with the native window focused, the Chromium renderer may ignore JavaScript `.focus()` calls if it believes the element is already active (`document.activeElement`). To ensure the blinking cursor appears, the frontend listens for a `window-summoned` event and explicitly calls `.blur()` followed by `.focus()` on the terminal canvas with a short `setTimeout`.
+
+### Intentional WebView2 focus click
+
+After ordinary application activation and initial startup, Scanline Term sends a real **middle-button** mouse press/release to the centre of the visible terminal WebView, then restores the pointer position. This is an intentional compatibility workaround, not accidental input handling: WebView2 can accept keyboard input after a real pointer activation while ignoring `SetFocus`, DOM `.focus()`, and posted mouse messages. Do not replace it with a “cleaner” focus-only implementation. The middle button is required because a left-button synthetic click becomes a context-menu click on left-handed Windows mouse configurations.
 
 ---
 

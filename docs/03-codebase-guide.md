@@ -307,7 +307,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
 | **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
 | **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
-| **`#[tauri::command] set_global_hotkey_enabled(app, enabled)`** | Registers or unregisters global `Win+~`; its callback hides the focused window or shows and focuses it |
+| **`#[tauri::command] set_global_hotkey_enabled(app, enabled, slide_from_top)`** | Registers or unregisters global `Win+~`; optionally animates the main window from above the monitor when toggling it |
 | `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener/global-shortcut plugins and command handlers |
 | **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
 
@@ -326,7 +326,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
 | `list_available_shells` | — | `{ name, command }[]` | Default-shell selector |
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
-| `set_global_hotkey_enabled` | `enabled: boolean` | `Result<(), String>` | Persisted global-hotkey setting effect |
+| `set_global_hotkey_enabled` | `enabled: boolean, slideFromTop: boolean` | `Result<(), String>` | Persisted global-hotkey and slide-animation settings effect |
 | `load_home_config` | — | `{ path, config }` | Home dashboard initialization/reload |
 | `save_home_config` | `config` | `{ path, config }` | Home dashboard editor actions |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |

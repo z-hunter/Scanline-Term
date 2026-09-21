@@ -489,6 +489,50 @@ fn focus_webview(window: &tauri::WebviewWindow) {
 }
 
 #[cfg(windows)]
+fn click_webview(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        mouse_event, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetCursorPos, GetWindow, GetWindowRect, IsWindowVisible, SetCursorPos, GW_CHILD,
+        GW_HWNDNEXT,
+    };
+
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let mut child = GetWindow(hwnd.0 as _, GW_CHILD);
+            while !child.is_null() {
+                if IsWindowVisible(child) != 0 {
+                    let mut rect = windows_sys::Win32::Foundation::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                    let mut cursor = windows_sys::Win32::Foundation::POINT { x: 0, y: 0 };
+                    if GetWindowRect(child, &mut rect) != 0 && GetCursorPos(&mut cursor) != 0 {
+                        // WebView2 ignores PostMessage mouse events after activation. This real middle-click
+                        // is intentional: do not replace it with SetFocus, DOM focus, or PostMessage.
+                        SetCursorPos((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+                        mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0);
+                        mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0);
+                        SetCursorPos(cursor.x, cursor.y);
+                    }
+                    break;
+                }
+                child = GetWindow(child, GW_HWNDNEXT);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn is_focus_activation(message: u32, wparam: usize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WA_ACTIVE, WA_CLICKACTIVE, WM_ACTIVATE};
+    message == WM_ACTIVATE && matches!(wparam as u32 & 0xffff, WA_ACTIVE | WA_CLICKACTIVE)
+}
+
+#[cfg(windows)]
+fn main_webview_is_active(window: &tauri::WebviewWindow) -> bool {
+    !window.app_handle().state::<browser::BrowserState>().has_active_browser()
+}
+
+#[cfg(windows)]
 fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -550,7 +594,6 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         }
         let _ = window.set_focus();
         focus_webview(window);
-        let _ = window.app_handle().emit("window-summoned", ());
     } else {
         SUMMON_SHOWING.store(false, Ordering::SeqCst);
         SUMMON_HIDING.store(true, Ordering::SeqCst);
@@ -577,6 +620,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         } else {
             SUMMON_SHOWING.store(false, Ordering::SeqCst);
             focus_webview(&window);
+            let _ = window.app_handle().emit("window-summoned", ());
         }
     });
 }
@@ -632,8 +676,8 @@ unsafe extern "system" fn window_subclass_proc(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED, SIZE_MAXIMIZED,
-        WM_SYSCOMMAND, SC_MINIMIZE,
+        CallWindowProcW, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED,
+        SIZE_MAXIMIZED, WM_SYSCOMMAND, SC_MINIMIZE,
     };
 
     static WAS_MINIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -663,19 +707,19 @@ unsafe extern "system" fn window_subclass_proc(
     let prev = PREV_WNDPROC.load(std::sync::atomic::Ordering::SeqCst);
     let result = CallWindowProcW(std::mem::transmute(prev), hwnd, msg, wparam, lparam);
 
-    /* FAR startup-hang experiment: this re-enters WebView2 focus handling.
-    if msg == WM_SETFOCUS {
+    if is_focus_activation(msg, wparam) {
         if let Some(window) = MAIN_WINDOW.get() {
-            focus_webview(window);
-            let _ = window.app_handle().emit("window-summoned", ());
-            
             let window_clone = window.clone();
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                focus_webview(&window_clone);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                if is_window_active(&window_clone) && main_webview_is_active(&window_clone) {
+                    focus_webview(&window_clone);
+                    if !SUMMON_SHOWING.load(Ordering::SeqCst) { click_webview(&window_clone); }
+                    let _ = window_clone.app_handle().emit("window-summoned", ());
+                }
             });
         }
-    } */
+    }
 
     result
 }
@@ -690,6 +734,15 @@ fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
             PREV_WNDPROC.store(prev, std::sync::atomic::Ordering::SeqCst);
         }
     }
+    let window = window.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if is_window_active(&window) && main_webview_is_active(&window) {
+            focus_webview(&window);
+            click_webview(&window);
+            let _ = window.app_handle().emit("window-summoned", ());
+        }
+    });
 }
 
 #[tauri::command]
@@ -874,7 +927,7 @@ mod tests {
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
-    use super::system_font_bytes;
+    use super::{is_focus_activation, system_font_bytes};
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -885,6 +938,16 @@ mod tests {
     #[test]
     fn uses_win_backquote_for_global_summon() {
         assert_eq!(summon_hotkey(), (0x4008, 0xC0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_focus_click_runs_only_for_window_activation() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{WA_ACTIVE, WA_CLICKACTIVE, WM_ACTIVATE, WM_SETFOCUS};
+        assert!(is_focus_activation(WM_ACTIVATE, WA_ACTIVE as usize));
+        assert!(is_focus_activation(WM_ACTIVATE, WA_CLICKACTIVE as usize));
+        assert!(!is_focus_activation(WM_SETFOCUS, 0));
+        assert!(!is_focus_activation(WM_ACTIVATE, 0));
     }
 
     #[test]

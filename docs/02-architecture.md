@@ -108,7 +108,7 @@ The desktop process owns one hidden `codex app-server --stdio` child. It launche
 | Mouse → SGR/X10 encoding | PTY output reader (pipe → Tauri event emission) |
 | Canvas 2D terminal drawing | PTY resize (`controller.resize()`) |
 | WebGL CRT shader rendering | Win32 GDI monospace font enumeration |
-| `localStorage` settings persistence; signed update check/install | Bundled ConPTY DLL resolution; global `Win+~` registration and window show/hide; updater plugin |
+| `localStorage` settings persistence; signed update check/install | Bundled ConPTY DLL resolution; global `Win+~` registration and optional slide-from-top window show/hide animation; updater plugin |
 | Copy/paste via `navigator.clipboard` | — |
 
 ## Data Flows
