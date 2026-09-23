@@ -4,8 +4,8 @@ import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement,
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
 import type { ShellInfo } from '../terminal/useTerminal';
-import { profileFromLegacyPreset, profileToRenderSettings } from '../virtual-screen/profile';
-import { ScreenProfileSections } from '../virtual-screen/react/ScreenProfileSections';
+import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';
+import { DisplaySettingsSection } from 'scanline-virtual-screen/react';
 
 type NumericKey = Exclude<
   keyof CRTSettings,
@@ -246,8 +246,8 @@ export function SettingsPanel({
           </label>
         </fieldset>
 
-        <ScreenProfileSections
-          profile={screenProfile}
+        <DisplaySettingsSection
+          value={screenProfile}
           modes={RESOLUTIONS}
           onChange={(next) => setStored((current) => ({ ...current, resolution: next.virtualScreen.modeId as ResolutionId, crt: profileToRenderSettings(next) }))}
         />

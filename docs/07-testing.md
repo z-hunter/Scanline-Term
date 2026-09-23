@@ -30,6 +30,8 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 
 Run: `npm test`
 
+The shared virtual-screen package is tested independently in `C:\Dev.dir\projects.dat\Scanline-Virtual-Screen` (`npm test`, `npm run build`, `npm run lint`). Scanline Term pins the published `v1.0.2` tag; the package core has no xterm import.
+
 The stage-1 manual matrix is intentionally scenario-based rather than screenshot-based: mock/source canvas, CRT on/off, all display modes, representative presets, PowerShell/CMD ANSI output, one TUI, multiple tabs, image overlays, legacy-load/new-save/reload, resize and repeated tab-switch/dispose cycles. It is run in `npm run dev` and `npm run tauri:dev`; no capture infrastructure is required.
 
 ### Rust Tests (`cargo test`)

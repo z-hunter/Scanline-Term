@@ -581,11 +581,12 @@ export class TerminalRenderer {
       }
     }
     if (changedRows.size === 0) {
+      const imagesChanged = this.imagesDirty;
       this.dirty = false; this.fullDirty = false; this.terminalOutputDirty = false; this.imagesDirty = false; this.lastCursorPhase = cursorPhase;
       if (this.scrollTransition && !this.scrollTargetReady) this.composeTerminal(this.scrollTargetCanvas);
       if (this.scrollTransition) this.renderScroll(time); else this.composeTerminal(this.compositedCanvas);
       this.drawCursor(this.compositedCanvas.getContext('2d'), settings, profile, offset, cellSize, buffer, nextCursorRow);
-      return Boolean(this.scrollTransition);
+      return imagesChanged || Boolean(this.scrollTransition);
     }
     const baseFont = canvasFont(settings.consoleFontSize, settings.consoleFont, settings.fallbackFont);
     ctx.globalAlpha = 1; ctx.fillStyle = profile.background; if (this.fullDirty) ctx.fillRect(0, 0, source.width, source.height); ctx.font = baseFont; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';

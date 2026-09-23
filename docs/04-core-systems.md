@@ -36,7 +36,7 @@ Tab backgrounds are derived from the visible xterm cells, blending cell backgrou
 
 ### Per-tab visual settings and presets
 
-Each terminal session stores its own complete screen profile: `virtualScreen.modeId`, terminal appearance, Display controls, and CRT parameters. The shared source canvas and virtual-screen facade always consume the active session's snapshot. A font or resolution change resizes only that session's ConPTY; inactive sessions retain their xterm dimensions until selected. New terminal sessions receive a cloned `default` profile, so later edits or overwrites do not retroactively alter existing tabs.
+Each terminal session stores its own complete screen profile: `virtualScreen.modeId`, terminal appearance, Display controls, and CRT parameters. The shared source canvas and virtual-screen renderer always consume the active session's snapshot. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent; inactive sessions retain their own profile and xterm buffer state. New terminal sessions receive a cloned `default` profile, so later edits or overwrites do not retroactively alter existing tabs.
 
 Named presets are JSON files under `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The Rust `presets` module owns path safety, file enumeration, bounded reads, conflict detection, atomic writes, and backups. The settings panel keeps dirty state in the active tab, asks before replacing unsaved values, and never writes visual preset fields to the global `localStorage` settings record.
 

@@ -26,13 +26,13 @@ These files are complex, tightly coupled, and easy to break:
 | File | Risk | Why |
 |------|------|-----|
 | **`src/crt/CRTFilter.ts`** | 🔴 Critical | 1101 lines of WebGL + inline GLSL. Mistakes cause visual corruption, black screens, or WebGL errors. No automated visual tests. |
-| **`src/terminal/TerminalSession.ts` / `TerminalRenderer.ts`** | 🔴 Critical | ConPTY/xterm lifecycle and source-canvas rendering; changes affect input, resize and display integrity. |
+| **`src/terminal/TerminalSession.ts` / `ScanlineTerminalRenderer.ts`** | 🔴 Critical | ConPTY/xterm lifecycle, package adapter and source-canvas rendering; changes affect input, resize and display integrity. |
 | **`src-tauri/src/main.rs`** | 🟠 High | ConPTY lifecycle, thread management, process cleanup. Bugs can cause orphaned processes, deadlocks, or data loss. Requires Windows to test. |
 | **`src-tauri/src/home.rs` / `src/ui/HomeDashboard.tsx`** | 🟠 High | Synced user configuration crosses the Rust/WebView boundary; validation or replacement mistakes can lose or corrupt the home file. |
 | **`src-tauri/src/codex.rs` / `src/ai/CodexClient.ts` / `src/App.tsx`** | 🟠 High | Codex process isolation, JSON-RPC lifecycle and thread-to-terminal routing. A mistake can execute in the wrong session or inherit developer instructions. |
 | **`src/win32-input.ts`** | 🟠 High | Virtual key code and scan code lookup tables. Errors cause incorrect key delivery to console apps. Hard to test without specific Windows apps. |
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
-| **`src/virtual-screen/VirtualScreenRenderer.ts` / `src/virtual-screen/overlays.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every future host. |
+| **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every host. The dependency is pinned to a package tag; package changes must be released separately. |
 | **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
 | **`src/terminal-color-profiles.ts`** | 🟢 Low | Self-contained palette data. Hard to break without deleting entries. |
 | **`src/terminal/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
@@ -143,7 +143,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Change Codex assistant, tools, model or effort selection** | `docs/10-ai-assistant.md`, `App.tsx`, `ai/CodexClient.ts`, `ai/chatMessages.ts`, `ai/modelSelection.ts`, `src/ai/protocol.ts`, `src/ui/AiPanel.tsx`, `terminal/TerminalSession.ts`, `src-tauri/src/codex.rs`, `src-tauri/capabilities/default.json`, `package.json` | Varies | `npm test`, `cargo test`, `tauri:dev`: sign-in, catalog fallback, per-tab running state/streaming, two-tab selection/routing, VT/Win32 input |
 | **Change browser home configuration or tab theming** | `src/ui/HomeDashboard.tsx`, `terminal/useTerminal.ts`, `src-tauri/src/home.rs`, `src-tauri/src/browser.rs`, `src-tauri/src/main.rs` | Same files plus docs | `npm test`, `cargo test`, `tauri:dev`: create/load/save/reload, invalid JSON, backup recovery, home → web navigation, page-color event and in-page navigation |
 | **Add terminal tab images** | `terminal/TerminalRenderer.ts`, `terminal/useTerminal.ts`, `crt/useCRT.ts`, Tauri dialog/asset configuration | Same frontend + Tauri files plus docs | `npm test`, `cargo check`, `tauri:dev`: Menu+I, PNG/JPG load, drag, wheel scale, context-menu delete, tab isolation, CRT on/off |
-| **Change virtual-screen boundary** | `virtual-screen/profile.ts`, `virtual-screen/overlays.ts`, `virtual-screen/VirtualScreenRenderer.ts`, `crt/useCRT.ts`, `terminal/TerminalRenderer.ts`, `ui/SettingsPanel.tsx` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: profile migration, mode fallback, overlays, CRT on/off, resize and dispose cycles |
+| **Change virtual-screen boundary** | `scanline-virtual-screen` package, `terminal/ScanlineTerminalRenderer.ts`, `crt/useCRT.ts`, `ui/SettingsPanel.tsx` | Package release plus frontend adapter/docs | Package tests/build, `npm test`, `npm run build`, `tauri:dev`: profile migration, mode fallback, overlays, CRT on/off, resize and dispose cycles |
 | **Change terminal scrollback or add scroll UI** | `terminal/TerminalSession.ts`, `terminal/useTerminal.ts`, `terminal/useTerminal.test.ts`, `terminal/TerminalRenderer.ts`, `TerminalRenderer.test.ts`, `ui/ScrollbackScrollbar.tsx`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: 10,000-line history, wheel/keyboard scroll, thumb drag, fade, alternate buffer, mouse tracking, browser tab isolation |
 
 ---

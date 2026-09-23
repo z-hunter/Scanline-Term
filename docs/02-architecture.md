@@ -38,7 +38,8 @@ graph TB
     CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
     Settings["settings.ts<br/>localStorage persistence"]
     SourceCanvas["Terminal canvas<br/>(virtual resolution)"]
-    ImageComposite["Image compositor canvas<br/>(terminal + tab images)"]
+    OverlayCompositor["OverlayCompositor<br/>(virtual-pixel overlays)"]
+    VirtualScreenRenderer["VirtualScreenRenderer<br/>(compositor + CRT/pass-through)"]
     OutputCanvas["Output canvas<br/>(physical pixels)"]
   end
 
@@ -75,20 +76,20 @@ graph TB
   TerminalSession --> Xterm
   TerminalRenderer --> Xterm
   TerminalRenderer --> SourceCanvas
-  TerminalRenderer --> ImageComposite
 
   UseCRT --> TerminalRenderer
-  UseCRT --> VirtualScreenFacade
-  ImageComposite --> VirtualScreenFacade
-  VirtualScreenFacade --> OverlayCompositor
-  VirtualScreenFacade --> CRTFilter
-  CRTFilter --> OutputCanvas
+  UseCRT --> VirtualScreenRenderer
+  SourceCanvas --> OverlayCompositor
+  UseTerminal --> OverlayCompositor
+  OverlayCompositor --> VirtualScreenRenderer
+  VirtualScreenRenderer --> CRTFilter
+  VirtualScreenRenderer --> OutputCanvas
   Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```
 
-Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then Scanline Term converts its normalized image state into runtime `ScreenOverlay` records in virtual pixels. `OverlayCompositor` draws those records before the CRT filter. The core virtual-screen facade accepts any source canvas; xterm is an optional adapter entrypoint and is not created by the core.
+Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then Scanline Term converts its normalized image state into runtime `ScreenOverlay` records in virtual pixels. `OverlayCompositor` combines those records with the source canvas before `VirtualScreenRenderer` sends the frame through CRT or pass-through output. The renderer accepts any source canvas; xterm is an optional adapter entrypoint and is not created by the core.
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
 
@@ -125,8 +126,10 @@ sequenceDiagram
     participant Tauri as Tauri Event Bus
     participant Xterm as @xterm/xterm
     participant Canvas as Canvas 2D
+    participant Overlay as OverlayCompositor
+    participant Screen as VirtualScreenRenderer
     participant CRT as CRTFilter (WebGL)
-    participant Screen as Output Canvas
+    participant Output as Output Canvas
 
     Shell->>ConPTY: stdout bytes
     ConPTY->>Reader: pipe read (4 KiB buffer)
@@ -136,10 +139,12 @@ sequenceDiagram
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
     Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text and cached box-glyph profiles on source canvas
-    Canvas->>Canvas: compose tab images over the terminal canvas
-    Canvas->>CRT: filter.render(composited source, settings, sourceDirty)
+    Canvas->>Overlay: compose source canvas + virtual-pixel overlays
+    Overlay->>Screen: composited virtual screen
+    Screen->>CRT: render(composited source, settings, sourceDirty)
     Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
-    CRT->>Screen: WebGL draw to output canvas
+    CRT->>Output: WebGL draw to output canvas
+    Screen-->>Output: pass-through draw when CRT is disabled
 ```
 
 ### Keyboard Input → Console
@@ -254,6 +259,8 @@ sequenceDiagram
 ```
 
 ### Per-tab preset settings
+
+The virtual-screen pipeline is supplied by the private `scanline-virtual-screen` package. Scanline Term owns the host adapter (`terminal/ScanlineTerminalRenderer.ts`) and remains responsible for normalized image placement, tab-local state and xterm lifetime; the package owns the profile, compositor and CRT/pass-through facade. The terminal entrypoint is created only when a host needs xterm output.
 
 Terminal tabs own a `TabPresetState` containing the complete `PresetSettings` snapshot. `useTerminal` applies the active snapshot to the shared renderer and CRT filter; changing a setting or resizing a virtual screen updates only the active ConPTY. Switching tabs rebinds the renderer and restores the target tab's snapshot without mutating inactive sessions.
 

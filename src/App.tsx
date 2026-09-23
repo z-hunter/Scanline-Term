@@ -20,7 +20,7 @@ import {
   RESOLUTIONS,
   type PresetSettings,
 } from "./crt/settings";
-import { defaultScreenProfile, profileFromLegacyPreset } from "./virtual-screen/profile";
+import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
@@ -42,7 +42,7 @@ import {
   type AiSelection,
 } from "./ai/modelSelection";
 import { terminalSession } from "./terminal/TerminalSession";
-import { SMOOTH_SCROLL_DIAGNOSTICS } from "./terminal/TerminalRenderer";
+import { SMOOTH_SCROLL_DIAGNOSTICS } from "./terminal/ScanlineTerminalRenderer";
 import "./styles.css";
 
 type ErrorToast = { id: number; message: string; resetKey: number };

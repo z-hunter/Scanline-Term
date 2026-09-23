@@ -1,8 +1,7 @@
 import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from './CRTFilter';
 import { isColorProfile } from '../terminal-color-profiles';
-export { DEFAULT_CRT_SETTINGS } from '../virtual-screen/defaults';
-import { DEFAULT_CRT_SETTINGS } from '../virtual-screen/defaults';
-import { defaultScreenProfile, legacyPresetFromProfile, normalizeProfile } from '../virtual-screen/profile';
+export { DEFAULT_CRT_SETTINGS } from 'scanline-virtual-screen/core';
+import { DEFAULT_CRT_SETTINGS, defaultScreenProfile, legacyPresetFromProfile, normalizeProfile } from 'scanline-virtual-screen/core';
 
 export const RESOLUTIONS = [
   { id: 'physical', label: 'Physical Window — fill available space' },

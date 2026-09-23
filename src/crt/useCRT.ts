@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/refs */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CRTSettings } from './CRTFilter';
-import type { Resolution, TerminalRenderer } from '../terminal/TerminalRenderer';
-import { VirtualScreenRenderer } from '../virtual-screen/VirtualScreenRenderer';
+import type { Resolution, TerminalRenderer } from '../terminal/ScanlineTerminalRenderer';
+import { VirtualScreenRenderer } from 'scanline-virtual-screen/core';
 
 export function useCRT({ settings, resolution, renderer, onError, onResizeSource, enabled = true }: { settings: CRTSettings; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement) => void; enabled?: boolean }) {
   const outputRef = useRef<HTMLCanvasElement>(null); const screenRef = useRef<VirtualScreenRenderer | null>(null); const settingsRef = useRef(settings); const [fps, setFps] = useState(0);
