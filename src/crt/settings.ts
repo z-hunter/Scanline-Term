@@ -1,5 +1,5 @@
-import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from './CRTFilter';
-import { isColorProfile } from '../terminal-color-profiles';
+import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from 'scanline-virtual-screen/core';
+import { isColorProfile } from 'scanline-virtual-screen/core';
 export { DEFAULT_CRT_SETTINGS } from 'scanline-virtual-screen/core';
 import { DEFAULT_CRT_SETTINGS, defaultScreenProfile, legacyPresetFromProfile, normalizeProfile } from 'scanline-virtual-screen/core';
 

@@ -2,10 +2,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import {
-  colorProfile,
-  type TerminalColorProfile,
-} from "../terminal-color-profiles";
+import { colorProfile, type TerminalColorProfile } from "scanline-virtual-screen/core";
 import { terminalKey } from "./terminal-input";
 import { win32InputKey } from "../win32-input";
 

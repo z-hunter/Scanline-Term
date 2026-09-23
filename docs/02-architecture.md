@@ -34,7 +34,7 @@ graph TB
     Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
     Search["terminal-search.ts<br/>xterm buffer matching"]
     TermMouse["terminal/terminal-mouse.ts<br/>mouse event encoding"]
-    ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
+    ColorProfiles["SVS core<br/>palette definitions"]
     Settings["settings.ts<br/>localStorage persistence"]
     SourceCanvas["Terminal canvas<br/>(virtual resolution)"]
     SVS["Scanline Virtual Screen<br/>external package"]

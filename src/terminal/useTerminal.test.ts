@@ -31,7 +31,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
-import { terminalDimensions } from './TerminalRenderer';
+import { terminalDimensions } from './ScanlineTerminalRenderer';
 import { adjacentTabId, browserTabColor, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
@@ -1569,4 +1569,3 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 });
-

@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/refs */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CRTSettings } from './CRTFilter';
+import type { CRTSettings } from 'scanline-virtual-screen/core';
 import type { Resolution, TerminalRenderer } from '../terminal/ScanlineTerminalRenderer';
 import { VirtualScreenRenderer } from 'scanline-virtual-screen/core';
 

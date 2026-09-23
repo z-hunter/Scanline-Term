@@ -1,7 +1,7 @@
 import { Fragment, useState, type Dispatch, type SetStateAction } from 'react';
-import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from '../crt/CRTFilter';
+import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from 'scanline-virtual-screen/core';
 import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
-import { COLOR_PROFILES } from '../terminal-color-profiles';
+import { COLOR_PROFILES } from 'scanline-virtual-screen/core';
 import { Knob, formatValue } from './Knob';
 import type { ShellInfo } from '../terminal/useTerminal';
 import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';

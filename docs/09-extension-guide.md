@@ -6,47 +6,7 @@
 
 ## Adding a Color Profile
 
-A color profile defines a 16-color (or 256-color) palette for the terminal.
-
-### Files to Modify
-
-1. **[`src/terminal-color-profiles.ts`](../src/terminal-color-profiles.ts)**
-
-### Steps
-
-1. Add the new profile ID to `COLOR_PROFILE_IDS`:
-   ```typescript
-   export const COLOR_PROFILE_IDS = ['dos-vga', ..., 'cyberpunk', 'my-new-profile'] as const;
-   ```
-
-2. Add a profile object to the `profiles` array:
-   ```typescript
-   {
-     id: 'my-new-profile',
-     label: 'My New Profile',
-     foreground: '#e0e0e0',
-     background: '#1a1a2e',
-     cursor: '#ff6b6b',  // optional — falls back to foreground
-     colors: [
-       '#1a1a2e', '#e74856', '#16c60c', '#f9f1a5',
-       '#3b78ff', '#b4009e', '#61d6d6', '#cccccc',
-       '#767676', '#e74856', '#16c60c', '#f9f1a5',
-       '#3b78ff', '#b4009e', '#61d6d6', '#f2f2f2',
-       // For 256 colors, append xterm extended table
-     ],
-   },
-   ```
-
-3. If the profile should be the new default, update `DEFAULT_COLOR_PROFILE_ID`.
-
-### Validation
-
-- [ ] `npm test` — `terminal-color-profiles.test.ts` passes
-- [ ] Add a test case for the new profile's key colors
-- [ ] `npm test` — `crt/settings.test.ts` passes (loadStoredSettings accepts the new ID)
-- [ ] In `tauri:dev`: select the new profile in the dropdown → colors update
-- [ ] Verify 16 ANSI colors look correct in a color test utility
-- [ ] Verify `remapLegacyRgb` works correctly for legacy Windows apps
+Color profiles are shared display data. Add them in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen), run its tests and release an immutable tag, then update the Scanline Term dependency. Validate the selected profile through Scanline Term's settings tests and `tauri:dev`.
 
 ---
 

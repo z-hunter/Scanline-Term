@@ -34,7 +34,6 @@ These files are complex, tightly coupled, and easy to break:
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
 | **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every host. The dependency is pinned to a package tag; package changes must be released separately. |
 | **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
-| **`src/terminal-color-profiles.ts`** | 🟢 Low | Self-contained palette data. Hard to break without deleting entries. |
 | **`src/terminal/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
 
 ---
@@ -124,7 +123,7 @@ Use this table to identify which files to inspect and test when implementing com
 
 | Feature Request | Files to Inspect | Files to Modify | Test Method |
 |----------------|-----------------|-----------------|-------------|
-| **Add a color profile** | `terminal-color-profiles.ts`, `settings.ts` | `terminal-color-profiles.ts` | `npm test`, visual in dev |
+| **Add a color profile** | SVS `core/color-profiles.ts`, `crt/settings.ts` | SVS repository plus pinned dependency | SVS checks, `npm test`, visual in dev |
 | **Add a CRT effect** | SVS repository, then package tag and host integration | SVS package plus consuming host | SVS checks, `npm test`, visual in dev |
 | **Add a keyboard shortcut** | `terminal/useTerminal.ts`, `terminal/terminal-input.ts` | `terminal/useTerminal.ts` | `npm test`, `tauri:dev` manual test |
 | **Add terminal-buffer search** | `terminal/terminal-search.ts`, `terminal/useTerminal.ts`, `terminal/ScanlineTerminalRenderer.ts`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: Menu+/, Menu+Shift+/, normal scrollback, alternate screen, Enter/n/N/Esc, CRT on/off |
@@ -147,7 +146,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Fix copy/paste** | `App.tsx` (clipboard handlers) | `App.tsx` | `tauri:dev` manual test |
 | **Change Codex assistant, tools, model or effort selection** | `docs/10-ai-assistant.md`, `App.tsx`, `ai/CodexClient.ts`, `ai/chatMessages.ts`, `ai/modelSelection.ts`, `src/ai/protocol.ts`, `src/ui/AiPanel.tsx`, `terminal/TerminalSession.ts`, `src-tauri/src/codex.rs`, `src-tauri/capabilities/default.json`, `package.json` | Varies | `npm test`, `cargo test`, `tauri:dev`: sign-in, catalog fallback, per-tab running state/streaming, two-tab selection/routing, VT/Win32 input |
 | **Change browser home configuration or tab theming** | `src/ui/HomeDashboard.tsx`, `terminal/useTerminal.ts`, `src-tauri/src/home.rs`, `src-tauri/src/browser.rs`, `src-tauri/src/main.rs` | Same files plus docs | `npm test`, `cargo test`, `tauri:dev`: create/load/save/reload, invalid JSON, backup recovery, home → web navigation, page-color event and in-page navigation |
-| **Add terminal tab images** | `terminal/TerminalRenderer.ts`, `terminal/useTerminal.ts`, `crt/useCRT.ts`, Tauri dialog/asset configuration | Same frontend + Tauri files plus docs | `npm test`, `cargo check`, `tauri:dev`: Menu+I, PNG/JPG load, drag, wheel scale, context-menu delete, tab isolation, CRT on/off |
+| **Add terminal tab images** | `terminal/ScanlineTerminalRenderer.ts`, `terminal/useTerminal.ts`, `crt/useCRT.ts`, Tauri dialog/asset configuration | Same frontend + Tauri files plus docs | `npm test`, `cargo check`, `tauri:dev`: Menu+I, PNG/JPG load, drag, wheel scale, context-menu delete, tab isolation, CRT on/off |
 | **Change virtual-screen boundary** | SVS repository plus `terminal/ScanlineTerminalRenderer.ts`, `crt/useCRT.ts`, `ui/SettingsPanel.tsx` | Package release, tagged dependency update and integration docs | Package tests/build, `npm test`, `npm run build`, `tauri:dev`: profile migration, mode fallback, overlays, CRT on/off, resize and dispose cycles |
 | **Change terminal scrollback or add scroll UI** | `terminal/TerminalSession.ts`, `terminal/useTerminal.ts`, `terminal/useTerminal.test.ts`, `terminal/ScanlineTerminalRenderer.ts`, `ui/ScrollbackScrollbar.tsx`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: 10,000-line history, wheel/keyboard scroll, thumb drag, fade, alternate buffer, mouse tracking, browser tab isolation |
 
@@ -185,7 +184,7 @@ npm run tauri:build
 - Win32 input: [`src/win32-input.ts`](./src/win32-input.ts)
 - Mouse: [`src/terminal/terminal-mouse.ts`](./src/terminal/terminal-mouse.ts)
 - Scrollback UI: [`src/ui/ScrollbackScrollbar.tsx`](./src/ui/ScrollbackScrollbar.tsx)
-- Color profiles: [`src/terminal-color-profiles.ts`](./src/terminal-color-profiles.ts)
+- Color profiles: [SVS core color profiles](https://github.com/z-hunter/Scanline-Virtual-Screen/blob/main/src/core/color-profiles.ts)
 - Rust backend: [`src-tauri/src/main.rs`](./src-tauri/src/main.rs)
 - Tauri config: [`src-tauri/tauri.conf.json`](./src-tauri/tauri.conf.json)
 - Capabilities: [`src-tauri/capabilities/default.json`](./src-tauri/capabilities/default.json)

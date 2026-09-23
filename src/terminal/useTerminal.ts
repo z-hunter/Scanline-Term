@@ -4,7 +4,7 @@ import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import { open as openFile } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { RESOLUTIONS } from '../crt/settings';
-import type { CRTSettings } from '../crt/CRTFilter';
+import type { CRTSettings } from 'scanline-virtual-screen/core';
 import type { Resolution } from './ScanlineTerminalRenderer';
 import { canvasFontLoad, TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor, type TerminalImage } from './ScanlineTerminalRenderer';
 import { TerminalSession, initialProfile, type TerminalLaunch, type TerminalOutputScroll, type TerminalSize } from './TerminalSession';
@@ -92,7 +92,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const clearSearch = useCallback(() => {
     searchRef.current = { open: false, query: '', matches: [], activeIndex: -1, buffer: null, direction: 1 };
     setSearch(searchRef.current);
-    renderer.current?.setSearchMatches([]);
+    renderer.current?.setTextHighlights([]);
   }, []);
   const applySearch = useCallback((query: string, activeIndex = 0, direction: 1 | -1 = searchRef.current.direction) => {
     const id = activeRef.current;
@@ -105,7 +105,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     searchRef.current = next;
     setSearch(next);
     renderer.current?.cancelScroll();
-    renderer.current?.setSearchMatches(snapshot.matches, nextIndex);
+    renderer.current?.setTextHighlights(snapshot.matches, nextIndex);
     const match = nextIndex >= 0 ? snapshot.matches[nextIndex] : undefined;
     if (match && snapshot.buffer === 'normal') {
       terminal.scrollToLine(match.line);

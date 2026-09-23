@@ -15,7 +15,6 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-input.test.ts`](../src/terminal/terminal-input.test.ts) | VT key encoding | F1–F24 with modifiers; Ctrl+C, Ctrl+Alt+C; cursor keys with DECCKM; numpad application mode |
 | [`win32-input.test.ts`](../src/win32-input.test.ts) | Win32 Input Mode | Modifier-only down/up; ContextMenu key; Ctrl+C; Enter; Backspace; ArrowUp; F1; virtual keys, scan codes, control state bitmask |
 | [`terminal-mouse.test.ts`](../src/terminal/terminal-mouse.test.ts) | Mouse encoding | SGR clicks, releases, wheel with Ctrl modifier; X10 legacy encoding; mouse move without button |
-| [`terminal-color-profiles.test.ts`](../src/terminal-color-profiles.test.ts) | Color profiles | Historical palette values; xterm extended table (256 colors); `remapLegacyRgb` for DOS VGA, Solarized, passthrough |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
 | SVS package tests | Shared renderer | Maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen) |
@@ -173,7 +172,7 @@ Run: `cd src-tauri && cargo test`
 
 ### After Changes to Color Profiles
 
-- [ ] `npm test` — `terminal-color-profiles.test.ts` passes
+- [ ] SVS color-profile tests pass for the pinned dependency
 - [ ] `npm test` — `crt/settings.test.ts` passes (profile validation)
 - [ ] In `tauri:dev`: switch profiles → colors update immediately
 - [ ] ANSI 16-color test: verify each color index maps correctly
@@ -191,7 +190,7 @@ Run: `cd src-tauri && cargo test`
 | VT key encoding | ✅ Vitest | FAR Manager function keys, SSH session |
 | Win32 Input Mode encoding | ✅ Vitest + Cargo | PowerShell `ReadKey`, cmd.exe F-key menus |
 | Mouse encoding | ✅ Vitest | FAR Manager mouse clicks, `less` scroll |
-| Color profiles | ✅ Vitest | Visual color accuracy comparison |
+| Color profiles | ✅ SVS Vitest + Scanline Term settings tests | Visual color accuracy comparison |
 | Settings validation | ✅ Vitest | — |
 | Persistence decay | ✅ Vitest | Visual trail quality |
 | ConPTY session | ✅ Cargo (basic) | Full session lifecycle, edge cases |

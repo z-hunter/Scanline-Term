@@ -23,7 +23,6 @@ ScanlineTerm/
 │   ├── crt/
 │   │   ├── settings.ts            # Host persistence and display-mode adapters
 │   │   └── useCRT.ts              # SVS render-loop and resize lifecycle adapter
-│   ├── terminal/ScanlineTerminalRenderer.ts # Scanline Virtual Screen terminal adapter
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
 │   ├── terminal/ScanlineTerminalRenderer.ts # SVS xterm adapter plus host image overlays
@@ -38,8 +37,6 @@ ScanlineTerm/
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
 │   ├── terminal/terminal-mouse.ts # Mouse event SGR/X10 encoding
 │   ├── terminal/terminal-mouse.test.ts # Unit tests for mouse encoding
-│   ├── terminal-color-profiles.ts # 8 color palette definitions + remapping
-│   ├── terminal-color-profiles.test.ts  # Unit tests for color profiles
 │   └── terminal-responses.test.ts # Test: xterm cursor-position report
 ├── src-tauri/
 │   ├── src/
@@ -220,28 +217,9 @@ Button code calculation includes modifier bits (shift=4, alt=8, ctrl=16), wheel 
 
 ---
 
-#### [`src/terminal-color-profiles.ts`](../src/terminal-color-profiles.ts)
+#### Shared display data
 
-Defines 8 terminal color profiles:
-
-| Profile ID | Label | Notable Colors |
-|------------|-------|------|
-| `dos-vga` | DOS VGA | Classic brown (#aa5500), bright colors |
-| `windows-legacy` | Windows Legacy | Standard 16-color Windows palette |
-| `windows-campbell` | Windows Campbell | Modern Windows Terminal palette |
-| `xterm-x11` | xterm / X11 | 16 + 216 cube + 24 grayscale = 256 colors |
-| `solarized-dark` | Solarized Dark | Ethan Schoonover's scheme |
-| `ibm-3279` | IBM 3279 | Green/pure 8-color mainframe palette |
-| `commodore-64` | Commodore 64 | Authentic C64 color values |
-| `commodore-128` | Commodore 128 (VDC) | Authentic C128 80-column VDC RGBI palette with green-on-black boot styling |
-| `cyberpunk` | Cyberpunk | Neon accent palette |
-
-| Export | Purpose |
-|--------|---------|
-| `COLOR_PROFILES` | Array of all profile objects |
-| `colorProfile(id)` | Lookup by ID, falls back to `windows-legacy` |
-| `profileColor(profile, index)` | Returns color at palette index; falls back to xterm extended cube for indices 16–255 |
-| `remapLegacyRgb(profile, color)` | If `color` matches a Windows Legacy palette entry (by hex), returns the equivalent color in `profile`. Used because Windows console apps emit legacy RGB values that need remapping. |
+CRT settings, color profiles, profile validation and renderer helpers are owned by the pinned [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) dependency. Scanline Term only adapts those values to its tabs, persistence and settings shell.
 
 ---
 
