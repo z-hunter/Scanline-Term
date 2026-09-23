@@ -1,4 +1,16 @@
 {
+  "schemaVersion": 1,
+  "virtualScreen": {
+    "modeId": "1024x768"
+  },
+  "terminal": {
+    "colorProfile": "xterm-x11",
+    "fontFamily": "DEC Terminal Modern",
+    "fontSize": 21,
+    "cellWidthAdjustment": 0,
+    "cellHeightAdjustment": 4,
+    "cursorStyle": "block"
+  },
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 2,
@@ -13,15 +25,9 @@
     "bloom": 0.55,
     "bloomAlgorithm": "soft",
     "breathing": 1,
-    "cellHeightAdjustment": 4,
-    "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "blue",
-    "colorProfile": "xterm-x11",
-    "consoleFont": "DEC Terminal Modern",
-    "consoleFontSize": 21,
     "crtEmulation": true,
-    "cursorStyle": "block",
     "curvature": 0.08000000000000002,
     "glow": 1.05,
     "humBar": 0.05,
@@ -42,7 +48,5 @@
     "scanlineIntensity": 1,
     "showBezel": true,
     "vignette": 0.2
-  },
-  "resolution": "1024x768",
-  "version": 1
+  }
 }

@@ -1,53 +1,8 @@
 import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from './CRTFilter';
-import { DEFAULT_COLOR_PROFILE_ID, isColorProfile } from '../terminal-color-profiles';
-
-export const DEFAULT_CRT_SETTINGS: Readonly<CRTSettings> = Object.freeze({
-  crtEmulation: true,
-  colorProfile: DEFAULT_COLOR_PROFILE_ID,
-  consoleFont: 'Consolas',
-  consoleFontSize: 16,
-  cellWidthAdjustment: 0,
-  cellHeightAdjustment: 0,
-  curvature: 0.13,
-  scanlineCount: 270,
-  scanlineIntensity: 0.5,
-  aberration: 0,
-  aberrationFalloff: 2,
-  vignette: 0.5,
-  phosphor: 1,
-  bezelGlow: true,
-  bezelGlowMode: 'spill',
-  showBezel: false,
-  bloom: 0.1,
-  bloomAlgorithm: 'spiral',
-  glow: 1,
-  glowRadius: 3,
-  persistence: 0.9,
-  persistenceEnergy: 0.09,
-  persistenceIntensity: 1.8,
-  imageBrightness: 1,
-  imageContrast: 1,
-  backgroundDesaturation: 0.5,
-  beamModulation: 0.5,
-  breathing: 0.5,
-  ambientGlassLight: 0,
-  bezelHighlight: 0.35,
-  bezelThickness: 0,
-  reflexBarEnabled: false,
-  reflexBar: 0.35,
-  reflexBarPosY: 0.09,
-  reflexBarWidth: 1,
-  reflexBarHeight: 0.23,
-  imperfectSignal: 0,
-  humBar: 0,
-  channelSwitchEffect: true,
-  antiAliasedPixels: true,
-  colorMode: 'color',
-  maskType: 'off',
-  maskStrength: 0.3,
-  cursorStyle: 'block',
-  cursorBrightness: 0,
-});
+import { isColorProfile } from '../terminal-color-profiles';
+export { DEFAULT_CRT_SETTINGS } from '../virtual-screen/defaults';
+import { DEFAULT_CRT_SETTINGS } from '../virtual-screen/defaults';
+import { defaultScreenProfile, legacyPresetFromProfile, normalizeProfile } from '../virtual-screen/profile';
 
 export const RESOLUTIONS = [
   { id: 'physical', label: 'Physical Window — fill available space' },
@@ -271,6 +226,10 @@ export function loadPresetSettings(raw: string): PresetSettings | null {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return null;
     const value = parsed as { version?: unknown; resolution?: unknown; crt?: unknown };
+    if ((parsed as { schemaVersion?: unknown }).schemaVersion === 1) {
+      const normalized = normalizeProfile(parsed, defaultScreenProfile(DEFAULT_RESOLUTION), RESOLUTIONS);
+      return normalized ? legacyPresetFromProfile(normalized) as PresetSettings : null;
+    }
     if (value.version !== 1 || !isResolution(value.resolution) || !value.crt || typeof value.crt !== 'object' || Array.isArray(value.crt)) return null;
     const stored = loadStoredSettings(JSON.stringify({ ...value, resolution: value.resolution, crt: value.crt }));
     return presetFromStored(stored);

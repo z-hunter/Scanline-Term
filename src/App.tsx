@@ -20,6 +20,7 @@ import {
   RESOLUTIONS,
   type PresetSettings,
 } from "./crt/settings";
+import { defaultScreenProfile, profileFromLegacyPreset } from "./virtual-screen/profile";
 import { useCRT } from "./crt/useCRT";
 import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
@@ -48,7 +49,7 @@ type ErrorToast = { id: number; message: string; resetKey: number };
 
 function ErrorToast({ message, resetKey, onDismiss }: { message: string; resetKey: number; onDismiss: () => void }) {
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  useEffect(() => { onDismissRef.current = onDismiss; }, [onDismiss]);
   useEffect(() => {
     const timer = window.setTimeout(() => onDismissRef.current(), 10_000);
     return () => window.clearTimeout(timer);
@@ -205,7 +206,7 @@ export default function App() {
       if (!catalog.names.some((name) => name.toLowerCase() === "default")) {
         const created = await invoke<{ names: string[] }>("save_preset", {
           name: "default",
-          preset: DEFAULT_PRESET_SETTINGS,
+          preset: defaultScreenProfile(DEFAULT_PRESET_SETTINGS.resolution),
           overwrite: false,
         });
         catalog = { ...catalog, names: created.names };
@@ -247,10 +248,11 @@ export default function App() {
     const state = terminal.activePresetState;
     if (!state || !name.trim()) return;
     try {
-      let result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset: state.settings, overwrite: false });
+      const preset = profileFromLegacyPreset(state.settings);
+      let result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset, overwrite: false });
       if (result.exists) {
         if (!window.confirm(`Overwrite preset “${name.trim()}”?`)) return;
-        result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset: state.settings, overwrite: true });
+        result = await invoke<{ saved: boolean; exists: boolean; names: string[] }>("save_preset", { name: name.trim(), preset, overwrite: true });
       }
       if (!result.saved) throw new Error("preset was not saved");
       setPresets(result.names);

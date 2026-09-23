@@ -36,7 +36,7 @@ Tab backgrounds are derived from the visible xterm cells, blending cell backgrou
 
 ### Per-tab visual settings and presets
 
-Each terminal session stores its own complete preset snapshot: virtual resolution, ANSI palette, font and size, Display controls, and CRT parameters. The shared source canvas and CRT filter always consume the active session's snapshot. A font or resolution change resizes only that session's ConPTY; inactive sessions retain their xterm dimensions until selected. New terminal sessions receive a cloned `default` preset, so later edits or overwrites do not retroactively alter existing tabs.
+Each terminal session stores its own complete screen profile: `virtualScreen.modeId`, terminal appearance, Display controls, and CRT parameters. The shared source canvas and virtual-screen facade always consume the active session's snapshot. A font or resolution change resizes only that session's ConPTY; inactive sessions retain their xterm dimensions until selected. New terminal sessions receive a cloned `default` profile, so later edits or overwrites do not retroactively alter existing tabs.
 
 Named presets are JSON files under `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The Rust `presets` module owns path safety, file enumeration, bounded reads, conflict detection, atomic writes, and backups. The settings panel keeps dirty state in the active tab, asks before replacing unsaved values, and never writes visual preset fields to the global `localStorage` settings record.
 
@@ -279,7 +279,7 @@ All clipboard access uses the browser/WebView's `navigator.clipboard` API. This 
 
 ### Canvas 2D Drawing (`drawTerminal()`)
 
-The terminal is drawn to an offscreen source canvas at the virtual resolution (e.g., 640×480), not at physical pixel resolution (unless "Physical" mode is selected). The active terminal tab may also own an in-memory list of local PNG/JPG images. `Menu+I` opens the native Tauri dialog; the selected path is fetched into a `Blob` and assigned a `blob:` URL so drawing remains origin-clean for WebGL. The renderer copies the terminal canvas to a same-sized compositing canvas and draws those images over it in normalized screen coordinates; the composited canvas is the input to both the CRT and non-CRT output paths. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it.
+The terminal is drawn to an offscreen source canvas at the virtual resolution (e.g., 640×480), not at physical pixel resolution (unless "Physical" mode is selected). The active terminal tab may also own an in-memory list of local PNG/JPG images. `Menu+I` opens the native Tauri dialog; the selected path is fetched into a `Blob` and assigned a `blob:` URL so drawing remains origin-clean for WebGL. The renderer exposes the terminal frame and converts loaded images from normalized tab coordinates into `ScreenOverlay` virtual-pixel records. The shared compositor draws those overlays before both CRT and non-CRT output paths. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it.
 
 **Drawing algorithm (simplified):**
 

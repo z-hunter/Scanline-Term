@@ -1,4 +1,16 @@
 {
+  "schemaVersion": 1,
+  "virtualScreen": {
+    "modeId": "physical-8x5"
+  },
+  "terminal": {
+    "colorProfile": "dos-vga",
+    "fontFamily": "IosevkaTermSlab NFM",
+    "fontSize": 16,
+    "cellWidthAdjustment": 0,
+    "cellHeightAdjustment": 0,
+    "cursorStyle": "underline"
+  },
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 3,
@@ -13,15 +25,9 @@
     "bloom": 0.05,
     "bloomAlgorithm": "soft",
     "breathing": 0,
-    "cellHeightAdjustment": 0,
-    "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "color",
-    "colorProfile": "dos-vga",
-    "consoleFont": "IosevkaTermSlab NFM",
-    "consoleFontSize": 16,
     "crtEmulation": true,
-    "cursorStyle": "underline",
     "curvature": 0,
     "glow": 0.2,
     "humBar": 0,
@@ -42,7 +48,5 @@
     "scanlineIntensity": 0.25000000000000006,
     "showBezel": false,
     "vignette": 0
-  },
-  "resolution": "physical-8x5",
-  "version": 1
+  }
 }

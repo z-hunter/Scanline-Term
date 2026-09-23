@@ -1,4 +1,17 @@
 {
+  "schemaVersion": 1,
+  "virtualScreen": {
+    "modeId": "640x480"
+  },
+  "terminal": {
+    "colorProfile": "commodore-64",
+    "fontFamily": "Commodore 128",
+    "fallbackFont": "Nouveau IBM Stretch",
+    "fontSize": 13,
+    "cellWidthAdjustment": 0,
+    "cellHeightAdjustment": 3,
+    "cursorStyle": "block"
+  },
   "crt": {
     "aberration": 2.75,
     "aberrationFalloff": 2,
@@ -13,17 +26,10 @@
     "bloom": 0.2,
     "bloomAlgorithm": "soft",
     "breathing": 0.05,
-    "cellHeightAdjustment": 3,
-    "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "color",
-    "colorProfile": "commodore-64",
-    "consoleFont": "Commodore 128",
-    "consoleFontSize": 13,
     "crtEmulation": true,
-    "cursorStyle": "block",
     "curvature": 0.06,
-    "fallbackFont": "Nouveau IBM Stretch",
     "glow": 0.6000000000000001,
     "humBar": 0.1,
     "imageBrightness": 1,
@@ -43,7 +49,5 @@
     "scanlineIntensity": 0.7000000000000001,
     "showBezel": false,
     "vignette": 0.8500000000000001
-  },
-  "resolution": "640x480",
-  "version": 1
+  }
 }

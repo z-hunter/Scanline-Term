@@ -78,15 +78,17 @@ graph TB
   TerminalRenderer --> ImageComposite
 
   UseCRT --> TerminalRenderer
-  UseCRT --> CRTFilter
-  ImageComposite --> CRTFilter
+  UseCRT --> VirtualScreenFacade
+  ImageComposite --> VirtualScreenFacade
+  VirtualScreenFacade --> OverlayCompositor
+  VirtualScreenFacade --> CRTFilter
   CRTFilter --> OutputCanvas
   Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```
 
-Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then the shared renderer draws it on the normalized virtual-resolution compositing canvas before the CRT filter.
+Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then Scanline Term converts its normalized image state into runtime `ScreenOverlay` records in virtual pixels. `OverlayCompositor` draws those records before the CRT filter. The core virtual-screen facade accepts any source canvas; xterm is an optional adapter entrypoint and is not created by the core.
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
 
@@ -255,7 +257,7 @@ sequenceDiagram
 
 Terminal tabs own a `TabPresetState` containing the complete `PresetSettings` snapshot. `useTerminal` applies the active snapshot to the shared renderer and CRT filter; changing a setting or resizing a virtual screen updates only the active ConPTY. Switching tabs rebinds the renderer and restores the target tab's snapshot without mutating inactive sessions.
 
-Preset files are kept outside the WebView at `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The WebView calls `list_presets`, `load_preset`, and `save_preset`; Rust validates the filename, reads regular bounded JSON files, and performs atomic writes with a backup. The WebView validates the versioned `{ version, resolution, crt }` payload before applying it. Global UI settings remain in `localStorage`; preset visual settings do not.
+Preset files are kept outside the WebView at `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The WebView calls `list_presets`, `load_preset`, and `save_preset`; Rust validates the filename, reads regular bounded JSON files, and performs atomic writes with a backup. The WebView normalizes canonical `{ schemaVersion, virtualScreen, terminal, crt }` profiles and legacy `{ version, resolution, crt }` files before applying them; new writes use the canonical profile. Global UI settings remain in `localStorage`; preset visual settings do not.
 
 ### Command Line → Workspace Tab
 

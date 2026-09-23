@@ -24,6 +24,12 @@ ScanlineTerm/
 │   │   ├── CRTFilter.ts           # ★ WebGL CRT shader pipeline (1101 lines)
 │   │   ├── settings.ts            # CRT settings, preset schema, resolutions, localStorage loader
 │   │   └── settings.test.ts       # Unit tests for settings validation
+│   ├── virtual-screen/             # Package-shaped screen/profile/compositor boundary
+│   │   ├── profile.ts              # ScreenProfile schema, legacy migration and adapters
+│   │   ├── overlays.ts             # Virtual-pixel overlay compositor
+│   │   ├── VirtualScreenRenderer.ts # CRT/pass-through facade
+│   │   ├── terminal.ts             # Optional xterm adapter entrypoint
+│   │   └── react/ScreenProfileSections.tsx # Controlled display section
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
 │   ├── terminal/TerminalRenderer.ts # dirty-row Canvas 2D renderer and glyph raster profiles
@@ -199,7 +205,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `StoredSettings` | Global UI/shell/hotkey/update settings; legacy `resolution` and `crt` fields are read only for migration |
 | `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |
 
-`PresetSettings` is the versioned `{ version, resolution, crt }` payload stored in a named JSON file. `TabPresetState` is the per-terminal-tab `{ name, draftName, settings, dirty }` snapshot. `loadPresetSettings` reuses the existing field validators and rejects malformed or unsupported files without applying partial state.
+`ScreenProfile` is the canonical `{ schemaVersion, virtualScreen, terminal, crt }` payload. It stores only `virtualScreen.modeId`; the host owns the mode dimensions. `normalizeProfile` accepts both this shape and legacy `{ version, resolution, crt }` data, preserving the current mode when a saved mode is unavailable. `PresetSettings` remains the Scanline Term runtime compatibility shape while persistence writes canonical profiles. `TabPresetState` is the per-terminal-tab `{ name, draftName, settings, dirty }` snapshot. `virtual-screen/terminal.ts` is intentionally a separate optional entrypoint so the core facade has no xterm import.
 
 ---
 

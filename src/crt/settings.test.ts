@@ -319,6 +319,19 @@ describe('CRT settings', () => {
     expect(preset?.crt.curvature).toBe(DEFAULT_CRT_SETTINGS.curvature);
   });
 
+  it('loads the canonical ScreenProfile preset and adapts it for the terminal runtime', () => {
+    const preset = loadPresetSettings(JSON.stringify({
+      schemaVersion: 1,
+      virtualScreen: { modeId: '640x480' },
+      terminal: { colorProfile: 'dos-vga', fontFamily: 'Cascadia Mono', fontSize: 14, cellWidthAdjustment: 0, cellHeightAdjustment: 0, cursorStyle: 'bar', cursorBrightness: 0 },
+      crt: { curvature: 0.2 },
+    }));
+    expect(preset?.resolution).toBe('640x480');
+    expect(preset?.crt.consoleFont).toBe('Cascadia Mono');
+    expect(preset?.crt.consoleFontSize).toBe(14);
+    expect(preset?.crt.curvature).toBe(0.2);
+  });
+
   it('loads service fallbackFont or FallbackFont from preset and stored settings', () => {
     const preset1 = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: { consoleFont: 'CustomFont', fallbackFont: 'SecondaryFont' } }));
     expect(preset1?.crt.consoleFont).toBe('CustomFont');

@@ -1,4 +1,16 @@
 {
+  "schemaVersion": 1,
+  "virtualScreen": {
+    "modeId": "physical-4x3"
+  },
+  "terminal": {
+    "colorProfile": "windows-legacy",
+    "fontFamily": "Cascadia Mono SemiLight",
+    "fontSize": 14,
+    "cellWidthAdjustment": 0,
+    "cellHeightAdjustment": 0,
+    "cursorStyle": "bar"
+  },
   "crt": {
     "aberration": 0.5,
     "aberrationFalloff": 4,
@@ -13,15 +25,9 @@
     "bloom": 0.1,
     "bloomAlgorithm": "soft",
     "breathing": 0,
-    "cellHeightAdjustment": 0,
-    "cellWidthAdjustment": 0,
     "channelSwitchEffect": true,
     "colorMode": "color",
-    "colorProfile": "windows-legacy",
-    "consoleFont": "Cascadia Mono SemiLight",
-    "consoleFontSize": 14,
     "crtEmulation": true,
-    "cursorStyle": "bar",
     "curvature": 0.03,
     "glow": 0.30000000000000004,
     "humBar": 0,
@@ -42,7 +48,5 @@
     "scanlineIntensity": 0.30000000000000004,
     "showBezel": false,
     "vignette": 0.30000000000000004
-  },
-  "resolution": "physical-4x3",
-  "version": 1
+  }
 }

@@ -4,6 +4,8 @@ import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement,
 import { COLOR_PROFILES } from '../terminal-color-profiles';
 import { Knob, formatValue } from './Knob';
 import type { ShellInfo } from '../terminal/useTerminal';
+import { profileFromLegacyPreset, profileToRenderSettings } from '../virtual-screen/profile';
+import { ScreenProfileSections } from '../virtual-screen/react/ScreenProfileSections';
 
 type NumericKey = Exclude<
   keyof CRTSettings,
@@ -162,6 +164,7 @@ export function SettingsPanel({
   const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
   const copySmoothScrollDiagnostics = () => void navigator.clipboard.writeText(getSmoothScrollDiagnostics()).then(() => setScrollDiagnosticsCopied(true)).catch(() => setScrollDiagnosticsCopied(false));
+  const screenProfile = profileFromLegacyPreset({ version: 1, resolution: stored.resolution, crt: stored.crt });
 
   if (stored.crt.consoleFontSize !== prevFontSize) {
     setPrevFontSize(stored.crt.consoleFontSize);
@@ -243,22 +246,11 @@ export function SettingsPanel({
           </label>
         </fieldset>
 
-        <label className="resolution-control">
-          Virtual resolution
-          <select
-            value={stored.resolution}
-            data-testid="resolution-select"
-            onChange={(event) =>
-              setStored((current) => ({ ...current, resolution: event.target.value as ResolutionId }))
-            }
-          >
-            {RESOLUTIONS.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ScreenProfileSections
+          profile={screenProfile}
+          modes={RESOLUTIONS}
+          onChange={(next) => setStored((current) => ({ ...current, resolution: next.virtualScreen.modeId as ResolutionId, crt: profileToRenderSettings(next) }))}
+        />
 
         <label className="resolution-control">
           ANSI color profile

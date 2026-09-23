@@ -25,8 +25,12 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`ui/AiPanel.test.tsx`](../src/ui/AiPanel.test.tsx) | AI composer | Signed-in submission, slash commands, model picker, typing state and scroll-follow behaviour |
 | [`ai/chatMessages.test.ts`](../src/ai/chatMessages.test.ts) | AI message stream | Item-scoped delta accumulation and preservation of commentary before final output |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
+| [`virtual-screen/profile.test.ts`](../src/virtual-screen/profile.test.ts) | Screen profiles | Canonical schema, legacy migration, mode fallback and JSON round-trip |
+| [`virtual-screen/overlays.test.ts`](../src/virtual-screen/overlays.test.ts) | Overlay compositor | Normalized-to-pixel conversion, stable z-order and opacity |
 
 Run: `npm test`
+
+The stage-1 manual matrix is intentionally scenario-based rather than screenshot-based: mock/source canvas, CRT on/off, all display modes, representative presets, PowerShell/CMD ANSI output, one TUI, multiple tabs, image overlays, legacy-load/new-save/reload, resize and repeated tab-switch/dispose cycles. It is run in `npm run dev` and `npm run tauri:dev`; no capture infrastructure is required.
 
 ### Rust Tests (`cargo test`)
 

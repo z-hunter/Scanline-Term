@@ -9,7 +9,7 @@
 ### Performance / Latency
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | FPS drops below 60 | Expensive shader (spiral bloom, high persistence) | Check FPS counter in settings panel header | Switch bloom algorithm to "Soft"; reduce persistence; lower virtual resolution |
 | FPS drops to ~30 | WebGL software rendering | Check `edge://gpu` in a browser; look for "Software only" | Update GPU drivers; ensure hardware acceleration is enabled in WebView2 |
 | Input feels laggy | `write_terminal` invocations backing up | Add `console.log` before `invoke('write_terminal')` | Check if ConPTY session is alive; verify writer thread isn't blocked |
@@ -19,7 +19,7 @@
 ### Console / ConPTY
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | "Windows console could not start" | ConPTY DLLs missing | Check `src-tauri/resources/conpty/x64/` | Ensure DLLs are present and readable |
 | "Windows console could not start" | `%ComSpec%` not set or invalid | `echo %ComSpec%` in cmd | Set `ComSpec` environment variable to `C:\Windows\System32\cmd.exe` |
 | Terminal starts but shows no prompt | `cmd.exe` startup delayed | Wait a few seconds; the initial `\r` should trigger the prompt | Check antivirus/security software intercepting process creation |
@@ -29,7 +29,7 @@
 ### Focus and Input
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Keyboard input not reaching terminal | Canvas doesn't have focus | Click the canvas; check `tabIndex` | Canvas gets `tabIndex={0}` when `terminalLive` is true |
 | Keyboard input is lost only after browser → terminal tab switching | Hidden browser child still owns WebView2 controller focus | Switch with `Menu+←` / `Menu+→`; if the app window is focused but terminal receives no text, inspect `browser::set_active_browser` | Hide browser children, release `BrowserState`, then focus `app.get_webview("main")`; do not call that controller-focus API from `WM_SETFOCUS` or unconditionally at startup |
 | Keyboard input is lost after minimize/restore or app switching | WebView2 has not accepted pointer activation | Reproduce after startup, minimize/restore, or app switching | Keep the intentional native middle-click in `click_webview`; do not replace it with `SetFocus`, DOM `.focus()`, or `PostMessage` |
@@ -41,7 +41,7 @@
 ### Codex Assistant
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | `Codex CLI was not found on PATH` | Codex is not installed or invisible to the Tauri process | Run `codex --version` from a new terminal | Install Codex or repair `PATH`; version must be at least 0.152.1 |
 | Sign-in button does nothing | External opener plugin/capability is missing | Debug has `authUrl`, but no browser opens | Ensure `tauri-plugin-opener` is registered and capability permits `https://**`; restart Tauri |
 | `Login cancelled` | Browser login was closed or callback could not complete | `account/login/completed` in Debug console | Start a new login; do not reuse the old URL |
@@ -51,7 +51,7 @@
 ### Buffer Size and Resize
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Incorrect buffer size | Font measurement mismatch | Compare `fontCellSize()` output with actual rendered characters | Font fallback may be selecting a different font than expected |
 | Text cut off at edges | Padding calculation too large/small | Check `terminalPadding()` | Padding = `max(2, floor(min(w,h) * 0.01))` — should be proportional |
 | Resize causes crash | PTY size validation rejects dimensions | Check error message (cols ∈ [20, 300], rows ∈ [8, 150]) | Ensure window is large enough for minimum grid at the selected font size |
@@ -60,7 +60,7 @@
 ### Color and Palette
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Colors look wrong after profile switch | `remapLegacyRgb` didn't match | Check if the app emits exact Windows Legacy RGB values | Profile switch should be immediate; check `activeColorProfile()` |
 | Extended colors (16–255) show profile background | `profileColor` fallback chain | Profile defines < 16 colors but index > 15 requested | Most profiles only define 16 colors; indices 16+ use xterm extended — this is correct |
 | White text appears gray | Profile's foreground color isn't pure white | Check `profile.foreground` | By design — e.g., Windows Campbell foreground is `#cccccc` |
@@ -69,7 +69,7 @@
 ### Persistence and Phosphor Trail
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Trail never disappears on a coloured TUI background | History is fed by the steady current frame rather than only by extinguished pixels | Confirm accumulation frames advance while history energy remains non-zero during an unchanged screen | Accumulate `max(previous - current, 0)`, gated by `sourceChanged`; do not clear history on ordinary scene changes |
 | HV Breathing leaves no trail where the raster contracts | History is accumulated in source UVs rather than physical screen coordinates | Toggle a bright/full-screen image to dark with Breathing enabled | Compare old/new rasters after curvature and their respective HV expansion; sample trail in output UVs |
 | Trail is too bright | `persistenceIntensity` too high | Reduce trail intensity control | Range is 0–4; typical value is 1 |
@@ -78,7 +78,7 @@
 ### Bloom and Glow
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Bloom looks like copies/ghosts | Using spiral algorithm with high bloom | Switch to "Soft blur" algorithm | Spiral is a 16-tap approximation; soft uses proper Gaussian separable passes |
 | Screen glow makes everything muddy | Glow too high | Reduce screen glow | Glow is desaturated 35% and uses screen blend mode |
 | No bloom visible | Bloom threshold too high for content | Soft bloom uses bright-pass threshold 0.55 | Only pixels with luma > 0.55 contribute to soft bloom |
@@ -86,7 +86,7 @@
 ### Mouse Selection and Coordinates
 
 | Symptom | Probable Cause | Diagnostic | Fix |
-|---------|---------------|------------|-----|
+| --------- | --------------- | ------------ | ----- |
 | Selection highlights wrong cells | `copyPoint()` coordinate offsets | Check hardcoded offsets (`row - 2`, `col - 3`) in `copyPoint()` | These offsets are calibration-specific; adjust if font/padding changed |
 | Mouse clicks offset with curvature | `cellAtPoint()` no longer matches the shader's `curve()` formula | Compare both formulas and the active curvature value | Keep the TypeScript coordinate mapping synchronized with the GLSL implementation |
 | Copy pastes wrong text | `translateToString()` range errors | Log `start` and `end` CopyPoint values | Verify viewport offset (`viewportY`) is correctly included |
@@ -96,7 +96,7 @@
 ## Platform Constraints
 
 | Constraint | Impact |
-|------------|--------|
+| ------------ | -------- |
 | **Windows-only** | All ConPTY, Win32 font, and GDI code is `#[cfg(windows)]`. macOS/Linux will compile a stub `list_monospace_fonts` but cannot run a terminal session. |
 | **x64 only** | Bundled ConPTY DLLs are in `resources/conpty/x64/`. ARM64 Windows is not supported without additional DLLs. |
 | **WebView2 required** | Tauri 2 uses WebView2 (Chromium-based). If WebView2 is missing, the app won't start. |
