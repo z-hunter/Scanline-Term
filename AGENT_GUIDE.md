@@ -44,6 +44,7 @@ These files are complex, tightly coupled, and easy to break:
 
 - **Never** reformat or restructure files you're not actively modifying.
 - `App.tsx` is composition only; keep terminal, CRT lifecycle and settings UI in their dedicated modules.
+- Keep TUI scroll detection and its diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; SVS only receives explicit buffer/region scroll commands.
 
 ### Documentation Maintenance
 

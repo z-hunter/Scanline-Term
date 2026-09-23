@@ -17,7 +17,7 @@ The SVS repository is the technical source of truth for its architecture, public
 `package.json` pins SVS to an immutable Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
 
 ```json
-"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v2.0.1"
+"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v3.0.0"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
@@ -29,6 +29,7 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - ConPTY, shell processes, tabs, native menus and Tauri commands;
 - terminal image loading, object URLs, drag/scale/delete interaction and tab-local image state;
 - profile storage, preset files, dirty state and confirmation dialogs;
+- TUI scroll detection and diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; ordinary scroll paths call `beginBufferScroll()`, detected host regions call `beginRegionScroll()`;
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.

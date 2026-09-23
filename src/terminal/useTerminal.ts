@@ -5,7 +5,6 @@ import { open as openFile } from '@tauri-apps/plugin-dialog';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { RESOLUTIONS } from '../crt/settings';
 import type { CRTSettings } from 'scanline-virtual-screen/core';
-import type { Resolution } from './ScanlineTerminalRenderer';
 import { canvasFontLoad, TerminalRenderer, terminalAverageColor, terminalDimensions, type CopyPoint, type TabColor, type TerminalImage } from './ScanlineTerminalRenderer';
 import { TerminalSession, initialProfile, type TerminalLaunch, type TerminalOutputScroll, type TerminalSize } from './TerminalSession';
 import { terminalKey } from './terminal-input';
@@ -22,6 +21,7 @@ export type WorkspaceTab = TerminalTab | BrowserTab;
 export type ShellInfo = { name: string; command: string };
 type SessionRecord = { tab: TerminalTab; session: TerminalSession; inputLocked: boolean; preset: TabPresetState; images: TerminalImage[] };
 export type TerminalSearchState = { open: boolean; query: string; matches: TerminalSearchMatch[]; activeIndex: number; buffer: 'normal' | 'alternate' | null; direction: 1 | -1 };
+type Resolution = (typeof RESOLUTIONS)[number];
 
 export function adjacentTabId(tabs: WorkspaceTab[], id: string): string | null {
   const index = tabs.findIndex((tab) => tab.id === id);
@@ -75,7 +75,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
   const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const smoothScrollbackRef = useRef(smoothScrollback); const rmbMenuInTermRef = useRef(rmbMenuInTerm); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const copyMode = useRef(false); const imageDrag = useRef<{ image: TerminalImage; x: number; y: number } | null>(null); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null); const scrollbackActivity = useRef(0); const scrollbackRef = useRef<ScrollbackScrollbarState | null>(null); const scrollIntentRef = useRef(false);
   const searchRef = useRef(search); searchRef.current = search;
-  defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; rmbMenuInTermRef.current = rmbMenuInTerm; renderer.current.setSmoothScrollingEnabled(smoothScrollback && smoothTuiScrolling); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
+  defaultPresetRef.current = initialPreset; settingsRef.current = activePresetState?.settings.crt ?? initialPreset.crt; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; rmbMenuInTermRef.current = rmbMenuInTerm; renderer.current.setTuiScrollingEnabled(smoothScrollback && smoothTuiScrolling); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const publishScrollback = useCallback((id: string, terminal: TerminalSession['terminal'], userInitiated: boolean, viewportY?: number) => {
     const buffer = terminal?.buffer.active;
@@ -132,7 +132,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const from = terminal.buffer.active.viewportY;
     terminal.scrollToLine(line);
     const to = terminal.buffer.active.viewportY;
-    if (smooth && smoothScrollbackRef.current) renderer.current?.beginScroll(from, to);
+    if (smooth && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(from, to);
     else renderer.current?.cancelScroll();
     publishScrollback(session.id, terminal, true, to);
   }, [publishScrollback]);
@@ -188,9 +188,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const openSession = useCallback((launch?: TerminalLaunch) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset = clonePresetSettings(defaultPresetRef.current); const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
-    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
+    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
     sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: 'default', draftName: 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) renderer.current!.resizeSource(resolution, outputRef.current); const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width || ('width' in resolution ? resolution.width : 1), source.height || ('height' in resolution ? resolution.height : 1), preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const width = resolution.id.startsWith('physical') ? outputRef.current.width || 1 : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? outputRef.current.height || 1 : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'args' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, ...(Array.isArray(launch.args) && launch.args.length > 0 && { args: launch.args.filter((argument): argument is string => typeof argument === 'string') }), cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
     const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
@@ -333,7 +333,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     outputRef.current = output;
     const preset = (activeRef.current ? sessions.current.get(activeRef.current)?.preset.settings : undefined) ?? defaultPresetRef.current;
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6];
-    renderer.current!.resizeSource(resolution, output);
+    const width = resolution.id.startsWith('physical') ? output.width || 1 : ('width' in resolution ? resolution.width : 1);
+    const height = resolution.id.startsWith('physical') ? output.height || 1 : ('height' in resolution ? resolution.height : 1);
+    renderer.current!.resizeSource(width, height);
     const source = renderer.current!.sourceCanvas;
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
     if (session) session.resize(terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont));

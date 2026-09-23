@@ -143,7 +143,7 @@ describe('terminal launch event', () => {
     await act(async () => { root.render(createElement(TestComponent)); });
     const output = document.createElement('canvas'); output.width = 1234; output.height = 567;
     await act(async () => { hookResult.resizeSource(output); });
-    hookResult.renderer.resizeSource(RESOLUTIONS[6], output);
+    hookResult.renderer.resizeSource(output.width, output.height);
     await act(async () => { hookResult.openSession(); await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1234, 567, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
     await act(async () => { root.unmount(); });

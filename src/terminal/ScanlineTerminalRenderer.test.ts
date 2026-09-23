@@ -5,7 +5,7 @@ import { TerminalRenderer, type TerminalImage } from './ScanlineTerminalRenderer
 describe('ScanlineTerminalRenderer', () => {
   it('hit-tests the topmost normalized image', () => {
     const renderer = new TerminalRenderer();
-    renderer.resizeSource({ id: 'test', width: 100, height: 100 }, document.createElement('canvas'));
+    renderer.resizeSource(100, 100);
     const image = (id: string, x: number): TerminalImage => ({ id, src: '', image: {} as HTMLImageElement, x, y: .2, width: .4, height: .4, baseWidth: .4, baseHeight: .4 });
     const bottom = image('bottom', .1); const top = image('top', .2);
     renderer.setImages([bottom, top]);
@@ -20,7 +20,7 @@ describe('ScanlineTerminalRenderer', () => {
     const cell = { getChars: () => '', getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false };
     const normal = { viewportY: 0, baseY: 0, cursorX: 0, cursorY: 0, getNullCell: () => cell, getLine: () => ({ getCell: () => cell }) };
     const terminal = { cols: 2, rows: 2, options: {}, buffer: { active: normal, normal }, onCursorMove: () => ({ dispose() {} }), onWriteParsed: () => ({ dispose() {} }), onScroll: () => ({ dispose() {} }) };
-    const renderer = new TerminalRenderer(); renderer.resizeSource({ id: 'test', width: 80, height: 40 }, document.createElement('canvas')); renderer.bindTerminal(terminal as never);
+    const renderer = new TerminalRenderer(); renderer.resizeSource(80, 40); renderer.bindTerminal(terminal as never);
     renderer.draw(0, DEFAULT_CRT_SETTINGS);
     renderer.setImages([{ id: 'image', src: '', image: { complete: true, naturalWidth: 1 } as HTMLImageElement, x: 0, y: 0, width: .5, height: .5, baseWidth: .5, baseHeight: .5 }]);
     expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
