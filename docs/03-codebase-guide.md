@@ -21,14 +21,12 @@ ScanlineTerm/
 │   ├── assets/
 │   │   └── scanline-term-mini.png  # Logo asset
 │   ├── crt/
-│   │   ├── CRTFilter.ts           # ★ WebGL CRT shader pipeline (1101 lines)
-│   │   ├── settings.ts            # CRT settings, preset schema, resolutions, localStorage loader
-│   │   └── settings.test.ts       # Unit tests for settings validation
+│   │   ├── settings.ts            # Host persistence and display-mode adapters
+│   │   └── useCRT.ts              # SVS render-loop and resize lifecycle adapter
 │   ├── terminal/ScanlineTerminalRenderer.ts # Scanline Virtual Screen terminal adapter
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── terminal/TerminalRenderer.ts # dirty-row Canvas 2D renderer and glyph raster profiles
-│   ├── terminal/TerminalRenderer.test.ts # Renderer, metrics and redraw regression tests
+│   ├── terminal/ScanlineTerminalRenderer.ts # SVS xterm adapter plus host image overlays
 │   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, ScrollbackScrollbar, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
@@ -94,9 +92,9 @@ ScanlineTerm/
 
 ### Frontend Core
 
-#### [`src/terminal/TerminalRenderer.ts`](../src/terminal/TerminalRenderer.ts)
+#### [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts)
 
-Reads xterm's headless buffer and renders rows to the terminal Canvas 2D surface. Cached row signatures keep redraws dirty-driven; signatures include both numeric colors and RGB/palette encoding modes. A second compositing canvas draws the active tab's in-memory local images over the terminal frame before CRT processing. Continuous vertical glyphs `│`, `┃`, `║` and `▎` use a cached alpha profile sampled from the active font and repeated through the complete cell height, with native `fillText()` as the fallback for other glyphs.
+Scanline Term's host adapter over SVS's optional xterm renderer. It adds only tab-local normalized image state and hit testing; the terminal canvas renderer, display pipeline and public API are maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
 
 #### [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts)
 
@@ -123,7 +121,7 @@ The single React component that constitutes the entire UI. Contains:
 | Ref | Type | Purpose |
 |-----|------|---------|
 | `terminalRef` | `Terminal \| null` | xterm instance |
-| `filterRef` | `CRTFilter \| null` | WebGL filter instance |
+| `renderer` | `VirtualScreenRenderer` | SVS display facade owned through `useCRT` |
 | `sourceRef` | `HTMLCanvasElement \| null` | Source canvas for terminal drawing |
 | `outputRef` | `HTMLCanvasElement` | WebGL output canvas (DOM ref) |
 | `sendInputRef` | `(input: string) => void` | Stable reference to `sendInput` closure |
@@ -153,39 +151,9 @@ Renders the transient scrollback indicator in the screen-frame border. It owns t
 
 ---
 
-#### [`src/crt/CRTFilter.ts`](../src/crt/CRTFilter.ts)
+#### Scanline Virtual Screen
 
-The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game engine.
-
-**Exported types:**
-- `CRTColorMode` — `'color' | 'bw' | 'green' | 'green-p39' | 'amber' | 'blue'`
-- `BloomAlgorithm` — `'soft' | 'spiral'`
-- `CursorStyle` — `'block' | 'underline' | 'bar'`
-- `CRTSettings` — Full interface with CRT controls, including Imperfect signal, Hum-bar, and Channel switch roll
-- `persistenceDecay(persistence, elapsedSeconds)` — Calculates FBO decay factor and quantization cutoff
-
-**Class: `CRTFilter`**
-
-| Method | Purpose |
-|--------|---------|
-| `constructor(canvas)` | Acquires WebGL context, calls `init()` |
-| `init()` | Compiles the initial CRT variant plus accumulation and blur programs; the final shader is specialized when Trail, Bloom, Glow, or signal effects are toggled |
-| `createShader(gl, type, source)` | Compiles a single GLSL shader |
-| `createProgram(gl, vsSource, fsSource)` | Links a vertex+fragment program |
-| `ensureFBO(width, height)` | Creates/resizes ping-pong FBOs for persistence |
-| `ensureGlowFBO(width, height)` | Creates/resizes FBOs for bloom and glow blur passes |
-| `blur(input, w, h, target, dx, dy, threshold, spread)` | Runs one separable Gaussian blur pass |
-| `clearPersistence()` | Clears both persistence FBOs to black |
-| `isValid()` | Returns `true` if WebGL resources are available |
-| `render(sourceCanvas, settings, sourceChanged)` | Main render entry — direct pass-through with CRT off, otherwise ping-ponged GPU luma reduction → screen-space persistence → bloom/glow → specialized final CRT |
-| `dispose()` | Deletes all WebGL resources |
-
-**Shader programs:**
-
-1. **CRT Main Fragment Shader** — curvature, HV breathing, Imperfect signal, hum-bar, channel switch roll, anti-moiré pixels, chromatic aberration, persistence trail overlay, bloom/halation, phosphor grain, scanlines (Sinc-integrated Fourier), beam modulation, screen glow, color mode conversion, vignette, brightness/contrast, selectable bezel spill/reflection
-2. **Accumulation Fragment Shader** — phosphor persistence: compares previous and current rasters after curvature/HV Breathing, accumulates only extinguished light with decayed history, then applies desaturation and a quantization cutoff
-3. **Blur Fragment Shader** — 5-tap separable Gaussian, configurable threshold (bright-pass) and spread
-4. **Pass-through Fragment Shader** — raw terminal image with brightness/contrast only when CRT emulation is off
+The active CRT pipeline, compositor, profile validation and optional terminal renderer are supplied by [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Its technical API and rendering details are intentionally documented there. For the Scanline Term boundary, update process and validation matrix, see [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 ---
 
@@ -200,7 +168,7 @@ The WebGL CRT post-processing pipeline. Originated in the Quest/Scanline game en
 | `StoredSettings` | Global UI/shell/hotkey/update settings; legacy `resolution` and `crt` fields are read only for migration |
 | `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |
 
-`ScreenProfile` is the canonical `{ schemaVersion, virtualScreen, terminal, crt }` payload provided by the pinned `scanline-virtual-screen` package (`v1.0.2`). It stores only `virtualScreen.modeId`; the host owns the mode dimensions. `normalizeProfile` accepts both this shape and legacy `{ version, resolution, crt }` data, preserving the current mode when a saved mode is unavailable. `PresetSettings` remains the Scanline Term runtime compatibility shape while persistence writes canonical profiles. `TabPresetState` is the per-terminal-tab `{ name, draftName, settings, dirty }` snapshot. The package keeps `core`, `terminal`, and `react` entrypoints independent; `ScanlineTerminalRenderer.ts` is the host adapter that adds Scanline Term's normalized image state and xterm lifecycle.
+`ScreenProfile` is supplied by the pinned SVS package. Scanline Term keeps its `PresetSettings` compatibility shape and per-tab `{ name, draftName, settings, dirty }` state while writing canonical profiles. The SVS schema and migration rules are documented upstream; the host-specific persistence boundary is documented in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 ---
 

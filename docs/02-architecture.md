@@ -28,18 +28,16 @@ graph TB
     UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
     UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
     TerminalSession["terminal/TerminalSession.ts<br/>PTY session coordinator"]
-    TerminalRenderer["terminal/TerminalRenderer.ts<br/>Canvas 2D character grid"]
+    TerminalRenderer["terminal/ScanlineTerminalRenderer.ts<br/>SVS terminal host adapter"]
     Xterm["@xterm/xterm<br/>headless VT parser"]
     TermInput["terminal/terminal-input.ts<br/>VT key encoding"]
     Win32Input["win32-input.ts<br/>Win32 Input Mode encoding"]
     Search["terminal-search.ts<br/>xterm buffer matching"]
     TermMouse["terminal/terminal-mouse.ts<br/>mouse event encoding"]
     ColorProfiles["terminal-color-profiles.ts<br/>palette definitions"]
-    CRTFilter["CRTFilter.ts<br/>WebGL shader pipeline"]
     Settings["settings.ts<br/>localStorage persistence"]
     SourceCanvas["Terminal canvas<br/>(virtual resolution)"]
-    OverlayCompositor["OverlayCompositor<br/>(virtual-pixel overlays)"]
-    VirtualScreenRenderer["VirtualScreenRenderer<br/>(compositor + CRT/pass-through)"]
+    SVS["Scanline Virtual Screen<br/>external package"]
     OutputCanvas["Output canvas<br/>(physical pixels)"]
   end
 
@@ -78,18 +76,16 @@ graph TB
   TerminalRenderer --> SourceCanvas
 
   UseCRT --> TerminalRenderer
-  UseCRT --> VirtualScreenRenderer
-  SourceCanvas --> OverlayCompositor
-  UseTerminal --> OverlayCompositor
-  OverlayCompositor --> VirtualScreenRenderer
-  VirtualScreenRenderer --> CRTFilter
-  VirtualScreenRenderer --> OutputCanvas
+  UseCRT --> SVS
+  SourceCanvas --> SVS
+  UseTerminal --> SVS
+  SVS --> OutputCanvas
   Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
 ```
 
-Terminal images are tab-local, in-memory state. `Menu+I` opens the native dialog; the selected path is fetched into a `Blob`/`blob:` URL, then Scanline Term converts its normalized image state into runtime `ScreenOverlay` records in virtual pixels. `OverlayCompositor` combines those records with the source canvas before `VirtualScreenRenderer` sends the frame through CRT or pass-through output. The renderer accepts any source canvas; xterm is an optional adapter entrypoint and is not created by the core.
+Scanline Term uses the external [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) package for profiles, compositing and CRT/pass-through rendering. Its host adapter keeps terminal images tab-local and converts their normalized state into SVS runtime overlays. SVS's API and rendering internals are documented in its repository; Scanline Term's integration contract is documented in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
 
@@ -126,9 +122,7 @@ sequenceDiagram
     participant Tauri as Tauri Event Bus
     participant Xterm as @xterm/xterm
     participant Canvas as Canvas 2D
-    participant Overlay as OverlayCompositor
-    participant Screen as VirtualScreenRenderer
-    participant CRT as CRTFilter (WebGL)
+    participant SVS as Scanline Virtual Screen
     participant Output as Output Canvas
 
     Shell->>ConPTY: stdout bytes
@@ -139,12 +133,8 @@ sequenceDiagram
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
     Canvas->>Canvas: drawTerminal() — redraw changed rows only<br/>read cell colors from profile<br/>draw text and cached box-glyph profiles on source canvas
-    Canvas->>Overlay: compose source canvas + virtual-pixel overlays
-    Overlay->>Screen: composited virtual screen
-    Screen->>CRT: render(composited source, settings, sourceDirty)
-    Note over CRT: Pass 1: Persistence accumulation (FBO ping-pong)<br/>Pass 2: Bloom + Glow blur (separable Gaussian)<br/>Pass 3: Final CRT fragment shader
-    CRT->>Output: WebGL draw to output canvas
-    Screen-->>Output: pass-through draw when CRT is disabled
+    Canvas->>SVS: source canvas + tab-local runtime overlays
+    SVS->>Output: CRT or pass-through frame
 ```
 
 ### Keyboard Input → Console
@@ -260,7 +250,7 @@ sequenceDiagram
 
 ### Per-tab preset settings
 
-The virtual-screen pipeline is supplied by the private `scanline-virtual-screen` package. Scanline Term owns the host adapter (`terminal/ScanlineTerminalRenderer.ts`) and remains responsible for normalized image placement, tab-local state and xterm lifetime; the package owns the profile, compositor and CRT/pass-through facade. The terminal entrypoint is created only when a host needs xterm output.
+The virtual-screen pipeline is supplied by the public [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) package. Scanline Term owns the host adapter (`terminal/ScanlineTerminalRenderer.ts`) and remains responsible for normalized image placement, tab-local state and xterm lifetime. The package API, lifecycle, profile migration and overlay semantics are specified in the SVS repository; this repository documents only its host integration.
 
 Terminal tabs own a `TabPresetState` containing the complete `PresetSettings` snapshot. `useTerminal` applies the active snapshot to the shared renderer and CRT filter; changing a setting or resizing a virtual screen updates only the active ConPTY. Switching tabs rebinds the renderer and restores the target tab's snapshot without mutating inactive sessions.
 

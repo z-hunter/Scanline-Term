@@ -15,7 +15,7 @@
 2. **Understand the execution boundary:** Is the code you're editing WebView-side (TypeScript) or Rust-side? See [Architecture](./docs/02-architecture.md).
 3. **Check for related tests:** Most modules have a `.test.ts` file alongside them. Run `npm test` to verify current state.
 4. **Check for downstream consumers:** Use grep for the function/type/export name across the entire `src/` tree.
-5. **Read the `CRTSettings` interface** before adding or modifying any CRT parameter — it's the shared contract between `CRTFilter.ts`, `settings.ts`, and `App.tsx`.
+5. **Read the SVS API and integration guide** before changing a display parameter — profile and renderer contracts live in the SVS repository, while host lifecycle remains here.
 
 ---
 
@@ -25,7 +25,7 @@ These files are complex, tightly coupled, and easy to break:
 
 | File | Risk | Why |
 |------|------|-----|
-| **`src/crt/CRTFilter.ts`** | 🔴 Critical | 1101 lines of WebGL + inline GLSL. Mistakes cause visual corruption, black screens, or WebGL errors. No automated visual tests. |
+| **SVS `core` package** | 🔴 Critical | Shared WebGL renderer and compositor. Change it in the SVS repository, release a tag, then validate the host integration. |
 | **`src/terminal/TerminalSession.ts` / `ScanlineTerminalRenderer.ts`** | 🔴 Critical | ConPTY/xterm lifecycle, package adapter and source-canvas rendering; changes affect input, resize and display integrity. |
 | **`src-tauri/src/main.rs`** | 🟠 High | ConPTY lifecycle, thread management, process cleanup. Bugs can cause orphaned processes, deadlocks, or data loss. Requires Windows to test. |
 | **`src-tauri/src/home.rs` / `src/ui/HomeDashboard.tsx`** | 🟠 High | Synced user configuration crosses the Rust/WebView boundary; validation or replacement mistakes can lose or corrupt the home file. |
@@ -44,7 +44,6 @@ These files are complex, tightly coupled, and easy to break:
 ### Preserve Unrelated Changes
 
 - **Never** reformat or restructure files you're not actively modifying.
-- The CRT shader strings in `CRTFilter.ts` use mixed line endings (`\r\n` and `\n`). Do not normalize them unless specifically asked.
 - `App.tsx` is composition only; keep terminal, CRT lifecycle and settings UI in their dedicated modules.
 
 ### Documentation Maintenance
@@ -67,6 +66,12 @@ A change is "architecturally significant" if it does any of the following:
 5. Any other `docs/` page that references moved/renamed code
 
 **Do not** update documentation for trivial changes (bug fixes, style tweaks, value adjustments) unless they contradict existing documentation.
+
+### Scanline Virtual Screen dependency
+
+- The SVS technical source of truth is the public [Scanline Virtual Screen repository](https://github.com/z-hunter/Scanline-Virtual-Screen), not a duplicate in this repository.
+- Read [`docs/12-scanline-virtual-screen.md`](./docs/12-scanline-virtual-screen.md) before changing its dependency tag, host adapter, profile persistence, overlays, or renderer lifecycle.
+- Do not edit `node_modules/scanline-virtual-screen`. Make package changes in its repository, validate and tag them, then update this repository's immutable dependency tag and lockfile.
 
 ### When Frontend-Only Validation Is Sufficient
 
@@ -120,9 +125,9 @@ Use this table to identify which files to inspect and test when implementing com
 | Feature Request | Files to Inspect | Files to Modify | Test Method |
 |----------------|-----------------|-----------------|-------------|
 | **Add a color profile** | `terminal-color-profiles.ts`, `settings.ts` | `terminal-color-profiles.ts` | `npm test`, visual in dev |
-| **Add a CRT effect** | `CRTFilter.ts`, `settings.ts`, `App.tsx` | All three | `npm test`, visual in dev |
+| **Add a CRT effect** | SVS repository, then package tag and host integration | SVS package plus consuming host | SVS checks, `npm test`, visual in dev |
 | **Add a keyboard shortcut** | `terminal/useTerminal.ts`, `terminal/terminal-input.ts` | `terminal/useTerminal.ts` | `npm test`, `tauri:dev` manual test |
-| **Add terminal-buffer search** | `terminal/terminal-search.ts`, `terminal/useTerminal.ts`, `terminal/TerminalRenderer.ts`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: Menu+/, Menu+Shift+/, normal scrollback, alternate screen, Enter/n/N/Esc, CRT on/off |
+| **Add terminal-buffer search** | `terminal/terminal-search.ts`, `terminal/useTerminal.ts`, `terminal/ScanlineTerminalRenderer.ts`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: Menu+/, Menu+Shift+/, normal scrollback, alternate screen, Enter/n/N/Esc, CRT on/off |
 | **Add a global hotkey** | `main.rs`, `App.tsx`, `settings.ts`, `SettingsPanel.tsx` | Rust registration + persisted UI setting | `cargo test`, `npm test`, `tauri:dev`: enable, hide, restore, conflict |
 | **Add a Tauri command** | `main.rs`, `App.tsx` | Both | `cargo test`, `tauri:dev` |
 | **Change font handling** | `App.tsx` (fontCellSize, terminalDimensions), `main.rs` (list_monospace_fonts) | Varies | `tauri:dev`, resize test |
@@ -130,7 +135,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add text attributes (bold/underline)** | `App.tsx` (drawTerminal), xterm buffer API | `App.tsx` | Visual in `tauri:dev` |
 | **Fix mouse coordinates** | `App.tsx` (terminalMouseCell, copyPoint) | `App.tsx` | `tauri:dev` with TUI app |
 | **Add a new resolution** | `settings.ts` (RESOLUTIONS) | `settings.ts` | `npm test`, visual in dev |
-| **Change persistence behavior** | `CRTFilter.ts` (accum shader, persistenceDecay), `settings.ts` | Both | `npm test`, visual in dev |
+| **Change persistence behavior** | SVS package and `crt/useCRT.ts` | Package plus host lifecycle if needed | SVS checks, `npm test`, visual in dev |
 | **Change terminal-tab presets** | `settings.ts`, `useTerminal.ts`, `SettingsPanel.tsx`, `presets.rs`, `App.tsx` | Same frontend state path plus Rust file commands | `npm test`, `cargo test`, `tauri:dev`: two tabs with different resolution/font/CRT settings, load/save/overwrite and dirty confirmations |
 | **Add window chrome / system tray** | `tauri.conf.json`, `main.rs`, `App.tsx` | All | `tauri:dev` |
 | **Add multi-tab / split** | `App.tsx`, `terminal/useTerminal.ts`, `main.rs`, settings and styles | Major refactor | `cargo test`, `npm test`, `tauri:dev` |
@@ -138,13 +143,13 @@ Use this table to identify which files to inspect and test when implementing com
 | **Change command-line session launch** | `main.rs`, `terminal/useTerminal.ts`, `TerminalSession.ts` | Rust target/argument parsing + frontend event handling | `cargo test`, `npm test`, `tauri:dev` |
 | **Change CSP** | `tauri.conf.json` | `tauri.conf.json` | `tauri:dev` |
 | **Add a new Tauri event** | `main.rs`, `App.tsx` | Both | `tauri:dev` |
-| **Change bloom algorithm** | `CRTFilter.ts` (shader + render) | `CRTFilter.ts` | Visual in dev |
+| **Change bloom algorithm** | SVS package | SVS package | SVS checks, visual in dev |
 | **Fix copy/paste** | `App.tsx` (clipboard handlers) | `App.tsx` | `tauri:dev` manual test |
 | **Change Codex assistant, tools, model or effort selection** | `docs/10-ai-assistant.md`, `App.tsx`, `ai/CodexClient.ts`, `ai/chatMessages.ts`, `ai/modelSelection.ts`, `src/ai/protocol.ts`, `src/ui/AiPanel.tsx`, `terminal/TerminalSession.ts`, `src-tauri/src/codex.rs`, `src-tauri/capabilities/default.json`, `package.json` | Varies | `npm test`, `cargo test`, `tauri:dev`: sign-in, catalog fallback, per-tab running state/streaming, two-tab selection/routing, VT/Win32 input |
 | **Change browser home configuration or tab theming** | `src/ui/HomeDashboard.tsx`, `terminal/useTerminal.ts`, `src-tauri/src/home.rs`, `src-tauri/src/browser.rs`, `src-tauri/src/main.rs` | Same files plus docs | `npm test`, `cargo test`, `tauri:dev`: create/load/save/reload, invalid JSON, backup recovery, home → web navigation, page-color event and in-page navigation |
 | **Add terminal tab images** | `terminal/TerminalRenderer.ts`, `terminal/useTerminal.ts`, `crt/useCRT.ts`, Tauri dialog/asset configuration | Same frontend + Tauri files plus docs | `npm test`, `cargo check`, `tauri:dev`: Menu+I, PNG/JPG load, drag, wheel scale, context-menu delete, tab isolation, CRT on/off |
-| **Change virtual-screen boundary** | `scanline-virtual-screen` package, `terminal/ScanlineTerminalRenderer.ts`, `crt/useCRT.ts`, `ui/SettingsPanel.tsx` | Package release plus frontend adapter/docs | Package tests/build, `npm test`, `npm run build`, `tauri:dev`: profile migration, mode fallback, overlays, CRT on/off, resize and dispose cycles |
-| **Change terminal scrollback or add scroll UI** | `terminal/TerminalSession.ts`, `terminal/useTerminal.ts`, `terminal/useTerminal.test.ts`, `terminal/TerminalRenderer.ts`, `TerminalRenderer.test.ts`, `ui/ScrollbackScrollbar.tsx`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: 10,000-line history, wheel/keyboard scroll, thumb drag, fade, alternate buffer, mouse tracking, browser tab isolation |
+| **Change virtual-screen boundary** | SVS repository plus `terminal/ScanlineTerminalRenderer.ts`, `crt/useCRT.ts`, `ui/SettingsPanel.tsx` | Package release, tagged dependency update and integration docs | Package tests/build, `npm test`, `npm run build`, `tauri:dev`: profile migration, mode fallback, overlays, CRT on/off, resize and dispose cycles |
+| **Change terminal scrollback or add scroll UI** | `terminal/TerminalSession.ts`, `terminal/useTerminal.ts`, `terminal/useTerminal.test.ts`, `terminal/ScanlineTerminalRenderer.ts`, `ui/ScrollbackScrollbar.tsx`, `App.tsx`, `styles.css` | Same frontend files plus docs | `npm test`, `npm run build`, `tauri:dev`: 10,000-line history, wheel/keyboard scroll, thumb drag, fade, alternate buffer, mouse tracking, browser tab isolation |
 
 ---
 
@@ -173,7 +178,7 @@ npm run tauri:build
 ### Key Files Quick Access
 
 - Main component: [`src/App.tsx`](./src/App.tsx)
-- CRT shader: [`src/crt/CRTFilter.ts`](./src/crt/CRTFilter.ts)
+- Display module: [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen)
 - Settings: [`src/crt/settings.ts`](./src/crt/settings.ts)
 - VT input: [`src/terminal/terminal-input.ts`](./src/terminal/terminal-input.ts)
 - Terminal search: [`src/terminal/terminal-search.ts`](./src/terminal/terminal-search.ts)

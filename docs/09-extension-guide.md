@@ -50,85 +50,10 @@ A color profile defines a 16-color (or 256-color) palette for the terminal.
 
 ---
 
-## Adding a CRT Setting
+## Extending Scanline Virtual Screen
 
-### Files to Modify
+CRT settings, shaders, profiles, rendering passes and the shared React sections belong to [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Follow its [contribution guide](https://github.com/z-hunter/Scanline-Virtual-Screen/blob/main/CONTRIBUTING.md) and release process, publish an immutable tag, then update the Scanline Term dependency according to [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
-1. **[`src/crt/CRTFilter.ts`](../src/crt/CRTFilter.ts)** — Add to `CRTSettings` interface, add shader uniform, update `render()`
-2. **[`src/crt/settings.ts`](../src/crt/settings.ts)** — Add default, add numeric range, add validation in `loadStoredSettings()`
-3. **[`src/App.tsx`](../src/App.tsx)** — Add UI control (knob, checkbox, or select)
-
-### Steps
-
-1. Add the field to `CRTSettings` in `CRTFilter.ts`:
-   ```typescript
-   myNewSetting: number; // 0.0 to 1.0 (description)
-   ```
-
-2. Add a GLSL uniform in the fragment shader and use it.
-
-3. Add the uniform location field and lookup in `init()`.
-
-4. Set the uniform value in `render()`.
-
-5. Add default in `DEFAULT_CRT_SETTINGS` in `settings.ts`:
-   ```typescript
-   myNewSetting: 0.5,
-   ```
-
-6. Add validation range in `numericRanges`:
-   ```typescript
-   myNewSetting: [0, 1],
-   ```
-
-7. Add a UI control in `App.tsx` — add to the appropriate `controls` group or create a new `<fieldset>`.
-
-### For Boolean Settings
-
-- Add to `CRTSettings` as `boolean`
-- Add validation in `loadStoredSettings()` alongside other boolean checks
-- Add a checkbox in the Display fieldset
-
-### Validation
-
-- [ ] `npm test` — `crt/settings.test.ts` passes (add a test for the new setting)
-- [ ] `npm run dev` — verify the control appears and adjusts the visual effect
-- [ ] Reset defaults — verify the new setting resets
-- [ ] Save and reload — verify persistence via localStorage
-
----
-
-## Adding a Shader / Rendering Effect
-
-### Files to Modify
-
-1. **[`src/crt/CRTFilter.ts`](../src/crt/CRTFilter.ts)** — Modify GLSL shader source and/or add new pass
-
-### Steps (inline shader modification)
-
-1. Add a `uniform` declaration in the fragment shader source string.
-2. Add the uniform location field to the class.
-3. Look up the location in `init()`.
-4. Set the uniform value in `render()`.
-5. Write the GLSL logic in `main()` at the appropriate point in the pipeline.
-
-### Steps (new render pass)
-
-1. Write a new fragment shader as a string in `init()`.
-2. Create a new program with `createProgram()`.
-3. Create FBOs with `ensureFBO()` or `ensureGlowFBO()` patterns.
-4. Add the pass in `render()` between existing passes.
-5. Clean up in `dispose()`.
-
-### Validation
-
-- [ ] No WebGL compile errors (check browser console)
-- [ ] Effect is visible and controllable
-- [ ] CRT Emulation toggle bypass still works (bypass check is at the top of `main()`)
-- [ ] Performance acceptable at 60fps (check FPS counter)
-- [ ] `dispose()` cleans up all new resources
-
----
 
 ## Adding a Keyboard Shortcut
 
@@ -165,7 +90,7 @@ Terminal search is split across three frontend responsibilities:
 
 - [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts) performs literal smart-case matching and returns physical line/cell ranges. Normal-buffer searches include scrollback; alternate-buffer searches use only the current viewport.
 - [`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts) owns transient query state, Menu+/ interception, cyclic navigation, scroll-to-match, and terminal-input suppression while search is open.
-- [`src/terminal/TerminalRenderer.ts`](../src/terminal/TerminalRenderer.ts) renders normal and active match highlights before the CRT pipeline; [`src/App.tsx`](../src/App.tsx) renders the compact DOM input above the CRT canvas.
+- [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) supplies the terminal source to SVS; [`src/App.tsx`](../src/App.tsx) renders the compact DOM input above the display canvas.
 
 When extending search, preserve the distinction between absolute buffer line coordinates and viewport row coordinates. Keep the query overlay out of the canvas so it remains readable with CRT curvature, scanlines, and persistence enabled.
 
@@ -227,9 +152,9 @@ const unlisten = await listen<PayloadType>('my-event', (event) => {
 
 ### Files to Modify
 
-1. **[`src/crt/CRTFilter.ts`](../src/crt/CRTFilter.ts)** — Add to `CRTSettings` if it affects rendering
-2. **[`src/crt/settings.ts`](../src/crt/settings.ts)** — Add default, validation
-3. **[`src/App.tsx`](../src/App.tsx)** — Add UI control, update `terminalDimensions()` dependency if needed
+1. **SVS terminal/profile API** — Add the shared setting and validation in the SVS repository.
+2. **[`src/crt/settings.ts`](../src/crt/settings.ts)** — Keep only Scanline Term persistence adapters current.
+3. **[`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts)** — Update host resize behavior if the setting changes cell geometry.
 
 ### Key Considerations
 

@@ -25,9 +25,9 @@ Neovim RPC остаётся отдельным направлением: он м
 | ConPTY | `src-tauri/src/main.rs`: `spawn_terminal`, `start_terminal`; reader thread читает по 4096 байт и шлёт `terminal-output`. |
 | VT | `src/terminal/TerminalSession.ts`: listener `terminal-output` вызывает `terminal.write(Uint8Array)`. `@xterm/xterm` 6.0 парсит VT и владеет normal/alternate buffers. |
 | Логическая сетка | `Terminal.buffer.active`; renderer читает `getLine(viewportY + row)`, курсор — `cursorX/cursorY`. Собственной модели VT margins в приложении нет. |
-| Рендер | `src/terminal/TerminalRenderer.ts`: `onWriteParsed`/`onCursorMove` делают grid dirty, `draw()` сравнивает row signatures и перерисовывает изменённые строки в `sourceCanvas`, затем `compositedCanvas`. |
+| Рендер | `src/terminal/ScanlineTerminalRenderer.ts` использует optional xterm adapter SVS; он получает dirty-source canvas и передаёт его в display boundary. |
 | Существующая плавность | `useTerminal.ts`: normal-buffer user scroll и output autoscroll вызывают `TerminalRenderer.beginScroll(fromViewportY,toViewportY)`. После `onWriteParsed` `TerminalRenderer.ts` сравнивает `rowSignatures` и при единственном вертикальном кандидате создаёт тот же `ScrollTransition` с row clip: в alternate buffer всегда, в normal buffer — только без изменения `baseY`/`viewportY` у нижней границы. |
-| CRT | `App.tsx` передаёт canvas в `useCRT`; `CRTFilter` получает уже скомпозированный кадр. Анимация до CRT поэтому переиспользуема. |
+| Display | `useCRT` передаёт готовый canvas в SVS; анимация до display boundary поэтому переиспользуема. |
 | Ввод/выделение/мышь | `useTerminal.ts` направляет input сразу в новую `TerminalSession`; mouse hit-test идёт через `TerminalRenderer.cellAtPoint`, copy использует текущий xterm buffer. Selection хранится абсолютными `row,column`; её old-pixel snapshot отдельно не существует. |
 
 Следствие: логика и ввод остаются в новом состоянии, а old-pixel snapshot

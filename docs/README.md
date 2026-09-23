@@ -16,16 +16,18 @@
 | [Troubleshooting](./08-troubleshooting.md) | Developers/Ops | Symptoms, causes, diagnostics, fixes, known limitations |
 | [Extension Guide](./09-extension-guide.md) | Developers | Recipes for adding profiles, settings, shortcuts, commands |
 | [Codex Terminal Assistant](./10-ai-assistant.md) | Developers/QA | Architecture, isolation, app-server protocol, tools, safety boundary and validation |
+| [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md) | Developers/Coding agents | Dependency pinning, host ownership, local package development and validation |
 | [Agent Guide](../AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
 
 ## Quick Links
 
 - **Source (frontend):** [`src/`](../src/)
 - **Source (Rust backend):** [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
-- **CRT shader/filter:** [`src/crt/CRTFilter.ts`](../src/crt/CRTFilter.ts)
+- **Display module:** [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen)
 - **Settings & defaults:** [`src/crt/settings.ts`](../src/crt/settings.ts)
 - **Tauri config:** [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json)
 - **Tests:** `npm test` (Vitest) and `cargo test` (Rust)
+- **Virtual display package:** [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen)
 
 ---
 

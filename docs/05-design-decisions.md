@@ -98,14 +98,14 @@ Continuous vertical pseudographic glyphs (`│`, `┃`, `║`, `▎`) use a cach
 
 ---
 
-## Why the CRT Module Is Framework-Free
+## Why the Display Module Is Separate
 
-**Decision:** `CRTFilter.ts` is a plain ES class with no React, no framework imports, and no DOM dependencies beyond the `HTMLCanvasElement` and `WebGLRenderingContext` it receives.
+**Decision:** The display pipeline lives in [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen), with independent core, terminal and React entrypoints.
 
 **Rationale:**
-- The module originated in the Quest/Scanline game engine and is maintained as an independent, portable module.
-- It can be integrated into any WebGL context — game engine, standalone demo, React app, or other framework.
-- The `render()` method takes a `HTMLCanvasElement` source and a `CRTSettings` object — no coupling to React state, hooks, or lifecycle.
+- Quest and Scanline Term can reuse the same virtual-screen, profile and CRT contract.
+- SVS core remains independent of React, xterm, Tauri and application state.
+- Scanline Term keeps only its host adapter and application lifecycle; the SVS repository owns the technical renderer design.
 
 ---
 

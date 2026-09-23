@@ -222,16 +222,16 @@ Run the `.msi` installer shown in the downloaded release assets. System requirem
 └──────────────────────────────┬──────────────────────────────┘
                                │ Canvas 2D Text Grid
 ┌──────────────────────────────▼──────────────────────────────┐
-│                  CRTFilter (WebGL 1 Engine)                 │
-│  Beam Modulation ── Scanlines ── Phosphor Persistence FBOs  │
-│  Bloom Passes ── Screen Curvature ── Final Display Canvas   │
+│        Scanline Virtual Screen (external display module)    │
+│      Virtual canvas ── CRT/pass-through ── Display canvas   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 For in-depth architectural details, check our comprehensive documentation in [`docs/`](./docs/README.md):
 
 - [Architecture & Data Flow](./docs/02-architecture.md)
-- [Core Systems & Shaders](./docs/04-core-systems.md)
+- [Core Systems & Host Integration](./docs/04-core-systems.md)
+- [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen)
 - [Design Decisions](./docs/05-design-decisions.md)
 - [Codex Terminal Assistant Guide](./docs/10-ai-assistant.md)
 
@@ -276,7 +276,7 @@ npm run tauri:build -- --bundles msi
 ## License
 
 This project is licensed under the [MIT License](LICENSE).  
-The WebGL `CRTFilter` originated in our *Quest/Scanline* project and is maintained here as a standalone module.
+The display module is [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen), which has its own source-available license and commercial-use terms.
 
 ---
 

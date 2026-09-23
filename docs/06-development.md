@@ -104,7 +104,7 @@ Serves the built `dist/` directory via Vite preview server.
 | Rust (`main.rs`) | Requires `npm run tauri:dev` restart (Tauri dev watches Rust and auto-rebuilds, but the ConPTY session restarts) |
 | `tauri.conf.json` | Requires `npm run tauri:dev` restart |
 | `capabilities/default.json` | Requires `npm run tauri:dev` restart |
-| GLSL shaders (inline in `CRTFilter.ts`) | Vite HMR — the TypeScript file change triggers reload |
+| SVS package source | Build and test SVS, publish an immutable tag, update this repository's dependency, then restart |
 | `package.json` scripts/deps | Requires `npm install` and restart |
 
 ---
@@ -167,7 +167,7 @@ Settings are stored under key `scanline-term.settings.v1` as a JSON object. The 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `Module not found: @xterm/xterm` | Missing npm dependencies | `npm install` |
-| TypeScript errors in `CRTFilter.ts` | TS strict mode, `useDefineForClassFields` | These are expected to compile correctly; check `tsconfig.app.json` |
+| TypeScript errors in `scanline-virtual-screen` | Stale or incompatible tagged dependency | Reinstall dependencies, verify the package tag and consult SVS development documentation |
 | Vite HMR not working | Port 5173 in use | Kill other Vite instances or change port |
 
 ### Runtime Failures

@@ -18,19 +18,17 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-color-profiles.test.ts`](../src/terminal-color-profiles.test.ts) | Color profiles | Historical palette values; xterm extended table (256 colors); `remapLegacyRgb` for DOS VGA, Solarized, passthrough |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
-| [`terminal/TerminalRenderer.test.ts`](../src/terminal/TerminalRenderer.test.ts) | Tab colors | Visible-cell average color and readable foreground selection |
+| SVS package tests | Shared renderer | Maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen) |
 | [`terminal/terminal-search.test.ts`](../src/terminal/terminal-search.test.ts) | Terminal buffer search | Normal-buffer scrollback, alternate viewport, smart-case, repeated matches and cyclic navigation |
 | [`ai/CodexClient.test.ts`](../src/ai/CodexClient.test.ts) | Codex protocol client | Pending-request cleanup and paged visible-model catalog loading |
 | [`ai/modelSelection.test.ts`](../src/ai/modelSelection.test.ts) | Model defaults | Luna/medium preference and server-default fallback |
 | [`ui/AiPanel.test.tsx`](../src/ui/AiPanel.test.tsx) | AI composer | Signed-in submission, slash commands, model picker, typing state and scroll-follow behaviour |
 | [`ai/chatMessages.test.ts`](../src/ai/chatMessages.test.ts) | AI message stream | Item-scoped delta accumulation and preservation of commentary before final output |
 | [`crt/settings.test.ts`](../src/crt/settings.test.ts) | CRT settings | Persistence decay physics; default values; corrupt value rejection; physical resolution; malformed JSON survival; trail intensity range; color modes; bloom algorithms; color profiles (including legacy name migration); console font/size; CRT emulation toggle; brightness/contrast/desaturation |
-| [`virtual-screen/profile.test.ts`](../src/virtual-screen/profile.test.ts) | Screen profiles | Canonical schema, legacy migration, mode fallback and JSON round-trip |
-| [`virtual-screen/overlays.test.ts`](../src/virtual-screen/overlays.test.ts) | Overlay compositor | Normalized-to-pixel conversion, stable z-order and opacity |
 
 Run: `npm test`
 
-The shared virtual-screen package is tested independently in `C:\Dev.dir\projects.dat\Scanline-Virtual-Screen` (`npm test`, `npm run build`, `npm run lint`). Scanline Term pins the published `v1.0.2` tag; the package core has no xterm import.
+SVS has its own [test and release procedure](https://github.com/z-hunter/Scanline-Virtual-Screen/blob/main/docs/development.md). Scanline Term validates only its pinned integration: package update, profiles/mode fallback, terminal overlays, CRT on/off, resize, tab switching and disposal. See [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 The stage-1 manual matrix is intentionally scenario-based rather than screenshot-based: mock/source canvas, CRT on/off, all display modes, representative presets, PowerShell/CMD ANSI output, one TUI, multiple tabs, image overlays, legacy-load/new-save/reload, resize and repeated tab-switch/dispose cycles. It is run in `npm run dev` and `npm run tauri:dev`; no capture infrastructure is required.
 

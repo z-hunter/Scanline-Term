@@ -36,7 +36,7 @@ Tab backgrounds are derived from the visible xterm cells, blending cell backgrou
 
 ### Per-tab visual settings and presets
 
-Each terminal session stores its own complete screen profile: `virtualScreen.modeId`, terminal appearance, Display controls, and CRT parameters. The shared source canvas and virtual-screen renderer always consume the active session's snapshot. Display resize and font changes resize every live ConPTY session to keep terminal geometry consistent; inactive sessions retain their own profile and xterm buffer state. New terminal sessions receive a cloned `default` profile, so later edits or overwrites do not retroactively alter existing tabs.
+Each terminal session stores its own complete screen profile: `virtualScreen.modeId`, terminal appearance, Display controls, and CRT parameters. The shared source canvas and virtual-screen renderer always consume the active session's snapshot. `useTerminal.resizeSource()` applies display resize and font changes only to the active ConPTY session; inactive sessions retain their existing terminal geometry until activation or another resize path, while preserving their own profile and xterm buffer state. New terminal sessions receive a cloned `default` profile, so later edits or overwrites do not retroactively alter existing tabs.
 
 Named presets are JSON files under `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The Rust `presets` module owns path safety, file enumeration, bounded reads, conflict detection, atomic writes, and backups. The settings panel keeps dirty state in the active tab, asks before replacing unsaved values, and never writes visual preset fields to the global `localStorage` settings record.
 
@@ -279,7 +279,7 @@ All clipboard access uses the browser/WebView's `navigator.clipboard` API. This 
 
 ### Canvas 2D Drawing (`drawTerminal()`)
 
-The terminal is drawn to an offscreen source canvas at the virtual resolution (e.g., 640×480), not at physical pixel resolution (unless "Physical" mode is selected). The active terminal tab may also own an in-memory list of local PNG/JPG images. `Menu+I` opens the native Tauri dialog; the selected path is fetched into a `Blob` and assigned a `blob:` URL so drawing remains origin-clean for WebGL. The renderer exposes the terminal frame and converts loaded images from normalized tab coordinates into `ScreenOverlay` virtual-pixel records. The shared compositor draws those overlays before both CRT and non-CRT output paths. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it.
+The optional SVS terminal adapter draws the active terminal to an offscreen source canvas at the selected virtual resolution. Scanline Term keeps PNG/JPG image loading, object URLs and interaction in its own tab state; it passes their runtime overlays to SVS at the rendering boundary. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it. The renderer and overlay contracts themselves are documented in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
 
 **Drawing algorithm (simplified):**
 
@@ -315,152 +315,11 @@ Colors are resolved through the active color profile:
 
 ---
 
-## CRT Pipeline
+## Scanline Virtual Screen rendering
 
-The CRT pipeline runs every frame inside `requestAnimationFrame`. The `CRTFilter.render()` method executes up to 9 WebGL passes, reflecting the listed luma reduction, persistence, soft-bloom, glow, and final passes:
+The active CRT/pass-through renderer is supplied by [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Its WebGL passes, shader parameters, profile schema and public renderer lifecycle are documented and tested in that repository.
 
-### Pass 1: Persistence Accumulation (conditional)
-
-**Active when:** `settings.persistence > 0` and `settings.crtEmulation === true`
-
-Uses ping-pong FBOs at `persistenceResolutionScale` (0.5×) of output resolution, so history is in physical screen coordinates.
-
-1. Ping-pong two full-resolution source textures: the latest terminal frame and the immediately preceding one.
-2. Bind the latest source (TEXTURE0), previous source (TEXTURE1), history FBO texture (TEXTURE2), and current/previous average-luma textures (TEXTURE3/4).
-3. Render accumulation shader to target FBO:
-   - `decayedHistory = max(0, history * decay - cutoff)`
-   - map both source frames through their own curvature and HV-breathing raster geometry; when the source changed, `emission = max(previous - current, 0) * 0.09`
-   - `trail = max(emission, decayedHistory)`
-   - Slight desaturation (mix with luma at 35%)
-4. Swap ping-pong FBOs
-
-#### Persistence invariant: history contains only extinguished light
-
-The direct source image already displays steady phosphors. The persistence FBO must therefore store only the light that disappeared between source frames, never a standing copy of the current frame or its background.
-
-This matters for FAR Manager and other TUIs with a bright coloured background. The former model seeded every accumulation pass with `current * 0.09`. A static blue panel consequently maintained a non-zero history floor forever; a ghost was especially visible through scanlines and only appeared to fade when a later screen update changed the input. The render loop itself was healthy (60 FPS, ~16.7 ms accumulation intervals); clearing history on a scene change merely hid the defect and was intentionally rejected.
-
-The current model compares the two source textures only when `sourceChanged` is true and emits the positive part of `previous - current`. This comparison is in output space after curvature and HV Breathing, using a ping-ponged average luma for each raster; when HV Breathing contracts the raster, the exposed physical phosphor points decay naturally. Closing a FAR dialog, moving a selection highlight, or covering shell text with a panel therefore creates a trail; an unchanged panel contributes no new energy and the FBO decays to zero. `clearPersistence()` also drops the source-frame comparison state so a resize cannot create a false first-frame trail.
-
-**Decay calculation** (`persistenceDecay()`):
-- Base = lerp(0.2, 0.99432, persistence); maximum half-life is 1.5× the previous limit
-- Half-life computed from base
-- Decay = exp(-ln2/halfLife × elapsedSeconds) — time-based, not frame-based
-- Cutoff = (30/255) × elapsedSeconds — prevents 8-bit quantization floor from causing permanent burn-in
-
-### Pass 2: Bloom + Glow Blur (conditional)
-
-**Active when:** `bloom > 0` (soft algorithm) or `glow > 0`, and `crtEmulation === true`
-
-Uses FBOs at `glowResolutionScale` (0.5×).
-
-**Bloom** (soft algorithm, 2 passes):
-1. Horizontal blur with bright-pass threshold 0.55, spread 1.0
-2. Vertical blur with no threshold, spread 1.0
-
-**Glow** (4 passes — wider kernel):
-1. Horizontal blur with threshold 0.08, spread 1.5
-2. Vertical blur, spread 1.5
-3. Horizontal blur (second iteration), spread 1.5
-4. Vertical blur (second iteration), spread 1.5
-
-Each blur pass uses a 5-tap Gaussian kernel (weights: 0.227027, 0.316216×2, 0.070270×2).
-The Glow blur source is the current image texture before final scanline modulation; the resulting diffuse layer is blended after scanlines and the RGB mask so it can illuminate scanline gaps like light diffusing through the CRT faceplate.
-
-### Pass 3: Final CRT Fragment Shader
-
-The final shader is specialized when Trail, Bloom, Glow, Imperfect signal, Hum-bar, or Channel switch roll are toggled, so disabled effect branches are removed at compile time. Persistence FBOs are cleared only when Trail transitions from enabled to disabled.
-
-The main fragment shader applies all visual effects in order:
-
-```
-1. CRT Emulation bypass check (if disabled → simple brightness/contrast only)
-2. Curvature distortion (barrel/pincushion)
-3. Bezel detection → selected bezel treatment: 16-tap phosphor spill or blurred screen reflection
-4. HV Breathing raster expansion
-5. Imperfect signal UV distortion
-6. Hum-bar UV position
-7. Channel switch roll
-8. Edge-dependent RGB beam misconvergence (symmetric R/B channel offset)
-9. Hum-bar raster injection (drawn directly onto imageColor before persistence)
-10. Imperfect signal flicker (applied directly to imageColor before persistence)
-11. Persistence trail overlay (from Pass 1, incorporating extinguished text) plus a procedural Hum-bar tail scaled by the persistence setting
-12. Bloom/halation overlay (from Pass 2 or inline 16-tap spiral)
-13. Phosphor grain/noise texture
-14. Scanlines (Sinc-integrated Fourier beam with Lottes phase jitter)
-15. Beam modulation (luma-dependent scanline width)
-16. Image brightness/contrast correction
-17. Color mode conversion (luma × phosphor tint)
-18. Background desaturation (monochrome modes only)
-19. Composite (finalImage × scanline + finalBackground)
-20. Color phosphor mask (optional; RGB aperture, slot, or shadow pattern)
-21. Screen glow overlay (from Pass 2, desaturated 35%, thick-glass diffusion over phosphors & mask)
-22. Vignette & ambient glass light
-23. Final clamp × 1.1
-```
-
-The color CRT mode keeps green as the convergence reference. Edge misconvergence samples red and blue from opposite sides of a centered screen-space field, so the visible ordering reverses across the screen: red appears outward and blue toward the center. `Edge falloff` controls the profile from linear (`1`) to edge-focused (`4`); the strength is measured in physical output pixels and is disabled for monochrome phosphor modes.
-
-### Edge Misconvergence
-
-`Edge misconvergence` simulates imperfect CRT beam convergence that becomes stronger away from the optical centre. The effect is evaluated in the final CRT fragment shader without adding a render pass or FBO:
-
-- `Edge misconvergence` (`0–5`) is the maximum red/blue separation per screen axis at an edge, in physical output pixels. The default is `0`, preserving the clean image until enabled.
-- `Edge falloff` (`1–4`, default `2`) raises the normalized distance from the centre to a power. `1` is linear; higher values keep the centre more closely aligned and concentrate the error near the bezel.
-- Green remains the reference channel. Red is sampled so it appears farther from the centre; blue appears closer. Thus the visible order is `R–G–B` at the left edge and `B–G–R` at the right edge, with the same inward/outward reversal vertically and diagonally in the corners.
-- The field is based on curved screen coordinates, while samples use the current raster coordinates. This keeps the convergence centre fixed when signal jitter, channel roll, or HV breathing are enabled.
-- The separation is applied only to the sharp colour raster before persistence, Bloom, scanline modulation, and screen Glow. Trail, Bloom, and Glow remain diffuse and are not independently channel-shifted. B&W and monochrome phosphor modes disable the separation.
-
-### HV Breathing
-
-HV Breathing drives raster expansion from a GPU reduction of the actual source texture: when the source changes and the effect is enabled, a 16×16 evenly spaced luma sample grid is rendered to a 1×1 texture. The final CRT shader samples that texture directly, so the response remains frame-accurate without a CPU canvas readback or dependence on terminal-cell and tab-colour heuristics. With HV Breathing disabled, the reduction pass is skipped entirely.
-
-### Ambient Glass Light
-
-Ambient Glass Light is a static, soft external illumination across the centre of the curved screen, modelled after cool-retro-term's `Ambient Light`. It is independent of terminal content, bloom, and glow. A 0–1 control blends a pale glass-light mask that smoothly fades toward the screen edges; at zero its shader branch is compiled out.
-
-### Bezel Glow Modes
-
-`Phosphor spill` is the original 16-tap local halo sampled from the source image. `Screen reflection` mirrors a softened reduced-resolution bright screen texture into the curved matte bezel, like the cool-retro-term frame-shininess effect. It uses the same four half-resolution blur passes as Screen glow, reusing that texture whenever glow is enabled. Both it and Bezel highlight pass through the phosphor colour conversion in monochrome modes.
-
-`Bezel highlight` is separate: an external-light band on the inner plastic facet. Its geometric mask fades toward corners and is independent of reflection mode and blur passes. With HV Breathing enabled, the existing GPU average-luma texture gently modulates it from 0.65× to 1.25×; otherwise it stays at the selected strength and does not enable luma reduction.
-
-`Bezel thickness` (0–10 px) adjusts the extra inward frame margin. When set above 0, the matte bezel, highlight facet, and glow/reflections become visible even at zero curvature, proportionally contracting the active screen area by the selected number of physical pixels.
-
-### Signal Effects
-
-- **Imperfect signal** is one 0–1 strength control for subtle temporal flicker, global and per-line X/Y jitter, and rolling horizontal waves. Wave motion runs at 15 Hz while its random interference state changes at 1.5 Hz, avoiding a repeated uniform pattern.
-- **Hum-bar** is a separate 0–1 control for a glowing horizontal band that travels top-to-bottom at 0.08 cycles per second. It adds light only; it does not displace scanlines or create tearing.
-- **Channel switch roll** is an on/off CRT control. On a terminal-to-terminal tab change, the current image starts a 420 ms vertical roll; the new source is bound after 150 ms and continues the same roll. Persistence history is deliberately retained for this transition, so the old source decays over the new one. Browser transitions, new tabs, and tab closure stay immediate.
-
-When a signal effect is off, its final-shader macro is compiled out. Channel switch roll also has no transition delay when disabled.
-
-### CRT Emulation Toggle
-
-When `crtEmulation` is `false`, a separate pass-through shader applies only brightness/contrast to the raw terminal image; CRT, persistence, blur, and final CRT shader work do not run. This provides a "clean" terminal view.
-
-### Color Modes
-
-| Mode | Enum Value | Shader Behavior |
-|------|-----------|----------------|
-| Color | `'color'` (0) | Full RGB passthrough |
-| B&W | `'bw'` (1) | Luma × vec3(1.0) — D65 white |
-| Green | `'green'` (2) | Luma × vec3(0.45, 1.0, 0.62) |
-| Amber | `'amber'` (3) | Luma × vec3(1.0, 0.58, 0.2) |
-| Blue | `'blue'` (4) | Luma × vec3(0.42, 0.72, 1.0) |
-
-### Color Phosphor Mask
-
-Color mode can optionally apply a screen-space procedural RGB mask after the final image, scanlines, and hum-bar are composited, before the thick-glass screen glow is overlaid. Tight Bloom/halation remains before the mask to expand the electron-beam image; wide Glow is applied afterward as diffusion of the emitted light through the faceplate glass. `Aperture grille` uses vertically blended RGB stripes, `Slot mask` blends neighbouring RGB phosphors while retaining staggered dark rows, and `Shadow mask` uses a staggered `RRGGBB / GBBRRG` pattern. The mask remains in physical output-pixel coordinates for stable high-frequency detail, uses an Auto scale of approximately 640 triads across the screen, and is disabled for B&W and monochrome phosphor modes.
-
-### Bloom Algorithms
-
-| Algorithm | Method |
-|-----------|--------|
-| **Soft** (default) | Pre-computed separable Gaussian blur at half resolution (Pass 2). Clean, fast. |
-| **Spiral** (legacy) | Inline 16-tap golden-angle spiral blur in the fragment shader. More textured, more expensive. |
-
----
+Scanline Term owns only the host boundary: source-canvas content, tab-local overlays, animation scheduling, resize handling, errors and disposal. See [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md) before changing that boundary.
 
 ## Font Discovery and Console Sizing
 
