@@ -279,7 +279,7 @@ All clipboard access uses the browser/WebView's `navigator.clipboard` API. This 
 
 ### Canvas 2D Drawing (`drawTerminal()`)
 
-The optional SVS terminal adapter draws the active terminal to an offscreen source canvas at the selected virtual resolution. Scanline Term keeps PNG/JPG image loading, object URLs and interaction in its own tab state; it passes their runtime overlays to SVS at the rendering boundary. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it. The renderer and overlay contracts themselves are documented in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
+The optional SVS terminal adapter draws the active terminal to an offscreen source canvas at the selected virtual resolution. Scanline Term keeps PNG/JPG image loading, object URLs and interaction in its own tab state; it passes their runtime overlays to SVS at the rendering boundary. Its host adapter also draws the branded browser-preview mock when no terminal is bound, using the same `/icon.png` logo as the splash screen; SVS itself remains unbranded and returns no frame while unbound. Images are not part of the xterm buffer and therefore do not scroll with terminal history. Left-drag moves the topmost image, the wheel scales it around the pointer, and its context menu removes it. The renderer and overlay contracts themselves are documented in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
 
 **Drawing algorithm (simplified):**
 

@@ -91,7 +91,7 @@ ScanlineTerm/
 
 #### [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts)
 
-Scanline Term's host adapter over SVS's optional xterm renderer. It adds only tab-local normalized image state and hit testing; the terminal canvas renderer, display pipeline and public API are maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
+Scanline Term's host adapter over SVS's optional xterm renderer. It owns application-specific terminal presentation: tab-local normalized image state and hit testing, TUI scroll detection/diagnostics, tab colours, and the branded browser-preview mock screen with the shared `/icon.png` splash logo. The terminal canvas renderer, display pipeline and public API are maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
 
 #### [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts)
 
@@ -106,8 +106,6 @@ The single React component that constitutes the entire UI. Contains:
 | Type definitions | 1–25 | `NumericKey`, `Control`, `CopyPoint`, `CopySelection`, settings control definitions |
 | `Knob` component | 53–76 | Rotary knob widget with pointer-drag, wheel, and keyboard interaction |
 | Layout helpers | 78–121 | `terminalPadding()`, `fontCellSize()`, `terminalDimensions()`, `sourceDimensions()`, `activeColorProfile()`, `cellColor()`, `canvasFont()` |
-| `drawTerminal()` | 123–182 | Reads xterm buffer cells, draws background/foreground/cursor on Canvas 2D. Handles inverse, dim, invisible attributes. Draws copy selection highlight. |
-| `drawMockTerminal()` | 184–263 | Animated mock terminal for browser preview (no ConPTY) |
 | `App()` — state | 269–300 | React state: `stored` (settings), `error`, `terminalLive`, `monospaceFonts`, `settingsVisible`, `terminalSize`, `fps`. Refs for terminal, filter, canvas, input, modes, copy selection. |
 | `App()` — effects | 297–466 | Settings persistence (localStorage), resolution sync, font enumeration, terminal init (xterm + ConPTY), resize handling, render loop (rAF) |
 | `App()` — input | 468–664 | `sendInput()`, mouse cell mapping, copy selection, mouse handlers (down/up/move/leave/wheel), keyboard handler (keydown/keyup with capture) |

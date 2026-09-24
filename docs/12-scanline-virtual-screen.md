@@ -30,6 +30,7 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - terminal image loading, object URLs, drag/scale/delete interaction and tab-local image state;
 - profile storage, preset files, dirty state and confirmation dialogs;
 - TUI scroll detection and diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; ordinary scroll paths call `beginBufferScroll()`, detected host regions call `beginRegionScroll()`;
+- the branded browser-preview mock and its `/icon.png` splash logo;
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
