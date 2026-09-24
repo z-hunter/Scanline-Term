@@ -38,6 +38,7 @@ mod presets;
 struct TerminalSession {
     child: Child,
     input: Sender<Vec<u8>>,
+    output_ack: mpsc::SyncSender<()>,
     controller: PtyController,
     generation: u64,
 }
@@ -820,13 +821,14 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
     let conpty_oxide::blocking::SessionParts { mut child, output: mut reader, input: mut writer, controller, .. } = conpty_session.into_parts();
     let generation = NEXT_SESSION_GENERATION.fetch_add(1, Ordering::Relaxed);
     let (input_sender, input_receiver) = mpsc::channel::<Vec<u8>>();
+    let (output_ack_sender, output_ack_receiver) = mpsc::sync_channel::<()>(1);
     {
         let mut sessions = state.0.lock().map_err(|_| "terminal state is unavailable")?;
         if sessions.contains_key(&session_id) {
             let _ = child.kill();
             return Err("terminal session already exists".into());
         }
-        sessions.insert(session_id.clone(), TerminalSession { child, input: input_sender, controller, generation });
+        sessions.insert(session_id.clone(), TerminalSession { child, input: input_sender, output_ack: output_ack_sender, controller, generation });
     }
     thread::spawn(move || {
         while let Ok(input) = input_receiver.recv() {
@@ -864,7 +866,9 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
             if Instant::now() < deadline {
                 thread::sleep(deadline.saturating_duration_since(Instant::now()));
             }
-            let _ = app.emit("terminal-output", TerminalOutput { session_id: reader_session_id.clone(), data: std::mem::take(&mut output) });
+            if app.emit("terminal-output", TerminalOutput { session_id: reader_session_id.clone(), data: std::mem::take(&mut output) }).is_err() || output_ack_receiver.recv().is_err() {
+                break;
+            }
         }
         let mut exited = false;
         if let Ok(mut sessions) = app.state::<TerminalState>().0.lock() {
@@ -961,7 +965,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop])
         .run(tauri::generate_context!())
         .expect("error while running Scanline Term");
 }
@@ -1217,9 +1221,12 @@ mod tests {
                 Err(_) => break,
             }
         });
+        let deadline = Instant::now() + Duration::from_secs(5);
         let mut output = Vec::new();
-        while !String::from_utf8_lossy(&output).contains("Reply") {
-            output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap());
+        while !String::from_utf8_lossy(&output).contains("TTL=") {
+            let timeout = deadline.saturating_duration_since(Instant::now());
+            assert!(!timeout.is_zero(), "ping did not produce output before the deadline");
+            output.extend(receiver.recv_timeout(timeout).expect("ping output did not arrive before the deadline"));
         }
         writer.write_all(b"\x03").unwrap();
         writer.flush().unwrap();
@@ -1229,6 +1236,14 @@ mod tests {
         }
         assert!(child.try_wait().unwrap().is_some(), "Ctrl-C did not interrupt the ConPTY child");
     }
+}
+
+#[tauri::command]
+fn ack_terminal_output(state: State<TerminalState>, session_id: SessionId) -> Result<(), String> {
+    valid_session_id(&session_id)?;
+    let sender = state.0.lock().map_err(|_| "terminal state is unavailable")?
+        .get(&session_id).ok_or("terminal is not running")?.output_ack.clone();
+    sender.send(()).map_err(|_| "terminal output is not running".into())
 }
 
 // Force rebuild

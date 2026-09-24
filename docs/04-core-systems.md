@@ -85,7 +85,7 @@ Example: Ctrl+C is the exception: it is sent as ETX (`\x03`) on keydown, because
 
 ### Output Backpressure
 
-ConPTY output is read in 4 KiB chunks into a bounded eight-chunk Rust channel. A separate emitter coalesces up to 32 KiB and sends no more than one `terminal-output` event every 16 ms. `TerminalSession` further feeds xterm in 16 KiB tasks. This keeps the WebView responsive to Ctrl+C and tab switching when a command produces sustained output.
+ConPTY output is read in 4 KiB chunks into a bounded eight-chunk Rust channel. A separate emitter coalesces up to 32 KiB, sends no more than one `terminal-output` event every 16 ms, and waits for `ack_terminal_output` after xterm's asynchronous write callback before continuing. `TerminalSession` further feeds xterm in 16 KiB tasks and drains them before reporting process exit. This keeps the WebView responsive to Ctrl+C and tab switching when a command produces sustained output while preserving final output.
 
 **Limitations:**
 - The browser `KeyboardEvent` doesn't provide native Win32 virtual key codes directly; `win32-input.ts` maps `event.code` to VK/scan code pairs via lookup tables.

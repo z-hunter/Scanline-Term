@@ -11,7 +11,7 @@ export type { CopyPoint, CopySelection, TerminalScrollRegion, TextHighlightRange
 export type Resolution = { id: string; width?: number; height?: number };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 
-export const SMOOTH_SCROLL_DIAGNOSTICS = true;
+export const SMOOTH_SCROLL_DIAGNOSTICS = false;
 
 export class TerminalRenderer extends CoreTerminalRenderer {
   private images: TerminalImage[] = [];

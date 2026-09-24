@@ -17,6 +17,7 @@ const keys: Record<string, Win32Key> = {
 };
 
 const letterScans = [0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c];
+let ctrlCEtxPending = false;
 const digitScans = [0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a];
 const functionScans = [0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x76];
 
@@ -68,7 +69,16 @@ function unicodeCharacter(event: KeyEvent): number {
 /** Encodes the Win32 Input Mode wire format expected by ConPTY. */
 export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
   // ConPTY recognizes ETX as CTRL_C_EVENT; a Win32 Input Mode record only reaches the input queue.
-  if (event.ctrlKey && event.code === 'KeyC') return keyDown ? '\x03' : '';
+  if (event.code === 'KeyC') {
+    if (keyDown && event.ctrlKey) {
+      ctrlCEtxPending = true;
+      return '\x03';
+    }
+    if (!keyDown && ctrlCEtxPending) {
+      ctrlCEtxPending = false;
+      return '';
+    }
+  }
   const [virtualKey, scanCode] = keyInfo(event);
   return `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
 }

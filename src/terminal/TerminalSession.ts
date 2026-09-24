@@ -36,6 +36,7 @@ export type TerminalObservation = {
 };
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
+type PendingOutput = { data: Uint8Array; acknowledge: () => void };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 
 const OUTPUT_CHUNK_BYTES = 16 * 1024;
@@ -98,9 +99,11 @@ export class TerminalSession {
   private disposed = false;
   private exited = false;
   private sequence = 0;
-  private pendingOutput: Uint8Array[] = [];
+  private pendingOutput: PendingOutput[] = [];
   private outputTimer: number | null = null;
   private outputWritePending = false;
+  private outputCompletion: Promise<void> | null = null;
+  private resolveOutputCompletion: (() => void) | null = null;
 
   constructor(
     readonly id: string,
@@ -164,10 +167,7 @@ export class TerminalSession {
         }),
         listen<TerminalExit>("terminal-exit", (event) => {
           if (event.payload.sessionId !== this.id || this.disposed) return;
-          this.exited = true;
-          this.live = false;
-          this.onState(false, this.size);
-          this.onExit();
+          void this.handleExit();
         }),
       ]);
       const validLaunch =
@@ -218,12 +218,12 @@ export class TerminalSession {
   }
 
   private queueOutput(data: number[]): void {
-    this.pendingOutput.push(Uint8Array.from(data));
+    this.pendingOutput.push({ data: Uint8Array.from(data), acknowledge: () => this.acknowledgeOutput() });
     this.scheduleOutputFlush();
   }
 
   private scheduleOutputFlush(): void {
-    if (this.outputWritePending || this.outputTimer !== null || this.disposed) return;
+    if (this.outputWritePending || this.outputTimer !== null || this.disposed || this.exited) return;
     this.outputTimer = window.setTimeout(() => {
       this.outputTimer = null;
       this.flushOutput();
@@ -234,14 +234,17 @@ export class TerminalSession {
     const terminal = this.terminal;
     if (!terminal || this.disposed || this.outputWritePending || !this.pendingOutput.length) return;
     const chunks: Uint8Array[] = [];
+    const acknowledgements: (() => void)[] = [];
     let length = 0;
     while (this.pendingOutput.length && length < OUTPUT_CHUNK_BYTES) {
-      const chunk = this.pendingOutput[0];
-      const take = Math.min(chunk.length, OUTPUT_CHUNK_BYTES - length);
-      chunks.push(chunk.subarray(0, take));
+      const pending = this.pendingOutput[0];
+      const take = Math.min(pending.data.length, OUTPUT_CHUNK_BYTES - length);
+      chunks.push(pending.data.subarray(0, take));
       length += take;
-      if (take === chunk.length) this.pendingOutput.shift();
-      else this.pendingOutput[0] = chunk.subarray(take);
+      if (take === pending.data.length) {
+        this.pendingOutput.shift();
+        acknowledgements.push(pending.acknowledge);
+      } else pending.data = pending.data.subarray(take);
     }
     const input = new Uint8Array(length);
     let offset = 0;
@@ -251,14 +254,39 @@ export class TerminalSession {
     const wasAtBottom = buffer.viewportY === buffer.baseY;
     const normalBuffer = buffer === terminal.buffer.normal;
     this.outputWritePending = true;
+    this.outputCompletion = new Promise((resolve) => { this.resolveOutputCompletion = resolve; });
     terminal.write(input, () => {
       this.outputWritePending = false;
+      this.outputCompletion = null;
+      this.resolveOutputCompletion?.();
+      this.resolveOutputCompletion = null;
       const toViewportY = buffer.viewportY;
       const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
       this.sequence++;
       this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : fromViewportY, autoScroll });
+      acknowledgements.forEach((acknowledge) => acknowledge());
       this.scheduleOutputFlush();
     });
+  }
+
+  private acknowledgeOutput(): void {
+    if (this.disposed) return;
+    void invoke("ack_terminal_output", { sessionId: this.id }).catch((reason) => this.onError(`Terminal output acknowledgment failed: ${String(reason)}`));
+  }
+
+  private async handleExit(): Promise<void> {
+    if (this.exited) return;
+    this.exited = true;
+    if (this.outputTimer !== null) window.clearTimeout(this.outputTimer);
+    this.outputTimer = null;
+    while (this.pendingOutput.length || this.outputWritePending) {
+      this.flushOutput();
+      if (this.outputWritePending && this.outputCompletion) await this.outputCompletion;
+    }
+    if (this.disposed) return;
+    this.live = false;
+    this.onState(false, this.size);
+    this.onExit();
   }
 
   async sendAutomationInput(action: TerminalInputAction): Promise<void> {
@@ -406,6 +434,9 @@ export class TerminalSession {
     if (this.outputTimer !== null) window.clearTimeout(this.outputTimer);
     this.outputTimer = null;
     this.pendingOutput = [];
+    this.resolveOutputCompletion?.();
+    this.resolveOutputCompletion = null;
+    this.outputCompletion = null;
     this.outputWritePending = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);

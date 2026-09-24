@@ -14,7 +14,9 @@ describe('Win32 Input Mode encoding', () => {
     expect(win32InputKey(key('ContextMenu', { key: 'ContextMenu' }), true)).toBe('\x1b[93;93;0;1;0;1_');
     expect(win32InputKey(key('ContextMenu', { key: 'ContextMenu' }), false)).toBe('\x1b[93;93;0;0;0;1_');
     expect(win32InputKey(key('KeyC', { key: 'c', ctrlKey: true }), true)).toBe('\x03');
-    expect(win32InputKey(key('KeyC', { key: 'c', ctrlKey: true }), false)).toBe('');
+    expect(win32InputKey(key('KeyC', { key: 'c' }), false)).toBe('');
+    expect(win32InputKey(key('KeyC', { key: 'c' }), true)).toBe('\x1b[67;46;99;1;0;1_');
+    expect(win32InputKey(key('KeyC', { key: 'c' }), false)).toBe('\x1b[67;46;99;0;0;1_');
     expect(win32InputKey(key('Enter', { key: 'Enter' }), true)).toBe('\x1b[13;28;13;1;0;1_');
     expect(win32InputKey(key('Backspace', { key: 'Backspace' }), true)).toBe('\x1b[8;14;8;1;0;1_');
     expect(win32InputKey(key('ArrowUp', { key: 'ArrowUp' }), true)).toBe('\x1b[38;72;0;1;0;1_');

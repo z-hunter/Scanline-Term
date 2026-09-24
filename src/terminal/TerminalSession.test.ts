@@ -26,7 +26,7 @@ describe('TerminalSession', () => {
     mocked.handlers.get('terminal-exit')!({ payload: { sessionId: 'other' } });
     expect(exited).not.toHaveBeenCalled();
     mocked.handlers.get('terminal-exit')!({ payload: { sessionId: session.id } });
-    expect(exited).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(exited).toHaveBeenCalledOnce());
     expect(session.live).toBe(false);
     session.dispose();
   });

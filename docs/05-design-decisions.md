@@ -45,9 +45,9 @@ Continuous vertical pseudographic glyphs (`│`, `┃`, `║`, `▎`) use a cach
 
 ## Why Console Output Is Backpressured
 
-**Decision:** ConPTY reader output passes through a bounded channel and is emitted to the WebView at most once per 16 ms; the frontend writes it to xterm in 16 KiB tasks.
+**Decision:** ConPTY reader output passes through a bounded channel and is emitted to the WebView at most once per 16 ms; the frontend writes it to xterm in 16 KiB tasks and acknowledges each event only after xterm's asynchronous write completes.
 
-**Rationale:** A command such as `dir /s` can produce enough 4 KiB pipe reads to flood the Tauri/WebView event queue. Limiting output work preserves prompt keyboard handling, including ETX-based Ctrl+C, and tab switching. The ConPTY input writer remains independent of this output path.
+**Rationale:** A command such as `dir /s` can produce enough 4 KiB pipe reads to flood the Tauri/WebView event queue. Limiting output work and waiting for frontend capacity preserves prompt keyboard handling, including ETX-based Ctrl+C, and tab switching. The ConPTY input writer remains independent of this output path, and terminal exit waits until final output has been parsed.
 
 ---
 
