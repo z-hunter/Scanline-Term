@@ -12,6 +12,7 @@ use std::{
         Mutex,
     },
     thread,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -834,15 +835,36 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
             }
         }
     });
-    let reader_session_id = session_id.clone();
-    let reader_generation = generation;
+    let (output_sender, output_receiver) = mpsc::sync_channel::<Vec<u8>>(8);
     thread::spawn(move || {
         let mut buffer = [0; 4096];
         while let Ok(count) = reader.read(&mut buffer) {
             if count == 0 {
                 break;
             }
-            let _ = app.emit("terminal-output", TerminalOutput { session_id: reader_session_id.clone(), data: buffer[..count].to_vec() });
+            if output_sender.send(buffer[..count].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    let reader_session_id = session_id.clone();
+    let reader_generation = generation;
+    thread::spawn(move || {
+        let mut output = Vec::with_capacity(32 * 1024);
+        while let Ok(chunk) = output_receiver.recv() {
+            output.extend(chunk);
+            let deadline = Instant::now() + Duration::from_millis(16);
+            while output.len() < 32 * 1024 {
+                match output_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(chunk) => output.extend(chunk),
+                    Err(mpsc::RecvTimeoutError::Timeout) => break,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+            if Instant::now() < deadline {
+                thread::sleep(deadline.saturating_duration_since(Instant::now()));
+            }
+            let _ = app.emit("terminal-output", TerminalOutput { session_id: reader_session_id.clone(), data: std::mem::take(&mut output) });
         }
         let mut exited = false;
         if let Ok(mut sessions) = app.state::<TerminalState>().0.lock() {
@@ -1171,6 +1193,41 @@ mod tests {
         while !String::from_utf8_lossy(&output).contains("F1") {
             output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap().unwrap());
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ctrl_c_interrupts_a_conpty_child() {
+        use std::{io::{Read, Write}, sync::mpsc, thread, time::{Duration, Instant}};
+
+        use conpty_oxide::{blocking::Command, ConPtyBackend, SessionOptions};
+
+        let backend = ConPtyBackend::from_dir(dev_conpty_dir()).unwrap();
+        let mut command = Command::new("ping.exe");
+        command.args(["-t", "127.0.0.1"]);
+        let session = command.spawn_with(SessionOptions::new().size(pty_size(80, 30).unwrap()).backend(backend)).unwrap();
+        let conpty_oxide::blocking::SessionParts { mut child, output: mut reader, input: mut writer, .. } = session.into_parts();
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || loop {
+            let mut bytes = [0; 1024];
+            match reader.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(count) if sender.send(bytes[..count].to_vec()).is_err() => break,
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        });
+        let mut output = Vec::new();
+        while !String::from_utf8_lossy(&output).contains("Reply") {
+            output.extend(receiver.recv_timeout(Duration::from_secs(5)).unwrap());
+        }
+        writer.write_all(b"\x03").unwrap();
+        writer.flush().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while child.try_wait().unwrap().is_none() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(child.try_wait().unwrap().is_some(), "Ctrl-C did not interrupt the ConPTY child");
     }
 }
 

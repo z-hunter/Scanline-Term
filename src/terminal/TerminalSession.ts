@@ -38,6 +38,8 @@ type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 
+const OUTPUT_CHUNK_BYTES = 16 * 1024;
+
 const sessions = new Map<string, TerminalSession>();
 export const terminalSession = (id: string) => sessions.get(id);
 
@@ -96,6 +98,9 @@ export class TerminalSession {
   private disposed = false;
   private exited = false;
   private sequence = 0;
+  private pendingOutput: Uint8Array[] = [];
+  private outputTimer: number | null = null;
+  private outputWritePending = false;
 
   constructor(
     readonly id: string,
@@ -155,18 +160,7 @@ export class TerminalSession {
       terminal.unicode.activeVersion = "11";
       this.unlisten = await Promise.all([
         listen<TerminalOutput>("terminal-output", (event) => {
-          if (event.payload.sessionId === this.id) {
-            const buffer = terminal.buffer.active;
-            const fromViewportY = buffer.viewportY;
-            const wasAtBottom = buffer.viewportY === buffer.baseY;
-            const normalBuffer = buffer === terminal.buffer.normal;
-            terminal.write(Uint8Array.from(event.payload.data), () => {
-              const toViewportY = buffer.viewportY;
-              const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
-              this.sequence++;
-              this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : fromViewportY, autoScroll });
-            });
-          }
+          if (event.payload.sessionId === this.id) this.queueOutput(event.payload.data);
         }),
         listen<TerminalExit>("terminal-exit", (event) => {
           if (event.payload.sessionId !== this.id || this.disposed) return;
@@ -221,6 +215,50 @@ export class TerminalSession {
     void invoke("write_terminal", { sessionId: this.id, input }).catch(
       (reason) => this.onError(`Terminal input failed: ${String(reason)}`),
     );
+  }
+
+  private queueOutput(data: number[]): void {
+    this.pendingOutput.push(Uint8Array.from(data));
+    this.scheduleOutputFlush();
+  }
+
+  private scheduleOutputFlush(): void {
+    if (this.outputWritePending || this.outputTimer !== null || this.disposed) return;
+    this.outputTimer = window.setTimeout(() => {
+      this.outputTimer = null;
+      this.flushOutput();
+    }, 0);
+  }
+
+  private flushOutput(): void {
+    const terminal = this.terminal;
+    if (!terminal || this.disposed || this.outputWritePending || !this.pendingOutput.length) return;
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    while (this.pendingOutput.length && length < OUTPUT_CHUNK_BYTES) {
+      const chunk = this.pendingOutput[0];
+      const take = Math.min(chunk.length, OUTPUT_CHUNK_BYTES - length);
+      chunks.push(chunk.subarray(0, take));
+      length += take;
+      if (take === chunk.length) this.pendingOutput.shift();
+      else this.pendingOutput[0] = chunk.subarray(take);
+    }
+    const input = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { input.set(chunk, offset); offset += chunk.length; }
+    const buffer = terminal.buffer.active;
+    const fromViewportY = buffer.viewportY;
+    const wasAtBottom = buffer.viewportY === buffer.baseY;
+    const normalBuffer = buffer === terminal.buffer.normal;
+    this.outputWritePending = true;
+    terminal.write(input, () => {
+      this.outputWritePending = false;
+      const toViewportY = buffer.viewportY;
+      const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
+      this.sequence++;
+      this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : fromViewportY, autoScroll });
+      this.scheduleOutputFlush();
+    });
   }
 
   async sendAutomationInput(action: TerminalInputAction): Promise<void> {
@@ -365,6 +403,10 @@ export class TerminalSession {
     if (this.processInterval !== null)
       window.clearInterval(this.processInterval);
     this.processInterval = null;
+    if (this.outputTimer !== null) window.clearTimeout(this.outputTimer);
+    this.outputTimer = null;
+    this.pendingOutput = [];
+    this.outputWritePending = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);
   }

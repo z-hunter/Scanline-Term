@@ -67,6 +67,8 @@ function unicodeCharacter(event: KeyEvent): number {
 
 /** Encodes the Win32 Input Mode wire format expected by ConPTY. */
 export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
+  // ConPTY recognizes ETX as CTRL_C_EVENT; a Win32 Input Mode record only reaches the input queue.
+  if (event.ctrlKey && event.code === 'KeyC') return keyDown ? '\x03' : '';
   const [virtualKey, scanCode] = keyInfo(event);
   return `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
 }

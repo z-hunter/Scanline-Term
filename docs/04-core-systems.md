@@ -79,9 +79,13 @@ When active, **every** keydown and keyup event is encoded using `win32InputKey()
 
 **Wire format:** `\x1b[virtualKey;scanCode;unicodeChar;keyDown;controlState;repeatCount_`
 
-Example: Ctrl+C → `\x1b[67;46;3;1;8;1_` (VK_C=67, scan=0x2E, unicode=3, down=1, LEFT_CTRL=8, repeat=1)
+Example: Ctrl+C is the exception: it is sent as ETX (`\x03`) on keydown, because ConPTY translates ETX into `CTRL_C_EVENT`. Keyup sends no bytes. Other keys use the Win32 Input Mode record shown above.
 
 **Compatibility motivation:** Many Windows console applications (FAR Manager, PowerShell `ReadKey`, `cmd.exe` internal commands) depend on Win32 input records rather than VT sequences. Win32 Input Mode lets them receive modifier-only events, key-up events, and exact scan codes that cannot be represented in standard VT.
+
+### Output Backpressure
+
+ConPTY output is read in 4 KiB chunks into a bounded eight-chunk Rust channel. A separate emitter coalesces up to 32 KiB and sends no more than one `terminal-output` event every 16 ms. `TerminalSession` further feeds xterm in 16 KiB tasks. This keeps the WebView responsive to Ctrl+C and tab switching when a command produces sustained output.
 
 **Limitations:**
 - The browser `KeyboardEvent` doesn't provide native Win32 virtual key codes directly; `win32-input.ts` maps `event.code` to VK/scan code pairs via lookup tables.

@@ -17,6 +17,7 @@ describe('TerminalSession', () => {
     const write = vi.spyOn(session.terminal!, 'write');
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: 'other', data: [65] } });
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: [66] } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(write).toHaveBeenCalledTimes(1);
     session.sendInput('dir\r'); session.resize({ cols: 81, rows: 24 });
     expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', { sessionId: session.id, cols: 80, rows: 24 });
@@ -229,6 +230,20 @@ describe('TerminalSession', () => {
       autoScroll: true,
     });
     expect(onOutput.mock.calls[0][0].toViewportY).toBeGreaterThan(fromViewportY);
+    session.dispose();
+  });
+
+  it('batches output and yields between 16 KiB writes', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    const write = vi.spyOn(session.terminal!, 'write');
+    const data = Array.from({ length: 20 * 1024 }, () => 0x78);
+
+    mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data } });
+    await vi.waitFor(() => expect(write).toHaveBeenCalledTimes(2));
+
+    expect(write.mock.calls[0][0]).toHaveLength(16 * 1024);
+    expect(write.mock.calls[1][0]).toHaveLength(4 * 1024);
     session.dispose();
   });
 });

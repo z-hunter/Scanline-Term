@@ -43,6 +43,14 @@ Continuous vertical pseudographic glyphs (`│`, `┃`, `║`, `▎`) use a cach
 
 ---
 
+## Why Console Output Is Backpressured
+
+**Decision:** ConPTY reader output passes through a bounded channel and is emitted to the WebView at most once per 16 ms; the frontend writes it to xterm in 16 KiB tasks.
+
+**Rationale:** A command such as `dir /s` can produce enough 4 KiB pipe reads to flood the Tauri/WebView event queue. Limiting output work preserves prompt keyboard handling, including ETX-based Ctrl+C, and tab switching. The ConPTY input writer remains independent of this output path.
+
+---
+
 ## Why Color Profiles Can Have More Than 16 Colors
 
 **Decision:** The `xterm-x11` profile contains 256 colors (16 named + 216 cube + 24 grayscale), matching xterm's full 256-color table. Other profiles define only 16 colors but fall back to the xterm extended cube for indices 16–255.

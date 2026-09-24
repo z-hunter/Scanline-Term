@@ -119,6 +119,7 @@ sequenceDiagram
     participant Shell as cmd.exe
     participant ConPTY as ConPTY (Rust)
     participant Reader as Reader Thread
+    participant Queue as Bounded Output Queue
     participant Tauri as Tauri Event Bus
     participant Xterm as @xterm/xterm
     participant Canvas as Canvas 2D
@@ -127,8 +128,9 @@ sequenceDiagram
 
     Shell->>ConPTY: stdout bytes
     ConPTY->>Reader: pipe read (4 KiB buffer)
-    Reader->>Tauri: emit("terminal-output", { sessionId, data })
-    Tauri->>Xterm: matching session terminal.write(Uint8Array)
+    Reader->>Queue: bounded 8-chunk send
+    Queue->>Tauri: emit up to 32 KiB every 16 ms
+    Tauri->>Xterm: matching session terminal.write in 16 KiB tasks
     Note over Xterm: VT parse → update buffer cells
     Xterm-->>Canvas: onWriteParsed → compare cached row signatures
     Note over Canvas: requestAnimationFrame loop
@@ -276,21 +278,22 @@ On first launch, Rust parses the positional target, its following arguments, and
 └──────────┬──────────┬───────────────┘
            │          │
     ┌──────▼──────┐ ┌─▼─────────────┐
-    │Writer Thread│ │ Reader Thread  │
-    │ mpsc recv   │ │ pipe read loop │
-    │ → pipe write│ │ → emit event   │
+    │Writer Thread│ │ Reader + Emitter│
+    │ mpsc recv   │ │ bounded output  │
+    │ → pipe write│ │ queue → event   │
     └─────────────┘ └────────────────┘
 ```
 
 - **`TerminalState`** is a `Mutex<HashMap<SessionId, TerminalSession>>`, accessed by Tauri command handlers on the main thread. Each command carries the frontend-generated UUID for its target session.
 - **Writer thread**: receives `Vec<u8>` from an `mpsc::Sender`, writes to the ConPTY input pipe. Blocks on `recv()`, terminates when the sender is dropped or the pipe errors.
-- **Reader thread**: each session reads its ConPTY output pipe in a `[0; 4096]` buffer loop. Events carry `sessionId`, so the frontend routes them to the matching xterm buffer. On EOF or error, the reader removes only its own entry and emits `terminal-exit`.
+- **Reader and emitter threads**: each session reads its ConPTY output pipe in a `[0; 4096]` buffer loop into a bounded eight-chunk channel. The emitter coalesces up to 32 KiB and emits at most once every 16 ms, preventing a verbose child process from flooding the WebView event queue. On EOF or error, it removes only its own entry and emits `terminal-exit`.
 - **`Drop` for `TerminalState`**: kills the child process to prevent orphaned console hosts.
 
 ### Frontend Side
 
 - All rendering runs on the **main JavaScript thread** inside a `requestAnimationFrame` loop.
 - xterm output is compared against cached row signatures. Only changed rows, plus the old/new cursor row, redraw; scroll, resize, settings, and selection redraw the whole source canvas.
+- `TerminalSession` processes output in 16 KiB writes and schedules the next write as a separate task, preserving keyboard and tab-event responsiveness during sustained output.
 - `ResizeObserver` triggers canvas and ConPTY resizes synchronously on the main thread.
 - Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
 
