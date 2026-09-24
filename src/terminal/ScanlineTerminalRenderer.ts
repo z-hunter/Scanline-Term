@@ -24,6 +24,7 @@ export class TerminalRenderer extends CoreTerminalRenderer {
   private nextTransitionId = 1;
   private activeTransitionId: number | null = null;
   private activeTransitionOperation: 'buffer' | 'region' | null = null;
+  private activeHeuristicRegion: TerminalScrollRegion | null = null;
   private drawing = false;
   private readonly logo = new Image();
 
@@ -57,6 +58,7 @@ export class TerminalRenderer extends CoreTerminalRenderer {
     const wasAnimating = this.isScrollAnimating;
     const accepted = super.beginRegionScroll(region);
     this.recordScrollRequest('region', region, wasAnimating, accepted);
+    if (accepted) this.activeHeuristicRegion = region;
     return accepted;
   }
   cancelScroll(): void {
@@ -67,6 +69,7 @@ export class TerminalRenderer extends CoreTerminalRenderer {
     if (wasAnimating) this.recordDiagnostic({ event: this.drawing ? 'transition-completed' : 'transition-cancelled', transitionId, operation });
     this.activeTransitionId = null;
     this.activeTransitionOperation = null;
+    this.activeHeuristicRegion = null;
   }
 
   exportSmoothScrollDiagnostics(): string { return JSON.stringify({ version: 2, entries: this.diagnostics }, null, 2); }
@@ -99,7 +102,13 @@ export class TerminalRenderer extends CoreTerminalRenderer {
       if (previous && previous.buffer === current.buffer && previous.cols === current.cols && previous.rows === current.rows && eligibleBuffer && terminal.hasSelection?.() !== true) {
         const detection = inspectVerticalScroll(previous.presentation, current.presentation, previous.content, current.content);
         this.recordDiagnostic({ event: 'heuristic-frame', buffer: terminal.buffer.active === terminal.buffer.alternate ? 'alternate' : 'normal', cols: current.cols, rows: current.rows, viewportY: current.viewportY, baseY: current.baseY, stableNormal, detection });
-        if (detection.candidate) this.beginRegionScroll({ deltaRows: detection.candidate.deltaRows, topRow: detection.candidate.topRow, bottomRow: detection.candidate.bottomRow });
+        if (detection.candidate) {
+          const region = { deltaRows: detection.candidate.deltaRows, topRow: detection.candidate.topRow, bottomRow: detection.candidate.bottomRow };
+          if (this.isScrollAnimating && this.activeTransitionOperation === 'region' && this.activeHeuristicRegion && (this.activeHeuristicRegion.topRow !== region.topRow || this.activeHeuristicRegion.bottomRow !== region.bottomRow)) {
+            this.recordDiagnostic({ event: 'heuristic-skip', reason: 'active-region-changed', activeRegion: this.activeHeuristicRegion, candidate: region });
+            this.cancelScroll();
+          } else this.beginRegionScroll(region);
+        }
       } else if (previous) this.recordDiagnostic({ event: 'heuristic-skip', reason: previous.buffer !== current.buffer ? 'buffer-change' : previous.cols !== current.cols || previous.rows !== current.rows ? 'grid-change' : !eligibleBuffer ? 'normal-buffer-moved' : 'selection' });
       this.previousSnapshot = current; this.heuristicDirty = false;
     } else if (terminal) {

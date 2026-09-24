@@ -16,6 +16,7 @@ export type TerminalScreenSnapshot = {
 const MIN_SCROLL_OVERLAP = 4;
 const MIN_SCROLL_TEXT_ROWS = 3;
 const MAX_PRESENTATION_MISMATCH_ROWS = 2;
+const MAX_UNSCROLLED_ROWS = 2;
 
 function rowHasText(signature: string): boolean { return signature.includes(':') ? /:[^,\s;]/.test(signature) : /\S/.test(signature); }
 
@@ -23,7 +24,7 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
   if (!previous.length || previous.length !== next.length || previousContent.length !== previous.length || nextContent.length !== next.length) return { candidate: null, maxExactOverlap: 0, maxExactDelta: null, rejection: 'different-row-count' };
   const candidates: ScrollCandidate[] = [];
   let maxExactOverlap = 0; let maxExactDelta: number | null = null;
-  let ambiguousRuns = false; let insufficientText = false; let unchangedIncoming = false;
+  let ambiguousRuns = false; let insufficientText = false; let insufficientRegion = false; let unchangedIncoming = false;
   const maxDelta = previous.length - MIN_SCROLL_OVERLAP;
   for (let delta = -maxDelta; delta <= maxDelta; delta += 1) {
     if (!delta) continue;
@@ -47,6 +48,7 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
     const run = bestRuns[0];
     if (next.slice(run.start, run.end).filter(rowHasText).length < MIN_SCROLL_TEXT_ROWS) { insufficientText = true; continue; }
     const topRow = Math.min(run.start, run.start + delta); const bottomRow = Math.max(run.end, run.end + delta);
+    if (bottomRow - topRow < previous.length - MAX_UNSCROLLED_ROWS) { insufficientRegion = true; continue; }
     let incomingChanged = false;
     const incomingStart = delta > 0 ? run.end : run.start + delta; const incomingEnd = delta > 0 ? run.end + delta : run.start;
     for (let row = incomingStart; row < incomingEnd; row += 1) if (next[row] !== previous[row]) { incomingChanged = true; break; }
@@ -54,7 +56,7 @@ export function inspectVerticalScroll(previous: readonly string[], next: readonl
   }
   candidates.sort((a, b) => b.overlapRows - a.overlapRows || Math.abs(a.deltaRows) - Math.abs(b.deltaRows));
   const best = candidates[0]; const candidate = best && (!candidates[1] || best.overlapRows >= candidates[1].overlapRows + 2) ? best : null;
-  const rejection = candidate ? null : candidates.length > 1 ? 'ambiguous-candidates' : ambiguousRuns ? 'ambiguous-run' : insufficientText ? 'fewer-than-three-text-rows' : unchangedIncoming ? 'unchanged-incoming-band' : maxExactOverlap < MIN_SCROLL_OVERLAP ? 'no-four-row-exact-overlap' : 'no-eligible-candidate';
+  const rejection = candidate ? null : candidates.length > 1 ? 'ambiguous-candidates' : ambiguousRuns ? 'ambiguous-run' : insufficientText ? 'fewer-than-three-text-rows' : insufficientRegion ? 'region-too-small' : unchangedIncoming ? 'unchanged-incoming-band' : maxExactOverlap < MIN_SCROLL_OVERLAP ? 'no-four-row-exact-overlap' : 'no-eligible-candidate';
   return { candidate, maxExactOverlap, maxExactDelta, rejection };
 }
 
