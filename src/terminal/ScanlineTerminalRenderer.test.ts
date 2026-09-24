@@ -3,6 +3,14 @@ import { DEFAULT_CRT_SETTINGS } from 'scanline-virtual-screen/core';
 import { TerminalRenderer, type TerminalImage } from './ScanlineTerminalRenderer';
 
 describe('ScanlineTerminalRenderer', () => {
+  it('renders the Scanline Term mock screen without a bound terminal', () => {
+    const context = { globalAlpha: 1, fillStyle: '', font: '', textBaseline: 'top', fillRect: vi.fn(), fillText: vi.fn(), drawImage: vi.fn(), clearRect: vi.fn(), measureText: () => ({ width: 24 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const renderer = new TerminalRenderer(); renderer.resizeSource(320, 240); renderer.bindTerminal(null);
+    expect(renderer.draw(1, DEFAULT_CRT_SETTINGS)).toBe(true);
+    expect(context.fillText).toHaveBeenCalledWith('SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', DEFAULT_CRT_SETTINGS.consoleFontSize, DEFAULT_CRT_SETTINGS.consoleFontSize);
+  });
+
   it('hit-tests the topmost normalized image', () => {
     const renderer = new TerminalRenderer();
     renderer.resizeSource(100, 100);

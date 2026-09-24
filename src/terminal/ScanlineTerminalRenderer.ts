@@ -2,6 +2,8 @@ import type { Terminal } from '@xterm/xterm';
 import { TerminalRenderer as CoreTerminalRenderer, type CopyPoint, type CopySelection, type TerminalScrollRegion, type TextHighlightRange } from 'scanline-virtual-screen/terminal';
 import type { CRTSettings } from 'scanline-virtual-screen/core';
 import type { ScreenOverlay } from 'scanline-virtual-screen/core';
+import { colorProfile } from 'scanline-virtual-screen/core';
+import { canvasFont } from 'scanline-virtual-screen/terminal';
 import { detectVerticalScroll, inspectVerticalScroll, snapshotTerminal, type ScrollDetection, type ScrollCandidate, type TerminalScreenSnapshot } from './terminal-scroll-heuristic';
 import { applyTabColorMode, terminalAverageColor, type TabColor } from './terminal-tab-color';
 
@@ -48,7 +50,7 @@ export class TerminalRenderer extends CoreTerminalRenderer {
 
   draw(time: number, settings: CRTSettings): boolean {
     const terminal = this.boundTerminal;
-    if (!terminal) return this.drawBrowserMock(settings);
+    if (!terminal) return this.drawBrowserMock(time, settings);
     if (this.tuiScrollingEnabled && this.heuristicDirty) {
       const current = snapshotTerminal(terminal); const previous = this.previousSnapshot;
       const stableNormal = terminal.buffer.active === terminal.buffer.normal && previous?.viewportY === current.viewportY && previous.baseY === current.baseY;
@@ -65,10 +67,16 @@ export class TerminalRenderer extends CoreTerminalRenderer {
     return super.draw(time, settings);
   }
 
-  private drawBrowserMock(settings: CRTSettings): boolean {
+  private drawBrowserMock(time: number, settings: CRTSettings): boolean {
     const ctx = this.sourceCanvas.getContext('2d'); const output = this.compositedCanvas.getContext('2d');
     if (!ctx || !output) return false;
-    ctx.fillStyle = '#05070a'; ctx.fillRect(0, 0, this.sourceCanvas.width, this.sourceCanvas.height); ctx.fillStyle = '#65e6a8'; ctx.font = `${Math.max(12, settings.consoleFontSize)}px ${settings.consoleFont}`; ctx.fillText('SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', 24, 36); ctx.fillStyle = '#8ba99a'; ctx.fillText('Bind a terminal session to begin.', 24, 66); output.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); output.drawImage(this.sourceCanvas, 0, 0); return true;
+    const { width, height } = this.sourceCanvas; const size = settings.consoleFontSize; const line = Math.floor(size * 1.5); const profile = colorProfile(settings.colorProfile);
+    ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height); ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont); ctx.textBaseline = 'top';
+    const lines = ['SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', `virtual framebuffer ${width}×${height}`, '[ OK ] phosphor matrix online', '[ OK ] scanline generator synchronized', '[ OK ] WebGL fragment pipeline ready', '> rendering an ordinary terminal as an old monitor', '> browser preview uses a mock session', '', `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`];
+    lines.forEach((text, index) => { ctx.fillStyle = ['#7dffae', '#4ecf83', '#9affbd', '#62db91', '#78c9ff', '#ffd166', '#ff8a80'][index % 7]; ctx.fillText(text, size, size + line * index); });
+    const promptY = size + line * lines.length; const promptText = 'ready> '; ctx.fillStyle = '#7dffae'; ctx.fillText(promptText, size, promptY);
+    if (Math.floor(time * 2) % 2 === 0) { const cursorX = size + ctx.measureText(promptText).width; const cursorW = ctx.measureText('M').width; const cursorH = size; ctx.fillStyle = profile.cursor ?? '#7dffae'; if (settings.cursorStyle === 'underline') ctx.fillRect(cursorX, promptY + cursorH - Math.max(2, Math.round(cursorH * 0.12)) - 1, cursorW, Math.max(2, Math.round(cursorH * 0.12))); else if (settings.cursorStyle === 'bar') ctx.fillRect(cursorX, promptY, Math.max(2, Math.min(cursorW, cursorW * 0.2)), cursorH); else ctx.fillRect(cursorX, promptY + 1, cursorW, Math.max(1, cursorH - 2)); }
+    output.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); output.drawImage(this.sourceCanvas, 0, 0); return true;
   }
 
   setImages(images: TerminalImage[]): void { this.images = images; this.cancelScroll(); this.markDirty(); }
