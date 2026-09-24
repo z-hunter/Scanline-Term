@@ -48,7 +48,7 @@ Dependency
 Install SVS from its public Git repository by immutable tag:
 
 ```json
-"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v3.0.0"
+"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v2.0.2"
 ```
 
 Commit both `package.json` and the lockfile. Do not use a branch name, a floating commit, or a local `file:` dependency in the final change.
