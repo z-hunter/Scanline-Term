@@ -21,6 +21,13 @@ export class TerminalRenderer extends CoreTerminalRenderer {
   private heuristicDirty = false;
   private previousSnapshot: TerminalScreenSnapshot | null = null;
   private diagnostics: Record<string, unknown>[] = [];
+  private readonly logo = new Image();
+
+  constructor() {
+    super();
+    this.logo.src = '/icon.png';
+    this.logo.onload = () => this.markDirty();
+  }
 
   bindTerminal(terminal: Terminal | null, onScroll?: (viewportY: number) => void): void {
     this.writeSubscription?.dispose(); this.writeSubscription = null;
@@ -71,7 +78,9 @@ export class TerminalRenderer extends CoreTerminalRenderer {
     const ctx = this.sourceCanvas.getContext('2d'); const output = this.compositedCanvas.getContext('2d');
     if (!ctx || !output) return false;
     const { width, height } = this.sourceCanvas; const size = settings.consoleFontSize; const line = Math.floor(size * 1.5); const profile = colorProfile(settings.colorProfile);
-    ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height); ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont); ctx.textBaseline = 'top';
+    ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height);
+    if (this.logo.complete && this.logo.naturalWidth > 0 && typeof ctx.drawImage === 'function') { const logoSize = Math.min(256, width, height); ctx.drawImage(this.logo, (width - logoSize) / 2, (height - logoSize) / 2, logoSize, logoSize); }
+    ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont); ctx.textBaseline = 'top';
     const lines = ['SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', `virtual framebuffer ${width}×${height}`, '[ OK ] phosphor matrix online', '[ OK ] scanline generator synchronized', '[ OK ] WebGL fragment pipeline ready', '> rendering an ordinary terminal as an old monitor', '> browser preview uses a mock session', '', `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`];
     lines.forEach((text, index) => { ctx.fillStyle = ['#7dffae', '#4ecf83', '#9affbd', '#62db91', '#78c9ff', '#ffd166', '#ff8a80'][index % 7]; ctx.fillText(text, size, size + line * index); });
     const promptY = size + line * lines.length; const promptText = 'ready> '; ctx.fillStyle = '#7dffae'; ctx.fillText(promptText, size, promptY);
