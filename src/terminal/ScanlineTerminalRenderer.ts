@@ -11,7 +11,7 @@ export type { CopyPoint, CopySelection, TerminalScrollRegion, TextHighlightRange
 export type Resolution = { id: string; width?: number; height?: number };
 export type TerminalImage = { id: string; src: string; image: HTMLImageElement; objectUrl?: string; x: number; y: number; width: number; height: number; baseWidth: number; baseHeight: number };
 
-export const SMOOTH_SCROLL_DIAGNOSTICS = false;
+export const SMOOTH_SCROLL_DIAGNOSTICS = true;
 
 export class TerminalRenderer extends CoreTerminalRenderer {
   private images: TerminalImage[] = [];
@@ -21,6 +21,10 @@ export class TerminalRenderer extends CoreTerminalRenderer {
   private heuristicDirty = false;
   private previousSnapshot: TerminalScreenSnapshot | null = null;
   private diagnostics: Record<string, unknown>[] = [];
+  private nextTransitionId = 1;
+  private activeTransitionId: number | null = null;
+  private activeTransitionOperation: 'buffer' | 'region' | null = null;
+  private drawing = false;
   private readonly logo = new Image();
 
   constructor() {
@@ -38,16 +42,46 @@ export class TerminalRenderer extends CoreTerminalRenderer {
   }
 
   setTuiScrollingEnabled(enabled: boolean): void {
+    if (this.tuiScrollingEnabled !== enabled) this.recordDiagnostic({ event: 'heuristic-toggle', enabled });
     this.tuiScrollingEnabled = enabled;
     if (!enabled) this.previousSnapshot = null;
   }
   beginScroll(fromViewportY: number, toViewportY: number): boolean { return this.beginBufferScroll(fromViewportY, toViewportY); }
+  beginBufferScroll(fromViewportY: number, toViewportY: number): boolean {
+    const wasAnimating = this.isScrollAnimating;
+    const accepted = super.beginBufferScroll(fromViewportY, toViewportY);
+    this.recordScrollRequest('buffer', { fromViewportY, toViewportY, deltaRows: toViewportY - fromViewportY }, wasAnimating, accepted);
+    return accepted;
+  }
+  beginRegionScroll(region: TerminalScrollRegion): boolean {
+    const wasAnimating = this.isScrollAnimating;
+    const accepted = super.beginRegionScroll(region);
+    this.recordScrollRequest('region', region, wasAnimating, accepted);
+    return accepted;
+  }
+  cancelScroll(): void {
+    const wasAnimating = this.isScrollAnimating;
+    const transitionId = this.activeTransitionId;
+    const operation = this.activeTransitionOperation;
+    super.cancelScroll();
+    if (wasAnimating) this.recordDiagnostic({ event: this.drawing ? 'transition-completed' : 'transition-cancelled', transitionId, operation });
+    this.activeTransitionId = null;
+    this.activeTransitionOperation = null;
+  }
 
-  exportSmoothScrollDiagnostics(): string { return JSON.stringify({ version: 1, entries: this.diagnostics }, null, 2); }
+  exportSmoothScrollDiagnostics(): string { return JSON.stringify({ version: 2, entries: this.diagnostics }, null, 2); }
   private recordDiagnostic(entry: Record<string, unknown>): void {
     if (!SMOOTH_SCROLL_DIAGNOSTICS) return;
     this.diagnostics.push({ at: new Date().toISOString(), ...entry });
-    if (this.diagnostics.length > 60) this.diagnostics.shift();
+    if (this.diagnostics.length > 300) this.diagnostics.shift();
+  }
+  private recordScrollRequest(operation: 'buffer' | 'region', request: Record<string, unknown>, wasAnimating: boolean, accepted: boolean): void {
+    const started = accepted && this.consumeScrollStart();
+    if (started) {
+      this.activeTransitionId = this.nextTransitionId++;
+      this.activeTransitionOperation = operation;
+    }
+    this.recordDiagnostic({ event: 'transition-request', transitionId: this.activeTransitionId, operation, request, accepted, wasAnimating, outcome: !accepted ? 'rejected' : started ? 'started' : wasAnimating ? 'retargeted' : 'continued' });
   }
 
   resizeSource(width: number, height: number): boolean { this.previousSnapshot = null; return super.resizeSource(width, height); }
@@ -64,14 +98,15 @@ export class TerminalRenderer extends CoreTerminalRenderer {
       const eligibleBuffer = terminal.buffer.active === terminal.buffer.alternate || stableNormal;
       if (previous && previous.buffer === current.buffer && previous.cols === current.cols && previous.rows === current.rows && eligibleBuffer && terminal.hasSelection?.() !== true) {
         const detection = inspectVerticalScroll(previous.presentation, current.presentation, previous.content, current.content);
-        this.recordDiagnostic({ kind: 'tui-scroll', detection });
+        this.recordDiagnostic({ event: 'heuristic-frame', buffer: terminal.buffer.active === terminal.buffer.alternate ? 'alternate' : 'normal', cols: current.cols, rows: current.rows, viewportY: current.viewportY, baseY: current.baseY, stableNormal, detection });
         if (detection.candidate) this.beginRegionScroll({ deltaRows: detection.candidate.deltaRows, topRow: detection.candidate.topRow, bottomRow: detection.candidate.bottomRow });
-      } else if (previous) this.recordDiagnostic({ kind: 'tui-scroll-skip', reason: previous.buffer !== current.buffer ? 'buffer-change' : previous.cols !== current.cols || previous.rows !== current.rows ? 'grid-change' : 'selection' });
+      } else if (previous) this.recordDiagnostic({ event: 'heuristic-skip', reason: previous.buffer !== current.buffer ? 'buffer-change' : previous.cols !== current.cols || previous.rows !== current.rows ? 'grid-change' : !eligibleBuffer ? 'normal-buffer-moved' : 'selection' });
       this.previousSnapshot = current; this.heuristicDirty = false;
     } else if (terminal) {
       this.previousSnapshot ??= snapshotTerminal(terminal);
     }
-    return super.draw(time, settings);
+    this.drawing = true;
+    try { return super.draw(time, settings); } finally { this.drawing = false; }
   }
 
   private drawBrowserMock(time: number, settings: CRTSettings): boolean {

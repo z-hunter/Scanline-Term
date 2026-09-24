@@ -33,4 +33,17 @@ describe('ScanlineTerminalRenderer', () => {
     renderer.setImages([{ id: 'image', src: '', image: { complete: true, naturalWidth: 1 } as HTMLImageElement, x: 0, y: 0, width: .5, height: .5, baseWidth: .5, baseHeight: .5 }]);
     expect(renderer.draw(.1, DEFAULT_CRT_SETTINGS)).toBe(true);
   });
+
+  it('records the heuristic decision and a retargeted region transition', () => {
+    const context = { globalAlpha: 1, fillStyle: '', font: '', textAlign: 'left', textBaseline: 'middle', imageSmoothingEnabled: true, drawImage: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), save: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), restore: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
+    const listeners: (() => void)[] = []; const cell = (chars: string) => ({ getChars: () => chars, getWidth: () => 1, getFgColor: () => 0, getBgColor: () => 0, isFgRGB: () => false, isBgRGB: () => false, isFgPalette: () => false, isBgPalette: () => false, isInverse: () => false, isDim: () => false, isInvisible: () => false });
+    let rows = ['A', 'B', 'C', 'D', 'E', 'F']; const alternate = { viewportY: 0, baseY: 0, cursorX: -1, cursorY: -1, getNullCell: () => cell(''), getLine: (row: number) => ({ getCell: () => cell(rows[row] ?? '') }) };
+    const terminal = { cols: 1, rows: 6, options: {}, buffer: { active: alternate, alternate, normal: {} }, hasSelection: () => false, onCursorMove: () => ({ dispose() {} }), onWriteParsed: (listener: () => void) => { listeners.push(listener); return { dispose() {} }; }, onScroll: () => ({ dispose() {} }) };
+    const renderer = new TerminalRenderer(); renderer.resizeSource(80, 120); renderer.bindTerminal(terminal as never); renderer.setTuiScrollingEnabled(true); renderer.draw(0, DEFAULT_CRT_SETTINGS);
+    rows = ['B', 'C', 'D', 'E', 'F', 'G']; listeners.forEach((listener) => listener()); renderer.draw(.1, DEFAULT_CRT_SETTINGS);
+    rows = ['C', 'D', 'E', 'F', 'G', 'H']; listeners.forEach((listener) => listener()); renderer.draw(.11, DEFAULT_CRT_SETTINGS);
+    const entries = JSON.parse(renderer.exportSmoothScrollDiagnostics()).entries;
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ event: 'heuristic-frame', detection: expect.objectContaining({ candidate: expect.objectContaining({ deltaRows: 1 }) }) }), expect.objectContaining({ event: 'transition-request', operation: 'region', outcome: 'started' }), expect.objectContaining({ event: 'transition-request', operation: 'region', outcome: 'retargeted' })]));
+  });
 });
