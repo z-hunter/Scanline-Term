@@ -14,10 +14,10 @@ The SVS repository is the technical source of truth for its architecture, public
 
 ## Dependency
 
-`package.json` pins SVS to the immutable `v2.0.2` Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
+`package.json` pins SVS to the immutable `v2.0.4` Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
 
 ```json
-"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v2.0.2"
+"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v2.0.4"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
