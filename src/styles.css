@@ -450,6 +450,7 @@ canvas:focus,
   position: relative;
   width: min(100%, calc(var(--workspace-screen-height, calc(100vh - 54px)) * var(--screen-ratio, 1.3333333333)));
   aspect-ratio: var(--screen-ratio, 1.3333333333);
+  max-height: var(--workspace-screen-height, calc(100vh - 54px));
   overflow: visible;
   border: 12px solid #1d2822;
   border-radius: 20px;

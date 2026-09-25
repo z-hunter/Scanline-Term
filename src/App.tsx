@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -22,7 +23,7 @@ import {
 } from "./crt/settings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
-import { useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
+import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
@@ -188,11 +189,6 @@ export default function App() {
   const resolution =
     RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
   const physicalWindow = resolution.id === "physical";
-  const screenStyle = physicalWindow
-    ? undefined
-    : ({
-      "--screen-ratio": String(resolution.width! / resolution.height!),
-    } as CSSProperties);
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -790,6 +786,20 @@ export default function App() {
   const tabsHidden =
     stored.hideTabsWhenSingleSession && terminal.tabs.length <= 1;
   const hideTopTabs = stored.tabPlacement === "top" && tabsHidden;
+  useLayoutEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const tabs = workspace.querySelector(".terminal-tabs-top");
+    const update = () => {
+      const height = workspace.getBoundingClientRect().height - (tabs?.getBoundingClientRect().height ?? 0);
+      workspace.style.setProperty("--workspace-screen-height", `${Math.max(1, Math.floor(height))}px`);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(workspace);
+    if (tabs) observer.observe(tabs);
+    update();
+    return () => observer.disconnect();
+  }, [stored.tabPlacement, terminal.tabs.length, tabsHidden]);
   useEffect(() => {
     const workspace = workspaceRef.current;
     const tabs = tabsRef.current;
@@ -1133,7 +1143,6 @@ export default function App() {
             id="terminal-display"
             ref={screenRef}
             className={`screen-frame${physicalWindow ? " physical-window" : ""}${showBezel ? "" : " bezel-hidden"}`}
-            style={screenStyle}
           >
             <canvas
               ref={outputRef}
@@ -1218,6 +1227,8 @@ export default function App() {
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
           smoothScrollDiagnosticsEnabled={SMOOTH_SCROLL_DIAGNOSTICS}
           getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
+          geometryDiagnosticsEnabled={TERMINAL_GEOMETRY_DIAGNOSTICS}
+          getGeometryDiagnostics={terminal.exportGeometryDiagnostics}
         />
       )}
     </main>

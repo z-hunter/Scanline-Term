@@ -4,7 +4,7 @@ import type { CRTSettings } from 'scanline-virtual-screen/core';
 import type { Resolution, TerminalRenderer } from '../terminal/ScanlineTerminalRenderer';
 import { VirtualScreenRenderer } from 'scanline-virtual-screen/core';
 
-export function useCRT({ settings, resolution, renderer, onError, onResizeSource, enabled = true }: { settings: CRTSettings; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement) => void; enabled?: boolean }) {
+export function useCRT({ settings, resolution, renderer, onError, onResizeSource, enabled = true }: { settings: CRTSettings; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement, reason?: string) => void; enabled?: boolean }) {
   const outputRef = useRef<HTMLCanvasElement>(null); const screenRef = useRef<VirtualScreenRenderer | null>(null); const settingsRef = useRef(settings); const [fps, setFps] = useState(0);
   settingsRef.current = settings;
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
@@ -15,12 +15,14 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
 
     let raf = 0; let reported = false; let renderFailed = false; let breathingPrimed = false; let count = 0; let started = performance.now();
     
+    let initialResize = true;
     const resize = () => { 
       const rect = output.getBoundingClientRect(); 
       const dpr = window.devicePixelRatio || 1; 
       output.width = Math.max(1, Math.round(rect.width * dpr)); 
       output.height = Math.max(1, Math.round(rect.height * dpr)); 
-      onResizeSource(output); 
+      onResizeSource(output, initialResize ? 'crt-initial' : 'output-resize-observer');
+      initialResize = false;
       renderer.markDirty(); 
       screen.clearPersistence();
     }; 

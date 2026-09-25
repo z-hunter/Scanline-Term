@@ -127,11 +127,11 @@ describe('browserTabColor', () => {
 });
 
 describe('terminal launch event', () => {
-  it('sizes a first Physical 4:3 session from the output canvas, not a stale source canvas', async () => {
+  it('sizes a first Physical 8:5 session from the CSS rect, not a stale canvas backing size', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
-    const preset = { version: 1 as const, resolution: 'physical-4x3' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    const preset = { version: 1 as const, resolution: 'physical-8x5' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
     let hookResult!: ReturnType<typeof useTerminal>;
     function TestComponent() {
       const result = useTerminal({ defaultPreset: preset, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
@@ -141,13 +141,19 @@ describe('terminal launch event', () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => { root.render(createElement(TestComponent)); });
-    const output = document.createElement('canvas'); output.width = 1234; output.height = 567;
+    const frame = document.createElement('div'); const output = document.createElement('canvas'); frame.appendChild(output); document.body.appendChild(frame); output.width = 1234; output.height = 567;
+    vi.spyOn(output, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
     await act(async () => { hookResult.resizeSource(output); });
+    expect(frame.style.getPropertyValue('--screen-ratio')).toBe('1.6');
+    expect(frame.style.getPropertyValue('aspect-ratio')).toBe('8 / 5');
     hookResult.renderer.resizeSource(output.width, output.height);
     await act(async () => { hookResult.openSession(); await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1234, 567, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
+    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1000, 500, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
+    const resizeCalls = mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal').length;
+    await act(async () => { hookResult.resizeSource(output, 'preset-change', 'stale-session'); });
+    expect(mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal')).toHaveLength(resizeCalls);
     await act(async () => { root.unmount(); });
-    container.remove(); vi.restoreAllMocks();
+    container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
   it('starts a new session with the command and working directory from -T', async () => {

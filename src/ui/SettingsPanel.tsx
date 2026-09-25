@@ -139,6 +139,8 @@ export function SettingsPanel({
   onPresetNameChange = () => undefined,
   smoothScrollDiagnosticsEnabled = false,
   getSmoothScrollDiagnostics = () => '',
+  geometryDiagnosticsEnabled = false,
+  getGeometryDiagnostics = () => '',
 }: {
   stored: StoredSettings;
   setStored: Dispatch<SetStateAction<StoredSettings>>;
@@ -156,6 +158,8 @@ export function SettingsPanel({
   onPresetNameChange?: (name: string) => void;
   smoothScrollDiagnosticsEnabled?: boolean;
   getSmoothScrollDiagnostics?: () => string;
+  geometryDiagnosticsEnabled?: boolean;
+  getGeometryDiagnostics?: () => string;
 }) {
   const update = (key: NumericKey, value: number) =>
     setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
@@ -163,7 +167,9 @@ export function SettingsPanel({
   const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
   const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
+  const [geometryDiagnosticsCopied, setGeometryDiagnosticsCopied] = useState<boolean | null>(null);
   const copySmoothScrollDiagnostics = () => void navigator.clipboard.writeText(getSmoothScrollDiagnostics()).then(() => setScrollDiagnosticsCopied(true)).catch(() => setScrollDiagnosticsCopied(false));
+  const copyGeometryDiagnostics = () => void navigator.clipboard.writeText(getGeometryDiagnostics()).then(() => setGeometryDiagnosticsCopied(true)).catch(() => setGeometryDiagnosticsCopied(false));
   const screenProfile = profileFromLegacyPreset({ version: 1, resolution: stored.resolution, crt: stored.crt });
 
   if (stored.crt.consoleFontSize !== prevFontSize) {
@@ -734,6 +740,10 @@ export function SettingsPanel({
         {smoothScrollDiagnosticsEnabled && <div className="setting-block">
           <span className="setting-label">Smooth scroll diagnostics</span>
           <button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
+        </div>}
+        {geometryDiagnosticsEnabled && <div className="setting-block">
+          <span className="setting-label">Terminal geometry diagnostics</span>
+          <button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
         </div>}
         <Switch
           label="RMB menu in term."

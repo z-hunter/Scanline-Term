@@ -47,6 +47,8 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(container.textContent).not.toContain('Smooth scroll diagnostics');
     await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, smoothScrollDiagnosticsEnabled: true })); });
     expect(container.textContent).toContain('Smooth scroll diagnostics');
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, geometryDiagnosticsEnabled: true })); });
+    expect(container.textContent).toContain('Terminal geometry diagnostics');
     root.unmount(); container.remove();
   });
 
