@@ -26,10 +26,18 @@
         <File Id="ScanlineTermFontVga" Source="..\..\..\..\resources\fonts\Ac437_IBM_VGA_9x16.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontRobotron" Source="..\..\..\..\resources\fonts\Ac437_Robotron.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontCommodore" Source="..\..\..\..\resources\fonts\commodore-128.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontFantasque" Source="..\..\..\..\resources\fonts\FantasqueSansMono-Regular.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIbmPlexRegular" Source="..\..\..\..\resources\fonts\IBMPlexMono-Regular.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIbmPlexBold" Source="..\..\..\..\resources\fonts\IBMPlexMono-Bold.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIbmPlexItalic" Source="..\..\..\..\resources\fonts\IBMPlexMono-Italic.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevkaCharonRegular" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Regular.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevkaCharonBold" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Bold.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevkaCharonItalic" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Italic.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIosevka" Source="..\..\..\..\resources\fonts\IosevkaTermSlabNerdFontMono-Regular.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevkaBold" Source="..\..\..\..\resources\fonts\IosevkaTermSlabNerdFontMono-Bold.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIosevkaItalic" Source="..\..\..\..\resources\fonts\IosevkaTermSlabNerdFontMono-Italic.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontNouveau" Source="..\..\..\..\resources\fonts\Nouveau_IBM_Stretch.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontFixedsys" Source="..\..\..\..\resources\fonts\ofont.ru_Fixedsys.ttf" TrueType="yes" />
-        <File Id="ScanlineTermFontOrator" Source="..\..\..\..\resources\fonts\OratorStd.otf" TrueType="yes" />
       </Component>
     </DirectoryRef>
   </Fragment>

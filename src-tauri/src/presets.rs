@@ -53,8 +53,59 @@ fn bundled_presets_path(app: &AppHandle) -> PathBuf {
     bundled_presets_path_from(app.path().resource_dir().ok(), cfg!(debug_assertions))
 }
 
-fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String> {
-    let bundled = bundled_presets_path(app);
+fn copy_bundled_preset(source: &Path, destination: &Path) -> Result<(), String> {
+    let source_modified = fs::metadata(source)
+        .and_then(|metadata| metadata.modified())
+        .map_err(|error| error.to_string())?;
+    let should_copy = match fs::metadata(destination) {
+        Ok(metadata) => source_modified > metadata.modified().map_err(|error| error.to_string())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(error) => return Err(error.to_string()),
+    };
+    if !should_copy {
+        return Ok(());
+    }
+    let temp_path = destination.with_file_name(format!(
+        "{}.tmp.{}",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("preset.json"),
+        std::process::id()
+    ));
+    let backup = destination.with_file_name(format!(
+        "{}.bak",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("preset.json")
+    ));
+    let result = fs::copy(source, &temp_path)
+        .map_err(|error| error.to_string())
+        .and_then(|_| {
+            if destination.exists() {
+                let _ = fs::remove_file(&backup);
+                fs::copy(destination, &backup).map_err(|error| error.to_string())?;
+                fs::remove_file(destination).map_err(|error| error.to_string())?;
+            }
+            fs::rename(&temp_path, destination).map_err(|error| error.to_string())?;
+            OpenOptions::new()
+                .write(true)
+                .open(destination)
+                .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(source_modified)))
+                .map_err(|error| error.to_string())
+        });
+    if let Err(error) = result {
+        if !destination.exists() && backup.exists() {
+            let _ = fs::copy(&backup, destination);
+        }
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn seed_bundled_presets_from(bundled: &Path, directory: &Path) -> Result<(), String> {
     for entry in fs::read_dir(bundled)
         .map_err(|error| error.to_string())?
         .flatten()
@@ -64,28 +115,13 @@ fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String>
             continue;
         }
         let destination = directory.join(source.file_name().ok_or("invalid bundled preset name")?);
-        if !destination.exists() {
-            let temp_name = format!(
-                "{}.tmp.{}",
-                destination
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("preset.json"),
-                std::process::id()
-            );
-            let temp_path = directory.join(temp_name);
-            let copy_result = fs::copy(&source, &temp_path)
-                .map_err(|error| error.to_string())
-                .and_then(|_| {
-                    fs::rename(&temp_path, &destination).map_err(|error| error.to_string())
-                });
-            if let Err(error) = copy_result {
-                let _ = fs::remove_file(&temp_path);
-                return Err(error);
-            }
-        }
+        copy_bundled_preset(&source, &destination)?;
     }
     Ok(())
+}
+
+fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String> {
+    seed_bundled_presets_from(&bundled_presets_path(app), directory)
 }
 
 fn validate_name(name: &str) -> Result<&str, String> {
@@ -285,11 +321,12 @@ pub fn save_preset(
 #[cfg(test)]
 mod tests {
     use super::{
-        bundled_presets_path_from, read_value, source_presets_path, validate_name, write_value,
+        bundled_presets_path_from, read_value, seed_bundled_presets_from, source_presets_path,
+        validate_name, write_value,
     };
     use serde_json::json;
     use std::{
-        fs,
+        fs::{self, OpenOptions},
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -309,6 +346,51 @@ mod tests {
             bundled_presets_path_from(Some(stale_staging), true),
             source_presets_path()
         );
+    }
+
+    #[test]
+    fn newer_bundled_preset_replaces_an_older_user_copy() {
+        let root =
+            std::env::temp_dir().join(format!("scanline-preset-seed-{}", std::process::id()));
+        let bundled = root.join("bundled");
+        let user = root.join("user");
+        fs::create_dir_all(&bundled).unwrap();
+        fs::create_dir_all(&user).unwrap();
+        let source = bundled.join("default.json");
+        let destination = user.join("default.json");
+        fs::write(&source, r#"{"version":2}"#).unwrap();
+        fs::write(&destination, r#"{"version":1}"#).unwrap();
+        let now = SystemTime::now();
+        OpenOptions::new()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(now))
+            .unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&destination)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(now - std::time::Duration::from_secs(1)))
+            .unwrap();
+        seed_bundled_presets_from(&bundled, &user).unwrap();
+        assert_eq!(
+            fs::read_to_string(&destination).unwrap(),
+            r#"{"version":2}"#
+        );
+        fs::write(&destination, r#"{"version":3}"#).unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&destination)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(now + std::time::Duration::from_secs(1)))
+            .unwrap();
+        seed_bundled_presets_from(&bundled, &user).unwrap();
+        assert_eq!(
+            fs::read_to_string(&destination).unwrap(),
+            r#"{"version":3}"#
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

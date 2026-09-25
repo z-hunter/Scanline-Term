@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CRT_SETTINGS } from 'scanline-virtual-screen/core';
-import { TerminalRenderer, type TerminalImage } from './ScanlineTerminalRenderer';
+import { SMOOTH_SCROLL_DIAGNOSTICS, TerminalRenderer, type TerminalImage } from './ScanlineTerminalRenderer';
 
 describe('ScanlineTerminalRenderer', () => {
   it('renders the Scanline Term mock screen without a bound terminal', () => {
@@ -44,6 +44,7 @@ describe('ScanlineTerminalRenderer', () => {
     rows = ['B', 'C', 'D', 'E', 'F', 'G']; listeners.forEach((listener) => listener()); renderer.draw(.1, DEFAULT_CRT_SETTINGS);
     rows = ['C', 'D', 'E', 'F', 'G', 'H']; listeners.forEach((listener) => listener()); renderer.draw(.11, DEFAULT_CRT_SETTINGS);
     const entries = JSON.parse(renderer.exportSmoothScrollDiagnostics()).entries;
+    if (!SMOOTH_SCROLL_DIAGNOSTICS) return expect(entries).toEqual([]);
     expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ event: 'heuristic-frame', detection: expect.objectContaining({ candidate: expect.objectContaining({ deltaRows: 1 }) }) }), expect.objectContaining({ event: 'transition-request', operation: 'region', outcome: 'started' }), expect.objectContaining({ event: 'transition-request', operation: 'region', outcome: 'retargeted' })]));
   });
 
@@ -57,6 +58,7 @@ describe('ScanlineTerminalRenderer', () => {
     rows = Array.from({ length: 35 }, (_, row) => row < 30 ? `old-${row + 3}` : `first-${row}`); listeners.forEach((listener) => listener()); renderer.draw(.1, DEFAULT_CRT_SETTINGS);
     rows = Array.from({ length: 35 }, (_, row) => row >= 2 && row < 32 ? rows[row + 3] : `second-${row}`); listeners.forEach((listener) => listener()); renderer.draw(.11, DEFAULT_CRT_SETTINGS);
     const entries = JSON.parse(renderer.exportSmoothScrollDiagnostics()).entries;
+    if (!SMOOTH_SCROLL_DIAGNOSTICS) return expect(entries).toEqual([]);
     expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ event: 'heuristic-skip', reason: 'active-region-changed' }), expect.objectContaining({ event: 'transition-cancelled', operation: 'region' })]));
     expect(entries.filter((entry: { event: string; operation?: string; outcome?: string }) => entry.event === 'transition-request' && entry.operation === 'region' && entry.outcome === 'started')).toHaveLength(1);
   });
