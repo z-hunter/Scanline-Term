@@ -1,17 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "640x480"
-  },
-  "terminal": {
-    "colorProfile": "commodore-64",
-    "fontFamily": "Commodore 128",
-    "fallbackFont": "Nouveau IBM Stretch",
-    "fontSize": 13,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 3,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 2.75,
     "aberrationFalloff": 2,
@@ -25,12 +12,13 @@
     "bezelThickness": 5,
     "bloom": 0.2,
     "bloomAlgorithm": "soft",
-    "breathing": 0.05,
+    "breathing": 0.45,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
     "curvature": 0.06,
     "glow": 0.6000000000000001,
+    "glowRadius": 3,
     "humBar": 0.1,
     "imageBrightness": 1,
     "imageContrast": 1.05,
@@ -38,6 +26,7 @@
     "maskStrength": 0.1,
     "maskType": "shadow",
     "persistence": 1,
+    "persistenceEnergy": 0.08,
     "persistenceIntensity": 2.15,
     "phosphor": 1,
     "reflexBar": 0.1,
@@ -49,5 +38,19 @@
     "scanlineIntensity": 0.7000000000000001,
     "showBezel": false,
     "vignette": 0.8500000000000001
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 3,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "commodore-64",
+    "cursorBrightness": 0,
+    "cursorStyle": "block",
+    "fallbackFont": "Nouveau IBM Stretch",
+    "fontFamily": "Commodore 128",
+    "fontSize": 13
+  },
+  "virtualScreen": {
+    "modeId": "640x480"
   }
 }

@@ -22,4 +22,10 @@ describe('Win32 Input Mode encoding', () => {
     expect(win32InputKey(key('ArrowUp', { key: 'ArrowUp' }), true)).toBe('\x1b[38;72;0;1;0;1_');
     expect(win32InputKey(key('F1', { key: 'F1' }), true)).toBe('\x1b[112;59;0;1;0;1_');
   });
+
+  it('does not let a stale Ctrl+C swallow an ordinary C keyup', () => {
+    expect(win32InputKey(key('KeyC', { key: 'c', ctrlKey: true }), true)).toBe('\x03');
+    expect(win32InputKey(key('KeyC', { key: 'c' }), true)).toBe('\x1b[67;46;99;1;0;1_');
+    expect(win32InputKey(key('KeyC', { key: 'c' }), false)).toBe('\x1b[67;46;99;0;0;1_');
+  });
 });

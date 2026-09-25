@@ -1,16 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "640x480"
-  },
-  "terminal": {
-    "colorProfile": "dos-vga",
-    "fontFamily": "Terminal",
-    "fontSize": 14,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 1,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 4.25,
     "aberrationFalloff": 3,
@@ -33,7 +21,7 @@
     "glowRadius": 4,
     "humBar": 0.3,
     "imageBrightness": 1,
-    "imageContrast": 1.15,
+    "imageContrast": 1.25,
     "imperfectSignal": 0.25,
     "maskStrength": 0.4,
     "maskType": "shadow",
@@ -50,5 +38,18 @@
     "scanlineIntensity": 1,
     "showBezel": false,
     "vignette": 0.8000000000000003
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": -1,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "windows-campbell",
+    "cursorBrightness": 0,
+    "cursorStyle": "block",
+    "fontFamily": "Terminal",
+    "fontSize": 14
+  },
+  "virtualScreen": {
+    "modeId": "640x480"
   }
 }

@@ -1,16 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "physical-4x3"
-  },
-  "terminal": {
-    "colorProfile": "cyberpunk",
-    "fontFamily": "Cascadia Mono",
-    "fontSize": 18,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 3,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 2,
     "aberrationFalloff": 2.5,
@@ -22,14 +10,15 @@
     "bezelGlowMode": "reflection",
     "bezelHighlight": 0.30000000000000004,
     "bezelThickness": 2,
-    "bloom": 0.25,
+    "bloom": 0.15000000000000002,
     "bloomAlgorithm": "soft",
     "breathing": 0,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
-    "curvature": 0.04,
+    "curvature": 0.05,
     "glow": 0.9,
+    "glowRadius": 3,
     "humBar": 0,
     "imageBrightness": 1,
     "imageContrast": 1.1,
@@ -37,6 +26,7 @@
     "maskStrength": 0.15000000000000002,
     "maskType": "shadow",
     "persistence": 1,
+    "persistenceEnergy": 0.09,
     "persistenceIntensity": 1.6,
     "phosphor": 1,
     "reflexBar": 0.1,
@@ -48,5 +38,18 @@
     "scanlineIntensity": 0.7500000000000001,
     "showBezel": false,
     "vignette": 0.5
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 0,
+    "cellWidthAdjustment": -1,
+    "colorProfile": "cyberpunk",
+    "cursorBrightness": 0,
+    "cursorStyle": "block",
+    "fontFamily": "IBM Plex Mono",
+    "fontSize": 18
+  },
+  "virtualScreen": {
+    "modeId": "physical-4x3"
   }
 }

@@ -3,7 +3,7 @@
     "aberration": 0,
     "aberrationFalloff": 3,
     "ambientGlassLight": 0.30000000000000004,
-    "antiAliasedPixels": true,
+    "antiAliasedPixels": false,
     "backgroundDesaturation": 0.5,
     "beamModulation": 0.6000000000000001,
     "bezelGlow": true,
@@ -15,7 +15,7 @@
     "breathing": 0.25,
     "channelSwitchEffect": true,
     "colorMode": "color",
-    "crtEmulation": true,
+    "crtEmulation": false,
     "curvature": 0.07,
     "glow": 0.65,
     "glowRadius": 2.5,
@@ -27,7 +27,7 @@
     "maskType": "off",
     "persistence": 0.75,
     "persistenceEnergy": 0.28,
-    "persistenceIntensity": 0.5,
+    "persistenceIntensity": 0.7000000000000001,
     "phosphor": 1,
     "reflexBar": 0.1,
     "reflexBarEnabled": true,
@@ -43,13 +43,13 @@
   "terminal": {
     "cellHeightAdjustment": 1,
     "cellWidthAdjustment": 0,
-    "colorProfile": "dos-vga",
-    "cursorBrightness": 0.05,
-    "cursorStyle": "block",
-    "fontFamily": "IosevkaTermSlab NFM",
-    "fontSize": 16
+    "colorProfile": "windows-campbell",
+    "cursorBrightness": 0.35000000000000003,
+    "cursorStyle": "underline",
+    "fontFamily": "Iosevka Charon Mono",
+    "fontSize": 18
   },
   "virtualScreen": {
-    "modeId": "1024x768"
+    "modeId": "physical"
   }
 }

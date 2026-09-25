@@ -1,17 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "physical-4x3"
-  },
-  "terminal": {
-    "colorProfile": "dos-vga",
-    "fontFamily": "Ac437 IBM MDA",
-    "fallbackFont": "Nouveau IBM Stretch",
-    "fontSize": 29,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 0,
-    "cursorStyle": "underline"
-  },
   "crt": {
     "aberration": 1.25,
     "aberrationFalloff": 3,
@@ -25,12 +12,13 @@
     "bezelThickness": 5,
     "bloom": 0,
     "bloomAlgorithm": "soft",
-    "breathing": 0.55,
+    "breathing": 0.4,
     "channelSwitchEffect": true,
     "colorMode": "green-p39",
     "crtEmulation": true,
     "curvature": 0.08,
     "glow": 0.8,
+    "glowRadius": 3,
     "humBar": 0.05,
     "imageBrightness": 1,
     "imageContrast": 1.2000000000000002,
@@ -38,6 +26,7 @@
     "maskStrength": 0.1,
     "maskType": "aperture",
     "persistence": 0.95,
+    "persistenceEnergy": 0.09,
     "persistenceIntensity": 3,
     "phosphor": 1,
     "reflexBar": 0.05,
@@ -49,5 +38,19 @@
     "scanlineIntensity": 0.8,
     "showBezel": false,
     "vignette": 0.65
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 0,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "dos-vga",
+    "cursorBrightness": 0.15000000000000002,
+    "cursorStyle": "underline",
+    "fallbackFont": "Nouveau IBM Stretch",
+    "fontFamily": "Ac437 IBM MDA",
+    "fontSize": 29
+  },
+  "virtualScreen": {
+    "modeId": "physical-4x3"
   }
 }

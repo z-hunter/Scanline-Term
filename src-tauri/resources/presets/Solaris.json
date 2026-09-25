@@ -1,52 +1,55 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "physical-4x3"
-  },
-  "terminal": {
-    "colorProfile": "solarized-dark",
-    "fontFamily": "Cascadia Mono",
-    "fontSize": 14,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 3,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 1.25,
     "aberrationFalloff": 1,
     "ambientGlassLight": 0.15000000000000002,
     "antiAliasedPixels": true,
     "backgroundDesaturation": 0.5,
-    "beamModulation": 0.8,
+    "beamModulation": 0.5,
     "bezelGlow": true,
     "bezelGlowMode": "reflection",
     "bezelHighlight": 0,
     "bezelThickness": 1,
-    "bloom": 0.1,
+    "bloom": 0.15000000000000002,
     "bloomAlgorithm": "soft",
     "breathing": 0.5,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
-    "curvature": 0.06,
-    "glow": 0.55,
+    "curvature": 0.05,
+    "glow": 0.7000000000000001,
+    "glowRadius": 3,
     "humBar": 0,
-    "imageBrightness": 1,
+    "imageBrightness": 1.15,
     "imageContrast": 1.2000000000000002,
-    "imperfectSignal": 0.1,
+    "imperfectSignal": 0.15000000000000002,
     "maskStrength": 0.1,
     "maskType": "off",
     "persistence": 1,
-    "persistenceIntensity": 2.1,
+    "persistenceEnergy": 0.2,
+    "persistenceIntensity": 0.7000000000000001,
     "phosphor": 0.5,
-    "reflexBar": 0.25,
+    "reflexBar": 0.1,
     "reflexBarEnabled": true,
     "reflexBarHeight": 0.6,
     "reflexBarPosY": 0.05,
     "reflexBarWidth": 0.99,
     "scanlineCount": 360,
-    "scanlineIntensity": 0.95,
+    "scanlineIntensity": 0.55,
     "showBezel": false,
-    "vignette": 0.6000000000000001
+    "vignette": 0.45
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 1,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "solarized-dark",
+    "cursorBrightness": 0.25,
+    "cursorStyle": "underline",
+    "fontFamily": "Iosevka Charon Mono",
+    "fontSize": 18
+  },
+  "virtualScreen": {
+    "modeId": "physical-4x3"
   }
 }

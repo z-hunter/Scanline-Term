@@ -1,16 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "1024x768"
-  },
-  "terminal": {
-    "colorProfile": "xterm-x11",
-    "fontFamily": "DEC Terminal Modern",
-    "fontSize": 21,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 4,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 2,
@@ -22,21 +10,23 @@
     "bezelGlowMode": "reflection",
     "bezelHighlight": 0.2,
     "bezelThickness": 5,
-    "bloom": 0.55,
-    "bloomAlgorithm": "soft",
+    "bloom": 0.2,
+    "bloomAlgorithm": "spiral",
     "breathing": 1,
     "channelSwitchEffect": true,
     "colorMode": "blue",
     "crtEmulation": true,
     "curvature": 0.08000000000000002,
     "glow": 1.05,
+    "glowRadius": 3,
     "humBar": 0.05,
-    "imageBrightness": 1.2000000000000002,
+    "imageBrightness": 1.1,
     "imageContrast": 0.95,
     "imperfectSignal": 0.1,
     "maskStrength": 0.3,
     "maskType": "off",
     "persistence": 1,
+    "persistenceEnergy": 0.09,
     "persistenceIntensity": 3.2,
     "phosphor": 1,
     "reflexBar": 0.35,
@@ -48,5 +38,18 @@
     "scanlineIntensity": 1,
     "showBezel": true,
     "vignette": 0.2
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 4,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "xterm-x11",
+    "cursorBrightness": 0,
+    "cursorStyle": "block",
+    "fontFamily": "DEC Terminal Modern",
+    "fontSize": 21
+  },
+  "virtualScreen": {
+    "modeId": "1024x768"
   }
 }

@@ -1,16 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "640x480"
-  },
-  "terminal": {
-    "colorProfile": "dos-vga",
-    "fontFamily": "Orator Std",
-    "fontSize": 14,
-    "cellWidthAdjustment": -1,
-    "cellHeightAdjustment": -1,
-    "cursorStyle": "block"
-  },
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 2,
@@ -25,9 +13,15 @@
     "bloom": 0.2,
     "bloomAlgorithm": "spiral",
     "breathing": 0.9,
+    "cellHeightAdjustment": -1,
+    "cellWidthAdjustment": -1,
     "channelSwitchEffect": true,
     "colorMode": "green",
+    "colorProfile": "dos-vga",
+    "consoleFont": "Orator Std",
+    "consoleFontSize": 14,
     "crtEmulation": true,
+    "cursorStyle": "block",
     "curvature": 0.25,
     "glow": 1.6,
     "humBar": 1,
@@ -48,5 +42,7 @@
     "scanlineIntensity": 0.9,
     "showBezel": true,
     "vignette": 0.9
-  }
+  },
+  "resolution": "640x480",
+  "version": 1
 }

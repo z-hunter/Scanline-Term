@@ -33,17 +33,24 @@ fn presets_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
-fn bundled_presets_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .resource_dir()
-        .ok()
+fn source_presets_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(PRESET_DIR)
+}
+
+fn bundled_presets_path_from(resource_dir: Option<PathBuf>, use_source: bool) -> PathBuf {
+    if use_source {
+        return source_presets_path();
+    }
+    resource_dir
         .map(|directory| directory.join(PRESET_DIR))
         .filter(|directory| directory.is_dir())
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("resources")
-                .join(PRESET_DIR)
-        })
+        .unwrap_or_else(source_presets_path)
+}
+
+fn bundled_presets_path(app: &AppHandle) -> PathBuf {
+    bundled_presets_path_from(app.path().resource_dir().ok(), cfg!(debug_assertions))
 }
 
 fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String> {
@@ -277,7 +284,9 @@ pub fn save_preset(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_value, validate_name, write_value};
+    use super::{
+        bundled_presets_path_from, read_value, source_presets_path, validate_name, write_value,
+    };
     use serde_json::json;
     use std::{
         fs,
@@ -291,6 +300,15 @@ mod tests {
             assert!(validate_name(name).is_err(), "{name}");
         }
         assert!(validate_name("retro CRT").is_ok());
+    }
+
+    #[test]
+    fn debug_uses_source_presets_instead_of_staged_resources() {
+        let stale_staging = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug");
+        assert_eq!(
+            bundled_presets_path_from(Some(stale_staging), true),
+            source_presets_path()
+        );
     }
 
     #[test]

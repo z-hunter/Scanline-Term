@@ -1,17 +1,4 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "physical-4x3"
-  },
-  "terminal": {
-    "colorProfile": "windows-campbell",
-    "fontFamily": "Ac437 Robotron A7100",
-    "fallbackFont": "Nouveau IBM Stretch",
-    "fontSize": 26,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": -1,
-    "cursorStyle": "underline"
-  },
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 2,
@@ -23,21 +10,23 @@
     "bezelGlowMode": "spill",
     "bezelHighlight": 0.2,
     "bezelThickness": 6,
-    "bloom": 0.5,
-    "bloomAlgorithm": "soft",
+    "bloom": 0.15000000000000002,
+    "bloomAlgorithm": "spiral",
     "breathing": 0.1,
     "channelSwitchEffect": true,
     "colorMode": "green",
     "crtEmulation": true,
     "curvature": 0.07,
-    "glow": 1.1,
+    "glow": 1.35,
+    "glowRadius": 2.5,
     "humBar": 0.30000000000000004,
     "imageBrightness": 1,
     "imageContrast": 1.1,
     "imperfectSignal": 0.05,
     "maskStrength": 0.3,
     "maskType": "off",
-    "persistence": 0.95,
+    "persistence": 1,
+    "persistenceEnergy": 0.09,
     "persistenceIntensity": 3.850000000000001,
     "phosphor": 1,
     "reflexBar": 0.10000000000000002,
@@ -49,5 +38,19 @@
     "scanlineIntensity": 0.5,
     "showBezel": true,
     "vignette": 0.7999999999999999
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 0,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "windows-campbell",
+    "cursorBrightness": 0.25,
+    "cursorStyle": "underline",
+    "fallbackFont": "Nouveau IBM Stretch",
+    "fontFamily": "Ac437 Robotron A7100",
+    "fontSize": 26
+  },
+  "virtualScreen": {
+    "modeId": "physical-4x3"
   }
 }

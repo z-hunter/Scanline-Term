@@ -74,6 +74,7 @@ export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
       ctrlCEtxPending = true;
       return '\x03';
     }
+    if (keyDown) ctrlCEtxPending = false;
     if (!keyDown && ctrlCEtxPending) {
       ctrlCEtxPending = false;
       return '';

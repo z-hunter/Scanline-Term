@@ -1,19 +1,7 @@
 {
-  "schemaVersion": 1,
-  "virtualScreen": {
-    "modeId": "800x600"
-  },
-  "terminal": {
-    "colorProfile": "dos-vga",
-    "fontFamily": "Nouveau IBM Stretch",
-    "fontSize": 16,
-    "cellWidthAdjustment": 0,
-    "cellHeightAdjustment": 0,
-    "cursorStyle": "underline"
-  },
   "crt": {
-    "aberration": 0.75,
-    "aberrationFalloff": 3.25,
+    "aberration": 1,
+    "aberrationFalloff": 2,
     "ambientGlassLight": 0,
     "antiAliasedPixels": true,
     "backgroundDesaturation": 0.6000000000000001,
@@ -24,15 +12,15 @@
     "bezelThickness": 3,
     "bloom": 0.05,
     "bloomAlgorithm": "soft",
-    "breathing": 0.5,
+    "breathing": 0.35000000000000003,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
-    "curvature": 0.08,
-    "glow": 0.95,
+    "curvature": 0.04,
+    "glow": 0.9,
     "glowRadius": 4,
     "humBar": 0,
-    "imageBrightness": 0.8,
+    "imageBrightness": 0.95,
     "imageContrast": 1.2000000000000002,
     "imperfectSignal": 0.05,
     "maskStrength": 0.65,
@@ -46,9 +34,22 @@
     "reflexBarHeight": 0.6,
     "reflexBarPosY": 0.07,
     "reflexBarWidth": 1,
-    "scanlineCount": 290,
-    "scanlineIntensity": 0.45,
+    "scanlineCount": 310,
+    "scanlineIntensity": 0.4,
     "showBezel": false,
     "vignette": 0.45
+  },
+  "schemaVersion": 1,
+  "terminal": {
+    "cellHeightAdjustment": 0,
+    "cellWidthAdjustment": 0,
+    "colorProfile": "dos-vga",
+    "cursorBrightness": 0.1,
+    "cursorStyle": "underline",
+    "fontFamily": "Nouveau IBM Stretch",
+    "fontSize": 24
+  },
+  "virtualScreen": {
+    "modeId": "physical-4x3"
   }
 }
