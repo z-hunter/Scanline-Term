@@ -511,6 +511,18 @@ describe('SettingsPanel font-size editing flow', () => {
     const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
     expect(displayFieldset?.textContent).toContain('Anti-moiré pixels');
     expect(displayFieldset?.textContent).not.toContain('Monitor frame');
+    expect(Array.from(container.querySelectorAll('.preset-controls > fieldset > legend')).map((legend) => legend.textContent)).toEqual([
+      'Presets',
+      'Display',
+      'Terminal',
+      'CRT',
+    ]);
+    const terminalFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Terminal');
+    expect(terminalFieldset?.textContent).toContain('ANSI color profile');
+    expect(terminalFieldset?.textContent).toContain('Console font');
+    expect(terminalFieldset?.textContent).toContain('Smooth terminal scrolling');
+    expect(terminalFieldset?.textContent).toContain('Cursor style');
+    expect(terminalFieldset?.textContent).not.toContain('Anti-moiré pixels');
 
     await act(async () => {
       root.unmount();

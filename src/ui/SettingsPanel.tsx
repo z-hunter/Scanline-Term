@@ -1,126 +1,16 @@
-import { Fragment, useState, type Dispatch, type SetStateAction } from 'react';
-import type { BezelGlowMode, CRTColorMode, CRTMaskType, CRTSettings } from 'scanline-virtual-screen/core';
-import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
-import { COLOR_PROFILES } from 'scanline-virtual-screen/core';
-import { Knob, formatValue } from './Knob';
-import type { ShellInfo } from '../terminal/useTerminal';
+import { useState, type Dispatch, type SetStateAction } from 'react';
+import type { ScreenProfile } from 'scanline-virtual-screen/core';
 import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';
-import { DisplaySettingsSection } from 'scanline-virtual-screen/react';
-
-type NumericKey = Exclude<
-  keyof CRTSettings,
-  | 'crtEmulation'
-  | 'colorProfile'
-  | 'consoleFont'
-  | 'fallbackFont'
-  | 'bezelGlow'
-  | 'bezelGlowMode'
-  | 'showBezel'
-  | 'antiAliasedPixels'
-  | 'channelSwitchEffect'
-  | 'reflexBarEnabled'
-  | 'colorMode'
-  | 'maskType'
-  | 'bloomAlgorithm'
-  | 'cursorStyle'
->;
-
-const controls: Record<string, { key: NumericKey; label: string; min: number; max: number; step: number }[]> = {
-  'Final image': [
-    { key: 'imageBrightness', label: 'Brightness', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'imageContrast', label: 'Contrast', min: 0.5, max: 1.5, step: 0.05 },
-    { key: 'phosphor', label: 'Phosphor / grain', min: 0, max: 1, step: 0.05 },
-  ],
-  Geometry: [
-    { key: 'curvature', label: 'Curvature', min: 0, max: 0.5, step: 0.01 },
-    { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.05 },
-  ],
-  Raster: [
-    { key: 'scanlineCount', label: 'Scanline count', min: 0, max: 768, step: 10 },
-    { key: 'scanlineIntensity', label: 'Scanline intensity', min: 0, max: 1, step: 0.05 },
-    { key: 'beamModulation', label: 'Beam modulation', min: 0, max: 1, step: 0.05 },
-  ],
-  Light: [
-    { key: 'bloom', label: 'Bloom', min: 0, max: 1, step: 0.05 },
-    { key: 'glow', label: 'Screen glow', min: 0, max: 2, step: 0.05 },
-    { key: 'glowRadius', label: 'Glow radius', min: 1, max: 6, step: 0.25 },
-    { key: 'ambientGlassLight', label: 'Ambient glass light', min: 0, max: 1, step: 0.05 },
-  ],
-  Temporal: [
-    { key: 'persistence', label: 'Phosphor trail', min: 0, max: 1, step: 0.05 },
-    { key: 'persistenceEnergy', label: 'Afterglow energy', min: 0, max: 0.5, step: 0.01 },
-    { key: 'persistenceIntensity', label: 'Trail intensity', min: 0, max: 4, step: 0.05 },
-    { key: 'breathing', label: 'HV breathing', min: 0, max: 1, step: 0.05 },
-    { key: 'imperfectSignal', label: 'Imperfect signal', min: 0, max: 1, step: 0.05 },
-    { key: 'humBar', label: 'Hum-bar', min: 0, max: 1, step: 0.05 },
-  ],
-};
-
-type SwitchProps = {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  className?: string;
-  'data-testid'?: string;
-};
-
-function Switch({ label, checked, onChange, className, 'data-testid': testId }: SwitchProps) {
-  return (
-    <label className={`switch-control${className ? ` ${className}` : ''}`}>
-      <span className="switch-label">{label}</span>
-      <span className="switch-toggle">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-checked={checked}
-          checked={checked}
-          data-testid={testId}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span className="switch-track">
-          <span className="switch-thumb" />
-        </span>
-      </span>
-    </label>
-  );
-}
-
-type SegmentedControlProps<T extends string> = {
-  value: T;
-  options: readonly { value: T; label: string }[];
-  onChange: (value: T) => void;
-  disabled?: boolean;
-  'data-testid'?: string;
-};
-
-function SegmentedControl<T extends string>({
-  value,
-  options,
-  onChange,
-  disabled,
-  'data-testid': testId,
-}: SegmentedControlProps<T>) {
-  return (
-    <div className={`segmented-control ${disabled ? 'disabled' : ''}`} data-testid={testId} role="radiogroup">
-      {options.map((option) => {
-        const isSelected = option.value === value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={isSelected}
-            disabled={disabled}
-            className={`segmented-control-item ${isSelected ? 'active' : ''}`}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+import {
+  AdvancedCRTSettingsSection,
+  DisplaySettingsSection,
+  SegmentedControl,
+  Switch,
+  TerminalSettingsSection,
+} from 'scanline-virtual-screen/react';
+import 'scanline-virtual-screen/react/styles.css';
+import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
+import type { ShellInfo } from '../terminal/useTerminal';
 
 export function SettingsPanel({
   stored,
@@ -161,60 +51,17 @@ export function SettingsPanel({
   geometryDiagnosticsEnabled?: boolean;
   getGeometryDiagnostics?: () => string;
 }) {
-  const update = (key: NumericKey, value: number) =>
-    setStored((current) => ({ ...current, crt: { ...current.crt, [key]: value } }));
   const canSavePreset = Boolean(presetState && (presetState.dirty || presetState.draftName !== presetState.name));
-  const [prevFontSize, setPrevFontSize] = useState(stored.crt.consoleFontSize);
-  const [fontSizeInput, setFontSizeInput] = useState(() => String(stored.crt.consoleFontSize));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
   const [geometryDiagnosticsCopied, setGeometryDiagnosticsCopied] = useState<boolean | null>(null);
   const copySmoothScrollDiagnostics = () => void navigator.clipboard.writeText(getSmoothScrollDiagnostics()).then(() => setScrollDiagnosticsCopied(true)).catch(() => setScrollDiagnosticsCopied(false));
   const copyGeometryDiagnostics = () => void navigator.clipboard.writeText(getGeometryDiagnostics()).then(() => setGeometryDiagnosticsCopied(true)).catch(() => setGeometryDiagnosticsCopied(false));
   const screenProfile = profileFromLegacyPreset({ version: 1, resolution: stored.resolution, crt: stored.crt });
-
-  if (stored.crt.consoleFontSize !== prevFontSize) {
-    setPrevFontSize(stored.crt.consoleFontSize);
-    const parsedInput = /^[+-]?\d+$/.test(fontSizeInput.trim()) ? parseInt(fontSizeInput.trim(), 10) : NaN;
-    if (parsedInput !== stored.crt.consoleFontSize) {
-      setFontSizeInput(String(stored.crt.consoleFontSize));
-    }
-  }
-
-  const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const value = event.target.value;
-    setFontSizeInput(value);
-
-    const parsed = /^[+-]?\d+$/.test(value.trim()) ? parseInt(value.trim(), 10) : NaN;
-    if (!Number.isNaN(parsed) && parsed >= 6 && parsed <= 32) {
-      setStored((current) => ({
-        ...current,
-        crt: { ...current.crt, consoleFontSize: parsed },
-      }));
-    }
-  };
-
-  const commitFontSize = () => {
-    const trimmed = fontSizeInput.trim();
-    const parsed = /^[+-]?\d+$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
-    const clamped = Number.isNaN(parsed)
-      ? stored.crt.consoleFontSize
-      : Math.max(6, Math.min(32, parsed));
-    setStored((current) => ({
-      ...current,
-      crt: {
-        ...current.crt,
-        consoleFontSize: clamped,
-      },
-    }));
-    setFontSizeInput(String(clamped));
-  };
-
-  const handleCellAdjustmentChange = (key: 'cellWidthAdjustment' | 'cellHeightAdjustment', value: string) => {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed >= -8 && parsed <= 16) {
-      setStored((current) => ({ ...current, crt: { ...current.crt, [key]: parsed } }));
-    }
-  };
+  const updateProfile = (profile: ScreenProfile) => setStored((current) => ({
+    ...current,
+    resolution: profile.virtualScreen.modeId as ResolutionId,
+    crt: profileToRenderSettings(profile),
+  }));
 
   return (
     <aside className="settings-panel">
@@ -224,7 +71,6 @@ export function SettingsPanel({
       </header>
 
       {!browserTabActive && <fieldset className="preset-controls" disabled={presetDisabled}>
-
         <fieldset className="preset-picker">
           <legend>Presets</legend>
           <div className="preset-picker-row">
@@ -252,559 +98,48 @@ export function SettingsPanel({
           </label>
         </fieldset>
 
-        <DisplaySettingsSection
+        <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} />
+        <TerminalSettingsSection
           value={screenProfile}
-          modes={RESOLUTIONS}
-          onChange={(next) => setStored((current) => ({ ...current, resolution: next.virtualScreen.modeId as ResolutionId, crt: profileToRenderSettings(next) }))}
+          fonts={monospaceFonts}
+          onChange={updateProfile}
+          smoothScrolling={{
+            enabled: stored.smoothScrollback,
+            tuiEnabled: stored.smoothTuiScrolling,
+            onEnabledChange: (smoothScrollback) => setStored((current) => ({ ...current, smoothScrollback })),
+            onTuiEnabledChange: (smoothTuiScrolling) => setStored((current) => ({ ...current, smoothTuiScrolling })),
+          }}
         />
-
-        <label className="resolution-control">
-          ANSI color profile
-          <select
-            value={stored.crt.colorProfile}
-            data-testid="color-profile-select"
-            onChange={(event) =>
-              setStored((current) => ({
-                ...current,
-                crt: { ...current.crt, colorProfile: event.target.value as CRTSettings['colorProfile'] },
-              }))
-            }
-          >
-            {COLOR_PROFILES.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className="font-control-row">
-          <label className="resolution-control font-name-control">
-            Console font
-            <select
-              value={stored.crt.consoleFont}
-              onChange={(event) =>
-                setStored((current) => ({ ...current, crt: { ...current.crt, consoleFont: event.target.value } }))
-              }
-            >
-              {!monospaceFonts.includes(stored.crt.consoleFont) && (
-                <option value={stored.crt.consoleFont}>{stored.crt.consoleFont} (fallback)</option>
-              )}
-              {monospaceFonts.map((font) => (
-                <option key={font} value={font}>
-                  {font}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="resolution-control font-size-control">
-            Size
-            <input
-              type="number"
-              min={6}
-              max={32}
-              step={1}
-              value={fontSizeInput}
-              onChange={handleFontSizeChange}
-              onBlur={commitFontSize}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  commitFontSize();
-                }
-              }}
-            />
-          </label>
-        </div>
-
-        <div className="font-control-row">
-          <label className="resolution-control font-size-control">
-            Cell width ±px
-            <input
-              type="number"
-              min={-8}
-              max={16}
-              step={1}
-              value={stored.crt.cellWidthAdjustment}
-              data-testid="cell-width-adjustment"
-              onChange={(event) => handleCellAdjustmentChange('cellWidthAdjustment', event.target.value)}
-            />
-          </label>
-          <label className="resolution-control font-size-control">
-            Cell height ±px
-            <input
-              type="number"
-              min={-8}
-              max={16}
-              step={1}
-              value={stored.crt.cellHeightAdjustment}
-              data-testid="cell-height-adjustment"
-              onChange={(event) => handleCellAdjustmentChange('cellHeightAdjustment', event.target.value)}
-            />
-          </label>
-        </div>
-
-        <fieldset>
-          <legend>CRT</legend>
-          <Switch
-            label="CRT Emulation"
-            checked={stored.crt.crtEmulation}
-            data-testid="control-crtEmulation"
-            onChange={(checked) =>
-              setStored((current) => ({
-                ...current,
-                crt: { ...current.crt, crtEmulation: checked },
-              }))
-            }
-          />
-          {stored.crt.crtEmulation && (
-            <div className="crt-subsections">
-              <fieldset className="knob-group colors-group">
-                <legend>Colors</legend>
-                <div className="font-control-row">
-                  <label className="resolution-control font-name-control">
-                    Color mode
-                    <select
-                      value={stored.crt.colorMode}
-                      data-testid="color-mode-select"
-                      onChange={(event) =>
-                        setStored((current) => ({
-                          ...current,
-                          crt: { ...current.crt, colorMode: event.target.value as CRTColorMode },
-                        }))
-                      }
-                    >
-                      <option value="color">Color</option>
-                      <option value="bw">B&amp;W</option>
-                      <option value="green">Green (P31)</option>
-                      <option value="green-p39">Green (P39)</option>
-                      <option value="amber">Amber</option>
-                      <option value="blue">Phosphor Blue</option>
-                    </select>
-                  </label>
-                  {stored.crt.colorMode !== 'color' && stored.crt.colorMode !== 'bw' && (
-                    <label className="slider-control font-size-control" style={{ width: '130px', margin: 0 }}>
-                      <span>
-                        Surface desat.
-                        <output>{formatValue(stored.crt.backgroundDesaturation)}</output>
-                      </span>
-                      <Knob
-                        label="Background desaturation"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={stored.crt.backgroundDesaturation}
-                        onChange={(value) => update('backgroundDesaturation', value)}
-                      />
-                    </label>
-                  )}
-                </div>
-                {stored.crt.colorMode === 'color' && (
-                  <div className="font-control-row">
-                    <label className="resolution-control font-name-control">
-                      Color mask
-                      <select
-                        value={stored.crt.maskType}
-                        data-testid="color-mask-select"
-                        onChange={(event) =>
-                          setStored((current) => ({
-                            ...current,
-                            crt: { ...current.crt, maskType: event.target.value as CRTMaskType },
-                          }))
-                        }
-                      >
-                        <option value="off">Off</option>
-                        <option value="aperture">Aperture grille</option>
-                        <option value="slot">Slot mask</option>
-                        <option value="shadow">Shadow mask</option>
-                      </select>
-                    </label>
-                    <label className={`slider-control font-size-control ${stored.crt.maskType === 'off' ? 'disabled' : ''}`} style={{ width: '130px', margin: 0 }}>
-                      <span>
-                        Strength
-                        <output>{formatValue(stored.crt.maskStrength)}</output>
-                      </span>
-                      <Knob
-                        label="Color mask strength"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={stored.crt.maskStrength}
-                        disabled={stored.crt.maskType === 'off'}
-                        onChange={(value) => update('maskStrength', value)}
-                      />
-                    </label>
-                  </div>
-                )}
-                {stored.crt.colorMode === 'color' && (
-                  <div className="font-control-row convergence-controls">
-                    <label className="slider-control font-size-control" style={{ margin: 0 }}>
-                      <span>
-                        Edge<br />
-                        misconvergence
-                        <output>{formatValue(stored.crt.aberration)} px</output>
-                      </span>
-                      <Knob
-                        label="Edge misconvergence"
-                        min={0}
-                        max={5}
-                        step={0.25}
-                        value={stored.crt.aberration}
-                        onChange={(value) => update('aberration', value)}
-                      />
-                    </label>
-                    <label className={`slider-control font-size-control ${stored.crt.aberration === 0 ? 'disabled' : ''}`} style={{ margin: 0 }}>
-                      <span>
-                        Edge falloff
-                        <output>{formatValue(stored.crt.aberrationFalloff)}</output>
-                      </span>
-                      <Knob
-                        label="Edge falloff"
-                        min={1}
-                        max={4}
-                        step={0.25}
-                        value={stored.crt.aberrationFalloff}
-                        disabled={stored.crt.aberration === 0}
-                        onChange={(value) => update('aberrationFalloff', value)}
-                      />
-                    </label>
-                  </div>
-                )}
-              </fieldset>
-              {Object.entries(controls).map(([group, groupControls]) => (
-                <fieldset className={`knob-group ${groupControls.length === 2 ? 'two-columns' : ''}`} key={group}>
-                  <legend>{group}</legend>
-                  {groupControls.map((control) => {
-                    if (group === 'Light' && control.key === 'bloom') {
-                      return (
-                        <div className="bloom-card" key={control.key}>
-                          <label className="slider-control">
-                            <span>
-                              {control.label}
-                              <output>{formatValue(stored.crt[control.key])}</output>
-                            </span>
-                            <Knob
-                              {...control}
-                              value={stored.crt[control.key]}
-                              onChange={(value) => update(control.key, value)}
-                            />
-                          </label>
-                          <SegmentedControl
-                            value={stored.crt.bloomAlgorithm}
-                            disabled={stored.crt.bloom === 0}
-                            options={[
-                              { value: 'soft', label: 'Soft' },
-                              { value: 'spiral', label: 'Spiral' },
-                            ]}
-                            onChange={(algo) =>
-                              setStored((current) => ({
-                                ...current,
-                                crt: { ...current.crt, bloomAlgorithm: algo },
-                              }))
-                            }
-                          />
-                        </div>
-                      );
-                    }
-                    const slider = (
-                      <label className="slider-control" key={control.key}>
-                        <span>
-                          {control.label}
-                          <output>{formatValue(stored.crt[control.key])}</output>
-                        </span>
-                        <Knob
-                          {...control}
-                          value={stored.crt[control.key]}
-                          onChange={(value) => update(control.key, value)}
-                        />
-                      </label>
-                    );
-                    if (group === 'Light' && control.key === 'ambientGlassLight') {
-                      return (
-                        <Fragment key={control.key}>
-                          {slider}
-                          <Switch
-                            className="reflex-bar-switch"
-                            label="Reflex-bar"
-                            checked={stored.crt.reflexBarEnabled}
-                            onChange={(checked) =>
-                              setStored((current) => ({
-                                ...current,
-                                crt: { ...current.crt, reflexBarEnabled: checked },
-                              }))
-                            }
-                          />
-                        </Fragment>
-                      );
-                    }
-                    return slider;
-                  })}
-                  {group === 'Light' && (
-                    <div className="reflex-subsection">
-                      {stored.crt.reflexBarEnabled && (
-                        <div className="reflex-control-row active">
-                          <label className="slider-control reflex-bar-control">
-                            <span>
-                              Intensity
-                              <output>{formatValue(stored.crt.reflexBar)}</output>
-                            </span>
-                            <Knob
-                              label="Intensity"
-                              min={0}
-                              max={1}
-                              step={0.05}
-                              value={stored.crt.reflexBar}
-                              onChange={(value) => update('reflexBar', value)}
-                            />
-                          </label>
-                          <label className="slider-control reflex-pos-y-control">
-                            <span>
-                              Vertical pos.
-                              <output>{formatValue(stored.crt.reflexBarPosY)}</output>
-                            </span>
-                            <Knob
-                              label="Vertical pos."
-                              min={0}
-                              max={0.5}
-                              step={0.01}
-                              value={stored.crt.reflexBarPosY}
-                              onChange={(value) => update('reflexBarPosY', value)}
-                            />
-                          </label>
-                          <label className="slider-control reflex-width-control">
-                            <span>
-                              Width
-                              <output>{formatValue(stored.crt.reflexBarWidth)}</output>
-                            </span>
-                            <Knob
-                              label="Width"
-                              min={0.95}
-                              max={1}
-                              step={0.005}
-                              value={stored.crt.reflexBarWidth}
-                              onChange={(value) => update('reflexBarWidth', value)}
-                            />
-                          </label>
-                          <label className="slider-control reflex-height-control">
-                            <span>
-                              Height
-                              <output>{formatValue(stored.crt.reflexBarHeight)}</output>
-                            </span>
-                            <Knob
-                              label="Height"
-                              min={0.05}
-                              max={0.6}
-                              step={0.01}
-                              value={stored.crt.reflexBarHeight}
-                              onChange={(value) => update('reflexBarHeight', value)}
-                            />
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {group === 'Temporal' && (
-                    <Switch
-                      label="Channel switch roll"
-                      checked={stored.crt.channelSwitchEffect}
-                      onChange={(checked) =>
-                        setStored((current) => ({
-                          ...current,
-                          crt: { ...current.crt, channelSwitchEffect: checked },
-                        }))
-                      }
-                    />
-                  )}
-                </fieldset>
-              ))}
-              <fieldset>
-                <legend>Bezel</legend>
-                <div className="setting-block">
-                  <span className="setting-label">Bezel glow</span>
-                  <SegmentedControl<'off' | BezelGlowMode>
-                    value={stored.crt.bezelGlow ? stored.crt.bezelGlowMode : 'off'}
-                    options={[{ value: 'off', label: 'Off' }, { value: 'spill', label: 'Spill' }, { value: 'reflection', label: 'Relect.' }]}
-                    onChange={(value) => setStored((current) => ({
-                      ...current,
-                      crt: value === 'off'
-                        ? { ...current.crt, bezelGlow: false }
-                        : { ...current.crt, bezelGlow: true, bezelGlowMode: value },
-                    }))}
-                  />
-                </div>
-                <div className="bezel-control-row">
-                  <label className="slider-control bezel-thickness-control">
-                    <span>
-                      Bezel thickness
-                      <output>{formatValue(stored.crt.bezelThickness)}</output>
-                    </span>
-                    <Knob
-                      label="Bezel thickness"
-                      min={0}
-                      max={10}
-                      step={1}
-                      value={stored.crt.bezelThickness}
-                      onChange={(value) => update('bezelThickness', value)}
-                    />
-                  </label>
-                  <label className="slider-control bezel-highlight-control">
-                    <span>
-                      Bezel highlight
-                      <output>{formatValue(stored.crt.bezelHighlight)}</output>
-                    </span>
-                    <Knob
-                      label="Bezel highlight"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={stored.crt.bezelHighlight}
-                      onChange={(value) => update('bezelHighlight', value)}
-                    />
-                  </label>
-                </div>
-                <Switch
-                  label="Monitor frame"
-                  checked={stored.crt.showBezel}
-                  onChange={(checked) =>
-                    setStored((current) => ({
-                      ...current,
-                      crt: { ...current.crt, showBezel: checked },
-                    }))
-                  }
-                />
-              </fieldset>
-            </div>
-          )}
-        </fieldset>
-
-        <fieldset>
-          <legend>Display</legend>
-          <Switch
-            label="Smooth terminal scrolling"
-            checked={stored.smoothScrollback}
-            onChange={(checked) =>
-              setStored((current) => ({ ...current, smoothScrollback: checked }))
-            }
-          />
-          {stored.smoothScrollback && <Switch
-            label="Heuristic TUI scrolling"
-            checked={stored.smoothTuiScrolling}
-            onChange={(checked) => setStored((current) => ({ ...current, smoothTuiScrolling: checked }))}
-          />}
-          <div className="setting-block">
-            <span className="setting-label">Cursor style</span>
-            <SegmentedControl
-              value={stored.crt.cursorStyle}
-              data-testid="cursor-style-segmented"
-              options={[
-                { value: 'block', label: 'Block' },
-                { value: 'underline', label: 'Underline' },
-                { value: 'bar', label: 'Bar' },
-              ]}
-              onChange={(cursorStyle) =>
-                setStored((current) => ({
-                  ...current,
-                  crt: { ...current.crt, cursorStyle },
-                }))
-              }
-            />
-          </div>
-          <label className="slider-control">
-            <span>
-              Cursor brightness
-              <output>{formatValue(stored.crt.cursorBrightness)}</output>
-            </span>
-            <Knob
-              label="Cursor brightness"
-              min={0}
-              max={1}
-              step={0.05}
-              value={stored.crt.cursorBrightness}
-              onChange={(value) => update('cursorBrightness', value)}
-            />
-          </label>
-          <Switch
-            label="Anti-moiré pixels"
-            checked={stored.crt.antiAliasedPixels}
-            onChange={(checked) =>
-              setStored((current) => ({
-                ...current,
-                crt: { ...current.crt, antiAliasedPixels: checked },
-              }))
-            }
-          />
-        </fieldset>
+        {smoothScrollDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Smooth scroll diagnostics</span><button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
+        {geometryDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Terminal geometry diagnostics</span><button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
+        <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
       </fieldset>}
 
       <fieldset>
         <legend>UI</legend>
-        {smoothScrollDiagnosticsEnabled && <div className="setting-block">
-          <span className="setting-label">Smooth scroll diagnostics</span>
-          <button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
-        </div>}
-        {geometryDiagnosticsEnabled && <div className="setting-block">
-          <span className="setting-label">Terminal geometry diagnostics</span>
-          <button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button>
-        </div>}
-        <Switch
-          label="RMB menu in term."
-          checked={stored.rmbMenuInTerm}
-          onChange={(checked) => setStored((current) => ({ ...current, rmbMenuInTerm: checked }))}
-        />
-        <div className="setting-block">
-          <span className="setting-label">Tab placement</span>
+        <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
+        <div className="host-setting-block">
+          <span className="host-setting-label">Tab placement</span>
           <SegmentedControl
             value={stored.tabPlacement}
-            options={[
-              { value: 'left', label: 'Left of monitor' },
-              { value: 'top', label: 'Above monitor' },
-            ]}
-            onChange={(placement) =>
-              setStored((current) => ({
-                ...current,
-                tabPlacement: placement as TabPlacement,
-              }))
-            }
+            options={[{ value: 'left', label: 'Left of monitor' }, { value: 'top', label: 'Above monitor' }]}
+            onChange={(tabPlacement) => setStored((current) => ({ ...current, tabPlacement: tabPlacement as TabPlacement }))}
           />
         </div>
-        <Switch
-          label="Hide tabs when single session"
-          checked={stored.hideTabsWhenSingleSession}
-          onChange={(checked) =>
-            setStored((current) => ({ ...current, hideTabsWhenSingleSession: checked }))
-          }
-        />
-        <Switch
-          label="Global hotkey: Win+~"
-          checked={stored.globalHotkeyEnabled}
-          onChange={(checked) =>
-            setStored((current) => ({ ...current, globalHotkeyEnabled: checked }))
-          }
-        />
-        {stored.globalHotkeyEnabled && <Switch
-          label="Slide from top"
-          checked={stored.slideFromTop}
-          onChange={(checked) => setStored((current) => ({ ...current, slideFromTop: checked }))}
-        />}
-        <label className="resolution-control">
+        <Switch label="Hide tabs when single session" checked={stored.hideTabsWhenSingleSession} onChange={(hideTabsWhenSingleSession) => setStored((current) => ({ ...current, hideTabsWhenSingleSession }))} />
+        <Switch label="Global hotkey: Win+~" checked={stored.globalHotkeyEnabled} onChange={(globalHotkeyEnabled) => setStored((current) => ({ ...current, globalHotkeyEnabled }))} />
+        {stored.globalHotkeyEnabled && <Switch label="Slide from top" checked={stored.slideFromTop} onChange={(slideFromTop) => setStored((current) => ({ ...current, slideFromTop }))} />}
+        <label className="host-select-control">
           Settings scale
-          <select
-            value={stored.settingsScale}
-            onChange={(event) =>
-              setStored((current) => ({ ...current, settingsScale: Number(event.target.value) }))
-            }
-          >
-            {[0.75, 0.9, 1, 1.1, 1.25, 1.5].map((scale) => (
-              <option key={scale} value={scale}>
-                {Math.round(scale * 100)}%
-              </option>
-            ))}
+          <select value={stored.settingsScale} onChange={(event) => setStored((current) => ({ ...current, settingsScale: Number(event.target.value) }))}>
+            {[0.75, 0.9, 1, 1.1, 1.25, 1.5].map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}
           </select>
         </label>
       </fieldset>
 
       <fieldset>
         <legend>System</legend>
-        <label className="resolution-control">
+        <label className="host-select-control">
           Default shell
           <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>
             <option value="">Windows default (%ComSpec%)</option>
@@ -812,13 +147,7 @@ export function SettingsPanel({
             {shells.map((shell) => <option key={shell.command} value={shell.command}>{shell.name}</option>)}
           </select>
         </label>
-        <Switch
-          label="Check for updates automatically"
-          checked={stored.autoUpdateEnabled}
-          onChange={(checked) =>
-            setStored((current) => ({ ...current, autoUpdateEnabled: checked }))
-          }
-        />
+        <Switch label="Check for updates automatically" checked={stored.autoUpdateEnabled} onChange={(autoUpdateEnabled) => setStored((current) => ({ ...current, autoUpdateEnabled }))} />
       </fieldset>
 
       <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>

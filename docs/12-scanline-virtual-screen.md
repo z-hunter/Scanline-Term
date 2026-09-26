@@ -14,10 +14,10 @@ The SVS repository is the technical source of truth for its architecture, public
 
 ## Dependency
 
-`package.json` pins SVS to the immutable `v2.0.4` Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
+`package.json` pins SVS to the immutable `v2.1.0` Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
 
 ```json
-"scanline-virtual-screen": "git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#v2.0.4"
+"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#v2.1.0"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
@@ -34,6 +34,8 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
+
+`src/ui/SettingsPanel.tsx` composes SVS's controlled `DisplaySettingsSection`, `TerminalSettingsSection`, and `AdvancedCRTSettingsSection`, plus `scanline-virtual-screen/react/styles.css`. Scanline Term provides its mode list, installed fonts, current `ScreenProfile`, and the host-owned smooth-scrolling callbacks; preset persistence, diagnostics, UI, and system controls stay local.
 
 Terminal search remains a Scanline Term feature. The host searches its xterm buffer and passes the resulting ranges to SVS `TerminalRenderer.setTextHighlights()`; SVS does not know about queries, navigation or search state. The JSON files under `src-tauri/resources/presets` are a deliberate Tauri packaging mirror of the built-in SVS presets.
 

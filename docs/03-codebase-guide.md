@@ -148,7 +148,7 @@ Renders the transient scrollback indicator in the screen-frame border. It owns t
 
 #### Scanline Virtual Screen
 
-The active CRT pipeline, compositor, profile validation and optional terminal renderer are supplied by [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Its technical API and rendering details are intentionally documented there. For the Scanline Term boundary, update process and validation matrix, see [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
+The active CRT pipeline, compositor, profile validation, optional terminal renderer, and controlled Display/Terminal/advanced CRT settings sections are supplied by [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Scanline Term composes those sections with host-owned presets, diagnostics, UI, and system controls. Its technical API and rendering details are intentionally documented there. For the Scanline Term boundary, update process and validation matrix, see [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 ---
 
