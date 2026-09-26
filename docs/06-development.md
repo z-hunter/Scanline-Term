@@ -49,6 +49,8 @@ npm run tauri:dev
 
 Starts Vite dev server + compiles Rust backend + opens Tauri window with live ConPTY tabs. Hot-reloads frontend changes; Rust changes require restart.
 
+The development build uses `com.zhunter.scanlineterm.dev`, so it can run alongside the MSI release and keeps its app-local data separate. It also skips production update checks. When the adjacent `../Scanline-Virtual-Screen` checkout exists, Vite uses its built `dist/` files, so SVS changes are available after rebuilding SVS and restarting `npm run tauri:dev`.
+
 ### Run Tests
 
 ```sh

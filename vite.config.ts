@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+const localSvs = fileURLToPath(new URL('../Scanline-Virtual-Screen/dist', import.meta.url));
+
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  build: {
-    assetsInlineLimit: 0,
-  },
-});
+  resolve: command === 'serve' && existsSync(localSvs) ? { alias: { 'scanline-virtual-screen': localSvs } } : undefined,
+  build: { assetsInlineLimit: 0 },
+}));

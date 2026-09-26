@@ -1,4 +1,4 @@
-# Quest → Scanline Virtual Screen: prompt for coding agent
+﻿# Quest → Scanline Virtual Screen: prompt for coding agent
 
 > Temporary working brief. Do not add this file to the documentation index.
 

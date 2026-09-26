@@ -14,10 +14,10 @@ The SVS repository is the technical source of truth for its architecture, public
 
 ## Dependency
 
-`package.json` pins SVS to the immutable `v2.1.0` Git tag. Do not replace it with a branch name or an unpinned commit during normal application work.
+`package.json` pins SVS to an immutable Git commit. Do not replace it with a branch name or a mutable tag during normal application work.
 
 ```json
-"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#v2.1.0"
+"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#165e9e217f83ca218bff7387d788453a5117b757"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
@@ -37,13 +37,15 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 
 `src/ui/SettingsPanel.tsx` composes SVS's controlled `DisplaySettingsSection`, `TerminalSettingsSection`, and `AdvancedCRTSettingsSection`, plus `scanline-virtual-screen/react/styles.css`. Scanline Term provides its mode list, installed fonts, current `ScreenProfile`, and the host-owned smooth-scrolling callbacks; preset persistence, diagnostics, UI, and system controls stay local.
 
+`pixelSmoothing` controls only source-texture sampling. `antiAliasedPixels` is an independent WebGL output resolve for virtual-pixel and CRT-raster conflicts, and applies with CRT enabled or disabled. The Canvas 2D fallback supports source smoothing only.
+
 Terminal search remains a Scanline Term feature. The host searches its xterm buffer and passes the resulting ranges to SVS `TerminalRenderer.setTextHighlights()`; SVS does not know about queries, navigation or search state. The JSON files under `src-tauri/resources/presets` are a deliberate Tauri packaging mirror of the built-in SVS presets.
 
 ## Updating SVS
 
 1. Make and validate the change in the SVS repository: `npm test`, `npm run build`, `npm run lint`, then package inspection.
-2. Publish an immutable SVS SemVer tag.
-3. Update the dependency tag with `npm install git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#vX.Y.Z`.
+2. Push the verified SVS commit.
+3. Update the dependency commit with `npm install git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#<commit>`.
 4. Commit the resulting `package.json` and `package-lock.json` changes.
 5. Run `npm test`, `npm run build`, `npm run lint`, then the SVS-related `npm run tauri:dev` matrix: profiles/mode fallback, overlays, CRT on/off, resize, tab switching and disposal.
 
@@ -64,7 +66,7 @@ cd C:\Dev.dir\projects.dat\ScanlineTerm
 npm install --no-save file:..\Scanline-Virtual-Screen
 ```
 
-Build SVS after changing it, validate Scanline Term against that build, then restore the immutable tagged dependency before committing Scanline Term. Prefer a tagged package release for any shared or reproducible branch.
+Build SVS after changing it, validate Scanline Term against that build, then restore the immutable commit dependency before committing Scanline Term.
 
 ## Licensing
 

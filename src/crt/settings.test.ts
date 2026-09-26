@@ -69,6 +69,7 @@ describe('CRT settings', () => {
     expect(invalid.showSettingsPanel).toBe(false);
     expect(invalid.showAiPanel).toBe(false);
     expect(invalid.autoUpdateEnabled).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'circadia' } })).crt.colorProfile).toBe('chalkbox');
   });
 
   it('defaults and validates smooth scrollback', () => {

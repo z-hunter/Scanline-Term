@@ -420,7 +420,7 @@ export default function App() {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
   useEffect(() => {
-    if (!isTauri() || !stored.autoUpdateEnabled) {
+    if (!isTauri() || import.meta.env.DEV || !stored.autoUpdateEnabled) {
       setAvailableUpdate((current) => {
         if (current) void current.close();
         return null;

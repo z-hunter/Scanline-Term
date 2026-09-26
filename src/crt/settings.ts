@@ -178,6 +178,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.crt.channelSwitchEffect === 'boolean') result.crt.channelSwitchEffect = value.crt.channelSwitchEffect;
     if (typeof value.crt.reflexBarEnabled === 'boolean') result.crt.reflexBarEnabled = value.crt.reflexBarEnabled;
     if (value.crt.colorProfile === 'zx-spectrum' || value.crt.colorProfile === 'retrowave') result.crt.colorProfile = 'cyberpunk';
+    else if (value.crt.colorProfile === 'circadia') result.crt.colorProfile = 'chalkbox' as CRTSettings['colorProfile'];
     else if (isColorProfile(value.crt.colorProfile)) result.crt.colorProfile = value.crt.colorProfile;
     if (typeof value.crt.consoleFont === 'string' && value.crt.consoleFont.length > 0 && value.crt.consoleFont.length <= 128) {
       result.crt.consoleFont = value.crt.consoleFont;

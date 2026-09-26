@@ -1,5 +1,10 @@
 # Backlog
 
+## Remove Circadia migration
+
+After old saved settings and presets no longer need compatibility, remove the
+`circadia` → `chalkbox` profile-ID migration.
+
 ## Kitty Terminal Graphics Protocol — V1
 
 ### Goal

@@ -166,7 +166,7 @@ Run: `cd src-tauri && cargo test`
 - [ ] Channel switch roll: switch terminal tabs; old source rolls first, new source joins after a short delay, and phosphor afterglow crosses the transition; disable it and verify instant switching
 - [ ] Color modes: switch through Color/B&W/Green/Amber/Blue
 - [ ] Bezel: toggle bezel glow, toggle monitor frame
-- [ ] Anti-moiré: toggle, verify difference at low virtual resolutions
+- [ ] Anti-moiré: at a non-integer scale, test on/off with CRT both on and off and with both pixel-smoothing states; verify pass-through changes without WebGL errors
 - [ ] No WebGL errors in DevTools console
 - [ ] Performance: 60fps maintained with default settings (check FPS counter)
 
