@@ -17,7 +17,7 @@ The SVS repository is the technical source of truth for its architecture, public
 `package.json` pins SVS to an immutable Git commit. Do not replace it with a branch name or a mutable tag during normal application work.
 
 ```json
-"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#165e9e217f83ca218bff7387d788453a5117b757"
+"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#ea4ee92dd8ce9baf82ff8c356f9be2a46cc4cc58"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
@@ -36,6 +36,8 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
 
 `src/ui/SettingsPanel.tsx` composes SVS's controlled `DisplaySettingsSection`, `TerminalSettingsSection`, and `AdvancedCRTSettingsSection`, plus `scanline-virtual-screen/react/styles.css`. Scanline Term provides its mode list, installed fonts, current `ScreenProfile`, and the host-owned smooth-scrolling callbacks; preset persistence, diagnostics, UI, and system controls stay local.
+
+SVS owns the cursor profile defaults (style, brightness, and blink flag) and renders the current xterm cursor options first. Scanline Term maps an application's DECSCUSR sequence to those transient xterm options; the profile remains the reset fallback.
 
 `pixelSmoothing` controls only source-texture sampling. `antiAliasedPixels` is an independent WebGL output resolve for virtual-pixel and CRT-raster conflicts, and applies with CRT enabled or disabled. The Canvas 2D fallback supports source smoothing only.
 

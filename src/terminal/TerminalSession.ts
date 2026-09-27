@@ -2,7 +2,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { Terminal } from "@xterm/xterm";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { colorProfile, type TerminalColorProfile } from "scanline-virtual-screen/core";
+import { colorProfile, type CursorStyle, type TerminalColorProfile } from "scanline-virtual-screen/core";
 import { terminalKey } from "./terminal-input";
 import { win32InputKey } from "../win32-input";
 
@@ -104,6 +104,9 @@ export class TerminalSession {
   private outputWritePending = false;
   private outputCompletion: Promise<void> | null = null;
   private resolveOutputCompletion: (() => void) | null = null;
+  private cursorStyle: CursorStyle = 'block';
+  private cursorBlink = true;
+  private applicationCursorStyle = false;
 
   constructor(
     readonly id: string,
@@ -149,6 +152,34 @@ export class TerminalSession {
           if (params.length !== 1 || params[0] !== 9001) return false;
           this.win32InputMode = false;
           return true;
+        },
+      ),
+      terminal.parser.registerCsiHandler(
+        { intermediates: ' ', final: 'q' },
+        (params) => {
+          const param = params.length === 0 ? 1 : params[0];
+          if (typeof param !== 'number') return false;
+          if (param === 0) this.applicationCursorStyle = false;
+          else {
+            const style = ({ 1: 'block', 2: 'block', 3: 'underline', 4: 'underline', 5: 'bar', 6: 'bar' } as const)[param as 1 | 2 | 3 | 4 | 5 | 6];
+            if (!style) return false;
+            this.applicationCursorStyle = true;
+            terminal.options.cursorStyle = style;
+            terminal.options.cursorBlink = param % 2 === 1;
+            return false;
+          }
+          terminal.options.cursorStyle = this.cursorStyle;
+          terminal.options.cursorBlink = this.cursorBlink;
+          return false;
+        },
+      ),
+      terminal.parser.registerEscHandler(
+        { final: 'c' },
+        () => {
+          this.applicationCursorStyle = false;
+          terminal.options.cursorStyle = this.cursorStyle;
+          terminal.options.cursorBlink = this.cursorBlink;
+          return false;
         },
       ),
       terminal.onData((input) => this.sendInput(input)),
@@ -215,6 +246,14 @@ export class TerminalSession {
     void invoke("write_terminal", { sessionId: this.id, input }).catch(
       (reason) => this.onError(`Terminal input failed: ${String(reason)}`),
     );
+  }
+
+  setCursorAppearance(style: CursorStyle, blink: boolean): void {
+    this.cursorStyle = style;
+    this.cursorBlink = blink;
+    if (this.applicationCursorStyle || !this.terminal) return;
+    this.terminal.options.cursorStyle = style;
+    this.terminal.options.cursorBlink = blink;
   }
 
   private queueOutput(data: number[]): void {
@@ -438,6 +477,9 @@ export class TerminalSession {
     this.resolveOutputCompletion = null;
     this.outputCompletion = null;
     this.outputWritePending = false;
+    this.cursorStyle = 'block';
+    this.cursorBlink = true;
+    this.applicationCursorStyle = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);
   }

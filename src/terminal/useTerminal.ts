@@ -216,7 +216,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'args' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, ...(Array.isArray(launch.args) && launch.args.length > 0 && { args: launch.args.filter((argument): argument is string => typeof argument === 'string') }), cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
     const starting = session.start(dimensions, initialProfile(preset.crt.colorProfile), effectiveLaunch);
-    if (session.terminal) session.terminal.options.cursorStyle = preset.crt.cursorStyle;
+    session.setCursorAppearance(preset.crt.cursorStyle, preset.crt.cursorBlink);
     renderer.current!.bindTerminal(session.terminal, (viewportY) => { if (activeRef.current === id && (scrollIntentRef.current || scrollbackRef.current?.sessionId === id)) { const userInitiated = scrollIntentRef.current; scrollIntentRef.current = false; publishScrollback(id, session.terminal, userInitiated, viewportY); } });
     void starting.then((shellName) => updateTab(id, (current) => current.status === 'exited' ? current : shellName ? { ...current, title: `${current.ordinal}. ${session.title ?? shellName}`, status: 'running' } : { ...current, title: `${current.ordinal}. Failed`, status: 'failed' })).catch((reason) => { updateTab(id, (current) => ({ ...current, title: `${current.ordinal}. Failed`, status: 'failed' })); onError(`Terminal startup failed: ${String(reason)}`); });
   }, [applySearch, onError, publishScrollback, recordGeometry, refreshTabColor, selectSession, updateTab]);
@@ -404,8 +404,8 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   useEffect(() => {
     renderer.current!.cancelScroll(); renderer.current!.markDirty();
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
-    if (session?.terminal) session.terminal.options.cursorStyle = settingsRef.current.cursorStyle;
-  }, [activePresetState?.settings.crt.cursorStyle, activePresetState?.settings.crt.breathing]);
+    session?.setCursorAppearance(settingsRef.current.cursorStyle, settingsRef.current.cursorBlink);
+  }, [activePresetState?.settings.crt.cursorStyle, activePresetState?.settings.crt.cursorBlink, activePresetState?.settings.crt.breathing]);
   useEffect(() => {
     const reopenAddress = (event: KeyboardEvent) => {
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');

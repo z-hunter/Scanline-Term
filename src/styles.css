@@ -789,6 +789,12 @@ legend {
   margin-bottom: 6px;
 }
 
+/* Keep the host panel's original surface and type scale around shared SVS controls. */
+.settings-panel .svs-settings-section { background: transparent; }
+.settings-panel .svs-field,
+.settings-panel .svs-slider-control,
+.settings-panel .svs-switch { font-size: 13px; }
+
 footer {
   margin-top: 18px;
   text-align: center;

@@ -32,6 +32,8 @@ The backend stores sessions by frontend-generated UUID. Each ConPTY reader emits
 
 Each xterm session preserves 10,000 scrollback lines. User-driven normal-buffer scrolling (wheel or the existing Menu+PageUp/PageDown and Menu+J/K shortcuts) publishes the active session's viewport/base/row counts to `ui/ScrollbackScrollbar.tsx`. The indicator is not activated by ordinary output, alternate-screen applications, or mouse-tracking wheel events. Its thumb uses pointer capture and calls xterm `scrollToLine()` while dragging; when smooth terminal scrolling is enabled, ordinary wheel/slow-drag/output movement uses SVS `beginBufferScroll()`. The host-owned `terminal-scroll-heuristic.ts` independently analyzes eligible alternate-buffer or stable bottom-of-normal-buffer frames and calls SVS `beginRegionScroll()` only for one unambiguous candidate. SVS only animates the supplied operation; it does not inspect screen contents or collect the diagnostic ring buffer. Settings → UI retains the local `Heuristic TUI scrolling` switch and optional `Copy log` diagnostics.
 
+The profile's cursor style and blink flag are the per-tab defaults. An application may temporarily override both with DECSCUSR (`CSI Ps SP q`); `CSI 0 SP q` restores those profile values and does not persist the runtime override.
+
 Tab backgrounds are derived from the visible xterm cells, blending cell backgrounds with a small contribution from glyph foregrounds. Recalculation is coalesced per animation frame and works for inactive tabs; WebGL output is not read back.
 
 ### Per-tab visual settings and presets

@@ -128,6 +128,27 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('uses DECSCUSR cursor appearance until reset restores the preset', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    session.setCursorAppearance('underline', false);
+    const write = (data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
+
+    await write('\x1b[5 q');
+    expect(session.terminal!.options.cursorStyle).toBe('bar');
+    expect(session.terminal!.options.cursorBlink).toBe(true);
+    await write('\x1b[6 q');
+    expect(session.terminal!.options.cursorBlink).toBe(false);
+    await write('\x1b[5 q\x1bc');
+    expect(session.terminal!.options.cursorStyle).toBe('underline');
+    expect(session.terminal!.options.cursorBlink).toBe(false);
+    await write('\x1b[5 q');
+    await write('\x1b[0 q');
+    expect(session.terminal!.options.cursorStyle).toBe('underline');
+    expect(session.terminal!.options.cursorBlink).toBe(false);
+    session.dispose();
+  });
+
   it('replaces the startup shell title with the active child process', async () => {
     const onProcessName = vi.fn();
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onProcessName);

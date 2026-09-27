@@ -201,6 +201,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (isMaskType(value.crt.maskType)) result.crt.maskType = value.crt.maskType;
     if (isBloomAlgorithm(value.crt.bloomAlgorithm)) result.crt.bloomAlgorithm = value.crt.bloomAlgorithm;
     if (isCursorStyle(value.crt.cursorStyle)) result.crt.cursorStyle = value.crt.cursorStyle;
+    if (typeof value.crt.cursorBlink === 'boolean') result.crt.cursorBlink = value.crt.cursorBlink;
   } catch {
     // Corrupt localStorage must never prevent the demo from starting.
   }

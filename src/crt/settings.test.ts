@@ -234,6 +234,11 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorStyle: 123 } })).crt.cursorStyle).toBe('block');
   });
 
+  it('accepts cursor blink only as a boolean', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorBlink: false } })).crt.cursorBlink).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ crt: { cursorBlink: 'no' } })).crt.cursorBlink).toBe(true);
+  });
+
   it('accepts cursor brightness only within its safe range', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorBrightness: 0.5 } })).crt.cursorBrightness).toBe(0.5);
     expect(loadStoredSettings(JSON.stringify({ crt: { cursorBrightness: 2 } })).crt.cursorBrightness).toBe(0);
