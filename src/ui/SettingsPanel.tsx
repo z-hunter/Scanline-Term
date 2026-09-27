@@ -98,7 +98,7 @@ export function SettingsPanel({
           </label>
         </fieldset>
 
-        <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} />
+        <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} showChannelSwitch={false} />
         <TerminalSettingsSection
           value={screenProfile}
           fonts={monospaceFonts}
@@ -118,6 +118,7 @@ export function SettingsPanel({
       <fieldset>
         <legend>UI</legend>
         <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
+        <Switch label="Channel switch roll" checked={stored.crt.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, crt: { ...current.crt, channelSwitchEffect } }))} />
         <div className="host-setting-block">
           <span className="host-setting-label">Tab placement</span>
           <SegmentedControl

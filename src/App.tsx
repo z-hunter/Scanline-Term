@@ -110,6 +110,7 @@ export default function App() {
   const screenRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
   const startChannelSwitchRef = useRef<() => void>(() => {});
+  const joinChannelSwitchRef = useRef<() => void>(() => {});
   const preservePersistenceForChannelSwitchRef = useRef(false);
   const [errorToasts, setErrorToasts] = useState<ErrorToast[]>([]);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
@@ -179,9 +180,10 @@ export default function App() {
     onError: reportError,
     onToggleSettings: toggleSettings,
     onToggleAi: aiEnabled ? toggleAi : undefined,
-    onTerminalTabTransition: () => {
+    onTerminalTabTransition: (incoming) => {
       preservePersistenceForChannelSwitchRef.current = true;
-      startChannelSwitchRef.current();
+      if (incoming) joinChannelSwitchRef.current();
+      else startChannelSwitchRef.current();
     },
   });
   const activePreset = terminal.activePreset;
@@ -281,8 +283,9 @@ export default function App() {
     onResizeSource: terminal.resizeSource,
     enabled: !activeBrowser,
   });
-  const { clearPersistence, outputRef, fps, startChannelSwitch } = crt;
+  const { clearPersistence, outputRef, fps, startChannelSwitch, joinChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
+  joinChannelSwitchRef.current = joinChannelSwitch;
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -1178,7 +1181,6 @@ export default function App() {
           >
             <canvas
               ref={outputRef}
-              key={activePreset.crt.crtEmulation ? "crt-on" : "crt-off"}
               className={`output-canvas${activeBrowser ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
               tabIndex={terminal.live ? 0 : -1}

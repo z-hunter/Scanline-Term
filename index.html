@@ -25,16 +25,32 @@
       z-index: 9999;
       pointer-events: none;
     }
+    #splash-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #7dffae;
+      font: 16px Consolas, monospace;
+    }
     #splash img {
       width: 256px;
       height: 256px;
       object-fit: contain;
     }
+    #splash p { margin: 12px 0 0; }
+    #splash p::after {
+      content: "█";
+      animation: blink 1s steps(1, end) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
   </style>
   <body>
     <div id="root">
       <div id="splash">
-        <img src="/icon.png" alt="Loading" />
+        <div id="splash-content">
+          <img src="/icon.png" alt="Loading" />
+          <p>Loading...</p>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

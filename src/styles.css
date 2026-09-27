@@ -706,6 +706,7 @@ fieldset {
   min-width: 0;
   min-inline-size: 0;
   padding: 10px 12px;
+  transform: translateY(-8px);
 }
 
 .preset-picker-row {
@@ -761,6 +762,21 @@ legend {
   text-transform: uppercase;
 }
 
+.settings-panel .preset-picker > legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.settings-panel .preset-picker > legend::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  mask: url('../src-tauri/resources/icons/presets.svg') center / contain no-repeat;
+}
+
 .host-select-control {
   display: block;
   color: #b9d7c1;
@@ -791,6 +807,7 @@ legend {
 
 /* Keep the host panel's original surface and type scale around shared SVS controls. */
 .settings-panel .svs-settings-section { background: transparent; }
+.settings-panel > fieldset:not(.preset-controls) { margin-top: var(--svs-section-gap, 16px); }
 .settings-panel .svs-field,
 .settings-panel .svs-slider-control,
 .settings-panel .svs-switch { font-size: 13px; }

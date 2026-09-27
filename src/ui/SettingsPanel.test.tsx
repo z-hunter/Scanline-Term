@@ -357,7 +357,7 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('renders Bezel section with Monitor frame, Bezel glow, Bezel highlight, and Channel switch roll in Temporal', async () => {
+  it('renders Bezel controls and places Channel switch roll in UI', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
       currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
@@ -425,7 +425,7 @@ describe('SettingsPanel font-size editing flow', () => {
 
     const glowButtons = bezelGlowBlock?.querySelectorAll('button');
     expect(glowButtons).toHaveLength(3);
-    expect(glowButtons?.[2].textContent).toBe('Relect.');
+    expect(glowButtons?.[2].textContent).toBe('Refl.');
     await act(async () => {
       glowButtons?.[2].click();
     });
@@ -509,11 +509,14 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(currentStored.crt.showBezel).toBe(true);
     setStored.mockClear();
 
-    // Verify Channel switch roll is inside the Temporal fieldset
-    expect(temporalFieldset?.textContent).toContain('Channel switch roll');
+    // Channel switch roll is an application UI preference.
+    const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
+    const uiFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'UI');
+    expect(displayFieldset?.textContent).not.toContain('Channel switch roll');
+    expect(uiFieldset?.textContent).toContain('Channel switch roll');
 
     // Toggle Channel switch roll
-    const channelSwitch = temporalFieldset?.querySelector('.switch-control');
+    const channelSwitch = Array.from(uiFieldset?.querySelectorAll('.switch-control') ?? []).find((element) => element.textContent?.includes('Channel switch roll'));
     const channelSwitchCheckbox = channelSwitch?.querySelector('input');
     await act(async () => {
       channelSwitchCheckbox?.click();
@@ -523,7 +526,6 @@ describe('SettingsPanel font-size editing flow', () => {
     setStored.mockClear();
 
     // Verify Display fieldset still has Anti-moiré pixels and no longer has Monitor frame
-    const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
     expect(displayFieldset?.textContent).toContain('Anti-moiré pixels');
     expect(displayFieldset?.textContent).not.toContain('Monitor frame');
     expect(Array.from(container.querySelectorAll('.preset-controls > fieldset > legend')).map((legend) => legend.textContent)).toEqual([

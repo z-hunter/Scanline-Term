@@ -82,7 +82,7 @@ export function browserTabColor(value: string): TabColor | null {
   return { background: `#${normalized.toLowerCase()}`, foreground: luminance > 150 ? '#101a14' : '#d7f5df' };
 }
 
-export function useTerminal({ defaultPreset, ready = true, settings, resolution, defaultShell = '', smoothScrollback = false, smoothTuiScrolling = true, rmbMenuInTerm = true, shells = [], onError, onToggleSettings, onToggleAi, onTerminalTabTransition }: { defaultPreset?: PresetSettings; ready?: boolean; settings?: CRTSettings; resolution?: Resolution; defaultShell?: string; smoothScrollback?: boolean; smoothTuiScrolling?: boolean; rmbMenuInTerm?: boolean; shells?: ShellInfo[]; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void; onTerminalTabTransition?: () => void }) {
+export function useTerminal({ defaultPreset, ready = true, settings, resolution, defaultShell = '', smoothScrollback = false, smoothTuiScrolling = true, rmbMenuInTerm = true, shells = [], onError, onToggleSettings, onToggleAi, onTerminalTabTransition }: { defaultPreset?: PresetSettings; ready?: boolean; settings?: CRTSettings; resolution?: Resolution; defaultShell?: string; smoothScrollback?: boolean; smoothTuiScrolling?: boolean; rmbMenuInTerm?: boolean; shells?: ShellInfo[]; onError: (message: string) => void; onToggleSettings: () => void; onToggleAi?: () => void; onTerminalTabTransition?: (incoming: boolean) => void }) {
   const initialPreset: PresetSettings = defaultPreset ?? { version: 1, resolution: (resolution?.id ?? DEFAULT_PRESET_SETTINGS.resolution) as PresetSettings['resolution'], crt: { ...(settings ?? DEFAULT_PRESET_SETTINGS.crt) } };
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const [activePresetState, setActivePresetState] = useState<TabPresetState | null>(null); const [scrollback, setScrollback] = useState<ScrollbackScrollbarState | null>(null); const [search, setSearch] = useState<TerminalSearchState>({ open: false, query: '', matches: [], activeIndex: -1, buffer: null, direction: 1 });
@@ -176,9 +176,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     if (id === activeRef.current) return;
     const record = sessions.current.get(id);
     if (animate && record && sessions.current.has(activeRef.current ?? '') && settingsRef.current.channelSwitchEffect && onTerminalTabTransitionRef.current) {
-      onTerminalTabTransitionRef.current();
+      onTerminalTabTransitionRef.current(false);
       pendingSelection.current = window.setTimeout(() => {
         pendingSelection.current = null;
+        onTerminalTabTransitionRef.current?.(true);
         selectSession(id, false);
       }, 150);
       return;

@@ -10,7 +10,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   useEffect(() => { 
     const output = outputRef.current; if (!output) return; 
-    const screen = new VirtualScreenRenderer(output, settings.crtEmulation);
+    const screen = new VirtualScreenRenderer(output);
     screenRef.current = screen;
 
     let raf = 0; let reported = false; let renderFailed = false; let breathingPrimed = false; let count = 0; let started = performance.now();
@@ -32,9 +32,9 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       if (enabledRef.current) { 
         const wasScrollAnimating = renderer.isScrollAnimating;
         const changed = renderer.draw(now / 1000, settingsRef.current); 
-        if (!screen.isValid() && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); }
+        if (!screen.isValid() && settingsRef.current.crtEmulation && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); }
         if (!breathingPrimed && renderer.hasMeasuredLuma) { screen.restartBreathing(); breathingPrimed = true; }
-        if (!renderFailed && (changed || wasScrollAnimating || renderer.isScrollAnimating || settingsRef.current.crtEmulation)) {
+        if (!renderFailed && (changed || wasScrollAnimating || renderer.isScrollAnimating || screen.isChannelSwitchAnimating() || settingsRef.current.crtEmulation)) {
           try { screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed); } catch (reason) { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
         }
         count += 1; 
@@ -53,9 +53,10 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       screen.dispose();
       screenRef.current = null;
     }; 
-  }, [onError, onResizeSource, renderer, settings.crtEmulation]);
+  }, [onError, onResizeSource, renderer]);
   useEffect(() => { screenRef.current?.clearPersistence(); }, [resolution]);
   const clearPersistence = useCallback(() => screenRef.current?.clearPersistence(), []);
   const startChannelSwitch = useCallback(() => screenRef.current?.startChannelSwitch(), []);
-  return { outputRef, fps, clearPersistence, startChannelSwitch };
+  const joinChannelSwitch = useCallback(() => screenRef.current?.joinChannelSwitch(), []);
+  return { outputRef, fps, clearPersistence, startChannelSwitch, joinChannelSwitch };
 }

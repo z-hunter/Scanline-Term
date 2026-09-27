@@ -123,12 +123,11 @@ export class TerminalRenderer extends CoreTerminalRenderer {
     if (!ctx || !output) return false;
     const { width, height } = this.sourceCanvas; const size = settings.consoleFontSize; const line = Math.floor(size * 1.5); const profile = colorProfile(settings.colorProfile);
     ctx.fillStyle = '#050806'; ctx.fillRect(0, 0, width, height);
-    if (this.logo.complete && this.logo.naturalWidth > 0 && typeof ctx.drawImage === 'function') { const logoSize = Math.min(256, width, height); ctx.drawImage(this.logo, (width - logoSize) / 2, (height - logoSize) / 2, logoSize, logoSize); }
     ctx.font = canvasFont(size, settings.consoleFont, settings.fallbackFont); ctx.textBaseline = 'top';
-    const lines = ['SCANLINE TERM // CRT DISPLAY DIAGNOSTIC', `virtual framebuffer ${width}×${height}`, '[ OK ] phosphor matrix online', '[ OK ] scanline generator synchronized', '[ OK ] WebGL fragment pipeline ready', '> rendering an ordinary terminal as an old monitor', '> browser preview uses a mock session', '', `  frame ${Math.floor(time * 10) % 10000}  uptime ${(time % 3600).toFixed(1)}s`];
-    lines.forEach((text, index) => { ctx.fillStyle = ['#7dffae', '#4ecf83', '#9affbd', '#62db91', '#78c9ff', '#ffd166', '#ff8a80'][index % 7]; ctx.fillText(text, size, size + line * index); });
-    const promptY = size + line * lines.length; const promptText = 'ready> '; ctx.fillStyle = '#7dffae'; ctx.fillText(promptText, size, promptY);
-    if (Math.floor(time * 2) % 2 === 0) { const cursorX = size + ctx.measureText(promptText).width; const cursorW = ctx.measureText('M').width; const cursorH = size; ctx.fillStyle = profile.cursor ?? '#7dffae'; if (settings.cursorStyle === 'underline') ctx.fillRect(cursorX, promptY + cursorH - Math.max(2, Math.round(cursorH * 0.12)) - 1, cursorW, Math.max(2, Math.round(cursorH * 0.12))); else if (settings.cursorStyle === 'bar') ctx.fillRect(cursorX, promptY, Math.max(2, Math.min(cursorW, cursorW * 0.2)), cursorH); else ctx.fillRect(cursorX, promptY + 1, cursorW, Math.max(1, cursorH - 2)); }
+    const promptText = 'Loading...'; const logoSize = Math.min(256, width, Math.max(0, height - line * 2)); const promptY = (height + logoSize) / 2; const promptX = (width - ctx.measureText(promptText).width) / 2;
+    if (this.logo.complete && this.logo.naturalWidth > 0 && typeof ctx.drawImage === 'function') ctx.drawImage(this.logo, (width - logoSize) / 2, promptY - line - logoSize, logoSize, logoSize);
+    ctx.fillStyle = '#7dffae'; ctx.fillText(promptText, promptX, promptY);
+    if (Math.floor(time * 2) % 2 === 0) { const cursorX = promptX + ctx.measureText(promptText).width; const cursorW = ctx.measureText('M').width; const cursorH = size; ctx.fillStyle = profile.cursor ?? '#7dffae'; if (settings.cursorStyle === 'underline') ctx.fillRect(cursorX, promptY + cursorH - Math.max(2, Math.round(cursorH * 0.12)) - 1, cursorW, Math.max(2, Math.round(cursorH * 0.12))); else if (settings.cursorStyle === 'bar') ctx.fillRect(cursorX, promptY, Math.max(2, Math.min(cursorW, cursorW * 0.2)), cursorH); else ctx.fillRect(cursorX, promptY + 1, cursorW, Math.max(1, cursorH - 2)); }
     output.clearRect(0, 0, this.compositedCanvas.width, this.compositedCanvas.height); output.drawImage(this.sourceCanvas, 0, 0); return true;
   }
 
