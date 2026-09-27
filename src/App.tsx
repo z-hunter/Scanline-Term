@@ -368,13 +368,16 @@ export default function App() {
     };
   }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
+    const isCurrent = () => client.current === codex;
     try {
       const models = await codex.listModels();
+      if (!isCurrent()) return;
       setModelCatalog(models);
       setModelCatalogError(
         models.length ? null : "Codex did not provide any selectable models.",
       );
     } catch (reason) {
+      if (!isCurrent()) return;
       setModelCatalog([]);
       setModelCatalogError(`Could not load Codex models: ${String(reason)}`);
     }
@@ -918,7 +921,9 @@ export default function App() {
     addAction(`Unknown command: ${raw}. Use /help to see available commands.`);
   };
   const sendAi = async (text: string) => {
-    if (!sessionId || !client.current) return;
+    const codex = client.current;
+    if (!sessionId || !codex) return;
+    const isCurrent = () => client.current === codex;
     setChats((value) => ({
       ...value,
       [sessionId]: [...(value[sessionId] ?? []), { role: "user", text }],
@@ -933,13 +938,13 @@ export default function App() {
       let threadId = threads.current.get(sessionId);
       const firstTurn = !threadId;
       if (!threadId) {
-        const created = await client.current.request("thread/start", {
+        const created = await codex.request("thread/start", {
           ephemeral: true,
           approvalPolicy: "never",
           sandbox: "read-only",
           serviceName: "scanline-term",
           ...(selection ? { model: selection.model } : {}),
-          cwd: client.current.workspace,
+          cwd: codex.workspace,
           baseInstructions: terminalAssistantBaseInstructions(),
           developerInstructions: terminalAssistantInstructions(operatingSystem),
           config: { project_doc_max_bytes: 0 },
@@ -1003,6 +1008,7 @@ export default function App() {
             },
           ],
         });
+        if (!isCurrent()) return;
         const thread = created as {
           thread?: { id?: string; instructionSources?: unknown[]; cwd?: string };
           instructionSources?: unknown[];
@@ -1013,13 +1019,14 @@ export default function App() {
         const reportedCwd = thread.cwd ?? thread.thread?.cwd;
         if (instructionSources?.length)
           throw new Error("Unexpected external Codex instructions were loaded");
-        if (reportedCwd && reportedCwd !== client.current.workspace)
+        if (reportedCwd && reportedCwd !== codex.workspace)
           throw new Error("Codex thread did not use the isolated workspace");
         threadId = thread.thread?.id;
         if (!threadId) throw new Error("Codex did not create a thread");
         threads.current.set(sessionId, threadId);
       }
-      const started = (await client.current.request("turn/start", {
+      if (!isCurrent()) return;
+      const started = (await codex.request("turn/start", {
         threadId,
         ...(selection ? { model: selection.model, effort: selection.effort } : {}),
         input: [
@@ -1031,8 +1038,10 @@ export default function App() {
           },
         ],
       })) as { turn?: { id?: string } };
+      if (!isCurrent()) return;
       if (started.turn?.id) activeTurns.current.set(sessionId, started.turn.id);
     } catch (reason) {
+      if (!isCurrent()) return;
       setAiStatus("error");
       setRunningSessions((current) => {
         const remaining = { ...current };
