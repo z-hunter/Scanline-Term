@@ -148,6 +148,7 @@ export function SettingsPanel({
           </select>
         </label>
         <Switch label="Check for updates automatically" checked={stored.autoUpdateEnabled} onChange={(autoUpdateEnabled) => setStored((current) => ({ ...current, autoUpdateEnabled }))} />
+        <Switch label="Disable AI assistant" checked={stored.aiAssistantDisabled} onChange={(aiAssistantDisabled) => setStored((current) => ({ ...current, aiAssistantDisabled, ...(aiAssistantDisabled ? { showAiPanel: false } : {}) }))} />
       </fieldset>
 
       <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>

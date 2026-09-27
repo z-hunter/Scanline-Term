@@ -54,20 +54,23 @@ describe('CRT settings', () => {
     const initial = loadStoredSettings(null);
     expect(initial.showSettingsPanel).toBe(false);
     expect(initial.showAiPanel).toBe(false);
+    expect(initial.aiAssistantDisabled).toBe(false);
     expect(initial.autoUpdateEnabled).toBe(true);
 
     const loaded = loadStoredSettings(
-      JSON.stringify({ showSettingsPanel: true, showAiPanel: true, autoUpdateEnabled: false }),
+      JSON.stringify({ showSettingsPanel: true, showAiPanel: true, aiAssistantDisabled: true, autoUpdateEnabled: false }),
     );
     expect(loaded.showSettingsPanel).toBe(true);
     expect(loaded.showAiPanel).toBe(true);
+    expect(loaded.aiAssistantDisabled).toBe(true);
     expect(loaded.autoUpdateEnabled).toBe(false);
 
     const invalid = loadStoredSettings(
-      JSON.stringify({ showSettingsPanel: 'open', showAiPanel: 1, autoUpdateEnabled: 'yes' }),
+      JSON.stringify({ showSettingsPanel: 'open', showAiPanel: 1, aiAssistantDisabled: 'yes', autoUpdateEnabled: 'yes' }),
     );
     expect(invalid.showSettingsPanel).toBe(false);
     expect(invalid.showAiPanel).toBe(false);
+    expect(invalid.aiAssistantDisabled).toBe(false);
     expect(invalid.autoUpdateEnabled).toBe(true);
     expect(loadStoredSettings(JSON.stringify({ crt: { colorProfile: 'circadia' } })).crt.colorProfile).toBe('chalkbox');
   });

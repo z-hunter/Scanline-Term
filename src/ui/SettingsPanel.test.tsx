@@ -67,6 +67,21 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('shows and updates the Disable AI assistant switch', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, setStored })); });
+    const aiSwitch = Array.from(container.querySelectorAll('.switch-control')).find((item) => item.textContent?.includes('Disable AI assistant'));
+    expect(aiSwitch).not.toBeUndefined();
+    aiSwitch?.querySelector<HTMLInputElement>('input')?.click();
+    expect(currentStored.aiAssistantDisabled).toBe(true);
+    root.unmount(); container.remove();
+  });
+
   it('retains local string value while editing and persists clamped value on blur', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

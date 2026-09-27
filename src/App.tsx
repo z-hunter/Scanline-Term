@@ -123,7 +123,8 @@ export default function App() {
   const lastUndisturbedWidth = useRef(0);
   const canFitWithoutShiftRef = useRef(false);
   const settingsVisible = stored.showSettingsPanel;
-  const aiVisible = stored.showAiPanel;
+  const aiEnabled = !stored.aiAssistantDisabled;
+  const aiVisible = aiEnabled && stored.showAiPanel;
   const client = useRef<CodexClient | null>(null);
   const [aiStatus, setAiStatus] = useState<
     "idle" | "running" | "disconnected" | "error"
@@ -161,11 +162,10 @@ export default function App() {
     [],
   );
   const toggleAi = useCallback(
-    () =>
-      setStored((current) => ({
-        ...current,
-        showAiPanel: !current.showAiPanel,
-      })),
+    () => setStored((current) => current.aiAssistantDisabled ? current : ({
+      ...current,
+      showAiPanel: !current.showAiPanel,
+    })),
     [],
   );
   const terminal = useTerminal({
@@ -178,7 +178,7 @@ export default function App() {
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
-    onToggleAi: toggleAi,
+    onToggleAi: aiEnabled ? toggleAi : undefined,
     onTerminalTabTransition: () => {
       preservePersistenceForChannelSwitchRef.current = true;
       startChannelSwitchRef.current();
@@ -391,6 +391,7 @@ export default function App() {
       settingsScale: stored.settingsScale,
       showSettingsPanel: stored.showSettingsPanel,
       showAiPanel: stored.showAiPanel,
+      aiAssistantDisabled: stored.aiAssistantDisabled,
       defaultShell: stored.defaultShell,
       smoothScrollback: stored.smoothScrollback,
       smoothTuiScrolling: stored.smoothTuiScrolling,
@@ -465,25 +466,46 @@ export default function App() {
       void invoke<ShellInfo[]>("list_available_shells").then(setShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
   }, [reportError]);
   useEffect(() => {
+    if (!aiEnabled) {
+      const codex = client.current;
+      client.current = null;
+      void codex?.stop();
+      threads.current.clear();
+      activeTurns.current.clear();
+      interruptedTurns.current.clear();
+      seenStreamDeltas.current.clear();
+      setAiStatus("disconnected");
+      setSignedIn(false);
+      setChats({});
+      setRunningSessions({});
+      setModelCatalog([]);
+      setModelCatalogError(null);
+      setDebug([]);
+      return;
+    }
     const codex = new CodexClient();
     client.current = codex;
     void codex
       .start()
       .then(async () => {
+        if (!aiEnabled || client.current !== codex) return;
         const account = await codex.request("account/read");
+        if (!aiEnabled || client.current !== codex) return;
         const authenticated = Boolean((account as { account?: unknown }).account);
         setSignedIn(authenticated);
         if (authenticated) void loadModels(codex);
         setAiStatus("idle");
       })
       .catch((reason) => {
+        if (!aiEnabled || client.current !== codex) return;
         setAiStatus("disconnected");
         reportError(`Codex unavailable: ${String(reason)}`);
       });
     return () => {
+      if (client.current === codex) client.current = null;
       void codex.stop();
     };
-  }, [loadModels, reportError]);
+  }, [aiEnabled, loadModels, reportError]);
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
@@ -491,14 +513,14 @@ export default function App() {
       setAiStatus("disconnected");
       setRunningSessions({});
     });
-  }, []);
+  }, [aiEnabled]);
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
     return codex.onDebug((line) =>
       setDebug((items) => [...items.slice(-999), line]),
     );
-  }, [terminal.activeSessionId, reportError]);
+  }, [aiEnabled, terminal.activeSessionId, reportError]);
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
@@ -741,7 +763,7 @@ export default function App() {
       )
         setAiStatus("idle");
     });
-  }, [loadModels, terminal.activeSessionId, reportError]);
+  }, [aiEnabled, loadModels, terminal.activeSessionId, reportError]);
   useEffect(() => {
     if (!terminal.activeSessionId) return;
     const preservePersistence = preservePersistenceForChannelSwitchRef.current;
@@ -1134,7 +1156,8 @@ export default function App() {
               onNewShell={(command) => terminal.openSession({ command })}
               shells={shells}
               onToggleSettings={toggleSettings}
-              onToggleAi={toggleAi}
+              onToggleAi={aiEnabled ? toggleAi : undefined}
+              aiEnabled={aiEnabled}
               settingsVisible={settingsVisible}
               aiVisible={aiVisible}
             />

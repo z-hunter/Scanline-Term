@@ -16,6 +16,7 @@ export function TerminalTabs({
   shells = [],
   onToggleSettings,
   onToggleAi,
+  aiEnabled = true,
   settingsVisible = false,
   aiVisible = false,
   panelRef,
@@ -32,6 +33,7 @@ export function TerminalTabs({
   shells?: ShellInfo[];
   onToggleSettings: () => void;
   onToggleAi?: () => void;
+  aiEnabled?: boolean;
   settingsVisible?: boolean;
   aiVisible?: boolean;
   panelRef?: Ref<HTMLDivElement>;
@@ -82,7 +84,7 @@ export function TerminalTabs({
       </div>}
     </div>
     <div className="tabs-actions">
-      <button
+      {aiEnabled && <button
         type="button"
         className={`tabs-ai-button${aiVisible ? ' active' : ''}`}
         aria-label="Toggle AI assistant"
@@ -91,7 +93,7 @@ export function TerminalTabs({
         onClick={onToggleAi}
       >
         <span className="tabs-ai-icon" aria-hidden="true" />
-      </button>
+      </button>}
       <button
         type="button"
         className={`tabs-settings-button${settingsVisible ? ' active' : ''}`}

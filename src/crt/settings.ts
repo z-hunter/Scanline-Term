@@ -29,6 +29,7 @@ export type AppSettings = {
   settingsScale: number;
   showSettingsPanel: boolean;
   showAiPanel: boolean;
+  aiAssistantDisabled: boolean;
   defaultShell: string;
   smoothScrollback: boolean;
   smoothTuiScrolling: boolean;
@@ -120,6 +121,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     settingsScale: 0.9,
     showSettingsPanel: false,
     showAiPanel: false,
+    aiAssistantDisabled: false,
     defaultShell: '',
     smoothScrollback: true,
     smoothTuiScrolling: true,
@@ -141,6 +143,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       settingsScale?: unknown;
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
+      aiAssistantDisabled?: unknown;
       defaultShell?: unknown;
       smoothScrollback?: unknown;
       smoothTuiScrolling?: unknown;
@@ -156,6 +159,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
+    if (typeof value.aiAssistantDisabled === 'boolean') result.aiAssistantDisabled = value.aiAssistantDisabled;
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
     if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;

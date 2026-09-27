@@ -143,6 +143,17 @@ describe('TerminalTabs', () => {
     container.remove();
   });
 
+  it('does not render the AI assistant button when AI is disabled', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TerminalTabs, {
+      tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew: vi.fn(),
+      onToggleSettings: vi.fn(), aiEnabled: false,
+    })));
+    expect(container.querySelector('.tabs-ai-button')).toBeNull();
+    root.unmount(); container.remove();
+  });
+
   it('opens the custom menu on right-click and starts the selected tab type', async () => {
     const onNew = vi.fn();
     const onNewBrowser = vi.fn();
