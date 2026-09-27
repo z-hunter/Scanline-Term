@@ -795,6 +795,11 @@ legend {
 .settings-panel .svs-slider-control,
 .settings-panel .svs-switch { font-size: 13px; }
 
+.settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item { font-size: 0; }
+.settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item::after { content: ''; display: block; width: 12px; height: 16px; margin: 0 auto; background: currentColor; }
+.settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item:nth-child(2)::after { width: 14px; height: 3px; margin-top: 10px; margin-bottom: 3px; }
+.settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item:nth-child(3)::after { width: 3px; }
+
 footer {
   margin-top: 18px;
   text-align: center;
