@@ -166,11 +166,11 @@ export class TerminalSession {
             this.applicationCursorStyle = true;
             terminal.options.cursorStyle = style;
             terminal.options.cursorBlink = param % 2 === 1;
-            return false;
+            return true;
           }
           terminal.options.cursorStyle = this.cursorStyle;
           terminal.options.cursorBlink = this.cursorBlink;
-          return false;
+          return true;
         },
       ),
       terminal.parser.registerEscHandler(
