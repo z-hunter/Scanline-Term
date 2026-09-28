@@ -1380,7 +1380,8 @@ describe('useTerminal closeSession concurrent closures', () => {
     const onTerminalTabTransition = vi.fn();
     function TestComponent() {
       const result = useTerminal({
-        settings: { ...DEFAULT_CRT_SETTINGS, channelSwitchEffect: true },
+        settings: { ...DEFAULT_CRT_SETTINGS, channelSwitchEffect: false },
+        channelSwitchEffect: true,
         resolution: RESOLUTIONS[1],
         onError,
         onToggleSettings,
@@ -1419,6 +1420,7 @@ describe('useTerminal closeSession concurrent closures', () => {
       hookResult.selectSession(tab2Id, true);
     });
     expect(onTerminalTabTransition).toHaveBeenCalledTimes(1);
+    expect(onTerminalTabTransition).toHaveBeenCalledWith(false);
     expect(hookResult.activeTabId).toBe(tab1Id);
 
     // Reselect the active tab before the 150ms timeout expires
@@ -1433,6 +1435,7 @@ describe('useTerminal closeSession concurrent closures', () => {
 
     // Tab 1 must remain active, delayed transition to tab 2 was cancelled
     expect(hookResult.activeTabId).toBe(tab1Id);
+    expect(onTerminalTabTransition).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       root.unmount();

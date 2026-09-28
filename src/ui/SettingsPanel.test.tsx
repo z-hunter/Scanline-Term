@@ -522,7 +522,7 @@ describe('SettingsPanel font-size editing flow', () => {
       channelSwitchCheckbox?.click();
     });
     expect(setStored).toHaveBeenCalled();
-    expect(currentStored.crt.channelSwitchEffect).toBe(false);
+    expect(currentStored.channelSwitchEffect).toBe(false);
     setStored.mockClear();
 
     // Verify Display fieldset still has Anti-moiré pixels and no longer has Monitor frame

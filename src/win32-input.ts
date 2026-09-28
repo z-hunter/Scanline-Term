@@ -18,6 +18,7 @@ const keys: Record<string, Win32Key> = {
 
 const letterScans = [0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c];
 let ctrlCEtxPending = false;
+let ctrlState = 0;
 const digitScans = [0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a];
 const functionScans = [0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57, 0x58, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x76];
 
@@ -44,7 +45,11 @@ function controlState(event: KeyEvent, keyDown: boolean): number {
   // Browser KeyboardEvents do not consistently include a modifier in its own
   // keydown event. Win32 consumers need the corresponding control-state bit
   // to recognize modifier-only KEY_EVENT_RECORDs.
-  if (event.ctrlKey || keyDown && (event.code === 'ControlLeft' || event.code === 'ControlRight')) state |= event.code === 'ControlRight' ? 0x04 : 0x08;
+  if (event.ctrlKey || keyDown && (event.code === 'ControlLeft' || event.code === 'ControlRight')) {
+    state |= event.code === 'ControlLeft' || event.code === 'ControlRight'
+      ? keyDown ? event.code === 'ControlRight' ? 0x04 : 0x08 : 0
+      : ctrlState || 0x08;
+  }
   if (event.altKey || keyDown && (event.code === 'AltLeft' || event.code === 'AltRight')) state |= event.code === 'AltRight' ? 0x01 : 0x02;
   if (event.shiftKey || keyDown && (event.code === 'ShiftLeft' || event.code === 'ShiftRight')) state |= 0x10;
   if (event.getModifierState?.('CapsLock')) state |= 0x80;
@@ -81,5 +86,8 @@ export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
     }
   }
   const [virtualKey, scanCode] = keyInfo(event);
-  return `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
+  if (keyDown) ctrlState |= event.code === 'ControlRight' ? 0x04 : event.code === 'ControlLeft' ? 0x08 : 0;
+  const input = `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
+  if (!keyDown) ctrlState &= event.code === 'ControlRight' ? ~0x04 : event.code === 'ControlLeft' ? ~0x08 : ~0;
+  return input;
 }

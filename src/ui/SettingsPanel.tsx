@@ -118,7 +118,7 @@ export function SettingsPanel({
       <fieldset>
         <legend>UI</legend>
         <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
-        <Switch label="Channel switch roll" checked={stored.crt.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, crt: { ...current.crt, channelSwitchEffect } }))} />
+        <Switch label="Channel switch roll" checked={stored.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, channelSwitchEffect }))} />
         <div className="host-setting-block">
           <span className="host-setting-label">Tab placement</span>
           <SegmentedControl

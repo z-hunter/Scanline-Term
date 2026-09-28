@@ -34,6 +34,7 @@ export type AppSettings = {
   smoothScrollback: boolean;
   smoothTuiScrolling: boolean;
   rmbMenuInTerm: boolean;
+  channelSwitchEffect: boolean;
 };
 
 export type StoredSettings = AppSettings & {
@@ -126,6 +127,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     smoothScrollback: true,
     smoothTuiScrolling: true,
     rmbMenuInTerm: true,
+    channelSwitchEffect: DEFAULT_CRT_SETTINGS.channelSwitchEffect,
     crt: { ...DEFAULT_CRT_SETTINGS },
   };
   if (!raw) return result;
@@ -148,6 +150,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       smoothScrollback?: unknown;
       smoothTuiScrolling?: unknown;
       rmbMenuInTerm?: unknown;
+      channelSwitchEffect?: unknown;
       crt?: Record<string, unknown>;
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
@@ -164,6 +167,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
     if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;
     if (typeof value.rmbMenuInTerm === 'boolean') result.rmbMenuInTerm = value.rmbMenuInTerm;
+    if (typeof value.channelSwitchEffect === 'boolean') result.channelSwitchEffect = value.channelSwitchEffect;
+    else if (typeof value.crt?.channelSwitchEffect === 'boolean') result.channelSwitchEffect = value.crt.channelSwitchEffect;
     if (!value.crt || typeof value.crt !== 'object') return result;
 
     for (const [key, range] of Object.entries(numericRanges)) {

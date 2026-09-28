@@ -28,4 +28,11 @@ describe('Win32 Input Mode encoding', () => {
     expect(win32InputKey(key('KeyC', { key: 'c' }), true)).toBe('\x1b[67;46;99;1;0;1_');
     expect(win32InputKey(key('KeyC', { key: 'c' }), false)).toBe('\x1b[67;46;99;0;0;1_');
   });
+
+  it('preserves the side of Ctrl for modified keys', () => {
+    expect(win32InputKey(key('ControlRight', { key: 'Control', ctrlKey: true }), true)).toBe('\x1b[17;29;0;1;4;1_');
+    expect(win32InputKey(key('KeyA', { key: 'a', ctrlKey: true }), true)).toBe('\x1b[65;30;1;1;4;1_');
+    expect(win32InputKey(key('KeyA', { key: 'a', ctrlKey: true }), false)).toBe('\x1b[65;30;1;0;4;1_');
+    expect(win32InputKey(key('ControlRight', { key: 'Control' }), false)).toBe('\x1b[17;29;0;0;0;1_');
+  });
 });

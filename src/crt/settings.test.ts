@@ -217,8 +217,9 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ crt: { reflexBarEnabled: true } })).crt.reflexBarEnabled).toBe(true);
   });
 
-  it('preserves the channel switch roll switch', () => {
-    expect(loadStoredSettings(JSON.stringify({ crt: { channelSwitchEffect: false } })).crt.channelSwitchEffect).toBe(false);
+  it('migrates the channel switch roll switch to application settings', () => {
+    expect(loadStoredSettings(JSON.stringify({ crt: { channelSwitchEffect: false } })).channelSwitchEffect).toBe(false);
+    expect(loadStoredSettings(JSON.stringify({ channelSwitchEffect: true, crt: { channelSwitchEffect: false } })).channelSwitchEffect).toBe(true);
   });
 
   it('preserves bezel glow mode and rejects unknown values', () => {
