@@ -150,6 +150,7 @@ sterm [options] [target] [arguments...]
 | --- | --- | --- |
 | **`-T`** | *None* | Open target in a new tab if an instance of Scanline Term is already running |
 | **`-P`** | `<path>` | Set explicit working directory (`cwd`) for the launched terminal session |
+| **`-S`** / **`--preset`** | `<name>` | Apply the named preset (without `.json`) to a new terminal tab |
 
 ### Target Arguments
 
@@ -188,6 +189,9 @@ sterm -T -P C:\Projects\MyProject
 
 # Open an executable with arguments in a new tab
 sterm -T C:\Tools\watcher.exe --port 8080
+
+# Open a terminal tab using a named preset from the Presets list
+sterm -T --preset "DEC VT-100 (1978)" pwsh
 
 # Open documentation directly in the built-in CRT browser
 sterm https://docs.rs

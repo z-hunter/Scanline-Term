@@ -12,7 +12,7 @@ import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
 import { findTerminalMatches, nextSearchIndex, type TerminalSearchMatch } from './terminal-search';
 import { showNativeImageMenu, showNativeTerminalMenu } from '../ui/nativeNewTabMenu';
-import { clonePresetSettings, DEFAULT_PRESET_SETTINGS, type PresetSettings, type TabPresetState } from '../crt/settings';
+import { clonePresetSettings, DEFAULT_PRESET_SETTINGS, loadPresetSettings, type PresetSettings, type TabPresetState } from '../crt/settings';
 import type { ScrollbackScrollbarState } from '../ui/ScrollbackScrollbar';
 
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
@@ -218,11 +218,18 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const markActivePresetSaved = useCallback((name: string) => {
     updateActivePreset((current) => ({ ...current, name, draftName: name, dirty: false }));
   }, [updateActivePreset]);
-  const openSession = useCallback((launch?: TerminalLaunch) => {
+  const openSession = useCallback(async (launch?: TerminalLaunch) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset = clonePresetSettings(defaultPresetRef.current); const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
+    const presetName = launch && typeof launch === 'object' && !('nativeEvent' in launch) && typeof launch.preset === 'string' ? launch.preset : null;
+    let preset = clonePresetSettings(defaultPresetRef.current);
+    if (presetName) try {
+      const loaded = loadPresetSettings(JSON.stringify(await invoke<unknown>('load_preset', { name: presetName })));
+      if (!loaded) throw new Error('invalid preset format');
+      preset = loaded;
+    } catch (reason) { onError(`Could not load launch preset ${presetName}: ${String(reason)}`); return; }
+    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
-    sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: 'default', draftName: 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
+    sessions.current.set(id, { tab, session, inputLocked: false, preset: { name: presetName ?? 'default', draftName: presetName ?? 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const width = resolution.id.startsWith('physical') ? outputSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? outputSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     recordGeometry('session-start', { sessionId: id, resolution: preset.resolution, output: outputRef.current ? { width: outputRef.current.width, height: outputRef.current.height, css: elementBounds(outputRef.current) } : null, source: { width: source.width, height: source.height }, terminal: dimensions });
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'args' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, ...(Array.isArray(launch.args) && launch.args.length > 0 && { args: launch.args.filter((argument): argument is string => typeof argument === 'string') }), cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;

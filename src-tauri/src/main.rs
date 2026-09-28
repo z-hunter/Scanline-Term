@@ -57,6 +57,7 @@ struct TerminalLaunch {
     #[serde(default)]
     args: Vec<String>,
     cwd: Option<String>,
+    preset: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -68,7 +69,7 @@ struct ShellInfo {
 
 #[derive(Clone, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-enum LaunchRequest { Terminal { command: Option<String>, args: Vec<String>, cwd: Option<String> }, Browser { url: String } }
+enum LaunchRequest { Terminal { command: Option<String>, args: Vec<String>, cwd: Option<String>, preset: Option<String> }, Browser { url: String } }
 struct LaunchState(LaunchRequest);
 
 #[derive(Clone, serde::Serialize)]
@@ -109,7 +110,7 @@ fn target_argument_index(args: &[String]) -> Option<usize> {
         match argument.as_str() {
             "--" => return (index + 1 < args.len()).then_some(index + 1),
             "-T" => index += 1,
-            "-P" => index += 2,
+            "-P" | "-S" | "--preset" => index += 2,
             _ => return Some(index),
         }
     }
@@ -137,16 +138,18 @@ fn command_arguments(args: &[String]) -> Vec<String> {
 fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
     let mut launch_in_tab = false;
     let mut explicit_cwd = None;
+    let mut preset = None;
     let mut index = 1;
     while index < args.len() {
         let argument = &args[index];
         match argument.as_str() {
             "-T" => launch_in_tab = true,
             "-P" => explicit_cwd = args.get(index + 1).cloned(),
+            "-S" | "--preset" => preset = args.get(index + 1).map(|name| name.trim_matches(['\'', '"']).to_owned()),
             "--" => break,
             _ => break,
         }
-        index += if argument == "-P" { 2 } else { 1 };
+        index += if matches!(argument.as_str(), "-P" | "-S" | "--preset") { 2 } else { 1 };
     }
     let target = target_argument(args);
     let target_path = target.map(|target| {
@@ -158,7 +161,7 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
         .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())).map(str::to_owned));
     let cwd = explicit_cwd.or_else(|| target_path.filter(|path| path.is_dir()).map(|path| path.to_string_lossy().into_owned()));
     let args = if command.is_some() { command_arguments(args) } else { Vec::new() };
-    (TerminalLaunch { command, args, cwd }, launch_in_tab)
+    (TerminalLaunch { command, args, cwd, preset }, launch_in_tab)
 }
 
 fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
@@ -172,7 +175,7 @@ fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
         }
     }
     let (terminal, tab) = terminal_launch(args, cwd);
-    (LaunchRequest::Terminal { command: terminal.command, args: terminal.args, cwd: terminal.cwd }, tab)
+    (LaunchRequest::Terminal { command: terminal.command, args: terminal.args, cwd: terminal.cwd, preset: terminal.preset }, tab)
 }
 
 fn valid_working_directory(cwd: Option<&str>) -> Result<(), String> {
@@ -960,7 +963,7 @@ fn main() {
         })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let (launch, launch_in_tab) = launch_request(&args, &cwd);
-            match launch { LaunchRequest::Browser { .. } => { let _ = app.emit("browser-launch", launch); }, LaunchRequest::Terminal { command, args, cwd } if launch_in_tab => { let _ = app.emit("terminal-launch", TerminalLaunch { command, args, cwd }); }, _ => {} }
+            match launch { LaunchRequest::Browser { .. } => { let _ = app.emit("browser-launch", launch); }, LaunchRequest::Terminal { command, args, cwd, preset } if launch_in_tab => { let _ = app.emit("terminal-launch", TerminalLaunch { command, args, cwd, preset }); }, _ => {} }
             if let Some(window) = app.get_webview_window("main") {
                 restore_and_focus_window(&window);
             }
@@ -1045,10 +1048,11 @@ mod tests {
         let (request, in_tab) = launch_request(&args, "C:\\work");
         assert!(in_tab);
         match request {
-            LaunchRequest::Terminal { command, args, cwd } => {
+            LaunchRequest::Terminal { command, args, cwd, preset } => {
                 assert_eq!(command.as_deref(), Some("pwsh"));
                 assert!(args.is_empty());
                 assert_eq!(cwd.as_deref(), Some("C:\\temp"));
+                assert_eq!(preset, None);
             }
             _ => panic!("expected terminal launch request"),
         }
@@ -1098,6 +1102,19 @@ mod tests {
         assert_eq!(launch.args, ["-NoLogo", "-Command", "Write-Host hello", "-P", "literal", "-T"]);
         assert_eq!(launch.cwd.as_deref(), Some("C:\\temp"));
         assert!(in_tab);
+    }
+
+    #[test]
+    fn parses_a_quoted_preset_for_terminal_launches_only() {
+        let args = vec!["scanline-term".into(), "-T".into(), "--preset".into(), "'DEC VT-100 (1978)'".into(), "pwsh".into()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        assert_eq!(launch.preset.as_deref(), Some("DEC VT-100 (1978)"));
+        assert!(in_tab);
+
+        let args = vec!["scanline-term".into(), "-S".into(), "amber".into(), "https://example.com".into()];
+        let (request, in_tab) = launch_request(&args, "C:\\work");
+        assert!(matches!(request, LaunchRequest::Browser { .. }));
+        assert!(!in_tab);
     }
 
     #[test]

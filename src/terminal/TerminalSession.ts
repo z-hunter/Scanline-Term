@@ -7,7 +7,7 @@ import { terminalKey } from "./terminal-input";
 import { win32InputKey } from "../win32-input";
 
 export type TerminalSize = { cols: number; rows: number };
-export type TerminalLaunch = { command?: string | null; args?: string[] | null; cwd?: string | null };
+export type TerminalLaunch = { command?: string | null; args?: string[] | null; cwd?: string | null; preset?: string | null };
 export type TerminalInputAction =
   | { kind: "text"; text: string; submit?: boolean }
   | {
