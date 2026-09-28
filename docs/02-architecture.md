@@ -92,7 +92,7 @@ Scanline Term uses the external [Scanline Virtual Screen](https://github.com/z-h
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
 
-The tab gallery is a temporary DOM overlay owned by `App.tsx`. `useCRT.captureFrame()` redraws the active WebGL output once and copies it into a bounded 2D canvas; `useTerminal` caches that canvas before a normal tab switch. Gallery entry snapshots the active tab and freezes the cache, so cards do not receive terminal output while the mode is open. The active card is centered in its row; tabs before it fill rows above and tabs after it fill rows below. Cards retain a 400px target width, with additional odd-numbered columns added only when the window has room. Native browser child WebViews are hidden through the existing `set_active_browser` lifecycle and represented by title/type placeholders.
+The tab gallery is a temporary DOM overlay owned by `App.tsx`. `useCRT.captureFrame()` redraws the active WebGL output once and copies it into a bounded 2D canvas; a render failure is reported and simply yields no preview. `useTerminal` caches that canvas before a normal tab switch and removes a closed tab's cache entry. Gallery entry snapshots the active tab and freezes the cache, so cards do not receive terminal output while the mode is open. The active card is centered in its row; tabs before it fill rows above and tabs after it fill rows below. Cards retain a 400px target width, with additional odd-numbered columns added only when the window has room. Gallery selection bypasses the normal channel-switch animation. Native browser child WebViews are hidden through the existing `set_active_browser` lifecycle and represented by title/type placeholders.
 
 ## Execution Boundary
 
@@ -211,7 +211,10 @@ sequenceDiagram
     User->>Canvas: mousedown / mousemove / mouseup / wheel
     Canvas->>App: React mouse event handler
     App->>App: TerminalRenderer.cellAtPoint() — apply CRT curve and map to cell coords
-    alt Copy Mode (Menu+C) or Middle Button
+    alt Ctrl + Middle Button on HTTP(S) URL
+        App->>App: Highlight the URL while Ctrl and pointer remain over it
+        App->>App: openBrowser(URL) on middle-button release
+    else Copy Mode (Menu+C) or Middle Button
         App->>App: Update copySelectionRef
         App->>App: copySelection() → navigator.clipboard.writeText()
     else Application Mouse Tracking Active

@@ -113,6 +113,13 @@ Run: `cd src-tauri && cargo test`
 - [ ] After browser → terminal while keeping Menu held, release and press Menu before issuing the next Menu shortcut; this is the supported native-WebView boundary behavior
 - [ ] With a browser tab present but a terminal tab active, minimize/restore the app and Alt+Tab away and back; immediately type in the terminal without clicking
 
+### After Changes to Sessions Gallery
+
+- [ ] `npm test` — `ui/TabGallery.test.tsx` and `terminal/useTerminal.test.ts` pass
+- [ ] In `tauri:dev`, open from `Menu+Backspace`, blank tab-strip/workspace space, the outer monitor frame, and the physical-window gutter; terminal content and controls do not open it
+- [ ] Verify `Enter`, Space, card click, and `1`…`9`/`0` open the expected card; Escape, repeated `Menu+Backspace`, and the overlay background return to the original tab
+- [ ] Verify arrows/`hjkl`, `Tab`/`Shift+Tab`, `Menu+N`, and `Menu+B`; test one tab, browser placeholders, 10+ tabs, bezel on/off, and fullscreen
+
 ### After Changes to Mouse Input
 
 - [ ] `npm test` — `terminal-mouse.test.ts` passes
@@ -123,6 +130,7 @@ Run: `cd src-tauri && cargo test`
 - [ ] Scrollbar stays hidden for ordinary output, alternate-screen applications, mouse-tracking wheel input, browser tabs, and tabs without history
 - [ ] Copy mode: Menu+C → click+drag → text selected → text copied to clipboard
 - [ ] Middle button click starts selection
+- [ ] In normal scrollback, hold Ctrl and middle-click a valid HTTP(S) URL: the entire URL stays highlighted only while Ctrl is held and the pointer remains over it; release the middle button to open a new browser tab without moving the viewport to the bottom
 - [ ] Mouse coordinates match expected cells (verify in a TUI app that shows cursor position)
 
 ### After Changes to Context Menus / Native WebView2 Layering

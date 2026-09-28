@@ -138,6 +138,14 @@ describe('linkAt', () => {
     expect(linkAt(text, 0)).toBeNull();
     expect(linkAt('https://', 0)).toBeNull();
   });
+
+  it('does not include sentence punctuation or unmatched closing delimiters', () => {
+    const text = 'see https://example.com/docs).';
+    const url = 'https://example.com/docs';
+    expect(linkAt(text, text.indexOf('example'))).toEqual({ url, start: 4, end: 4 + url.length - 1 });
+    expect(linkAt('see https://example.com/(docs).', 20)?.url).toBe('https://example.com/(docs)');
+    expect(linkAt("see https://example.com/docs'", 20)?.url).toBe('https://example.com/docs');
+  });
 });
 
 describe('terminal launch event', () => {

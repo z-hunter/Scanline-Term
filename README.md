@@ -43,6 +43,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 Keep your hands on the keyboard and stay in the zone:
 
 - **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
+- **Open Terminal Links**: Hold `Ctrl` and middle-click an HTTP(S) URL in the terminal, including normal scrollback. The whole URL is highlighted while the pointer remains over it; release the middle button to open it in a new browser tab.
 - **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`, or open the static Sessions Gallery with `Menu + Backspace`.
 
 ### 3. Native Windows ConPTY Engine
@@ -105,6 +106,7 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + Tab`** | Alternate Tab | Toggle back to the previously active tab |
 | **`Menu + V`** | Paste | Paste clipboard text into the active shell |
 | **`Menu + C`** | Copy Mode | Activate rectangular screen selection and copy mode |
+| **`Ctrl + Middle Click`** | Open Terminal Link | Highlight the HTTP(S) URL under the pointer; release over it to open a new browser tab |
 | **`Menu + /`** | Find in Terminal | Open terminal-buffer search; type a query, then use `Enter` or `n` for the next match |
 | **`Menu + Shift + /`** | Find Back in Terminal | Open reverse terminal-buffer search; `Enter` or `n` moves to the previous match |
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
@@ -113,7 +115,7 @@ While terminal search is open, `N` reverses the search direction and `Esc` close
 
 ### Sessions Gallery
 
-`Menu + Backspace` (or a primary click on unused workspace/tab-bar space) opens a static overview of all sessions. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move, `Enter`, `Space`, or `1`…`9`/`0` to open a tab, and `Esc`, `Menu + Backspace`, or a click outside a card to return unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
+`Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move, `Enter`, `Space`, or `1`…`9`/`0` to open a tab, and `Esc`, `Menu + Backspace`, or a click outside a card to return unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
 
 ### Browser Tab Keyboard Navigation
 

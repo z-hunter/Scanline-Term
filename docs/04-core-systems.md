@@ -175,7 +175,7 @@ When search is open, the DOM search field owns text input and does not forward i
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding. A lone Menu press is forwarded to the active Win32 Input Mode terminal as a deferred down/up pair when it is released; this preserves application shortcuts while allowing console applications to observe `VK_APPS`. Standard VT has no equivalent Menu sequence.
 
-The tab gallery freezes the last visible terminal canvas for each tab at the moment it is left. Entering the gallery captures the active tab once, hides native browser children through `set_active_browser`, and suspends terminal input. The active card starts in the centre column of its row; earlier tabs fill rows above and later tabs fill rows below. Cards target 400px wide and use additional odd-numbered columns only when the viewport can fit them without shrinking previews. Arrow keys or `hjkl` move selection (`Left`/`Right` follow tab ordinals across row boundaries); `Enter`, Space, a card click, or digits `1`…`9`/`0` open the target tab immediately. Escape, `Menu+Backspace`, or a background click return to the original tab with its return animation. `Menu+N` and `Menu+B` remain available and create the respective tab before closing the gallery. Browser tabs are represented by title/type placeholders because their WebView2 surfaces are outside the CRT canvas.
+The tab gallery freezes the last visible terminal canvas for each tab at the moment it is left. Entering the gallery captures the active tab once, hides native browser children through `set_active_browser`, and suspends terminal input. It can also open from free workspace/tab-strip background: the outer monitor frame and physical-window gutters are included, while terminal content, cards, controls, panels, and notifications are excluded. The active card starts in the centre column of its row; earlier tabs fill rows above and later tabs fill rows below. Cards target 400px wide and use additional odd-numbered columns only when the viewport can fit them without shrinking previews. Arrow keys or `hjkl` move selection (`Left`/`Right` follow tab ordinals across row boundaries); `Enter`, Space, a card click, or digits `1`…`9`/`0` open the target tab immediately without a channel-switch animation. Escape, `Menu+Backspace`, or a background click return to the original tab with its return animation. `Tab` and `Shift+Tab` wrap focus inside the modal. `Menu+N` and `Menu+B` remain available and create the respective tab before closing the gallery. Browser tabs are represented by title/type placeholders because their WebView2 surfaces are outside the CRT canvas.
 
 `Alt+Enter` is reserved for fullscreen and is intercepted before terminal encoding. Do not rely on `KeyboardEvent.altKey` alone: on some Windows layouts Right Alt is exposed as AltGr and does not reliably set it. The handler tracks physical `AltLeft` and `AltRight` key events, and clears that state on window blur so a later plain Enter cannot toggle fullscreen.
 
@@ -265,10 +265,11 @@ When `terminal.buffer.active === terminal.buffer.normal` (normal buffer, not alt
 ### Copy Mode
 
 1. **Enter copy mode:** Menu+C sets `copyModeRef.current = true`
-2. **Start selection:** Left-click in copy mode (or middle-button in any mode) begins a drag selection
-3. **Drag:** `handleTerminalMouseMove` updates `copySelectionRef` with start/end `CopyPoint`
-4. **End selection:** `handleTerminalMouseUp` calls `copySelection()` which reads text from xterm buffer using `line.translateToString()` and writes to `navigator.clipboard`
-5. **Visual feedback:** `drawTerminal()` draws a semi-transparent blue highlight (`rgba(125, 210, 255, 0.42)`) over selected cells
+2. **Open a terminal link:** Ctrl+middle-click on a valid in-line HTTP(S) URL highlights the complete URL. The highlight remains only while Ctrl is held and the pointer stays over that URL; releasing the middle button there opens a new browser tab. Modifier-only key presses do not move the normal-buffer viewport, so this also works in scrollback.
+3. **Start selection:** Left-click in copy mode (or middle-button without Ctrl in any mode) begins a drag selection
+4. **Drag:** `handleTerminalMouseMove` updates `copySelectionRef` with start/end `CopyPoint`
+5. **End selection:** `handleTerminalMouseUp` calls `copySelection()` which reads text from xterm buffer using `line.translateToString()` and writes to `navigator.clipboard`
+6. **Visual feedback:** `drawTerminal()` draws a semi-transparent blue highlight (`rgba(125, 210, 255, 0.42)`) over selected cells
 
 The `copyPoint()` helper (lines 513–516) has hardcoded coordinate offsets (`cell.row - 2` and `cell.col - 3`) that appear to be calibration adjustments. These may need tuning if font metrics or padding calculations change.
 
@@ -279,6 +280,7 @@ The `copyPoint()` helper (lines 513–516) has hardcoded coordinate offsets (`ce
 | Paste (Menu+V) | `navigator.clipboard.readText()` → `sendInput()` | App keyboard handler |
 | Paste (browser) | `onPaste` event on canvas → `clipboardData.getData('text')` → `sendInput()` | Canvas paste handler |
 | Copy (Menu+C drag) | Buffer text extraction → `navigator.clipboard.writeText()` | Copy mode handlers |
+| Open link (Ctrl+middle-click) | Existing `openBrowser(url)` tab path | Terminal mouse handlers |
 
 All clipboard access uses the browser/WebView's `navigator.clipboard` API. This requires the WebView to have clipboard permissions (typically granted by default in Tauri WebView2).
 

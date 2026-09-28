@@ -79,7 +79,7 @@ ScanlineTerm/
 
 #### [`src/ui/TabGallery.tsx`](../src/ui/TabGallery.tsx)
 
-Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, terminal canvas previews, browser placeholders, focus management and reduced-motion-aware transitions. `App.tsx` supplies the frozen tab list and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide.
+Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, terminal canvas previews, browser placeholders, focus trapping, and reduced-motion-aware transitions. `App.tsx` supplies the frozen tab list and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide. It opens from `Menu+Backspace` or safe free-background clicks (including the monitor frame and physical-window gutters), never from terminal content, controls, panels, or notifications.
 
 ### AI assistant
 
