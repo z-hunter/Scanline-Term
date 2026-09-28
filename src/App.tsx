@@ -365,6 +365,7 @@ export default function App() {
       });
     return () => unlisten?.();
   }, []);
+  const tabsHidden = shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length);
   useEffect(() => {
     if (!isTauri()) return;
     const update = () => {
@@ -380,7 +381,7 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -876,7 +877,6 @@ export default function App() {
       if (!activeIds.has(id)) seenStreamDeltas.current.delete(id);
     });
   }, [terminal.tabs]);
-  const tabsHidden = shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length);
   const closeGallery = useCallback(() => {
     setGalleryCloseRequested(false);
     setGalleryOpen(false);
