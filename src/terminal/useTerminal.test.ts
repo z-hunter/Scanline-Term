@@ -105,6 +105,11 @@ describe('tabIdAtOrdinal', () => {
     expect(tabIdAtOrdinal([tabs[0], tabs[2]], 3)).toBe('three');
     expect(tabIdAtOrdinal(tabs, 9)).toBeNull();
   });
+
+  it('maps zero to the tenth tab for the gallery shortcut contract', () => {
+    const ten = [...tabs, ...Array.from({ length: 7 }, (_, index) => ({ ...tabs[0], id: `extra-${index}`, ordinal: index + 4, title: `${index + 4}. cmd.exe` }))];
+    expect(tabIdAtOrdinal(ten, 10)).toBe('extra-6');
+  });
 });
 
 describe('renumberTabs', () => {

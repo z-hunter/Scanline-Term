@@ -55,8 +55,24 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     }; 
   }, [onError, onResizeSource, renderer]);
   useEffect(() => { screenRef.current?.clearPersistence(); }, [resolution]);
+  const captureFrame = useCallback((maxWidth = 720): HTMLCanvasElement | null => {
+    const output = outputRef.current;
+    const screen = screenRef.current;
+    if (!output || !screen || output.width < 1 || output.height < 1) return null;
+    const changed = renderer.draw(performance.now() / 1000, settingsRef.current);
+    screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+    const scale = Math.min(1, maxWidth / output.width);
+    const snapshot = document.createElement('canvas');
+    snapshot.width = Math.max(1, Math.round(output.width * scale));
+    snapshot.height = Math.max(1, Math.round(output.height * scale));
+    const context = snapshot.getContext('2d');
+    if (!context) return null;
+    context.imageSmoothingEnabled = true;
+    context.drawImage(output, 0, 0, snapshot.width, snapshot.height);
+    return snapshot;
+  }, [renderer]);
   const clearPersistence = useCallback(() => screenRef.current?.clearPersistence(), []);
   const startChannelSwitch = useCallback(() => screenRef.current?.startChannelSwitch(), []);
   const joinChannelSwitch = useCallback(() => screenRef.current?.joinChannelSwitch(), []);
-  return { outputRef, fps, clearPersistence, startChannelSwitch, joinChannelSwitch };
+  return { outputRef, fps, captureFrame, clearPersistence, startChannelSwitch, joinChannelSwitch };
 }

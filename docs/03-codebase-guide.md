@@ -26,7 +26,7 @@ ScanlineTerm/
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
 │   ├── terminal/ScanlineTerminalRenderer.ts # SVS xterm adapter plus host image overlays
-│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, ScrollbackScrollbar, native menu, layoutFit and Knob components
+│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, TabGallery, ScrollbackScrollbar, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
 │   ├── styles.css                 # Application stylesheet
 │   ├── assets.d.ts                # TypeScript type shim for .png imports
@@ -76,6 +76,10 @@ ScanlineTerm/
 > **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, per-tab image lists, active input routing, per-tab colors, and terminal-canvas context-menu routing; `ui/TerminalTabs.tsx` renders the post-it tab strip. `ui/nativeNewTabMenu.ts` builds the shared Tauri native new-tab and image-delete popups. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, validated HTTP(S)/local-document targets, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
+
+#### [`src/ui/TabGallery.tsx`](../src/ui/TabGallery.tsx)
+
+Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, terminal canvas previews, browser placeholders, focus management and reduced-motion-aware transitions. `App.tsx` supplies the frozen tab list and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide.
 
 ### AI assistant
 

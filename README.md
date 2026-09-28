@@ -17,6 +17,7 @@
 - Historical and custom presets for various terminals and screens
 - Built-in mini web browser
 - Built-in AI assistant
+- Static sessions gallery for visual tab switching
 - Open Source
 
 Combining the raw nostalgia of cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, vim-like search, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
@@ -42,7 +43,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 Keep your hands on the keyboard and stay in the zone:
 
 - **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
-- **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`.
+- **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`, or open the static Sessions Gallery with `Menu + Backspace`.
 
 ### 3. Native Windows ConPTY Engine
 
@@ -97,6 +98,7 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + N`** | New Terminal Tab | Spawn a new independent ConPTY shell session |
 | **`Menu + B`** | New Browser Tab | Open a local bookmark home page; links promote the tab to WebView2 |
 | **`Menu + W`** | Close Tab | Close the active terminal session or browser tab |
+| **`Menu + Backspace`** | Sessions Gallery | Open / close a static fullscreen gallery of terminal and browser tabs |
 | **`Menu + 1...9`** | Switch Tab | Switch directly to tab 1 through 9 |
 | **`Menu + →`** / **`Menu + >`** | Next Tab | Switch to the next terminal or browser tab (cycles) |
 | **`Menu + ←`** / **`Menu + <`** | Previous Tab | Switch to the previous terminal or browser tab (cycles) |
@@ -108,6 +110,10 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
 
 While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
+
+### Sessions Gallery
+
+`Menu + Backspace` (or a primary click on unused workspace/tab-bar space) opens a static overview of all sessions. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move, `Enter`, `Space`, or `1`…`9`/`0` to open a tab, and `Esc`, `Menu + Backspace`, or a click outside a card to return unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
 
 ### Browser Tab Keyboard Navigation
 

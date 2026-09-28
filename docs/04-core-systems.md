@@ -165,7 +165,8 @@ Modifier parameter = `1 + shift + 2*alt + 4*ctrl`
 | **Menu+N** | Create a new terminal tab | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+B** | Create a browser tab with the local home dashboard | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+W** | Close the active terminal or browser tab | `terminal/useTerminal.ts` keyboard handler |
-| **Menu+1…9** | Select the tab whose name begins with that number | `terminal/useTerminal.ts` keyboard handler |
+| **Menu+Backspace** | Open/close the static tab gallery | `App.tsx` + `ui/TabGallery.tsx` |
+| **Menu+0 / Menu+1…9** | Select tab 10 / tabs 1…9 | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+→ / Menu+>** | Select the next tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+← / Menu+<** | Select the previous tab (cycles) | `terminal/useTerminal.ts` keyboard handler |
 | **Menu+Tab** | Toggle to the previously active tab | `terminal/useTerminal.ts` keyboard handler |
@@ -174,9 +175,11 @@ When search is open, the DOM search field owns text input and does not forward i
 
 The Menu key (Context Menu / Apps key) is tracked via `menu` ref in `terminal/useTerminal.ts`. While held, letter keys are intercepted before terminal input encoding. A lone Menu press is forwarded to the active Win32 Input Mode terminal as a deferred down/up pair when it is released; this preserves application shortcuts while allowing console applications to observe `VK_APPS`. Standard VT has no equivalent Menu sequence.
 
+The tab gallery freezes the last visible terminal canvas for each tab at the moment it is left. Entering the gallery captures the active tab once, hides native browser children through `set_active_browser`, and suspends terminal input. The active card starts in the centre column of its row; earlier tabs fill rows above and later tabs fill rows below. Cards target 400px wide and use additional odd-numbered columns only when the viewport can fit them without shrinking previews. Arrow keys or `hjkl` move selection (`Left`/`Right` follow tab ordinals across row boundaries); `Enter`, Space, a card click, or digits `1`…`9`/`0` open the target tab immediately. Escape, `Menu+Backspace`, or a background click return to the original tab with its return animation. `Menu+N` and `Menu+B` remain available and create the respective tab before closing the gallery. Browser tabs are represented by title/type placeholders because their WebView2 surfaces are outside the CRT canvas.
+
 `Alt+Enter` is reserved for fullscreen and is intercepted before terminal encoding. Do not rely on `KeyboardEvent.altKey` alone: on some Windows layouts Right Alt is exposed as AltGr and does not reliably set it. The handler tracks physical `AltLeft` and `AltRight` key events, and clears that state on window blur so a later plain Enter cannot toggle fullscreen.
 
-In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `PageUp`, `PageDown`, `Digit1` through `Digit9`, `ArrowRight`, `ArrowLeft`, `Period`, `Comma`, and `Tab`; other key codes are rejected. A lone Menu press and release remain normal page input. The injected script suppresses only an orphan Menu keyup left by a terminal → browser Menu shortcut, preventing a spurious browser context menu. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
+In a native browser child WebView, only key codes matching the `browser_shortcut` allowlist are forwarded to that same application handler and stopped before the page sees them: `KeyS`, `KeyA`, `KeyB`, `KeyV`, `KeyC`, `KeyN`, `KeyW`, `KeyJ`, `KeyK`, `PageUp`, `PageDown`, `Backspace`, `Digit0` through `Digit9`, `ArrowRight`, `ArrowLeft`, `Period`, `Comma`, `Tab`, and `Quote`; other key codes are rejected. A lone Menu press and release remain normal page input. The injected script suppresses only an orphan Menu keyup left by a terminal → browser Menu shortcut, preventing a spurious browser context menu. Closing an empty browser tab also clears its host address modal. When a browser tab closes to reveal a terminal tab, focus is restored to the terminal canvas after the child WebView has closed.
 
 ### Native Browser Focus Handoff
 

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
 } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -23,12 +24,13 @@ import {
 } from "./crt/settings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
-import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
+import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo, type WorkspaceTab } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
 import { ScrollbackScrollbar } from "./ui/ScrollbackScrollbar";
 import { HomeDashboard } from "./ui/HomeDashboard";
+import { TabGallery, type GalleryFrame } from "./ui/TabGallery";
 import {
   appendAgentDelta,
   completeAgentMessage,
@@ -106,6 +108,12 @@ export default function App() {
   const [presetsReady, setPresetsReady] = useState(!isTauri());
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
+  const [gallerySnapshot, setGallerySnapshot] = useState<{ tabs: WorkspaceTab[]; activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
+  const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
+  const galleryToggleRef = useRef<() => void>(() => {});
+  const beforeTabChangeRef = useRef<(id: string) => void>(() => {});
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -169,6 +177,7 @@ export default function App() {
     })),
     [],
   );
+  const toggleGallery = useCallback(() => galleryToggleRef.current(), []);
   const terminal = useTerminal({
     defaultPreset,
     ready: presetsReady,
@@ -177,10 +186,13 @@ export default function App() {
     smoothTuiScrolling: stored.smoothTuiScrolling,
     rmbMenuInTerm: stored.rmbMenuInTerm,
     channelSwitchEffect: stored.channelSwitchEffect,
+    galleryOpen,
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
     onToggleAi: aiEnabled ? toggleAi : undefined,
+    onToggleGallery: toggleGallery,
+    onBeforeTabChange: (id) => beforeTabChangeRef.current(id),
     onTerminalTabTransition: (incoming) => {
       preservePersistenceForChannelSwitchRef.current = true;
       if (incoming) joinChannelSwitchRef.current();
@@ -194,6 +206,28 @@ export default function App() {
   const physicalWindow = resolution.id === "physical";
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  useLayoutEffect(() => {
+    let menu = false;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "ContextMenu") { menu = true; return; }
+      const hasMenu = menu || !event.isTrusted;
+      if (hasMenu && event.code === "Backspace") { event.preventDefault(); event.stopImmediatePropagation(); toggleGallery(); return; }
+      if (!galleryOpen) return;
+      if (hasMenu && (event.code === "KeyN" || event.code === "KeyB")) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) { if (event.code === "KeyN") terminal.openSession(); else terminal.openBrowser(); setGalleryCloseRequested(true); }
+        return;
+      }
+      if ((event.code === "Enter" || event.code === "NumpadEnter") && event.altKey && isTauri()) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) void getCurrentWindow().isFullscreen().then((fullscreen) => getCurrentWindow().setFullscreen(!fullscreen)).catch((reason) => reportError(`Fullscreen toggle failed: ${String(reason)}`));
+      }
+    };
+    const keyup = (event: KeyboardEvent) => { if (event.key === "ContextMenu") menu = false; };
+    window.addEventListener("keydown", keydown, true);
+    window.addEventListener("keyup", keyup, true);
+    return () => { window.removeEventListener("keydown", keydown, true); window.removeEventListener("keyup", keyup, true); };
+  }, [galleryOpen, reportError, terminal, toggleGallery]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (terminal.search.open) window.requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -282,11 +316,34 @@ export default function App() {
     renderer: terminal.renderer,
     onError: reportError,
     onResizeSource: terminal.resizeSource,
-    enabled: !activeBrowser,
+    enabled: !activeBrowser && !galleryOpen,
   });
-  const { clearPersistence, outputRef, fps, startChannelSwitch, joinChannelSwitch } = crt;
+  const { clearPersistence, outputRef, fps, captureFrame, startChannelSwitch, joinChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
   joinChannelSwitchRef.current = joinChannelSwitch;
+  beforeTabChangeRef.current = (id) => {
+    if (activeBrowserId === id || galleryOpen) return;
+    const canvas = captureFrame();
+    if (canvas) galleryFramesRef.current.set(id, { canvas, aspectRatio: canvas.width / Math.max(1, canvas.height), showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel) });
+  };
+  galleryToggleRef.current = () => {
+    if (galleryOpen) {
+      setGalleryCloseRequested(true);
+      return;
+    }
+    const activeId = terminal.activeTabId;
+    if (activeId && activeBrowserId !== activeId) {
+      const canvas = captureFrame();
+      if (canvas) galleryFramesRef.current.set(activeId, { canvas, aspectRatio: canvas.width / Math.max(1, canvas.height), showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel) });
+    }
+    setGallerySnapshot({ tabs: terminal.tabs.slice(), activeId, frames: new Map(galleryFramesRef.current), originRect: screenRef.current?.getBoundingClientRect() ?? null });
+    setGalleryCloseRequested(false);
+    setGalleryOpen(true);
+  };
+  useEffect(() => {
+    const ids = new Set(terminal.tabs.map((tab) => tab.id));
+    galleryFramesRef.current.forEach((_, id) => { if (!ids.has(id)) galleryFramesRef.current.delete(id); });
+  }, [terminal.tabs]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -310,8 +367,8 @@ export default function App() {
     const update = () => {
       const rect = screenRef.current?.getBoundingClientRect();
       const payload = {
-        sessionId: activeBrowser?.page === "web" ? activeBrowserId : null,
-        bounds: activeBrowser?.page === "web" && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
+        sessionId: !galleryOpen && activeBrowser?.page === "web" ? activeBrowserId : null,
+        bounds: !galleryOpen && activeBrowser?.page === "web" && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
       };
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
@@ -320,7 +377,7 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, windowSize]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -335,7 +392,7 @@ export default function App() {
     let unlisten: (() => void) | undefined;
 
     const enforceFocus = () => {
-      if (!settingsVisible && !aiVisible) {
+      if (!galleryOpen && !settingsVisible && !aiVisible) {
         let attempts = 0;
         const interval = setInterval(() => {
           window.focus();
@@ -370,7 +427,7 @@ export default function App() {
       unlisten?.();
       void unlistenFocus.then((f) => f());
     };
-  }, [activeBrowser?.page, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
+  }, [activeBrowser?.page, galleryOpen, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
   const loadModels = useCallback(async (codex: CodexClient) => {
     const isCurrent = () => client.current === codex;
     try {
@@ -773,16 +830,18 @@ export default function App() {
     });
   }, [aiEnabled, loadModels, terminal.activeSessionId, reportError]);
   useEffect(() => {
+    if (galleryOpen) return;
     if (!terminal.activeSessionId) return;
     const preservePersistence = preservePersistenceForChannelSwitchRef.current;
     preservePersistenceForChannelSwitchRef.current = false;
     if (!preservePersistence) clearPersistence();
     window.requestAnimationFrame(() => outputRef.current?.focus());
-  }, [terminal.activeSessionId, clearPersistence, outputRef]);
+  }, [galleryOpen, terminal.activeSessionId, clearPersistence, outputRef]);
   useEffect(() => {
+    if (galleryOpen) return;
     if (aiVisible) return;
     window.requestAnimationFrame(() => outputRef.current?.focus());
-  }, [aiVisible, outputRef]);
+  }, [aiVisible, galleryOpen, outputRef]);
   useEffect(() => {
     const activeIds = new Set(terminal.tabs.map((tab) => tab.id));
     setChats((current) => {
@@ -816,6 +875,21 @@ export default function App() {
   const tabsHidden =
     stored.hideTabsWhenSingleSession && terminal.tabs.length <= 1;
   const hideTopTabs = stored.tabPlacement === "top" && tabsHidden;
+  const closeGallery = useCallback(() => {
+    setGalleryCloseRequested(false);
+    setGalleryOpen(false);
+    setGallerySnapshot(null);
+  }, []);
+  const chooseGalleryTab = useCallback((id: string) => {
+    terminal.selectSession(id, false);
+    closeGallery();
+  }, [closeGallery, terminal]);
+  const openGalleryFromBackground = useCallback((event: MouseEvent<HTMLElement>) => {
+    const target = event.target as Element;
+    if (target !== event.currentTarget && target.closest('.screen-frame, .terminal-tab, .tabs-actions, .new-tab-control, button, input, textarea, select, a')) return;
+    if (target !== event.currentTarget && !target.closest('.terminal-workspace, .terminal-tabs, .terminal-tab-list')) return;
+    toggleGallery();
+  }, [toggleGallery]);
   useLayoutEffect(() => {
     const workspace = workspaceRef.current;
     if (!workspace) return;
@@ -1140,7 +1214,7 @@ export default function App() {
       }
       className={`app-shell${settingsVisible ? "" : " settings-hidden"}${aiVisible ? "" : " ai-hidden"}${canFitWithoutShift ? " panels-fit" : ""}`}
     >
-      <section className="display-panel" aria-label="CRT display">
+      <section className="display-panel" aria-label="CRT display" onClick={openGalleryFromBackground}>
         <div
           ref={workspaceRef}
           style={
@@ -1225,6 +1299,15 @@ export default function App() {
           </div>
         )}
       </section>
+      {galleryOpen && gallerySnapshot && <TabGallery
+        tabs={gallerySnapshot.tabs}
+        activeId={gallerySnapshot.activeId}
+        frames={gallerySnapshot.frames}
+        originRect={gallerySnapshot.originRect}
+        closeRequested={galleryCloseRequested}
+        onChoose={chooseGalleryTab}
+        onCancel={closeGallery}
+      />}
       {aiVisible && (
         activeBrowser ? <aside className="ai-panel" aria-label="AI assistant">The AI assistant is available only for terminal tabs.</aside> : <AiPanel
           messages={sessionId ? (chats[sessionId] ?? []) : []}

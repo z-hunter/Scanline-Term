@@ -24,6 +24,7 @@ graph TB
   subgraph "WebView / Frontend (React + WebGL)"
     AppTsx["App.tsx<br/>React composition root"]
     TabsUi["ui/TerminalTabs.tsx<br/>tab strip"]
+    GalleryUi["ui/TabGallery.tsx<br/>static tab overview"]
     HomeUi["ui/HomeDashboard.tsx<br/>local bookmark home"]
     UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
     UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
@@ -59,6 +60,7 @@ graph TB
 
   AppTsx --> UseTerminal
   AppTsx --> TabsUi
+  AppTsx --> GalleryUi
   AppTsx --> HomeUi
   AppTsx --> UseCRT
   AppTsx --> Settings
@@ -80,6 +82,7 @@ graph TB
   SourceCanvas --> SVS
   UseTerminal --> SVS
   SVS --> OutputCanvas
+  OutputCanvas -->|"captureFrame()"| GalleryUi
   Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
@@ -88,6 +91,8 @@ graph TB
 Scanline Term uses the external [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) package for profiles, compositing and CRT/pass-through rendering. Its host adapter keeps terminal images tab-local and converts their normalized state into SVS runtime overlays. SVS's API and rendering internals are documented in its repository; Scanline Term's integration contract is documented in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
+
+The tab gallery is a temporary DOM overlay owned by `App.tsx`. `useCRT.captureFrame()` redraws the active WebGL output once and copies it into a bounded 2D canvas; `useTerminal` caches that canvas before a normal tab switch. Gallery entry snapshots the active tab and freezes the cache, so cards do not receive terminal output while the mode is open. The active card is centered in its row; tabs before it fill rows above and tabs after it fill rows below. Cards retain a 400px target width, with additional odd-numbered columns added only when the window has room. Native browser child WebViews are hidden through the existing `set_active_browser` lifecycle and represented by title/type placeholders.
 
 ## Execution Boundary
 
