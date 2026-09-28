@@ -113,6 +113,7 @@ export default function App() {
   const [gallerySnapshot, setGallerySnapshot] = useState<{ tabs: WorkspaceTab[]; activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
   const galleryToggleRef = useRef<() => void>(() => {});
+  const galleryMenuRef = useRef(false);
   const beforeTabChangeRef = useRef<(id: string) => void>(() => {});
   const workspaceRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -207,10 +208,9 @@ export default function App() {
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
   useLayoutEffect(() => {
-    let menu = false;
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "ContextMenu") { menu = true; return; }
-      const hasMenu = menu || !event.isTrusted;
+      if (event.key === "ContextMenu") { galleryMenuRef.current = true; return; }
+      const hasMenu = galleryMenuRef.current || !event.isTrusted;
       if (hasMenu && event.code === "Backspace") { event.preventDefault(); event.stopImmediatePropagation(); toggleGallery(); return; }
       if (!galleryOpen) return;
       if (hasMenu && (event.code === "KeyN" || event.code === "KeyB")) {
@@ -223,10 +223,12 @@ export default function App() {
         if (!event.repeat) void getCurrentWindow().isFullscreen().then((fullscreen) => getCurrentWindow().setFullscreen(!fullscreen)).catch((reason) => reportError(`Fullscreen toggle failed: ${String(reason)}`));
       }
     };
-    const keyup = (event: KeyboardEvent) => { if (event.key === "ContextMenu") menu = false; };
+    const keyup = (event: KeyboardEvent) => { if (event.key === "ContextMenu") galleryMenuRef.current = false; };
+    const blur = () => { galleryMenuRef.current = false; };
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("keyup", keyup, true);
-    return () => { window.removeEventListener("keydown", keydown, true); window.removeEventListener("keyup", keyup, true); };
+    window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", keydown, true); window.removeEventListener("keyup", keyup, true); window.removeEventListener("blur", blur); };
   }, [galleryOpen, reportError, terminal, toggleGallery]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {

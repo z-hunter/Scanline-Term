@@ -45,10 +45,13 @@ function controlState(event: KeyEvent, keyDown: boolean): number {
   // Browser KeyboardEvents do not consistently include a modifier in its own
   // keydown event. Win32 consumers need the corresponding control-state bit
   // to recognize modifier-only KEY_EVENT_RECORDs.
-  if (event.ctrlKey || keyDown && (event.code === 'ControlLeft' || event.code === 'ControlRight')) {
-    state |= event.code === 'ControlLeft' || event.code === 'ControlRight'
-      ? keyDown ? event.code === 'ControlRight' ? 0x04 : 0x08 : 0
-      : ctrlState || 0x08;
+  if (event.ctrlKey || event.code === 'ControlLeft' || event.code === 'ControlRight') {
+    if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
+      const released = event.code === 'ControlRight' ? 0x04 : 0x08;
+      state |= keyDown ? released : ctrlState & ~released;
+    } else {
+      state |= ctrlState || 0x08;
+    }
   }
   if (event.altKey || keyDown && (event.code === 'AltLeft' || event.code === 'AltRight')) state |= event.code === 'AltRight' ? 0x01 : 0x02;
   if (event.shiftKey || keyDown && (event.code === 'ShiftLeft' || event.code === 'ShiftRight')) state |= 0x10;
@@ -88,6 +91,9 @@ export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
   const [virtualKey, scanCode] = keyInfo(event);
   if (keyDown) ctrlState |= event.code === 'ControlRight' ? 0x04 : event.code === 'ControlLeft' ? 0x08 : 0;
   const input = `\x1b[${virtualKey};${scanCode};${unicodeCharacter(event)};${Number(keyDown)};${controlState(event, keyDown)};1_`;
-  if (!keyDown) ctrlState &= event.code === 'ControlRight' ? ~0x04 : event.code === 'ControlLeft' ? ~0x08 : ~0;
+  if (!keyDown) {
+    if (event.code === 'ControlRight') ctrlState &= ~0x04;
+    if (event.code === 'ControlLeft') ctrlState &= ~0x08;
+  }
   return input;
 }

@@ -60,7 +60,12 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     const screen = screenRef.current;
     if (!output || !screen || output.width < 1 || output.height < 1) return null;
     const changed = renderer.draw(performance.now() / 1000, settingsRef.current);
-    screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+    try {
+      screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+    } catch (reason) {
+      onError(`Could not capture CRT frame: ${String(reason)}`);
+      return null;
+    }
     const scale = Math.min(1, maxWidth / output.width);
     const snapshot = document.createElement('canvas');
     snapshot.width = Math.max(1, Math.round(output.width * scale));
@@ -70,7 +75,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     context.imageSmoothingEnabled = true;
     context.drawImage(output, 0, 0, snapshot.width, snapshot.height);
     return snapshot;
-  }, [renderer]);
+  }, [onError, renderer]);
   const clearPersistence = useCallback(() => screenRef.current?.clearPersistence(), []);
   const startChannelSwitch = useCallback(() => screenRef.current?.startChannelSwitch(), []);
   const joinChannelSwitch = useCallback(() => screenRef.current?.joinChannelSwitch(), []);

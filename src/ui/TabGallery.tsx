@@ -165,6 +165,7 @@ export function TabGallery({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (closing) return;
+      if (event.code === 'Escape') { event.preventDefault(); cancel(); return; }
       const current = layout.find((item) => item.tab.id === resolvedSelectedId);
       if (!current) return;
       let next: string | null = null;
@@ -173,7 +174,6 @@ export function TabGallery({
       else if (event.code === 'ArrowUp' || event.code === 'KeyK') next = nearestInColumn(layout, current.position.row, current.position.column, -1);
       else if (event.code === 'ArrowDown' || event.code === 'KeyJ') next = nearestInColumn(layout, current.position.row, current.position.column, 1);
       else if (event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space') { event.preventDefault(); if (resolvedSelectedId) finish(() => onChoose(resolvedSelectedId)); return; }
-      else if (event.code === 'Escape') { event.preventDefault(); cancel(); return; }
       else if (/^Digit[0-9]$/.test(event.code)) {
         const ordinal = event.code === 'Digit0' ? 10 : Number(event.code.slice(-1));
         const id = tabs.find((tab) => tab.ordinal === ordinal)?.id;
