@@ -888,8 +888,10 @@ export default function App() {
   }, [closeGallery, terminal]);
   const openGalleryFromBackground = useCallback((event: MouseEvent<HTMLElement>) => {
     const target = event.target as Element;
-    if (target !== event.currentTarget && target.closest('.screen-frame, .terminal-tab, .tabs-actions, .new-tab-control, button, input, textarea, select, a')) return;
-    if (target !== event.currentTarget && !target.closest('.terminal-workspace, .terminal-tabs, .terminal-tab-list')) return;
+    const screenFrame = target.closest('.screen-frame');
+    if (screenFrame && target !== screenFrame) return;
+    if (target !== event.currentTarget && target.closest('.terminal-tab, .tabs-actions, .new-tab-control, button, input, textarea, select, a')) return;
+    if (target !== event.currentTarget && !target.closest('.display-panel, .terminal-workspace, .terminal-tabs, .terminal-tab-list')) return;
     toggleGallery();
   }, [toggleGallery]);
   useLayoutEffect(() => {
@@ -1216,8 +1218,9 @@ export default function App() {
         } as CSSProperties
       }
       className={`app-shell${settingsVisible ? "" : " settings-hidden"}${aiVisible ? "" : " ai-hidden"}${canFitWithoutShift ? " panels-fit" : ""}`}
+      onClick={openGalleryFromBackground}
     >
-      <section className="display-panel" aria-label="CRT display" onClick={openGalleryFromBackground}>
+      <section className="display-panel" aria-label="CRT display">
         <div
           ref={workspaceRef}
           style={
