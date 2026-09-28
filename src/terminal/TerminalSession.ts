@@ -84,6 +84,10 @@ function tabTitle(title: string): string {
   return executable?.[1] ?? title;
 }
 
+export function scrollToBottomOnKey(key: string): boolean {
+  return !['Alt', 'Control', 'Meta', 'Shift'].includes(key);
+}
+
 export class TerminalSession {
   terminal: Terminal | null = null;
   live = false;
@@ -183,7 +187,7 @@ export class TerminalSession {
         },
       ),
       terminal.onData((input) => this.sendInput(input)),
-      terminal.onKey(() => terminal.scrollToBottom()),
+      terminal.onKey(({ domEvent }) => { if (scrollToBottomOnKey(domEvent.key)) terminal.scrollToBottom(); }),
       terminal.onTitleChange((title) => {
         this.title = tabTitle(title);
         this.onTitle(this.title);

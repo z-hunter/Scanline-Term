@@ -32,7 +32,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { terminalDimensions } from './ScanlineTerminalRenderer';
-import { adjacentTabId, browserTabColor, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, browserTabColor, linkAt, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
 const tabs: TerminalTab[] = [
@@ -128,6 +128,15 @@ describe('browserTabColor', () => {
     expect(browserTabColor('#F0F0F0')).toEqual({ background: '#f0f0f0', foreground: '#101a14' });
     expect(browserTabColor('102030')).toEqual({ background: '#102030', foreground: '#d7f5df' });
     expect(browserTabColor('#fff')).toBeNull();
+  });
+});
+
+describe('linkAt', () => {
+  it('returns the full valid HTTP(S) URL under the pointer column', () => {
+    const text = 'open https://github.com/z-hunter/Scanline-Term?tab=readme now';
+    expect(linkAt(text, text.indexOf('github'))).toEqual({ url: 'https://github.com/z-hunter/Scanline-Term?tab=readme', start: 5, end: 56 });
+    expect(linkAt(text, 0)).toBeNull();
+    expect(linkAt('https://', 0)).toBeNull();
   });
 });
 

@@ -5,8 +5,15 @@ const mocked = vi.hoisted(() => ({ invoke: vi.fn(), handlers: new Map<string, (e
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: mocked.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { mocked.handlers.set(name, handler); return () => mocked.handlers.delete(name); }) }));
 
-import { TerminalSession } from './TerminalSession';
-import { initialProfile } from './TerminalSession';
+import { initialProfile, scrollToBottomOnKey, TerminalSession } from './TerminalSession';
+
+describe('scrollToBottomOnKey', () => {
+  it('keeps scrollback position for modifier-only keys', () => {
+    expect(scrollToBottomOnKey('Control')).toBe(false);
+    expect(scrollToBottomOnKey('Shift')).toBe(false);
+    expect(scrollToBottomOnKey('a')).toBe(true);
+  });
+});
 
 describe('TerminalSession', () => {
   beforeEach(() => { mocked.invoke.mockReset(); mocked.handlers.clear(); mocked.invoke.mockResolvedValue('cmd.exe'); });
