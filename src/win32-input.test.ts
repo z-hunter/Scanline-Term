@@ -43,4 +43,9 @@ describe('Win32 Input Mode encoding', () => {
     expect(win32InputKey(key('KeyA', { key: 'a', ctrlKey: true }), false)).toBe('\x1b[65;30;1;0;8;1_');
     expect(win32InputKey(key('ControlLeft', { key: 'Control' }), false)).toBe('\x1b[17;29;0;0;0;1_');
   });
+
+  it('emits both Ctrl bits when both Control keys are held', () => {
+    win32InputKey(key('ControlLeft', { key: 'Control', ctrlKey: true }), true);
+    expect(win32InputKey(key('ControlRight', { key: 'Control', ctrlKey: true }), true)).toBe('\x1b[17;29;0;1;12;1_');
+  });
 });

@@ -48,7 +48,7 @@ function controlState(event: KeyEvent, keyDown: boolean): number {
   if (event.ctrlKey || event.code === 'ControlLeft' || event.code === 'ControlRight') {
     if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
       const released = event.code === 'ControlRight' ? 0x04 : 0x08;
-      state |= keyDown ? released : ctrlState & ~released;
+      state |= keyDown ? ctrlState : ctrlState & ~released;
     } else {
       state |= ctrlState || 0x08;
     }
