@@ -20,7 +20,6 @@ export function TerminalTabs({
   settingsVisible = false,
   aiVisible = false,
   panelRef,
-  hideTabList = false,
 }: {
   tabs: WorkspaceTab[];
   activeId: string | null;
@@ -37,7 +36,6 @@ export function TerminalTabs({
   settingsVisible?: boolean;
   aiVisible?: boolean;
   panelRef?: Ref<HTMLDivElement>;
-  hideTabList?: boolean;
 }) {
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
   const newTabControlRef = useRef<HTMLDivElement>(null);
@@ -68,10 +66,10 @@ export function TerminalTabs({
     if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true);
   };
   return <div ref={panelRef} className={`terminal-tabs terminal-tabs-${placement}`} onContextMenu={openContextMenu}>
-    {!hideTabList && <div className="terminal-tab-list" role="tablist" aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}>{tabs.map((tab, index) => <div className={`terminal-tab terminal-tab-${tab.status}${tab.id === activeId ? ' active' : ''}`} key={tab.id} style={{ '--tab-background': tab.background, '--tab-foreground': tab.foreground } as CSSProperties} onMouseEnter={() => onSelect(tab.id)}>
+    <div className="terminal-tab-list" role="tablist" aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}>{tabs.map((tab, index) => <div className={`terminal-tab terminal-tab-${tab.status}${tab.id === activeId ? ' active' : ''}`} key={tab.id} style={{ '--tab-background': tab.background, '--tab-foreground': tab.foreground } as CSSProperties} onMouseEnter={() => onSelect(tab.id)}>
       <button id={`terminal-tab-${tab.id}`} type="button" role="tab" aria-selected={tab.id === activeId} aria-controls="terminal-display" tabIndex={tab.id === activeId ? 0 : -1} onClick={() => onSelect(tab.id)} onKeyDown={(event) => selectByKey(event, index)}>{tab.title}</button>
       <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} disabled={tab.status === 'starting' && tab.kind !== 'browser'} onClick={() => onClose(tab.id)}>×</button>
-    </div>)}</div>}
+    </div>)}</div>
     <div ref={newTabControlRef} className="new-tab-control">
       <button type="button" className="new-tab-button" aria-label="New terminal tab" aria-haspopup="menu" aria-expanded={newTabMenuOpen} onClick={() => { onNew(); setNewTabMenuOpen(false); }}>+</button>
       {newTabMenuOpen && <div className="new-tab-menu" role="menu" aria-label="New tab options">

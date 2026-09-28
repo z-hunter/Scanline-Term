@@ -20,6 +20,7 @@ import {
   loadPresetSettings,
   loadStoredSettings,
   RESOLUTIONS,
+  shouldHideTabsBar,
   type PresetSettings,
 } from "./crt/settings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
@@ -449,7 +450,8 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: stored.version,
       tabPlacement: stored.tabPlacement,
-      hideTabsWhenSingleSession: stored.hideTabsWhenSingleSession,
+      hideTabsBar: stored.hideTabsBar,
+      hideTabsBarOnlyIfSingleTab: stored.hideTabsBarOnlyIfSingleTab,
       globalHotkeyEnabled: stored.globalHotkeyEnabled,
       slideFromTop: stored.slideFromTop,
       rmbMenuInTerm: stored.rmbMenuInTerm,
@@ -874,9 +876,7 @@ export default function App() {
       if (!activeIds.has(id)) seenStreamDeltas.current.delete(id);
     });
   }, [terminal.tabs]);
-  const tabsHidden =
-    stored.hideTabsWhenSingleSession && terminal.tabs.length <= 1;
-  const hideTopTabs = stored.tabPlacement === "top" && tabsHidden;
+  const tabsHidden = shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length);
   const closeGallery = useCallback(() => {
     setGalleryCloseRequested(false);
     setGalleryOpen(false);
@@ -924,7 +924,8 @@ export default function App() {
     return () => observer.disconnect();
   }, [
     stored.tabPlacement,
-    stored.hideTabsWhenSingleSession,
+    stored.hideTabsBar,
+    stored.hideTabsBarOnlyIfSingleTab,
     terminal.tabs.length,
     tabsHidden,
   ]);
@@ -1232,13 +1233,12 @@ export default function App() {
           }
           className={`terminal-workspace terminal-workspace-${stored.tabPlacement}${tabsHidden ? " tabs-hidden" : ""}`}
         >
-          {isTauri() && !hideTopTabs && (
+          {isTauri() && !tabsHidden && (
             <TerminalTabs
               panelRef={tabsRef}
               tabs={terminal.tabs}
               activeId={terminal.activeTabId}
               placement={stored.tabPlacement}
-              hideTabList={tabsHidden}
               onSelect={terminal.selectSession}
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}

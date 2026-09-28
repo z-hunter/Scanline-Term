@@ -28,6 +28,7 @@ function assignChunk(items: WorkspaceTab[], row: number, columns: number, align:
 
 export function buildGalleryLayout(tabs: WorkspaceTab[], activeId: string | null, columns: number): GalleryLayoutItem[] {
   if (!tabs.length) return [];
+  if (tabs.length <= columns) return tabs.map((tab, index) => ({ tab, position: { row: 0, column: index + 1 } }));
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.id === activeId));
   const side = Math.floor(columns / 2);
   const currentStart = Math.max(0, activeIndex - side);

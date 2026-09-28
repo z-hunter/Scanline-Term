@@ -31,6 +31,15 @@ describe('TabGallery', () => {
     expect(position.get('tab-6')).toEqual({ row: 2, column: 1 });
   });
 
+  it('keeps every tab in one row when they all fit', () => {
+    const layout = buildGalleryLayout(tabs.slice(0, 3), 'tab-3', 3);
+    expect(layout.map(({ tab, position }) => [tab.id, position])).toEqual([
+      ['tab-1', { row: 0, column: 1 }],
+      ['tab-2', { row: 0, column: 2 }],
+      ['tab-3', { row: 0, column: 3 }],
+    ]);
+  });
+
   it('moves selection and commits it with Enter', () => {
     vi.useFakeTimers();
     const animate = vi.fn();

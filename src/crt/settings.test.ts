@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings } from './settings';
+import { DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, shouldHideTabsBar } from './settings';
 
 describe('CRT settings', () => {
   it('rejects corrupt values and falls back to VGA', () => {
@@ -26,10 +26,20 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ tabPlacement: 'bottom' })).tabPlacement).toBe('top');
   });
 
-  it('defaults and validates single-session tab visibility', () => {
-    expect(loadStoredSettings(null).hideTabsWhenSingleSession).toBe(false);
-    expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: true })).hideTabsWhenSingleSession).toBe(true);
-    expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: 'yes' })).hideTabsWhenSingleSession).toBe(false);
+  it('defaults, validates, and migrates tab bar visibility', () => {
+    const initial = loadStoredSettings(null);
+    expect(initial.hideTabsBar).toBe(false);
+    expect(initial.hideTabsBarOnlyIfSingleTab).toBe(true);
+    expect(loadStoredSettings(JSON.stringify({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: false }))).toMatchObject({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: false });
+    expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: true }))).toMatchObject({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: true });
+    expect(loadStoredSettings(JSON.stringify({ hideTabsBar: 'yes', hideTabsBarOnlyIfSingleTab: 'no' }))).toMatchObject({ hideTabsBar: false, hideTabsBarOnlyIfSingleTab: true });
+  });
+
+  it('hides the whole tab bar always or only for a single tab', () => {
+    expect(shouldHideTabsBar(false, false, 2)).toBe(false);
+    expect(shouldHideTabsBar(true, false, 2)).toBe(true);
+    expect(shouldHideTabsBar(true, true, 1)).toBe(true);
+    expect(shouldHideTabsBar(true, true, 2)).toBe(false);
   });
 
   it('defaults and validates the global hotkey switch', () => {

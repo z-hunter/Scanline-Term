@@ -22,7 +22,8 @@ export const DEFAULT_RESOLUTION: ResolutionId = '1024x768';
 export type AppSettings = {
   version: 1;
   tabPlacement: TabPlacement;
-  hideTabsWhenSingleSession: boolean;
+  hideTabsBar: boolean;
+  hideTabsBarOnlyIfSingleTab: boolean;
   globalHotkeyEnabled: boolean;
   slideFromTop: boolean;
   autoUpdateEnabled: boolean;
@@ -54,6 +55,9 @@ export type TabPresetState = {
   settings: PresetSettings;
   dirty: boolean;
 };
+
+export const shouldHideTabsBar = (hide: boolean, onlyIfSingleTab: boolean, tabCount: number): boolean =>
+  hide && (!onlyIfSingleTab || tabCount <= 1);
 
 const numericRanges = {
   consoleFontSize: [6, 32],
@@ -115,7 +119,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     version: 1,
     resolution: DEFAULT_RESOLUTION,
     tabPlacement: 'top',
-    hideTabsWhenSingleSession: false,
+    hideTabsBar: false,
+    hideTabsBarOnlyIfSingleTab: true,
     globalHotkeyEnabled: true,
     slideFromTop: true,
     autoUpdateEnabled: true,
@@ -138,6 +143,8 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     const value = parsed as {
       resolution?: unknown;
       tabPlacement?: unknown;
+      hideTabsBar?: unknown;
+      hideTabsBarOnlyIfSingleTab?: unknown;
       hideTabsWhenSingleSession?: unknown;
       globalHotkeyEnabled?: unknown;
       slideFromTop?: unknown;
@@ -155,7 +162,9 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
-    if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsWhenSingleSession = value.hideTabsWhenSingleSession;
+    if (typeof value.hideTabsBar === 'boolean') result.hideTabsBar = value.hideTabsBar;
+    else if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsBar = value.hideTabsWhenSingleSession;
+    if (typeof value.hideTabsBarOnlyIfSingleTab === 'boolean') result.hideTabsBarOnlyIfSingleTab = value.hideTabsBarOnlyIfSingleTab;
     if (typeof value.globalHotkeyEnabled === 'boolean') result.globalHotkeyEnabled = value.globalHotkeyEnabled;
     if (typeof value.slideFromTop === 'boolean') result.slideFromTop = value.slideFromTop;
     if (typeof value.autoUpdateEnabled === 'boolean') result.autoUpdateEnabled = value.autoUpdateEnabled;

@@ -127,7 +127,8 @@ export function SettingsPanel({
             onChange={(tabPlacement) => setStored((current) => ({ ...current, tabPlacement: tabPlacement as TabPlacement }))}
           />
         </div>
-        <Switch label="Hide tabs when single session" checked={stored.hideTabsWhenSingleSession} onChange={(hideTabsWhenSingleSession) => setStored((current) => ({ ...current, hideTabsWhenSingleSession }))} />
+        <Switch label="Hide tabs bar" checked={stored.hideTabsBar} onChange={(hideTabsBar) => setStored((current) => ({ ...current, hideTabsBar }))} />
+        {stored.hideTabsBar && <Switch label="...only if single tab" checked={stored.hideTabsBarOnlyIfSingleTab} onChange={(hideTabsBarOnlyIfSingleTab) => setStored((current) => ({ ...current, hideTabsBarOnlyIfSingleTab }))} />}
         <Switch label="Global hotkey: Win+~" checked={stored.globalHotkeyEnabled} onChange={(globalHotkeyEnabled) => setStored((current) => ({ ...current, globalHotkeyEnabled }))} />
         {stored.globalHotkeyEnabled && <Switch label="Slide from top" checked={stored.slideFromTop} onChange={(slideFromTop) => setStored((current) => ({ ...current, slideFromTop }))} />}
         <label className="host-select-control">
