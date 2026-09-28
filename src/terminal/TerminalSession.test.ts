@@ -8,9 +8,10 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async (name: string, han
 import { initialProfile, scrollToBottomOnKey, TerminalSession } from './TerminalSession';
 
 describe('scrollToBottomOnKey', () => {
-  it('keeps scrollback position for modifier-only keys', () => {
-    expect(scrollToBottomOnKey('Control')).toBe(false);
-    expect(scrollToBottomOnKey('Shift')).toBe(false);
+  it('keeps scrollback position for modifier and lock keys', () => {
+    for (const key of ['Alt', 'AltGraph', 'CapsLock', 'Control', 'Fn', 'FnLock', 'Hyper', 'Meta', 'NumLock', 'OS', 'ScrollLock', 'Shift', 'Super', 'Symbol', 'SymbolLock']) {
+      expect(scrollToBottomOnKey(key)).toBe(false);
+    }
     expect(scrollToBottomOnKey('a')).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
   "crt": {
     "aberration": 0,
     "aberrationFalloff": 3,
-    "ambientGlassLight": 0.30000000000000004,
+    "ambientGlassLight": 0.55,
     "antiAliasedPixels": true,
     "backgroundDesaturation": 0.5,
     "beamModulation": 0.45,

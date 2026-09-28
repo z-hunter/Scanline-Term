@@ -85,7 +85,7 @@ function tabTitle(title: string): string {
 }
 
 export function scrollToBottomOnKey(key: string): boolean {
-  return !['Alt', 'Control', 'Meta', 'Shift'].includes(key);
+  return !['Alt', 'AltGraph', 'CapsLock', 'Control', 'Fn', 'FnLock', 'Hyper', 'Meta', 'NumLock', 'OS', 'ScrollLock', 'Shift', 'Super', 'Symbol', 'SymbolLock'].includes(key);
 }
 
 export class TerminalSession {

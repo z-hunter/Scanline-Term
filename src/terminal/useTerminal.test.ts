@@ -32,7 +32,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { terminalDimensions } from './ScanlineTerminalRenderer';
-import { adjacentTabId, browserTabColor, linkAt, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, browserTabColor, linkAt, linkAtLine, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
 const tabs: TerminalTab[] = [
@@ -145,6 +145,15 @@ describe('linkAt', () => {
     expect(linkAt(text, text.indexOf('example'))).toEqual({ url, start: 4, end: 4 + url.length - 1 });
     expect(linkAt('see https://example.com/(docs).', 20)?.url).toBe('https://example.com/(docs)');
     expect(linkAt("see https://example.com/docs'", 20)?.url).toBe('https://example.com/docs');
+  });
+  it('maps cursor-positioned text and URLs through translated empty cells', () => {
+    const cells: { getChars: () => string }[] = [...'     '].map(() => ({ getChars: () => '' }));
+    cells.push(...'prompt'.split('').map((char) => ({ getChars: () => char })));
+    cells.push({ getChars: () => '' }, { getChars: () => '' });
+    cells.push(...'https://example.com'.split('').map((char) => ({ getChars: () => char })));
+    const line = { length: cells.length, translateToString: () => '     prompt  https://example.com', getCell: (column: number) => cells[column] };
+
+    expect(linkAtLine(line, 13)).toEqual({ url: 'https://example.com', start: 13, end: 31 });
   });
 });
 
