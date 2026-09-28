@@ -69,7 +69,7 @@ Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The
 
 ### 6. Ultra-Lightweight & Fast
 
-Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only **~15 MB**, launches instantly, and stays lightweight on system resources.
+Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only *25 MB** (most of which consists of the included fonts), launches instantly, and stays lightweight on system resources.
 
 ---
 
