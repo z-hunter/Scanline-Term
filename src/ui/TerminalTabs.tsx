@@ -43,7 +43,7 @@ export function TerminalTabs({
   const hoveredTab = useRef<{ id: string; x: number; y: number } | null>(null);
   const mouseSelection = useRef<{ id: string; x: number; y: number } | null>(null);
   const layoutHoverBlocked = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (layoutHoverBlocked.current && !tabs.some((tab) => tab.id === layoutHoverBlocked.current)) {
       layoutHoverBlocked.current = null;
       hoveredTab.current = null;
@@ -101,7 +101,10 @@ export function TerminalTabs({
   };
   const selectByHover = (event: MouseEvent<HTMLDivElement>, id: string) => {
     if (layoutHoverBlocked.current === id) return;
-    if (hoveredTab.current?.id === id) return;
+    if (hoveredTab.current?.id === id) {
+      mouseSelection.current = { id, x: event.clientX, y: event.clientY };
+      return;
+    }
     selectByMouse(event, id);
   };
   const clearHoverBlock = (id: string) => {

@@ -177,6 +177,7 @@ describe('terminal launch event', () => {
     await act(async () => { hookResult.resizeSource(output); });
     expect(frame.style.getPropertyValue('--screen-ratio')).toBe('1.6');
     expect(frame.style.getPropertyValue('aspect-ratio')).toBe('8 / 5');
+    expect(JSON.parse(hookResult.exportGeometryDiagnostics()).entries).toEqual([]);
     hookResult.renderer.resizeSource(output.width, output.height);
     await act(async () => { hookResult.openSession(); await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1000, 500, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));

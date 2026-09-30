@@ -138,7 +138,8 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const recordGeometry = useCallback((event: string, details: Record<string, unknown> = {}) => {
     if (!TERMINAL_GEOMETRY_DIAGNOSTICS) return;
-    geometryDiagnostics.current.push({ at: new Date().toISOString(), event, ...details });
+    const workspace = document.querySelector('.terminal-workspace'); const frame = document.querySelector('#terminal-display'); const tabs = document.querySelector('.terminal-tabs'); const style = workspace ? getComputedStyle(workspace) : null;
+    geometryDiagnostics.current.push({ at: new Date().toISOString(), event, ...details, layoutSnapshot: { workspace: elementBounds(workspace), frame: elementBounds(frame), tabs: elementBounds(tabs), variables: { screenRatio: style?.getPropertyValue('--screen-ratio'), workspaceScreenHeight: style?.getPropertyValue('--workspace-screen-height'), terminalScreenWidth: style?.getPropertyValue('--terminal-screen-width'), terminalScreenHeight: style?.getPropertyValue('--terminal-screen-height') } } });
     if (geometryDiagnostics.current.length > 200) geometryDiagnostics.current.shift();
   }, []);
   const publishScrollback = useCallback((id: string, terminal: TerminalSession['terminal'], userInitiated: boolean, viewportY?: number) => {
@@ -231,11 +232,12 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     }
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
     activeRef.current = id; setActiveTabId(id); scrollIntentRef.current = false; scrollbackRef.current = null; setScrollback(null); clearSearch();
-    if (!record) { setActivePresetState(null); settingsRef.current = defaultPresetRef.current.crt; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); return; }
+    if (!record) { setActivePresetState(null); settingsRef.current = defaultPresetRef.current.crt; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: defaultPresetRef.current.resolution })); return; }
     setActivePresetState(record.preset);
     settingsRef.current = record.preset.settings.crt;
     renderer.current!.bindTerminal(record.session.terminal, (viewportY) => { if (activeRef.current === id && (scrollIntentRef.current || scrollbackRef.current?.sessionId === id)) { const userInitiated = scrollIntentRef.current; scrollIntentRef.current = false; publishScrollback(id, record.session.terminal, userInitiated, viewportY); } }); renderer.current!.setImages(record.images); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
     recordGeometry('tab-select', { sessionId: id, resolution: record.preset.settings.resolution, terminal: record.session.size, source: { width: renderer.current!.sourceCanvas.width, height: renderer.current!.sourceCanvas.height }, output: elementBounds(outputRef.current), frame: elementBounds(outputRef.current?.parentElement ?? null) });
+    requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: record.preset.settings.resolution }));
   }, [clearSearch, publishScrollback, recordGeometry]);
   const updateActivePreset = useCallback((update: (current: TabPresetState) => TabPresetState) => {
     const record = activeRef.current ? sessions.current.get(activeRef.current) : undefined;
