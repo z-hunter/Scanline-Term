@@ -160,7 +160,9 @@ export function TabGallery({
   const cancel = useCallback(() => finish(onCancel, activeId ?? resolvedSelectedId), [activeId, finish, onCancel, resolvedSelectedId]);
 
   useEffect(() => {
-    if (closeRequested) cancel();
+    if (!closeRequested) return;
+    const frame = window.requestAnimationFrame(cancel);
+    return () => window.cancelAnimationFrame(frame);
   }, [cancel, closeRequested]);
 
   useEffect(() => {

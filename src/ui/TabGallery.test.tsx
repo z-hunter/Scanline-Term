@@ -104,4 +104,21 @@ describe('TabGallery', () => {
     container.remove();
     vi.useRealTimers();
   });
+
+  it('closes when requested by its parent', () => {
+    vi.useFakeTimers();
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: vi.fn() });
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = { tabs, activeId: 'tab-4', frames: new Map(), originRect: null, onChoose: vi.fn(), onCancel };
+    act(() => root.render(createElement(TabGallery, props)));
+    act(() => root.render(createElement(TabGallery, { ...props, closeRequested: true })));
+    act(() => vi.runAllTimers());
+    expect(onCancel).toHaveBeenCalledOnce();
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+  });
 });

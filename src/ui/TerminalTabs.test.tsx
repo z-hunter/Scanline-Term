@@ -2,13 +2,13 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import { TerminalTabs } from './TerminalTabs';
-import type { TerminalTab } from '../terminal/useTerminal';
+import type { TerminalTab, WorkspaceTab } from '../terminal/useTerminal';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const testTabs: TerminalTab[] = [
+const testTabs: WorkspaceTab[] = [
   { id: 'tab-1', ordinal: 1, title: '1. cmd.exe', status: 'running', background: '#000000', foreground: '#ffffff' },
-  { id: 'tab-2', ordinal: 2, title: '2. pwsh.exe', status: 'running', background: '#000000', foreground: '#ffffff' },
+  { id: 'tab-2', ordinal: 2, title: '2. browser', status: 'running', page: 'web', kind: 'browser', background: '#000000', foreground: '#ffffff' },
 ];
 
 describe('TerminalTabs', () => {
@@ -56,25 +56,73 @@ describe('TerminalTabs', () => {
     container.remove();
   });
 
-  it('ignores a tab moved beneath a stationary cursor until the cursor leaves it', async () => {
+  it('ignores a browser tab moved beneath a stationary cursor until the cursor leaves it', async () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) { callbacks.push(callback); }
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', TestResizeObserver);
+    const elementFromPoint = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
     const onSelect = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => root.render(createElement(TerminalTabs, {
-      tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect, onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
-    })));
+    try {
+      await act(async () => root.render(createElement(TerminalTabs, {
+        tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect, onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
+      })));
+      const [first, second] = Array.from(container.querySelectorAll<HTMLElement>('.terminal-tab'));
+      await act(async () => first.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 40, clientY: 10 })));
+      Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => second });
+      callbacks[0]([], {} as ResizeObserver);
+      await act(async () => second.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 41, clientY: 10 })));
+      expect(onSelect).toHaveBeenCalledOnce();
+      await act(async () => second.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+      await act(async () => second.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 42, clientY: 10 })));
+      expect(onSelect).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      if (elementFromPoint) Object.defineProperty(document, 'elementFromPoint', elementFromPoint);
+      else delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+      vi.unstubAllGlobals();
+    }
+  });
 
-    const [first, second] = Array.from(container.querySelectorAll<HTMLElement>('.terminal-tab'));
-    await act(async () => first.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
-    await act(async () => second.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
-    expect(onSelect).toHaveBeenCalledOnce();
-    await act(async () => second.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
-    await act(async () => second.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
-    expect(onSelect).toHaveBeenCalledTimes(2);
-
-    await act(async () => root.unmount());
-    container.remove();
+  it('clears a hover block when the blocked tab is removed', async () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) { callbacks.push(callback); }
+      observe() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', TestResizeObserver);
+    const elementFromPoint = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
+    const onSelect = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = { activeId: 'tab-1', placement: 'top' as const, onSelect, onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn() };
+    try {
+      await act(async () => root.render(createElement(TerminalTabs, { ...props, tabs: testTabs })));
+      const [first, second] = Array.from(container.querySelectorAll<HTMLElement>('.terminal-tab'));
+      await act(async () => first.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 40, clientY: 10 })));
+      Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => second });
+      callbacks[0]([], {} as ResizeObserver);
+      await act(async () => root.render(createElement(TerminalTabs, { ...props, tabs: [testTabs[0]] })));
+      await act(async () => root.render(createElement(TerminalTabs, { ...props, tabs: testTabs })));
+      const restored = container.querySelectorAll<HTMLElement>('.terminal-tab')[1];
+      await act(async () => restored.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 40, clientY: 10 })));
+      expect(onSelect).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      if (elementFromPoint) Object.defineProperty(document, 'elementFromPoint', elementFromPoint);
+      else delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('renders AI assistant button and toggles it on click', async () => {
