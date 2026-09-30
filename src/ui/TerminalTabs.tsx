@@ -39,6 +39,8 @@ export function TerminalTabs({
 }) {
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
   const newTabControlRef = useRef<HTMLDivElement>(null);
+  const hoveredTab = useRef<{ id: string; x: number; y: number } | null>(null);
+  const layoutHoverBlocked = useRef<string | null>(null);
   useEffect(() => {
     if (!newTabMenuOpen) return;
     const closeOnKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') setNewTabMenuOpen(false); };
@@ -65,8 +67,24 @@ export function TerminalTabs({
     event.preventDefault();
     if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true);
   };
+  const selectByHover = (event: MouseEvent<HTMLDivElement>, id: string) => {
+    const previous = hoveredTab.current;
+    if (layoutHoverBlocked.current === id) return;
+    if (previous?.id !== id && previous?.x === event.clientX && previous?.y === event.clientY) {
+      layoutHoverBlocked.current = id;
+      return;
+    }
+    hoveredTab.current = { id, x: event.clientX, y: event.clientY };
+    onSelect(id);
+  };
+  const clearHoverBlock = (id: string) => {
+    if (layoutHoverBlocked.current === id) {
+      layoutHoverBlocked.current = null;
+      hoveredTab.current = null;
+    }
+  };
   return <div ref={panelRef} className={`terminal-tabs terminal-tabs-${placement}`} onContextMenu={openContextMenu}>
-    <div className="terminal-tab-list" role="tablist" aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}>{tabs.map((tab, index) => <div className={`terminal-tab terminal-tab-${tab.status}${tab.id === activeId ? ' active' : ''}`} key={tab.id} style={{ '--tab-background': tab.background, '--tab-foreground': tab.foreground } as CSSProperties} onMouseEnter={() => onSelect(tab.id)}>
+    <div className="terminal-tab-list" role="tablist" aria-orientation={placement === 'top' ? 'horizontal' : 'vertical'}>{tabs.map((tab, index) => <div className={`terminal-tab terminal-tab-${tab.status}${tab.id === activeId ? ' active' : ''}`} key={tab.id} style={{ '--tab-background': tab.background, '--tab-foreground': tab.foreground } as CSSProperties} onMouseEnter={(event) => selectByHover(event, tab.id)} onMouseLeave={() => clearHoverBlock(tab.id)}>
       <button id={`terminal-tab-${tab.id}`} type="button" role="tab" aria-selected={tab.id === activeId} aria-controls="terminal-display" tabIndex={tab.id === activeId ? 0 : -1} onClick={() => onSelect(tab.id)} onKeyDown={(event) => selectByKey(event, index)}>{tab.title}</button>
       <button type="button" className="terminal-tab-close" aria-label={`Close ${tab.title}`} disabled={tab.status === 'starting' && tab.kind !== 'browser'} onClick={() => onClose(tab.id)}>×</button>
     </div>)}</div>

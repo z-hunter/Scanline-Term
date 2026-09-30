@@ -56,6 +56,27 @@ describe('TerminalTabs', () => {
     container.remove();
   });
 
+  it('ignores a tab moved beneath a stationary cursor until the cursor leaves it', async () => {
+    const onSelect = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TerminalTabs, {
+      tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect, onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
+    })));
+
+    const [first, second] = Array.from(container.querySelectorAll<HTMLElement>('.terminal-tab'));
+    await act(async () => first.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
+    await act(async () => second.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
+    expect(onSelect).toHaveBeenCalledOnce();
+    await act(async () => second.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    await act(async () => second.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: 40, clientY: 10 })));
+    expect(onSelect).toHaveBeenCalledTimes(2);
+
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
   it('renders AI assistant button and toggles it on click', async () => {
     const onToggleAi = vi.fn();
     const onToggleSettings = vi.fn();
