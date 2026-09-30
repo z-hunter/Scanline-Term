@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
 
 export type GalleryFrame = {
@@ -89,6 +89,7 @@ export function TabGallery({
   frames,
   originRect,
   onChoose,
+  onMove = () => undefined,
   onCancel,
   closeRequested = false,
 }: {
@@ -97,18 +98,22 @@ export function TabGallery({
   frames: ReadonlyMap<string, GalleryFrame>;
   originRect: DOMRect | null;
   onChoose: (id: string) => void;
+  onMove?: (id: string, targetIndex: number) => void;
   onCancel: () => void;
   closeRequested?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef(new Map<string, HTMLButtonElement>());
+  const previousRects = useRef(new Map<string, DOMRect>());
+  const menuHeld = useRef(false);
   const entryAnimation = useRef(false);
+  const skipNextLayoutAnimation = useRef(false);
   const [columns, setColumns] = useState(() => galleryColumns(window.innerWidth, tabs.length));
   const [visible, setVisible] = useState(false);
   const [selectedId, setSelectedId] = useState(activeId ?? tabs[0]?.id ?? null);
   const [closing, setClosing] = useState(false);
   const timer = useRef<number | null>(null);
-  const layout = buildGalleryLayout(tabs, activeId, columns);
+  const layout = useMemo(() => buildGalleryLayout(tabs, activeId, columns), [tabs, activeId, columns]);
   const resolvedSelectedId = selectedId && tabs.some((tab) => tab.id === selectedId) ? selectedId : activeId ?? tabs[0]?.id ?? null;
 
   useEffect(() => {
@@ -127,8 +132,10 @@ export function TabGallery({
     const card = resolvedSelectedId ? cardRefs.current.get(resolvedSelectedId) : null;
     if (!card) return;
     entryAnimation.current = true;
-    if (!originRect || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const target = card.getBoundingClientRect();
+    previousRects.current = new Map(layout.map(({ tab }) => [tab.id, cardRefs.current.get(tab.id)?.getBoundingClientRect() ?? new DOMRect()]));
+    skipNextLayoutAnimation.current = true;
+    if (!originRect || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     const x = originRect.left - target.left;
     const y = originRect.top - target.top;
     const sx = originRect.width / Math.max(1, target.width);
@@ -137,7 +144,21 @@ export function TabGallery({
       [{ transform: `translate(${x}px, ${y}px) scale(${sx}, ${sy})`, opacity: 0.92 }, { transform: 'translate(0, 0) scale(1)', opacity: 1 }],
       { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'both' },
     );
-  }, [columns, originRect, resolvedSelectedId]);
+  }, [layout, originRect, resolvedSelectedId]);
+
+  useLayoutEffect(() => {
+    if (skipNextLayoutAnimation.current) { skipNextLayoutAnimation.current = false; return; }
+    const previous = previousRects.current;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced) layout.forEach(({ tab }) => {
+      const node = cardRefs.current.get(tab.id); const oldRect = previous.get(tab.id); const nextRect = node?.getBoundingClientRect();
+      if (!node || !oldRect || !nextRect) return;
+      const dx = oldRect.left - nextRect.left; const dy = oldRect.top - nextRect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    });
+    previousRects.current = new Map(layout.map(({ tab }) => [tab.id, cardRefs.current.get(tab.id)?.getBoundingClientRect() ?? new DOMRect()]));
+  }, [layout]);
 
   useEffect(() => {
     if (!resolvedSelectedId) return;
@@ -168,6 +189,18 @@ export function TabGallery({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (closing) return;
+      if (event.code === 'ContextMenu') { menuHeld.current = true; return; }
+      if (menuHeld.current && event.shiftKey && (event.code === 'ArrowLeft' || event.code === 'ArrowRight' || event.code === 'ArrowUp' || event.code === 'ArrowDown' || event.code === 'KeyH' || event.code === 'KeyJ' || event.code === 'KeyK' || event.code === 'KeyL')) {
+        const currentIndex = tabs.findIndex((tab) => tab.id === resolvedSelectedId);
+        const current = layout.find((item) => item.tab.id === resolvedSelectedId);
+        let targetId: string | null = null;
+        if (event.code === 'ArrowLeft' || event.code === 'KeyH') targetId = tabs[currentIndex - 1]?.id ?? null;
+        else if (event.code === 'ArrowRight' || event.code === 'KeyL') targetId = tabs[currentIndex + 1]?.id ?? null;
+        else if (current) targetId = nearestInColumn(layout, current.position.row, current.position.column, event.code === 'ArrowUp' || event.code === 'KeyK' ? -1 : 1);
+        const targetIndex = targetId ? tabs.findIndex((tab) => tab.id === targetId) : -1;
+        if (resolvedSelectedId && targetIndex >= 0 && targetIndex !== currentIndex) onMove(resolvedSelectedId, targetIndex);
+        event.preventDefault(); event.stopImmediatePropagation(); return;
+      }
       if (event.code === 'Escape') { event.preventDefault(); cancel(); return; }
       const current = layout.find((item) => item.tab.id === resolvedSelectedId);
       if (!current) return;
@@ -191,8 +224,11 @@ export function TabGallery({
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [cancel, closing, finish, layout, onChoose, resolvedSelectedId, tabs]);
+    const onKeyUp = (event: KeyboardEvent) => { if (event.code === 'ContextMenu') menuHeld.current = false; };
+    const onBlur = () => { menuHeld.current = false; };
+    window.addEventListener('keyup', onKeyUp, true); window.addEventListener('blur', onBlur);
+    return () => { window.removeEventListener('keydown', onKeyDown, true); window.removeEventListener('keyup', onKeyUp, true); window.removeEventListener('blur', onBlur); };
+  }, [cancel, closing, finish, layout, onChoose, onMove, resolvedSelectedId, tabs]);
 
   return <div ref={dialogRef} className={`tab-gallery${visible ? ' is-visible' : ''}${closing ? ' is-closing' : ''}`} role="dialog" aria-modal="true" aria-label="Tab gallery" onClick={(event) => { if (!(event.target as Element).closest('.tab-gallery-card')) cancel(); }}>
     <div className="tab-gallery-grid" style={{ '--gallery-columns': columns } as CSSProperties}>

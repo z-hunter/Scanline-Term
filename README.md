@@ -45,6 +45,7 @@ Keep your hands on the keyboard and stay in the zone:
 - **Built-in WebView2 Browser Tabs**: Open documentation, API references, or web tools right alongside your terminal (`Menu + B` or pass URLs via CLI). A blank browser tab starts on a local bookmark home page stored in `%APPDATA%\\com.zhunter.scanlineterm\\home.json`; each browser tab adopts the opened page's theme/background color.
 - **Open Terminal Links**: Hold `Ctrl` and middle-click an HTTP(S) URL in the terminal, including normal scrollback. The whole URL is highlighted while the pointer remains over it; release the middle button to open it in a new browser tab.
 - **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`, or open the static Sessions Gallery with `Menu + Backspace`.
+- **Tab Reordering**: Drag the active tab left or right in the tab bar, or move it one position at a time with `Menu + Shift + ←/→` or `Menu + Shift + H/L`. Tab numbers are refreshed automatically.
 
 ### 3. Native Windows ConPTY Engine
 
@@ -105,6 +106,8 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + Backspace`** | Sessions Gallery | Open / close a static fullscreen gallery of terminal and browser tabs |
 | **`Menu + 1...9`** | Switch Tab | Switch directly to tab 1 through 9 |
 | **`Menu + →`** / **`Menu + >`** | Next Tab | Switch to the next terminal or browser tab (cycles) |
+| **`Menu + Shift + →`** / **`Menu + Shift + L`** | Move Tab Right | Move the active tab one position to the right |
+| **`Menu + Shift + ←`** / **`Menu + Shift + H`** | Move Tab Left | Move the active tab one position to the left |
 | **`Menu + ←`** / **`Menu + <`** | Previous Tab | Switch to the previous terminal or browser tab (cycles) |
 | **`Menu + Tab`** | Alternate Tab | Toggle back to the previously active tab |
 | **`Menu + V`** | Paste | Paste clipboard text into the active shell |
@@ -118,7 +121,11 @@ While terminal search is open, `N` reverses the search direction and `Esc` close
 
 ### Sessions Gallery
 
-`Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move, `Enter`, `Space`, or `1`…`9`/`0` to open a tab, and `Esc`, `Menu + Backspace`, or a click outside a card to return unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
+`Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move the selection. While Gallery is open, `Menu + Shift + ←/→` or `Menu + Shift + H/L` moves the selected card one position horizontally, and `Menu + Shift + ↑/↓` or `Menu + Shift + K/J` moves it to the nearest card in the adjacent row. Gallery reordering is keyboard-only; cards animate into their new positions and tab numbers are refreshed after every move. `Enter`, `Space`, or `1`…`9`/`0` opens a tab, while `Esc`, `Menu + Backspace`, or a click outside a card returns unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
+
+### Tab Reordering
+
+When the tab bar contains more than one tab, the active tab can be dragged left or right. The tab under the pointer becomes active when the drag starts; the tab follows the pointer and the other tabs make room, but the order is committed only when the pointer is released. Keyboard moves are discrete one-position steps and animate the tab to its new slot. All reorder paths keep tab numbering sequential.
 
 ### Browser Tab Keyboard Navigation
 

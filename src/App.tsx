@@ -25,7 +25,7 @@ import {
 } from "./crt/settings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
-import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo, type WorkspaceTab } from "./terminal/useTerminal";
+import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
@@ -74,7 +74,7 @@ Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Menu+A: show or hide the AI assistant panel.
 - Menu+': switch keyboard focus between the terminal and AI panel.
 - Menu+N: create a terminal tab; Menu+B: create a browser tab; Menu+W: close the active tab.
-- Menu+1 through Menu+9: select that numbered tab; Menu+Right or Menu+>: next tab; Menu+Left or Menu+<: previous tab; Menu+Tab: return to the previously active tab.
+- Menu+1 through Menu+9: select that numbered tab; Menu+Right or Menu+>: next tab; Menu+Left or Menu+<: previous tab; Menu+Shift+Left/Right or Menu+Shift+H/L: move the active tab; Menu+Tab: return to the previously active tab.
 - Menu+V: paste clipboard text into the terminal. Menu+C: start copy mode, then drag to select and copy terminal text. Middle-click and drag also selects text.
 - Menu+I: choose a local PNG or JPG and place it over the active terminal tab; drag images to move them and use the mouse wheel to scale them.
 - Menu+PageUp or Menu+PageDown (or Menu+J / Menu+K): scroll terminal history by a page. Menu+J/K also scrolls the AI panel when it has focus.
@@ -111,7 +111,7 @@ export default function App() {
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
-  const [gallerySnapshot, setGallerySnapshot] = useState<{ tabs: WorkspaceTab[]; activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
+  const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
   const galleryToggleRef = useRef<() => void>(() => {});
   const galleryMenuRef = useRef(false);
@@ -339,7 +339,7 @@ export default function App() {
       const canvas = captureFrame();
       if (canvas) galleryFramesRef.current.set(activeId, { canvas, aspectRatio: canvas.width / Math.max(1, canvas.height), showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel) });
     }
-    setGallerySnapshot({ tabs: terminal.tabs.slice(), activeId, frames: new Map(galleryFramesRef.current), originRect: screenRef.current?.getBoundingClientRect() ?? null });
+    setGallerySnapshot({ activeId, frames: new Map(galleryFramesRef.current), originRect: screenRef.current?.getBoundingClientRect() ?? null });
     setGalleryCloseRequested(false);
     setGalleryOpen(true);
   };
@@ -1243,6 +1243,7 @@ export default function App() {
               activeId={terminal.activeTabId}
               placement={stored.tabPlacement}
               onSelect={terminal.selectSession}
+              onMove={terminal.moveTab}
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}
               onNewBrowser={() => terminal.openBrowser()}
@@ -1305,12 +1306,13 @@ export default function App() {
         )}
       </section>
       {galleryOpen && gallerySnapshot && <TabGallery
-        tabs={gallerySnapshot.tabs}
+        tabs={terminal.tabs}
         activeId={gallerySnapshot.activeId}
         frames={gallerySnapshot.frames}
         originRect={gallerySnapshot.originRect}
         closeRequested={galleryCloseRequested}
         onChoose={chooseGalleryTab}
+        onMove={terminal.moveTab}
         onCancel={closeGallery}
       />}
       {aiVisible && (

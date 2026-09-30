@@ -47,7 +47,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   let mode = 'normal', pendingG = false, hint = null, menu = false;
   const open = window.open; window.open = (url, ...args) => typeof url === 'string' && /^(?:https?|file):/i.test(url) ? (location.href = url, window) : open.call(window, url, ...args);
   addEventListener('click', e => { const link = e.target.closest('a[target="_blank"]'); if (link?.href) { e.preventDefault(); location.href = link.href; } }, true);
-  const shortcut = code => { location.href = '__SCANLINE_SHORTCUT_URL__' + code; };
+  const shortcut = (code, shiftKey) => { location.href = '__SCANLINE_SHORTCUT_URL__' + (shiftKey ? 'Shift-' : '') + code; };
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
   const labels = 'asdfghjkl';
   const parseColor = value => { const hex=value?.match(/^#([\da-f]{3,6})$/i); if (hex) { const raw=hex[1].length===3 ? hex[1].split('').map(c=>c+c).join('') : hex[1]; return raw.toLowerCase(); } const rgb=value?.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i); return rgb && (rgb[4] === undefined || Number(rgb[4]) > 0) ? [rgb[1],rgb[2],rgb[3]].map(c=>Number(c).toString(16).padStart(2,'0')).join('') : null; };
@@ -58,7 +58,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; box.innerHTML = '<button type="button" data-back aria-label="Back">←</button><button type="button" data-forward aria-label="Forward">→</button><input aria-label="Address" style="min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px" />'; const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const v=input.value.trim(); close(); if(v) location.href=/^(?:https?|file):\/\//i.test(v)?v:`https://${v}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
   addEventListener('keydown', e => {
     if (e.key === 'ContextMenu') { menu = true; return; }
-    if (menu) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) shortcut(e.code); return; }
+    if (menu) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) shortcut(e.code, e.shiftKey); return; }
     if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter(item=>item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
     if (e.key === 'F6') { e.preventDefault(); address(); return; }
     if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); mode = 'normal'; } return; }
@@ -84,11 +84,12 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   setTimeout(reportColor, 0);
 })()"#;
 
-fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<String> {
+fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<(String, bool)> {
     let mut segments = url.path_segments()?;
-    let id = segments.next()?; let code = segments.next()?;
+    let id = segments.next()?; let raw_code = segments.next()?;
+    let (code, shift) = raw_code.strip_prefix("Shift-").map_or((raw_code, false), |code| (code, true));
     if url.scheme() != "scanline-term" || url.host_str() != Some("shortcut") || id != session_id || segments.next().is_some() { return None; }
-    matches!(code, "KeyS" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote").then(|| code.to_owned())
+    matches!(code, "KeyS" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "KeyH" | "KeyL" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote").then(|| (code.to_owned(), shift))
 }
 
 fn browser_color_value(value: &str) -> Option<String> {
@@ -110,7 +111,7 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
     let browser = window.add_child(
         WebviewBuilder::new(format!("browser-{session_id}"), WebviewUrl::External(initial))
             .devtools(cfg!(debug_assertions))
-            .on_navigation(move |url| { if let Some(code) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code })); return false; } matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
+            .on_navigation(move |url| { if let Some((code, shift_key)) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code, "shiftKey": shift_key })); return false; } matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .on_download(|_, _| true)
             .on_page_load(move |webview, payload| { let event = payload.event(); trace(&page_app, match event { PageLoadEvent::Started => "load-start", PageLoadEvent::Finished => "load-finished" }, &page_id, payload.url().as_str()); if event == PageLoadEvent::Finished { match webview.eval(&navigation_script) { Ok(()) => trace(&page_app, "script-installed", &page_id, payload.url().as_str()), Err(error) => trace(&page_app, "script-failed", &page_id, error.to_string()) } } })
@@ -172,4 +173,39 @@ pub fn close_browser(state: State<BrowserState>, session_id: BrowserId) -> Resul
 }
 
 #[cfg(test)]
-mod tests { use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url}; #[test] fn accepts_only_http_urls() { assert!(browser_url("https://example.com").is_ok()); assert!(browser_url("file:///C:/x").is_err()); } #[test] fn accepts_only_existing_local_files() { assert!(browser_target_url("file:///C:/definitely-missing-scanline-term.html").is_err()); } #[test] fn accepts_only_its_supported_browser_shortcuts() { let id = "11111111-1111-1111-1111-111111111111"; let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap(); assert_eq!(browser_shortcut(&url, id), Some("KeyW".into())); assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None); let right_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowRight")).unwrap(); assert_eq!(browser_shortcut(&right_arrow, id), Some("ArrowRight".into())); let left_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowLeft")).unwrap(); assert_eq!(browser_shortcut(&left_arrow, id), Some("ArrowLeft".into())); let tab_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Tab")).unwrap(); assert_eq!(browser_shortcut(&tab_key, id), Some("Tab".into())); let quote_key = url::Url::parse(&format!("scanline-term://shortcut/{id}/Quote")).unwrap(); assert_eq!(browser_shortcut(&quote_key, id), Some("Quote".into())); let backspace = url::Url::parse(&format!("scanline-term://shortcut/{id}/Backspace")).unwrap(); assert_eq!(browser_shortcut(&backspace, id), Some("Backspace".into())); let tenth = url::Url::parse(&format!("scanline-term://shortcut/{id}/Digit0")).unwrap(); assert_eq!(browser_shortcut(&tenth, id), Some("Digit0".into())); let unsupported = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyX")).unwrap(); assert_eq!(browser_shortcut(&unsupported, id), None); } #[test] fn accepts_only_valid_browser_colors() { assert_eq!(browser_color_value("aBc123"), Some("#aBc123".into())); assert_eq!(browser_color_value("fff"), None); } }
+mod tests {
+    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url};
+
+    #[test]
+    fn accepts_only_http_urls() {
+        assert!(browser_url("https://example.com").is_ok());
+        assert!(browser_url("file:///C:/x").is_err());
+    }
+
+    #[test]
+    fn accepts_only_existing_local_files() {
+        assert!(browser_target_url("file:///C:/definitely-missing-scanline-term.html").is_err());
+    }
+
+    #[test]
+    fn accepts_only_its_supported_browser_shortcuts() {
+        let id = "11111111-1111-1111-1111-111111111111";
+        let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap();
+        assert_eq!(browser_shortcut(&url, id), Some(("KeyW".into(), false)));
+        let shifted = url::Url::parse(&format!("scanline-term://shortcut/{id}/Shift-KeyL")).unwrap();
+        assert_eq!(browser_shortcut(&shifted, id), Some(("KeyL".into(), true)));
+        assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None);
+        let right_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowRight")).unwrap();
+        assert_eq!(browser_shortcut(&right_arrow, id), Some(("ArrowRight".into(), false)));
+        let left_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowLeft")).unwrap();
+        assert_eq!(browser_shortcut(&left_arrow, id), Some(("ArrowLeft".into(), false)));
+        let unsupported = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyX")).unwrap();
+        assert_eq!(browser_shortcut(&unsupported, id), None);
+    }
+
+    #[test]
+    fn accepts_only_valid_browser_colors() {
+        assert_eq!(browser_color_value("aBc123"), Some("#aBc123".into()));
+        assert_eq!(browser_color_value("fff"), None);
+    }
+}

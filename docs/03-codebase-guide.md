@@ -77,9 +77,13 @@ ScanlineTerm/
 
 `App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
 
+#### [`src/ui/TerminalTabs.tsx`](../src/ui/TerminalTabs.tsx)
+
+Renders the normal post-it tab strip. The active tab can be reordered with pointer drag when at least two tabs exist; the dragged tab follows the pointer and the order is committed on release. Keyboard moves are supplied by `useTerminal` and animate one-position steps. The component owns only presentation and pointer tracking, while `useTerminal.moveTab()` performs the shared move-and-renumber operation. Gallery reordering is intentionally separate and keyboard-only.
+
 #### [`src/ui/TabGallery.tsx`](../src/ui/TabGallery.tsx)
 
-Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, terminal canvas previews, browser placeholders, focus trapping, and reduced-motion-aware transitions. `App.tsx` supplies the frozen tab list and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide. It opens from `Menu+Backspace` or safe free-background clicks (including the monitor frame and physical-window gutters), never from terminal content, controls, panels, or notifications.
+Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, keyboard-only tab reordering, terminal canvas previews, browser placeholders, focus trapping, and reduced-motion-aware transitions. `App.tsx` supplies the live tab order and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide. Horizontal moves use adjacent ordinal positions; vertical moves choose the nearest card in the next or previous row. It opens from `Menu+Backspace` or safe free-background clicks (including the monitor frame and physical-window gutters), never from terminal content, controls, panels, or notifications.
 
 ### AI assistant
 
@@ -291,7 +295,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `terminal-launch` | `{ command?, args?, cwd? }` | Opens a new tab after a second `-T` invocation |
 | `browser-title` | `{ sessionId, title }` | Updates a native browser tab title from the document title |
 | `browser-color` | `{ sessionId, background }` | Updates a native browser tab color from the page theme/background |
-| `browser-shortcut` | `{ sessionId, code }` | Routes an allow-listed Menu shortcut from a native browser child |
+| `browser-shortcut` | `{ sessionId, code, shiftKey }` | Routes an allow-listed Menu shortcut, including Shift, from a native browser child |
 | `browser-launch` | `{ kind, url }` | Opens a browser tab from a later CLI invocation |
 | `codex-message` | `{ generation, message }` | `CodexClient` JSON-RPC router |
 | `codex-stderr` | `{ generation, text }` | Available diagnostic event; not yet subscribed by the frontend |

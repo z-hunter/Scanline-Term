@@ -32,7 +32,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { terminalDimensions } from './ScanlineTerminalRenderer';
-import { adjacentTabId, browserTabColor, linkAt, linkAtLine, nextTabId, previousActiveTabId, previousTabId, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
+import { adjacentTabId, browserTabColor, linkAt, linkAtLine, nextTabId, previousActiveTabId, previousTabId, reorderTabs, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
 import { win32InputKey } from '../win32-input';
 
 const tabs: TerminalTab[] = [
@@ -128,6 +128,23 @@ describe('browserTabColor', () => {
     expect(browserTabColor('#F0F0F0')).toEqual({ background: '#f0f0f0', foreground: '#101a14' });
     expect(browserTabColor('102030')).toEqual({ background: '#102030', foreground: '#d7f5df' });
     expect(browserTabColor('#fff')).toBeNull();
+  });
+});
+
+describe('reorderTabs', () => {
+  it('moves one tab and keeps ordinals and title prefixes sequential', () => {
+    const reordered = reorderTabs(tabs, 'three', 0);
+    expect(reordered.map((tab) => ({ id: tab.id, ordinal: tab.ordinal, title: tab.title }))).toEqual([
+      { id: 'three', ordinal: 1, title: '1. cmd.exe' },
+      { id: 'one', ordinal: 2, title: '2. cmd.exe' },
+      { id: 'two', ordinal: 3, title: '3. cmd.exe' },
+    ]);
+  });
+
+  it('clamps the target and leaves missing or unchanged tabs untouched', () => {
+    expect(reorderTabs(tabs, 'one', -1).map((tab) => tab.id)).toEqual(['one', 'two', 'three']);
+    expect(reorderTabs(tabs, 'one', 99).map((tab) => tab.id)).toEqual(['two', 'three', 'one']);
+    expect(reorderTabs(tabs, 'unknown', 1)).toBe(tabs);
   });
 });
 
@@ -723,6 +740,14 @@ describe('useTerminal closeSession concurrent closures', () => {
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
     });
     expect(hookResult.activeTabId).toBe(tab2);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowLeft', shiftKey: true, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true }));
+    });
+    expect(hookResult.activeTabId).toBe(tab2);
+    expect(hookResult.tabs.map((tab) => tab.id)).toEqual([tab2, tab1]);
 
     await act(async () => {
       root.unmount();

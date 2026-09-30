@@ -82,6 +82,34 @@ describe('TabGallery', () => {
     vi.useRealTimers();
   });
 
+  it('reorders the selected card one step with Menu+Shift', () => {
+    const onMove = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(createElement(TabGallery, { tabs, activeId: 'tab-4', frames: new Map(), originRect: null, onChoose: vi.fn(), onMove, onCancel: vi.fn() })));
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ContextMenu', bubbles: true, cancelable: true })));
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight', shiftKey: true, bubbles: true, cancelable: true })));
+    expect(onMove).toHaveBeenCalledWith('tab-4', 4);
+    act(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ContextMenu', bubbles: true })));
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('does not replay the entry animation on a no-op rerender', () => {
+    const animate = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+    const props = { tabs, activeId: 'tab-4', frames: new Map(), originRect: new DOMRect(10, 10, 100, 100), onChoose: vi.fn(), onCancel: vi.fn() };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => root.render(createElement(TabGallery, props)));
+    act(() => root.render(createElement(TabGallery, props)));
+    expect(animate).toHaveBeenCalledOnce();
+    act(() => root.unmount());
+    container.remove();
+  });
+
   it('cancels from Escape or the gallery background', () => {
     vi.useFakeTimers();
     Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: vi.fn() });
