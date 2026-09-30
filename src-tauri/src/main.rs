@@ -135,6 +135,17 @@ fn command_arguments(args: &[String]) -> Vec<String> {
     result
 }
 
+fn resolve_relative_path(cwd: &str, path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else if path == Path::new(".") {
+        PathBuf::from(cwd)
+    } else {
+        Path::new(cwd).join(path)
+    }
+}
+
 fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
     let mut launch_in_tab = false;
     let mut explicit_cwd = None;
@@ -144,7 +155,7 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
         let argument = &args[index];
         match argument.as_str() {
             "-T" => launch_in_tab = true,
-            "-P" => explicit_cwd = args.get(index + 1).cloned(),
+            "-P" => explicit_cwd = args.get(index + 1).map(|path| resolve_relative_path(cwd, path).to_string_lossy().into_owned()),
             "-S" | "--preset" => preset = args.get(index + 1).map(|name| name.trim_matches(['\'', '"']).to_owned()),
             "--" => break,
             _ => break,
@@ -152,10 +163,7 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
         index += if matches!(argument.as_str(), "-P" | "-S" | "--preset") { 2 } else { 1 };
     }
     let target = target_argument(args);
-    let target_path = target.map(|target| {
-        let path = PathBuf::from(target);
-        if path.is_absolute() { path } else { Path::new(cwd).join(path) }
-    });
+    let target_path = target.map(|target| resolve_relative_path(cwd, target));
     let command = target_path.as_ref().filter(|path| path.is_file())
         .map(|path| path.to_string_lossy().into_owned())
         .or_else(|| target.filter(|_| target_path.as_ref().is_none_or(|path| !path.is_dir())).map(str::to_owned));
@@ -167,8 +175,7 @@ fn terminal_launch(args: &[String], cwd: &str) -> (TerminalLaunch, bool) {
 fn launch_request(args: &[String], cwd: &str) -> (LaunchRequest, bool) {
     if let Some(target) = target_argument(args) {
         if let Some(value) = browser::browser_target_url(target).ok().map(Into::into).or_else(|| {
-            let path = Path::new(target);
-            let path = if path.is_absolute() { path.to_path_buf() } else { Path::new(cwd).join(path) };
+            let path = resolve_relative_path(cwd, target);
             browser::local_file_url(&path).map(Into::into)
         }) {
             return (LaunchRequest::Browser { url: value }, false);
@@ -1140,6 +1147,22 @@ mod tests {
     #[test]
     fn rejects_a_missing_working_directory() {
         assert!(valid_working_directory(Some("C:\\definitely-missing-scanline-term-directory")).is_err());
+    }
+
+    #[test]
+    fn resolves_relative_working_directory_against_caller_cwd() {
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), ".".into(), "hx.exe".into(), "myfile".into()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        assert_eq!(launch.command.as_deref(), Some("hx.exe"));
+        assert_eq!(launch.args, ["myfile"]);
+        assert_eq!(launch.cwd.as_deref(), Some("C:\\work"));
+        assert!(in_tab);
+
+        let args = vec!["scanline-term".into(), "-T".into(), "-P".into(), "subfolder".into(), "pwsh".into()];
+        let (launch, in_tab) = terminal_launch(&args, "C:\\work");
+        let expected = std::path::Path::new("C:\\work").join("subfolder");
+        assert_eq!(launch.cwd.as_deref(), expected.to_str());
+        assert!(in_tab);
     }
 
     #[cfg(windows)]
