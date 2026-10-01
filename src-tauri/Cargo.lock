@@ -3152,7 +3152,7 @@ dependencies = [
 
 [[package]]
 name = "scanline_term"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "conpty-oxide",
  "serde",

@@ -30,6 +30,7 @@
         <File Id="ScanlineTermFontIbmPlexRegular" Source="..\..\..\..\resources\fonts\IBMPlexMono-Regular.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIbmPlexBold" Source="..\..\..\..\resources\fonts\IBMPlexMono-Bold.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIbmPlexItalic" Source="..\..\..\..\resources\fonts\IBMPlexMono-Italic.ttf" TrueType="yes" />
+        <File Id="ScanlineTermFontIbmPlexMedium" Source="..\..\..\..\resources\fonts\IBMPlexMono-Medium.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIosevkaCharonRegular" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Regular.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIosevkaCharonBold" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Bold.ttf" TrueType="yes" />
         <File Id="ScanlineTermFontIosevkaCharonItalic" Source="..\..\..\..\resources\fonts\IosevkaCharonMono-Italic.ttf" TrueType="yes" />
