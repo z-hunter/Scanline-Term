@@ -235,7 +235,8 @@ canvas:focus,
 .terminal-tab {
   display: flex;
   min-width: 0;
-  border: 1px solid #355840;
+  border: 1px solid;
+  border-color: color-mix(in srgb, var(--tab-background) 65%, #d7f5df) color-mix(in srgb, var(--tab-background) 65%, #000) transparent color-mix(in srgb, var(--tab-background) 65%, #d7f5df);
   border-bottom: 0;
   border-radius: 5px 5px 0 0;
   background: #163321;
@@ -244,7 +245,7 @@ canvas:focus,
 }
 
 .terminal-tabs-left .terminal-tab {
-  border: 1px solid #355840;
+  border-color: color-mix(in srgb, var(--tab-background) 65%, #d7f5df) transparent color-mix(in srgb, var(--tab-background) 65%, #000) color-mix(in srgb, var(--tab-background) 65%, #d7f5df);
   border-right: 0;
   border-radius: 5px 0 0 5px;
 }
@@ -267,6 +268,10 @@ canvas:focus,
   background: #204b2d;
   background: color-mix(in srgb, var(--tab-background) 85%, #204b2d);
   box-shadow: 1px -1px 2px #0008;
+}
+
+.terminal-tab.active > button:first-child {
+  font-weight: 700;
 }
 
 .terminal-tabs-left .terminal-tab.active {
