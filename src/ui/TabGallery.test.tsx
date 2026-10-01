@@ -98,16 +98,22 @@ describe('TabGallery', () => {
 
   it('does not replay the entry animation on a no-op rerender', () => {
     const animate = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
-    const props = { tabs, activeId: 'tab-4', frames: new Map(), originRect: new DOMRect(10, 10, 100, 100), onChoose: vi.fn(), onCancel: vi.fn() };
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act(() => root.render(createElement(TabGallery, props)));
-    act(() => root.render(createElement(TabGallery, props)));
-    expect(animate).toHaveBeenCalledOnce();
-    act(() => root.unmount());
-    container.remove();
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    try {
+      Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+      const props = { tabs, activeId: 'tab-4', frames: new Map(), originRect: new DOMRect(10, 10, 100, 100), onChoose: vi.fn(), onCancel: vi.fn() };
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      act(() => root.render(createElement(TabGallery, props)));
+      act(() => root.render(createElement(TabGallery, props)));
+      expect(animate).toHaveBeenCalledOnce();
+      act(() => root.unmount());
+      container.remove();
+    } finally {
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+    }
   });
 
   it('cancels from Escape or the gallery background', () => {

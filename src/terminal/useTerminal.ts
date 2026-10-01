@@ -473,7 +473,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       if (cancelled) return;
       renderer.current?.cancelScroll(); renderer.current?.markDirty();
       if (outputRef.current) resizeSource(outputRef.current, 'font-ready', sessionId);
-    }).catch((reason) => onError(`Could not load font: ${String(reason)}`));
+    }).catch((reason) => { if (!cancelled) onError(`Could not load font: ${String(reason)}`); });
     return () => { cancelled = true; };
   }, [activeTabId, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, onError, resizeSource]);
   useEffect(() => { const sessionId = activeTabId; const output = outputRef.current; if (output) resizeSource(output, 'preset-change', sessionId); }, [activeTabId, resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
