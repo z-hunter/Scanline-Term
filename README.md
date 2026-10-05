@@ -213,15 +213,23 @@ sterm https://docs.rs
 
 ## Installation
 
-Download the latest pre-compiled Windows Installer (**MSI**) from the Releases page:
+Download the latest pre-compiled Windows Installer (**MSI**) or portable ZIP from the Releases page:
 
 **[Download Scanline Term (Latest Release)](https://github.com/z-hunter/Scanline-Term/releases/latest)**
 
-Run the `.msi` installer shown in the downloaded release assets. System requirements:
+Run the `.msi` installer for the standard installation, including the `sterm` command on the system `PATH` and the bundled optional fonts. System requirements:
 
 - Windows 10 (version 17763+) or Windows 11 (64-bit)
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on most modern Windows systems)
 - *(Optional)* [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) on `PATH` if using the AI Terminal Assistant.
+
+### Portable ZIP (technical release)
+
+1. Download `Scanline-Term-<version>-portable-x64.zip` and extract the entire archive.
+2. Keep `sterm.exe` next to `resources\conpty\x64\`; those ConPTY files are required for terminal sessions.
+3. Run `sterm.exe`. No installation or administrator rights are needed.
+
+The portable build needs the same supported Windows version and WebView2 Runtime as the MSI. It includes the preset catalog and font files, but does not add `sterm` to `PATH` or install fonts. For the complete manual setup steps, see [Portable ZIP Installation](./docs/13-portable-installation.md), which is included in the archive as `docs\PORTABLE-INSTALLATION.md`.
 
 ---
 
@@ -287,8 +295,9 @@ npm run tauri:dev
 npm test
 cd src-tauri && cargo test
 
-# Build production MSI installer
+# Build production MSI installer and portable ZIP
 npm run tauri:build -- --bundles msi
+./scripts/package-portable.ps1
 ```
 
 ---

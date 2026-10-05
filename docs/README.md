@@ -16,6 +16,7 @@
 | [Troubleshooting](./08-troubleshooting.md) | Developers/Ops | Symptoms, causes, diagnostics, fixes, known limitations |
 | [Extension Guide](./09-extension-guide.md) | Developers | Recipes for adding profiles, settings, shortcuts, commands |
 | [Codex Terminal Assistant](./10-ai-assistant.md) | Developers/QA | Architecture, isolation, app-server protocol, tools, safety boundary and validation |
+| [Portable ZIP Installation](./13-portable-installation.md) | Users/QA | Manual installation and runtime requirements for the portable Windows ZIP |
 | [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md) | Developers/Coding agents | Dependency pinning, host ownership, local package development and validation |
 | [Agent Guide](../AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
 

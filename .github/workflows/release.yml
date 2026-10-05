@@ -29,3 +29,13 @@ jobs:
           releaseName: Scanline Term v__VERSION__
           releaseDraft: true
           # updaterJsonPreferNsis: true
+      - name: Package portable ZIP
+        shell: pwsh
+        run: ./scripts/package-portable.ps1
+      - name: Upload portable ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          gh release upload "v$version" src-tauri/target/release/bundle/portable/*.zip --clobber

@@ -14,7 +14,7 @@
 | **WebView2 Runtime** | Tauri 2 rendering engine | Pre-installed on Windows 10/11; [download](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
 | **ConPTY DLLs** | Bundled in `src-tauri/resources/conpty/x64/` | Included in repository |
 | **Canonical presets** | Bundled in `src-tauri/resources/presets/` | Seeded into the user's app config on first launch |
-| **Preset fonts** | Bundled in `src-tauri/resources/fonts/` | Installed by the Windows MSI into `%WINDIR%\Fonts` |
+| **Preset fonts** | Bundled in `src-tauri/resources/fonts/` | Installed by the Windows MSI into `%WINDIR%\Fonts`; manually install from the portable ZIP if desired |
 | **Codex CLI** (`>= 0.152.1`) | Optional AI assistant app-server | Install Codex and ensure `codex` is on `PATH` |
 
 ### Windows-Specific Notes
@@ -75,11 +75,19 @@ Runs ESLint with the flat config (`eslint.config.js`). Includes TypeScript, Reac
 # Frontend only
 npm run build
 
-# Full Tauri build (NSIS installer)
+# Full Tauri build (MSI installer)
 npm run tauri:build
 ```
 
 The Tauri build produces an MSI installer. With `TAURI_SIGNING_PRIVATE_KEY` configured, it also produces the updater signature files used by GitHub Releases. The installer adds its directory to the system `PATH`, so a new terminal can run `sterm`.
+
+Build the portable technical release after the Tauri build:
+
+```sh
+./scripts/package-portable.ps1
+```
+
+It creates `src-tauri/target/release/bundle/portable/Scanline-Term-<version>-portable-x64.zip`, containing `sterm.exe`, ConPTY, fonts, presets, `README.md`, and `docs/PORTABLE-INSTALLATION.md`. The portable copy does not install fonts system-wide.
 
 ### Publishing an Update
 
