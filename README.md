@@ -99,6 +99,9 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Win + ~`** | Global Show/Hide | Summon or minimize Scanline Term from any Windows application |
 | **`Alt + Enter`** | Fullscreen Toggle | Toggle distraction-free full-screen CRT mode |
 | **`Menu + S`** | Settings Panel | Open / close the real-time CRT shader lab and display controls |
+| **`Menu + Z`** | Toggle Tab Bar | Show or hide the tab bar |
+| **`Menu + -`** / **`Menu + +`** | Terminal Font Size | Decrease / increase the active terminal font size by one point |
+| **`Menu + P`** | Quick Preset Picker | Preview presets immediately; Enter, a second `Menu + P`, or double-click applies; Esc or a click outside cancels and restores the prior preset |
 | **`Menu + A`** | AI Assistant Panel | Open / close the Codex AI assistant panel |
 | **`Menu + N`** | New Terminal Tab | Spawn a new independent ConPTY shell session |
 | **`Menu + B`** | New Browser Tab | Open a local bookmark home page; links promote the tab to WebView2 |
@@ -118,6 +121,10 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
 
 While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
+
+### Quick Preset Picker
+
+`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys, the mouse wheel, or a click to choose a preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
 
 ### Sessions Gallery
 

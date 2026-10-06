@@ -159,6 +159,9 @@ if (menuKeyDownRef.current && event.code === 'KeyX') {
 | Chord | Action | Handler |
 |-------|--------|---------|
 | Menu+S | Toggle settings panel | `setSettingsVisible()` |
+| Menu+Z | Toggle tab-bar visibility | `setStored()` |
+| Menu+- / Menu++ | Decrease / increase terminal font size by one point | `updateActivePreset()` |
+| Menu+P | Open quick preset picker | `QuickPresetPicker` |
 | Menu+A | Toggle AI assistant panel | `onToggleAi()` |
 | Menu+' | Toggle terminal/AI focus | `focus()` |
 | Menu+V | Paste from clipboard | `navigator.clipboard.readText()` → `sendInput()` |

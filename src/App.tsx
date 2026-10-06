@@ -22,6 +22,7 @@ import {
   RESOLUTIONS,
   shouldHideTabsBar,
   type PresetSettings,
+  type TabPresetState,
 } from "./crt/settings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
@@ -32,6 +33,7 @@ import { AiPanel } from "./ui/AiPanel";
 import { ScrollbackScrollbar } from "./ui/ScrollbackScrollbar";
 import { HomeDashboard } from "./ui/HomeDashboard";
 import { TabGallery, type GalleryFrame } from "./ui/TabGallery";
+import { QuickPresetPicker } from "./ui/QuickPresetPicker";
 import {
   appendAgentDelta,
   completeAgentMessage,
@@ -71,6 +73,8 @@ Scanline Term is a Windows terminal with CRT visual effects, configurable displa
 
 Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Menu+S: show or hide display settings.
+- Menu+Z: show or hide the tab bar. Menu+- and Menu++ change the terminal font size by one point.
+- Menu+P: quickly preview and choose a terminal preset.
 - Menu+A: show or hide the AI assistant panel.
 - Menu+': switch keyboard focus between the terminal and AI panel.
 - Menu+N: create a terminal tab; Menu+B: create a browser tab; Menu+W: close the active tab.
@@ -112,8 +116,12 @@ export default function App() {
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [presetPickerInitial, setPresetPickerInitial] = useState<TabPresetState | null>(null);
+  const presetPickerRequest = useRef(0);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
   const galleryToggleRef = useRef<() => void>(() => {});
+  const openPresetPickerRef = useRef<() => void>(() => {});
   const galleryMenuRef = useRef(false);
   const beforeTabChangeRef = useRef<(id: string) => void>(() => {});
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -180,6 +188,7 @@ export default function App() {
     [],
   );
   const toggleGallery = useCallback(() => galleryToggleRef.current(), []);
+  const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), []);
   const terminal = useTerminal({
     defaultPreset,
     ready: presetsReady,
@@ -189,11 +198,14 @@ export default function App() {
     rmbMenuInTerm: stored.rmbMenuInTerm,
     channelSwitchEffect: stored.channelSwitchEffect,
     galleryOpen,
+    presetPickerOpen,
     shells,
     onError: reportError,
     onToggleSettings: toggleSettings,
     onToggleAi: aiEnabled ? toggleAi : undefined,
     onToggleGallery: toggleGallery,
+    onTogglePresetPicker: () => openPresetPickerRef.current(),
+    onToggleTabsBar: toggleTabsBar,
     onBeforeTabChange: (id) => beforeTabChangeRef.current(id),
     onTerminalTabTransition: (incoming) => {
       preservePersistenceForChannelSwitchRef.current = true;
@@ -208,6 +220,13 @@ export default function App() {
   const physicalWindow = resolution.id === "physical";
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  const openPresetPicker = useCallback(() => {
+    if (presetPickerOpen || activeBrowser || !terminal.activePresetState) return;
+    const state = terminal.activePresetState;
+    setPresetPickerInitial({ ...state, settings: clonePresetSettings(state.settings) });
+    setPresetPickerOpen(true);
+  }, [activeBrowser, presetPickerOpen, terminal]);
+  openPresetPickerRef.current = openPresetPicker;
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "ContextMenu") { galleryMenuRef.current = true; return; }
@@ -280,6 +299,30 @@ export default function App() {
       reportError(`Could not load preset ${name}: ${String(reason)}`);
     }
   }, [reportError, terminal]);
+  const previewPreset = useCallback(async (name: string) => {
+    const request = ++presetPickerRequest.current;
+    try {
+      const raw = await invoke<unknown>("load_preset", { name });
+      const loaded = loadPresetSettings(JSON.stringify(raw));
+      if (!loaded) throw new Error("invalid preset format");
+      if (request === presetPickerRequest.current) terminal.replaceActivePreset(loaded, name);
+    } catch (reason) {
+      if (request === presetPickerRequest.current) reportError(`Could not load preset ${name}: ${String(reason)}`);
+    }
+  }, [reportError, terminal]);
+  const commitPresetPicker = useCallback((name: string) => {
+    if (name) void previewPreset(name);
+    setPresetPickerOpen(false);
+    setPresetPickerInitial(null);
+    (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus();
+  }, [previewPreset]);
+  const cancelPresetPicker = useCallback(() => {
+    presetPickerRequest.current += 1;
+    if (presetPickerInitial) terminal.updateActivePreset(() => presetPickerInitial);
+    setPresetPickerOpen(false);
+    setPresetPickerInitial(null);
+    (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus();
+  }, [presetPickerInitial, terminal]);
   const savePreset = useCallback(async (name: string) => {
     const state = terminal.activePresetState;
     if (!state || !name.trim()) return;
@@ -1314,6 +1357,13 @@ export default function App() {
         onChoose={chooseGalleryTab}
         onMove={terminal.moveTab}
         onCancel={closeGallery}
+      />}
+      {presetPickerOpen && presetPickerInitial && <QuickPresetPicker
+        names={presets}
+        initialName={presetPickerInitial.name}
+        onPreview={(name) => void previewPreset(name)}
+        onCommit={commitPresetPicker}
+        onCancel={cancelPresetPicker}
       />}
       {aiVisible && (
         activeBrowser ? <aside className="ai-panel" aria-label="AI assistant">The AI assistant is available only for terminal tabs.</aside> : <AiPanel
