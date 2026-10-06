@@ -46,13 +46,16 @@ export function TerminalTabs({
   const mouseSelection = useRef<{ id: string; x: number; y: number } | null>(null);
   const layoutHoverBlocked = useRef<string | null>(null);
   const previousRects = useRef(new Map<string, DOMRect>());
+  const tabsRef = useRef(tabs);
   const [drag, setDrag] = useState<{ id: string; source: number; target: number; pointerId: number; start: number; delta: number; gaps: Record<string, number> } | null>(null);
   const axis = placement === 'top' ? 'x' : 'y';
   const orderKey = tabs.map((tab) => tab.id).join('|');
+  useLayoutEffect(() => { tabsRef.current = tabs; }, [tabs]);
   const animateLayout = () => {
+    const currentTabs = tabsRef.current;
     const previous = previousRects.current;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (!reduced) tabs.forEach((tab) => {
+    if (!reduced) currentTabs.forEach((tab) => {
       const node = tabListRef.current?.querySelector<HTMLElement>(`[data-terminal-tab-id="${tab.id}"]`);
       const oldRect = previous.get(tab.id); const nextRect = node?.getBoundingClientRect();
       if (!node || !oldRect || !nextRect) return;
@@ -60,12 +63,12 @@ export function TerminalTabs({
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
       node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
     });
-    previousRects.current = new Map(tabs.map((tab) => {
+    previousRects.current = new Map(currentTabs.map((tab) => {
       const node = tabListRef.current?.querySelector<HTMLElement>(`[data-terminal-tab-id="${tab.id}"]`);
       return [tab.id, node?.getBoundingClientRect() ?? new DOMRect()] as const;
     }));
   };
-  useLayoutEffect(animateLayout, [orderKey, tabs]);
+  useLayoutEffect(animateLayout, [orderKey]);
   useLayoutEffect(() => {
     if (layoutHoverBlocked.current && !tabs.some((tab) => tab.id === layoutHoverBlocked.current)) {
       layoutHoverBlocked.current = null;

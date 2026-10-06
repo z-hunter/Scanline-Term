@@ -124,7 +124,7 @@ While terminal search is open, `N` reverses the search direction and `Esc` close
 
 ### Quick Preset Picker
 
-`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys, the mouse wheel, or a click to choose a preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
+`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys to choose a preview, use the mouse wheel to scroll the list, or click a row to choose its preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
 
 ### Sessions Gallery
 

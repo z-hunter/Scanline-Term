@@ -8,6 +8,7 @@ export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onC
   onCancel: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
   const menuHeld = useRef(false);
   const [filter, setFilter] = useState('');
@@ -17,12 +18,29 @@ export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onC
   const choose = useCallback((name: string) => { setSelected(name); onPreview(name); }, [onPreview]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  const previousResolved = useRef(resolvedSelected);
+  useEffect(() => {
+    if (previousResolved.current !== resolvedSelected) {
+      previousResolved.current = resolvedSelected;
+      if (resolvedSelected) onPreview(resolvedSelected);
+    }
+  }, [onPreview, resolvedSelected]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (event.code === 'ContextMenu') { menuHeld.current = true; return; }
-      if (event.code === 'KeyP' && menuHeld.current) { event.preventDefault(); onCommit(resolvedSelected); return; }
+      if (event.code === 'KeyP' && menuHeld.current) { event.preventDefault(); if (resolvedSelected) void onCommit(resolvedSelected); return; }
       if (event.code === 'Escape') { event.preventDefault(); onCancel(); return; }
-      if (event.code === 'Enter' || event.code === 'NumpadEnter') { event.preventDefault(); onCommit(resolvedSelected); return; }
+      if (event.code === 'Enter' || event.code === 'NumpadEnter') { event.preventDefault(); if (resolvedSelected) void onCommit(resolvedSelected); return; }
+      if (event.code === 'Tab' || event.key === 'Tab') {
+        event.preventDefault();
+        const focusable = panelRef.current ? Array.from(panelRef.current.querySelectorAll<HTMLElement>('input, button, [href], select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled')) : [];
+        if (focusable.length) {
+          const current = focusable.indexOf(document.activeElement as HTMLElement);
+          const offset = event.shiftKey ? -1 : 1;
+          focusable[(current + offset + focusable.length) % focusable.length].focus();
+        }
+        return;
+      }
       const index = filtered.indexOf(resolvedSelected);
       const direction = event.code === 'ArrowUp' ? -1 : event.code === 'ArrowDown' ? 1 : 0;
       if (direction && filtered.length) {
@@ -38,7 +56,7 @@ export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onC
   }, [choose, filtered, onCancel, onCommit, resolvedSelected]);
 
   return <div className="quick-preset-picker" role="dialog" aria-modal="true" aria-label="Quick preset picker" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }}>
-    <section className="quick-preset-picker-panel">
+    <section ref={panelRef} className="quick-preset-picker-panel">
       <div className="quick-preset-filter">
         <input ref={inputRef} value={filter} onChange={(event) => setFilter(event.currentTarget.value)} placeholder="Filter presets…" aria-label="Filter presets" spellCheck={false} autoComplete="off" />
         {filter && <button type="button" onClick={() => setFilter('')} aria-label="Clear preset filter">×</button>}

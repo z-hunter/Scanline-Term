@@ -125,6 +125,41 @@ describe('TerminalTabs', () => {
     }
   });
 
+  it('does not replay layout animation when tab metadata changes without reordering', async () => {
+    const animate = vi.fn();
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const originalRect = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect');
+    let offset = 0;
+    try {
+      Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+      Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value: function () {
+          const index = this.dataset.terminalTabId === 'tab-1' ? 0 : 1;
+          return new DOMRect(index * 100 + offset, 0, 80, 20);
+        },
+      });
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => root.render(createElement(TerminalTabs, {
+        tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
+      })));
+      offset = 10;
+      await act(async () => root.render(createElement(TerminalTabs, {
+        tabs: testTabs.map((tab) => tab.id === 'tab-1' ? { ...tab, background: '#111111' } : tab), activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
+      })));
+      expect(animate).not.toHaveBeenCalled();
+      await act(async () => root.unmount());
+      container.remove();
+    } finally {
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+      if (originalRect) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', originalRect);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'getBoundingClientRect');
+    }
+  });
+
   it('renders AI assistant button and toggles it on click', async () => {
     const onToggleAi = vi.fn();
     const onToggleSettings = vi.fn();

@@ -118,7 +118,11 @@ export default function App() {
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [presetPickerInitial, setPresetPickerInitial] = useState<TabPresetState | null>(null);
+  const [presetPickerTabId, setPresetPickerTabId] = useState<string | null>(null);
   const presetPickerRequest = useRef(0);
+  const presetPickerInitialRef = useRef<TabPresetState | null>(null);
+  const presetPickerTabIdRef = useRef<string | null>(null);
+  const activeTabIdRef = useRef<string | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
@@ -220,16 +224,30 @@ export default function App() {
   const physicalWindow = resolution.id === "physical";
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  activeTabIdRef.current = terminal.activeTabId;
+  presetPickerInitialRef.current = presetPickerInitial;
+  presetPickerTabIdRef.current = presetPickerTabId;
   const openPresetPicker = useCallback(() => {
     if (presetPickerOpen || activeBrowser || !terminal.activePresetState) return;
     const state = terminal.activePresetState;
+    const tabId = terminal.activeTabId;
+    if (!tabId) return;
     setPresetPickerInitial({ ...state, settings: clonePresetSettings(state.settings) });
+    setPresetPickerTabId(tabId);
     setPresetPickerOpen(true);
   }, [activeBrowser, presetPickerOpen, terminal]);
   openPresetPickerRef.current = openPresetPicker;
+  useEffect(() => {
+    if (!presetPickerOpen || !presetPickerTabId || activeTabIdRef.current === presetPickerTabId) return;
+    presetPickerRequest.current += 1;
+    setPresetPickerOpen(false);
+    setPresetPickerInitial(null);
+    setPresetPickerTabId(null);
+  }, [presetPickerOpen, presetPickerTabId, terminal.activeTabId]);
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "ContextMenu") { galleryMenuRef.current = true; return; }
+      if (presetPickerOpen) return;
       const hasMenu = galleryMenuRef.current || !event.isTrusted;
       if (hasMenu && event.code === "Backspace") { event.preventDefault(); event.stopImmediatePropagation(); toggleGallery(); return; }
       if (!galleryOpen) return;
@@ -249,7 +267,7 @@ export default function App() {
     window.addEventListener("keyup", keyup, true);
     window.addEventListener("blur", blur);
     return () => { window.removeEventListener("keydown", keydown, true); window.removeEventListener("keyup", keyup, true); window.removeEventListener("blur", blur); };
-  }, [galleryOpen, reportError, terminal, toggleGallery]);
+  }, [galleryOpen, presetPickerOpen, reportError, terminal, toggleGallery]);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (terminal.search.open) window.requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -299,30 +317,45 @@ export default function App() {
       reportError(`Could not load preset ${name}: ${String(reason)}`);
     }
   }, [reportError, terminal]);
-  const previewPreset = useCallback(async (name: string) => {
+  const previewPreset = useCallback(async (name: string, openingTabId: string | null) => {
+    if (!openingTabId || activeTabIdRef.current !== openingTabId) return false;
     const request = ++presetPickerRequest.current;
     try {
       const raw = await invoke<unknown>("load_preset", { name });
       const loaded = loadPresetSettings(JSON.stringify(raw));
       if (!loaded) throw new Error("invalid preset format");
-      if (request === presetPickerRequest.current) terminal.replaceActivePreset(loaded, name);
+      if (request !== presetPickerRequest.current || activeTabIdRef.current !== openingTabId) return false;
+      terminal.replaceActivePreset(loaded, name);
+      return true;
     } catch (reason) {
       if (request === presetPickerRequest.current) reportError(`Could not load preset ${name}: ${String(reason)}`);
+      return false;
     }
   }, [reportError, terminal]);
-  const commitPresetPicker = useCallback((name: string) => {
-    if (name) void previewPreset(name);
+  const commitPresetPicker = useCallback(async (name: string) => {
+    const openingTabId = presetPickerTabIdRef.current;
+    const snapshot = presetPickerInitialRef.current;
+    if (!name || !openingTabId || !snapshot || activeTabIdRef.current !== openingTabId) return;
+    if (snapshot.dirty && !window.confirm("Discard unsaved preset changes and load this preset?")) {
+      if (activeTabIdRef.current === openingTabId) terminal.updateActivePreset(() => snapshot);
+      return;
+    }
+    if (!await previewPreset(name, openingTabId) || activeTabIdRef.current !== openingTabId) return;
     setPresetPickerOpen(false);
     setPresetPickerInitial(null);
+    setPresetPickerTabId(null);
     (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus();
-  }, [previewPreset]);
+  }, [previewPreset, terminal]);
   const cancelPresetPicker = useCallback(() => {
     presetPickerRequest.current += 1;
-    if (presetPickerInitial) terminal.updateActivePreset(() => presetPickerInitial);
+    const openingTabId = presetPickerTabIdRef.current;
+    const snapshot = presetPickerInitialRef.current;
+    if (snapshot && openingTabId && activeTabIdRef.current === openingTabId) terminal.updateActivePreset(() => snapshot);
     setPresetPickerOpen(false);
     setPresetPickerInitial(null);
+    setPresetPickerTabId(null);
     (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus();
-  }, [presetPickerInitial, terminal]);
+  }, [terminal]);
   const savePreset = useCallback(async (name: string) => {
     const state = terminal.activePresetState;
     if (!state || !name.trim()) return;
@@ -1361,7 +1394,7 @@ export default function App() {
       {presetPickerOpen && presetPickerInitial && <QuickPresetPicker
         names={presets}
         initialName={presetPickerInitial.name}
-        onPreview={(name) => void previewPreset(name)}
+        onPreview={(name) => void previewPreset(name, presetPickerTabIdRef.current)}
         onCommit={commitPresetPicker}
         onCancel={cancelPresetPicker}
       />}
