@@ -742,7 +742,8 @@ unsafe extern "system" fn window_subclass_proc(
     }
 
     let prev = PREV_WNDPROC.load(std::sync::atomic::Ordering::SeqCst);
-    let result = CallWindowProcW(std::mem::transmute(prev), hwnd, msg, wparam, lparam);
+    // SAFETY: `prev` is the original window procedure returned by SetWindowLongPtrW.
+    let result = unsafe { CallWindowProcW(std::mem::transmute(prev), hwnd, msg, wparam, lparam) };
 
     if is_focus_activation(msg, wparam) {
         if let Some(window) = MAIN_WINDOW.get() {
