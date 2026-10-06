@@ -3,7 +3,7 @@
     "aberration": 1,
     "aberrationFalloff": 3.25,
     "ambientGlassLight": 0.6000000000000001,
-    "antiAliasedPixels": true,
+    "antiAliasedPixels": false,
     "backgroundDesaturation": 0.5,
     "beamModulation": 0.75,
     "bezelGlow": true,
@@ -20,8 +20,8 @@
     "glow": 0.8,
     "glowRadius": 2.25,
     "humBar": 0,
-    "imageBrightness": 1,
-    "imageContrast": 1.1,
+    "imageBrightness": 1.05,
+    "imageContrast": 1.05,
     "imperfectSignal": 0.05,
     "maskStrength": 0.1,
     "maskType": "off",
@@ -48,7 +48,7 @@
     "cursorBlink": true,
     "cursorBrightness": 0.15000000000000002,
     "cursorStyle": "underline",
-    "fontFamily": "IBM Plex Mono",
+    "fontFamily": "IBM Plex Mono Medium",
     "fontSize": 18
   },
   "virtualScreen": {
