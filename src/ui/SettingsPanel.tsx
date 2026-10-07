@@ -151,6 +151,7 @@ export function SettingsPanel({
         </label>
         <Switch label="Check for updates automatically" checked={stored.autoUpdateEnabled} onChange={(autoUpdateEnabled) => setStored((current) => ({ ...current, autoUpdateEnabled }))} />
         <Switch label="Disable AI assistant" checked={stored.aiAssistantDisabled} onChange={(aiAssistantDisabled) => setStored((current) => ({ ...current, aiAssistantDisabled, ...(aiAssistantDisabled ? { showAiPanel: false } : {}) }))} />
+        <Switch label="Enable MCP terminal mode" checked={stored.mcpEnabled} onChange={(mcpEnabled) => setStored((current) => ({ ...current, mcpEnabled }))} />
       </fieldset>
 
       <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>

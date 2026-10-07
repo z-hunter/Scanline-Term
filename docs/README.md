@@ -18,6 +18,7 @@
 | [Codex Terminal Assistant](./10-ai-assistant.md) | Developers/QA | Architecture, isolation, app-server protocol, tools, safety boundary and validation |
 | [Portable ZIP Installation](./13-portable-installation.md) | Users/QA | Manual installation and runtime requirements for the portable Windows ZIP |
 | [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md) | Developers/Coding agents | Dependency pinning, host ownership, local package development and validation |
+| [MCP Agent Guide](./14-mcp-agent-guide.md) | MCP agents/Developers | Local setup, session ownership, screen/scrollback snapshots, keyboard, mouse and lifecycle tools |
 | [Agent Guide](../AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
 
 ## Quick Links

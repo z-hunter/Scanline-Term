@@ -6,7 +6,7 @@
   "identifier": "com.zhunter.scanlineterm",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-mcp.ps1",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },

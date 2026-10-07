@@ -463,6 +463,12 @@ canvas:focus,
   box-shadow: 0 0 0 2px #314238, 0 20px 80px #000, inset 0 0 28px #000;
 }
 
+.screen-frame.agent-control-mcp { border-color: #2e78a8; box-shadow: 0 0 0 2px #4ab7ff, 0 0 24px #2c9fe888, 0 20px 80px #000, inset 0 0 28px #000; }
+.screen-frame.agent-control-ai { border-color: #39734d; box-shadow: 0 0 0 2px #79d897, 0 0 24px #79d89788, 0 20px 80px #000, inset 0 0 28px #000; }
+.screen-frame.bezel-hidden.agent-control-mcp { outline: 2px solid #4ab7ff; outline-offset: 0; box-shadow: 0 0 24px #2c9fe888; }
+.screen-frame.bezel-hidden.agent-control-ai { outline: 2px solid #79d897; outline-offset: 0; box-shadow: 0 0 24px #79d89788; }
+@media (prefers-reduced-motion: reduce) { .screen-frame.agent-control-mcp, .screen-frame.agent-control-ai { transition: none; } }
+
 .scrollback-scrollbar {
   position: absolute;
   z-index: 4;

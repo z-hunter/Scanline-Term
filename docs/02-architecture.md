@@ -234,6 +234,32 @@ sequenceDiagram
     end
 ```
 
+### MCP Client → Owned Console Sessions
+
+```mermaid
+sequenceDiagram
+    participant Agent as MCP client / stdio sidecar
+    participant Pipe as current-user named pipe
+    participant Broker as Rust mcp.rs
+    participant Web as App.tsx MCP dispatcher
+    participant Session as TerminalSession
+    participant PTY as ConPTY
+
+    Agent->>Pipe: JSON-RPC tools/call
+    Pipe->>Broker: owner-scoped JSON-lines request
+    Broker->>Web: mcp-request(handle, params)
+    Web->>Session: validate owner, dispatch shared automation
+    Session->>PTY: write/resize or read xterm state
+    Web-->>Broker: mcp_respond(result/error)
+    Broker-->>Agent: opaque handle result
+    Agent-->>Pipe: disconnect
+    Pipe->>Broker: owner disconnected
+    Broker->>Web: mcp-owner-disconnected
+    Web->>Session: close every owned tab
+```
+
+The broker assigns an owner per pipe connection and maps opaque handles to internal UUIDs. It rejects missing or cross-owner handles. Active connections have interruptible lifecycle flags; disabling MCP marks them inactive, cancels pending requests, drops their streams and emits owner cleanup before the listener stops. The WebView keeps the owner tag on each session, reuses `terminal-automation.ts`, and never exposes Codex controls for MCP tabs. The current screen is always plain text plus style runs; full scrollback is requested explicitly as plain text.
+
 ### Window Resize → Console Resize
 
 ```mermaid
@@ -301,6 +327,7 @@ On first launch, Rust parses the positional target, its following arguments, `-P
 - **Writer thread**: receives `Vec<u8>` from an `mpsc::Sender`, writes to the ConPTY input pipe. Blocks on `recv()`, terminates when the sender is dropped or the pipe errors.
 - **Reader and emitter threads**: each session reads its ConPTY output pipe in a `[0; 4096]` buffer loop into a bounded eight-chunk channel. The emitter coalesces up to 32 KiB, emits at most once every 16 ms, and waits for the frontend's `ack_terminal_output` after xterm's write callback before sending more. On EOF or error, it removes only its own entry and emits `terminal-exit`.
 - **`Drop` for `TerminalState`**: kills the child process to prevent orphaned console hosts.
+- **MCP listener**: when enabled, one listener thread accepts local-socket connections; each connection is handled on its own interruptible JSON-lines thread and waits on a correlated response channel. The shared `McpState` owns the listener stop flag, active connection flags, pending requests and monotonic owner/handle counters. Disconnect or MCP disablement cancels that owner's pending requests and emits `mcp-owner-disconnected`; the WebView closes all sessions tagged with that owner.
 
 ### Frontend Side
 
@@ -310,6 +337,7 @@ On first launch, Rust parses the positional target, its following arguments, `-P
 - The session drains pending xterm writes before changing `live` to false or invoking its exit callback, so final output precedes `terminal-exit` handling.
 - `ResizeObserver` triggers canvas and ConPTY resizes synchronously on the main thread.
 - Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
+- MCP requests are handled asynchronously in `App.tsx`; ownership checks happen before routing to the same `TerminalSession` automation used by Codex. Active MCP tabs are marked with a blue frame glow, while built-in Codex control is green.
 
 ---
 

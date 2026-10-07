@@ -6,7 +6,7 @@
 
 ## Purpose and boundary
 
-The Codex terminal assistant is an experimental, Codex-only feature. It gives an agent a conversation and two session-bound terminal tools: it can inspect xterm's parsed screen/scrollback and enqueue keyboard input into the ConPTY session associated with that conversation.
+The Codex terminal assistant is an experimental, Codex-only feature. It gives an agent a conversation and session-bound terminal tools: it can inspect xterm's parsed screen/scrollback and enqueue keyboard or TUI mouse input into the ConPTY session associated with that conversation. MCP-owned sessions deliberately do not expose this panel or Codex thread.
 
 The assistant does **not** execute the user's requested task in Codex's own shell. Its own Codex sandbox is read-only; the requested command runs only in the selected terminal tab. A thread-to-session map remains in the WebView, so no `sessionId` is ever exposed in model tool arguments.
 
@@ -43,6 +43,7 @@ sequenceDiagram
 | Protocol subset | [`src/ai/protocol.ts`](../src/ai/protocol.ts) | Minimal JSON-RPC types used by the application; generated Codex protocol types are deliberately not imported. |
 | Model selection | [`src/ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Chooses the per-tab Codex model and supported reasoning effort, including the Luna/medium default and safe fallback. |
 | Terminal bridge | [`src/terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | Builds snapshots, waits for xterm output, and encodes/enqueues automation input. |
+| Shared automation | [`src/terminal/terminal-automation.ts`](../src/terminal/terminal-automation.ts) | Shared validation/dispatch for keyboard, mouse and observation tools used by Codex and MCP. |
 | UI | [`src/ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Per-active-tab chat view, composer, login button and developer debug console. |
 
 ## Startup, authentication and isolation
@@ -78,7 +79,7 @@ Thread configuration is:
 | `serviceName` | `scanline-term` | Identifies this client to app-server. |
 | `baseInstructions` and `developerInstructions` | Terminal-assistant policy | Directs the model to use the terminal tools, observe output and ask before destructive work. |
 
-The first turn includes the full xterm history; later turns include the latest 200 lines. Both are placed in the turn as explicitly untrusted terminal data. The full preserved scrollback remains available through `observe_terminal`. The debug console is opened by clicking its `Debug console` summary and retains the latest 1,000 JSON-RPC lines; `Copy all` copies them without opening or closing the log.
+Every turn starts with the current screen as plain text plus separate style runs. Full preserved scrollback remains available only through `observe_terminal` with `includeScrollback: true`, so large buffers do not inflate every prompt. Terminal data is explicitly untrusted. The debug console is opened by clicking its `Debug console` summary and retains the latest 1,000 JSON-RPC lines; `Copy all` copies them without opening or closing the log.
 
 The selected `model` is supplied when the thread is created and both `model` and `effort` are supplied on every `turn/start`. A selection change therefore affects the next turn in that tab without recreating the ephemeral thread. The active turn is never modified.
 
@@ -99,7 +100,7 @@ Agent-message deltas are accumulated only while they belong to the same app-serv
 
 ## Dynamic terminal tools
 
-The current app-server version accepts a flat `dynamicTools` array. The model-facing names are `observe_terminal` and `send_terminal_input`; the assistant policy refers to them as the Scanline terminal tools. Calls that use an unexpected namespace or name are rejected.
+The current app-server version accepts a flat `dynamicTools` array. The model-facing names are `observe_terminal`, `send_terminal_input` and `send_terminal_mouse`; the assistant policy refers to them as the Scanline terminal tools. Calls that use an unexpected namespace or name are rejected.
 
 ### `observe_terminal`
 
@@ -107,12 +108,12 @@ Arguments:
 
 | Argument | Meaning |
 |---|---|
-| `history` | `recent` (default, last 200 lines) or `full` (all preserved xterm scrollback). |
+| `includeScrollback` | `true` requests the complete plain-text active buffer; the current screen and styles are always returned. `history` remains accepted as a compatibility alias. |
 | `afterSequence` | If absent, return a snapshot immediately. If supplied, wait for output newer than this sequence. |
 | `quietMs` | Required silence before completing a wait; clamped to 0–5,000 ms, default 400 ms. |
 | `timeoutMs` | Total wait timeout; clamped to 1–60,000 ms, default 60,000 ms. |
 
-`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, first returned absolute line number, and trimmed lines. Right-side whitespace is removed; left indentation is preserved. When the tab exits while waiting, the call fails rather than claiming a timeout.
+`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, a plain-text current screen, per-cell style runs (foreground/background and bold/italic/underline/etc.), and optional full plain-text scrollback. Right-side whitespace is removed; left indentation is preserved. When the tab exits while waiting, the call fails rather than claiming a timeout.
 
 ### `send_terminal_input`
 
@@ -124,6 +125,18 @@ Accepted action forms:
 ```
 
 Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write. A named key uses canonical DOM names: `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause`, or `F1` through `F24`; a one-character key is also accepted for modified shortcuts. Common model aliases such as `ESC`, `UP`, and `ARROW_UP` are normalized. `repeat` is an integer from 1 to 100 and queues that many complete keypresses in one write; use it for TUI navigation, then observe the result. An unsupported named key or invalid repeat fails the tool call rather than reporting a queued input. A valid key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
+
+### `send_terminal_mouse`
+
+Accepts `primary` and `secondary` buttons, `click`/`press`/`release`, `move`, and `wheel` actions with 1-based cell coordinates. The primary/secondary mapping follows the user's Windows left-handed mouse setting; the middle button remains Scanline Term's text-selection gesture. Input is delivered only when the TUI has enabled application mouse tracking.
+
+## MCP terminal mode
+
+Enabling **MCP terminal mode** in Settings starts a per-user Windows named-pipe listener in the Tauri process. The standalone `scanline-term-mcp` binary speaks MCP JSON-RPC over stdin/stdout and forwards tool calls through that pipe. Each pipe connection receives an opaque owner ID; it can list and control only sessions it created, and disconnecting closes those sessions. Handles never expose internal xterm/session IDs. MCP sessions use a blue screen-frame glow and the Codex panel is unavailable; ordinary Codex automation uses a green glow while active.
+
+The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_terminal_input`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
+
+For the agent-facing setup, tool contracts, snapshot schema, observation loop, TUI mouse semantics and safety guidance, see the dedicated [MCP Agent Guide](./14-mcp-agent-guide.md).
 
 ## Safety model
 
@@ -156,7 +169,7 @@ The following are not implemented yet and must not be documented as guarantees:
 - `inputLocked` exists in terminal state but is not wired to block human keyboard input while a turn runs.
 - Closing a terminal tab does not yet interrupt and explicitly delete/archive its Codex thread.
 - Debug output contains JSON-RPC messages only; `codex-stderr` is not currently subscribed in `CodexClient`.
-- There is no provider abstraction, chat persistence, MCP bridge, mouse automation or policy engine. Model and effort choices are ephemeral, per-tab controls only.
+- There is no provider abstraction, chat persistence or policy engine. Model and effort choices are ephemeral, per-tab controls only. MCP currently exposes the local named-pipe transport and core terminal tools only; it is not a general filesystem or process-management API.
 
 When implementing any item above, update this document, [`docs/02-architecture.md`](./02-architecture.md), [`docs/04-core-systems.md`](./04-core-systems.md), [`docs/07-testing.md`](./07-testing.md), and the root [`AGENT_GUIDE.md`](../AGENT_GUIDE.md).
 

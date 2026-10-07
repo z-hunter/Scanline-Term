@@ -25,6 +25,7 @@ ScanlineTerm/
 │   │   └── useCRT.ts              # SVS render-loop and resize lifecycle adapter
 │   ├── App.tsx                    # React composition root
 │   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
+│   ├── terminal/terminal-automation.ts # Shared Codex/MCP observation and input dispatch
 │   ├── terminal/ScanlineTerminalRenderer.ts # SVS xterm adapter plus host image overlays
 │   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, TabGallery, ScrollbackScrollbar, native menu, layoutFit and Knob components
 │   ├── main.tsx                   # React entry point (createRoot)
@@ -41,6 +42,8 @@ ScanlineTerm/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── codex.rs              # Codex app-server lifecycle and JSONL bridge
+│   │   ├── mcp.rs                # Named-pipe MCP broker, owner/handle isolation
+│   │   ├── bin/scanline-term-mcp.rs # stdio MCP JSON-RPC sidecar
 │   │   ├── home.rs               # Validated home.json load/save and backup handling
 │   │   ├── presets.rs            # Bounded preset catalog and atomic JSON file commands
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
@@ -104,6 +107,10 @@ Scanline Term's host adapter over SVS's optional xterm renderer. It owns applica
 #### [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts)
 
 Pure xterm-buffer search helpers. Normal-buffer searches include scrollback; alternate-buffer searches inspect only the current viewport. Matches are literal with smart-case matching and expose physical line/cell ranges for renderer highlighting and navigation.
+
+#### [`src/terminal/terminal-automation.ts`](../src/terminal/terminal-automation.ts)
+
+Normalizes and dispatches shared terminal tools for the built-in Codex assistant and MCP bridge. It validates text/key actions, semantic primary/secondary/wheel mouse actions, bounded waits, and the optional full-scrollback request.
 
 #### [`src/App.tsx`](../src/App.tsx)
 
@@ -243,6 +250,10 @@ Owns the versioned home document at the Tauri app config path. It validates link
 
 Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_presets`, `load_preset`, and `save_preset` Tauri commands. Names are validated as safe single Windows filenames, only regular bounded JSON files are listed, and writes use a temporary file plus `.bak` recovery copy. The Rust side does not interpret CRT fields; the WebView applies the shared settings validator before changing a tab.
 
+#### [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs) and [`src-tauri/src/bin/scanline-term-mcp.rs`](../src-tauri/src/bin/scanline-term-mcp.rs)
+
+`mcp.rs` owns the optional current-user named-pipe listener, per-connection owners, opaque terminal handles, request correlation and disconnect cleanup. The sidecar is a dependency-light stdio MCP JSON-RPC adapter; it exposes only the terminal tools and never receives internal session IDs.
+
 #### [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
 
 | Item | Purpose |
@@ -285,6 +296,8 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
 | `codex_send` | `generation, JSON-RPC object` | `Result<(), String>` | `CodexClient` requests, notifications and tool responses; rejects stale generations |
 | `codex_stop` | `generation` | `Result<(), String>` | Generation-safe shutdown; stale generation is a no-op |
+| `mcp_set_enabled` | `enabled: boolean` | `Result<(), String>` | Settings effect starts/stops the local MCP listener |
+| `mcp_respond` | `requestId, result, error?` | `Result<(), String>` | Frontend response to a broker request |
 
 #### Events (Rust → frontend)
 
@@ -300,6 +313,8 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `codex-message` | `{ generation, message }` | `CodexClient` JSON-RPC router |
 | `codex-stderr` | `{ generation, text }` | Available diagnostic event; not yet subscribed by the frontend |
 | `codex-exit` | `{ generation, text }` | Fails pending Codex requests for the active generation |
+| `mcp-request` | `{ requestId, ownerId, method, params }` | MCP frontend dispatcher |
+| `mcp-owner-disconnected` | `{ ownerId }` | Closes all sessions owned by the pipe connection |
 
 ### Configuration
 

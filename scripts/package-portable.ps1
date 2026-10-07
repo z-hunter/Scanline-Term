@@ -8,6 +8,9 @@ $archive = Join-Path $root "src-tauri\target\release\bundle\portable\Scanline-Te
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Join-Path $stage "resources") -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\target\release\sterm.exe") -Destination $stage
+$mcpBinary = Join-Path $root "src-tauri\target\release\scanline-term-mcp.exe"
+if (-not (Test-Path -LiteralPath $mcpBinary)) { throw "Build the MCP sidecar first: cargo build --release --bin scanline-term-mcp" }
+Copy-Item -LiteralPath $mcpBinary -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\conpty") -Destination (Join-Path $stage "resources") -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\fonts") -Destination (Join-Path $stage "resources") -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destination (Join-Path $stage "resources") -Recurse

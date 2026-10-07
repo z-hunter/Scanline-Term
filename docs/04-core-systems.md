@@ -56,6 +56,12 @@ The AI assistant does not own a second shell. `TerminalSession` exposes its pars
 
 One isolated `codex app-server` process serves the app. The WebView maps each ephemeral Codex thread to a terminal session before dispatching dynamic tool calls, so a tool call cannot choose another tab. After authentication it loads the account-visible model catalog and keeps model/effort selection plus running-turn UI state local to each terminal tab; Luna with medium effort is preferred for new tabs when available. The detailed lifecycle, authentication flow, protocol contracts and current limitations are in [Codex Terminal Assistant](./10-ai-assistant.md).
 
+## MCP terminal automation
+
+`terminal/terminal-automation.ts` is the shared validation/dispatch layer for observation, keyboard and TUI mouse actions. `TerminalSession.snapshot(false)` always returns the live screen as readable plain text plus independent style runs; complete active-buffer scrollback is opt-in and plain text only. `sendAutomationMouse()` maps semantic primary/secondary buttons to the existing xterm mouse encoder, honoring application tracking and leaving middle-button selection to Scanline Term.
+
+When enabled in Settings, `src-tauri/src/mcp.rs` listens on the current-user `scanline-term-mcp` local socket (a Windows named pipe). A connection gets an owner ID and an interruptible active flag; disabling MCP stops active streams, cancels pending requests and emits cleanup for every owner. The frontend tags every created tab with its owner. The broker translates opaque handles to internal session IDs, rejects cross-owner access, and emits a disconnect event that closes the owner's sessions. `src-tauri/src/bin/scanline-term-mcp.rs` is the stdio MCP adapter. MCP tabs receive a blue frame glow and do not expose the built-in Codex panel; active built-in Codex control uses green.
+
 ---
 
 ## ConPTY and Win32 Input Mode

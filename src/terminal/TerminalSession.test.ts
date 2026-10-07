@@ -74,6 +74,41 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('returns a readable live screen with separate style runs and opt-in scrollback', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 12, rows: 3 }, initialProfile('dos-vga'));
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b[1;31mRed\x1b[0m\r\nplain\r\nlast', resolve));
+
+    const current = session.snapshot();
+    expect(current.scrollback).toBeUndefined();
+    expect(current.screen.lines.slice(0, 3)).toEqual(['Red', 'plain', 'last']);
+    expect(current.screen.styles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ row: 0, startColumn: 0, endColumn: 3, bold: true, foreground: { mode: 'palette', index: 1 } }),
+    ]));
+
+    await new Promise<void>((resolve) => session.terminal!.write('\r\nolder\r\noldest\r\nnewest', resolve));
+    const full = session.snapshot(true);
+    expect(full.scrollback?.lines).toContain('oldest');
+    expect(full.scrollback?.lines.slice(-3)).toEqual(['older', 'oldest', 'newest']);
+    expect(full.screen.lines).toHaveLength(3);
+    session.dispose();
+  });
+
+  it('encodes semantic TUI mouse actions and rejects disabled tracking', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await expect(session.sendAutomationMouse({ action: 'press', button: 'primary', col: 2, row: 3 })).rejects.toThrow('mouse tracking is disabled');
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b[?1000h\x1b[?1006h', resolve));
+    mocked.invoke.mockClear();
+    await session.sendAutomationMouse({ action: 'click', button: 'primary', col: 2, row: 3 });
+    await session.sendAutomationMouse({ action: 'wheel', direction: 'down', col: 2, row: 3, steps: 2 });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(1, 'write_terminal', { sessionId: session.id, input: '\x1b[<0;2;3M' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(2, 'write_terminal', { sessionId: session.id, input: '\x1b[<0;2;3m' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(3, 'write_terminal', { sessionId: session.id, input: '\x1b[<65;2;3M' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(4, 'write_terminal', { sessionId: session.id, input: '\x1b[<65;2;3M' });
+    session.dispose();
+  });
+
   it('does not report a process lookup failure after the session exits', async () => {
     const onError = vi.fn();
     let rejectLookup!: (reason: Error) => void;

@@ -17,6 +17,7 @@ All frontend tests use **Vitest** with the **happy-dom** environment (configured
 | [`terminal-mouse.test.ts`](../src/terminal/terminal-mouse.test.ts) | Mouse encoding | SGR clicks, releases, wheel with Ctrl modifier; X10 legacy encoding; mouse move without button |
 | [`terminal-responses.test.ts`](../src/terminal-responses.test.ts) | xterm VT responses | Cursor position report (`\x1b[6n` → `\x1b[1;1R`) |
 | [`terminal/TerminalSession.test.ts`](../src/terminal/TerminalSession.test.ts) | Tab routing | Session-scoped Tauri event routing and session ID propagation for input/resize |
+| [`terminal/terminal-automation.test.ts`](../src/terminal/terminal-automation.test.ts) | Shared automation | Keyboard/mouse normalization, middle-button rejection, dispatcher routing |
 | SVS package tests | Shared renderer | Maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen) |
 | [`terminal/terminal-search.test.ts`](../src/terminal/terminal-search.test.ts) | Terminal buffer search | Normal-buffer scrollback, alternate viewport, smart-case, repeated matches and cyclic navigation |
 | [`ai/CodexClient.test.ts`](../src/ai/CodexClient.test.ts) | Codex protocol client | Pending-request cleanup and paged visible-model catalog loading |
@@ -41,6 +42,7 @@ The stage-1 manual matrix is intentionally scenario-based rather than screenshot
 | `unrelated_process_has_no_child` | Process lookup | Nonexistent process returns no child |
 | `bundled_conpty_streams_win32_input_request` | ConPTY integration | Spawns cmd.exe with bundled ConPTY, verifies `\x1b[?9001h` appears in output |
 | `win32_input_mode_delivers_function_key` | ConPTY + Win32 Input | Sends F1 Win32 input sequence to PowerShell `ReadKey`, verifies "F1" output |
+| `mcp.rs` unit tests | MCP broker | Stable socket naming, response IDs and JSON bridge payload basics |
 
 Run: `cd src-tauri && cargo test`
 
@@ -132,6 +134,17 @@ Run: `cd src-tauri && cargo test`
 - [ ] Middle button click starts selection
 - [ ] In normal scrollback, hold Ctrl and middle-click a valid HTTP(S) URL: the entire URL stays highlighted only while Ctrl is held and the pointer remains over it; release the middle button to open a new browser tab without moving the viewport to the bottom
 - [ ] Mouse coordinates match expected cells (verify in a TUI app that shows cursor position)
+
+### After Changes to MCP Terminal Mode
+
+- [ ] Enable MCP terminal mode; `scanline-term-mcp` completes `initialize`, `tools/list`, and `ping` over stdio
+- [ ] Create two owned sessions and verify `list_terminals`, screen/style snapshots, opt-in plain scrollback, keyboard and primary/secondary/wheel TUI input
+- [ ] Verify middle-button input is rejected/reserved and disabled application mouse tracking returns an error
+- [ ] Verify resize and close affect only the connection's opaque handles
+- [ ] Connect a second sidecar/client and confirm it cannot use the first owner's handles
+- [ ] Disconnect the sidecar and verify all of its tabs close; the built-in AI panel remains unavailable on MCP tabs
+- [ ] Disable MCP while a sidecar is connected and verify pending calls fail, streams stop, and owned tabs close without creating a replacement when browser tabs remain
+- [ ] Verify MCP frame glow is blue and active built-in Codex control is green
 
 ### After Changes to Context Menus / Native WebView2 Layering
 

@@ -4,6 +4,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { colorProfile, type CursorStyle, type TerminalColorProfile } from "scanline-virtual-screen/core";
 import { terminalKey } from "./terminal-input";
+import { terminalMouse, type MouseTrackingMode } from "./terminal-mouse";
 import { win32InputKey } from "../win32-input";
 
 export type TerminalSize = { cols: number; rows: number };
@@ -18,6 +19,30 @@ export type TerminalInputAction =
       shift?: boolean;
       repeat?: number;
     };
+export type TerminalMouseAction =
+  | { action: "click" | "press" | "release"; button: "primary" | "secondary"; col: number; row: number; ctrl?: boolean; alt?: boolean; shift?: boolean }
+  | { action: "move"; col: number; row: number; heldButton?: "primary" | "secondary"; ctrl?: boolean; alt?: boolean; shift?: boolean }
+  | { action: "wheel"; direction: "up" | "down"; col: number; row: number; steps?: number; ctrl?: boolean; alt?: boolean; shift?: boolean };
+export type TerminalColor =
+  | { mode: "default" }
+  | { mode: "palette"; index: number }
+  | { mode: "rgb"; value: string };
+export type TerminalStyleRun = {
+  row: number;
+  startColumn: number;
+  endColumn: number;
+  foreground?: TerminalColor;
+  background?: TerminalColor;
+  bold?: true;
+  italic?: true;
+  dim?: true;
+  underline?: true;
+  blink?: true;
+  inverse?: true;
+  invisible?: true;
+  strikethrough?: true;
+  overline?: true;
+};
 export type TerminalSnapshot = {
   status: "running" | "exited";
   title: string | null;
@@ -27,8 +52,8 @@ export type TerminalSnapshot = {
   sequence: number;
   cursor: { x: number; y: number };
   viewportY: number;
-  firstLine: number;
-  lines: string[];
+  screen: { firstLine: number; lines: string[]; styles: TerminalStyleRun[] };
+  scrollback?: { firstLine: 0; lines: string[] };
 };
 export type TerminalObservation = {
   snapshot: TerminalSnapshot;
@@ -82,6 +107,52 @@ function tabTitle(title: string): string {
     /^[A-Za-z]:\\.*\\([^\\]+?\.(?:exe|com|bat|cmd))(?:\s.*)?$/i,
   );
   return executable?.[1] ?? title;
+}
+
+function automationMouseButton(button: "primary" | "secondary"): 0 | 2 {
+  return button === "primary" ? 0 : 2;
+}
+
+function mouseTrackingMode(terminal: Terminal): MouseTrackingMode {
+  return (terminal.modes.mouseTrackingMode as MouseTrackingMode | undefined) ?? "none";
+}
+
+function cellColor(cell: {
+  isFgDefault(): boolean; isFgRGB(): boolean; getFgColor(): number;
+  isBgDefault(): boolean; isBgRGB(): boolean; getBgColor(): number;
+}, foreground: boolean): TerminalColor | undefined {
+  const isDefault = foreground ? cell.isFgDefault() : cell.isBgDefault();
+  if (isDefault) return undefined;
+  const rgb = foreground ? cell.isFgRGB() : cell.isBgRGB();
+  const value = foreground ? cell.getFgColor() : cell.getBgColor();
+  return rgb ? { mode: "rgb", value: `#${value.toString(16).padStart(6, "0")}` } : { mode: "palette", index: value };
+}
+
+function cellStyle(cell: {
+  isFgDefault(): boolean; isFgRGB(): boolean; getFgColor(): number;
+  isBgDefault(): boolean; isBgRGB(): boolean; getBgColor(): number;
+  isBold(): number; isItalic(): number; isDim(): number; isUnderline(): number; isBlink(): number;
+  isInverse(): number; isInvisible(): number; isStrikethrough(): number; isOverline(): number;
+}): Omit<TerminalStyleRun, "row" | "startColumn" | "endColumn"> {
+  const style: Omit<TerminalStyleRun, "row" | "startColumn" | "endColumn"> = {};
+  const foreground = cellColor(cell, true);
+  const background = cell.isBgDefault() ? undefined : (cell.isBgRGB() ? { mode: "rgb" as const, value: `#${cell.getBgColor().toString(16).padStart(6, "0")}` } : { mode: "palette" as const, index: cell.getBgColor() });
+  if (foreground) style.foreground = foreground;
+  if (background) style.background = background;
+  if (cell.isBold()) style.bold = true;
+  if (cell.isItalic()) style.italic = true;
+  if (cell.isDim()) style.dim = true;
+  if (cell.isUnderline()) style.underline = true;
+  if (cell.isBlink()) style.blink = true;
+  if (cell.isInverse()) style.inverse = true;
+  if (cell.isInvisible()) style.invisible = true;
+  if (cell.isStrikethrough()) style.strikethrough = true;
+  if (cell.isOverline()) style.overline = true;
+  return style;
+}
+
+function styleKey(style: Omit<TerminalStyleRun, "row" | "startColumn" | "endColumn">): string {
+  return JSON.stringify(style);
 }
 
 export function scrollToBottomOnKey(key: string): boolean {
@@ -352,11 +423,58 @@ export class TerminalSession {
     if (input) await invoke("write_terminal", { sessionId: this.id, input });
   }
 
-  snapshot(history: "recent" | "full" = "recent"): TerminalSnapshot {
+  async sendAutomationMouse(action: TerminalMouseAction): Promise<void> {
+    if (!this.live || !this.terminal) throw new Error("terminal is not running");
+    const terminal = this.terminal;
+    const tracking = mouseTrackingMode(terminal);
+    if (tracking === "none") throw new Error("terminal mouse tracking is disabled");
+    if (!Number.isInteger(action.col) || !Number.isInteger(action.row) || action.col < 1 || action.col > terminal.cols || action.row < 1 || action.row > terminal.rows)
+      throw new Error(`terminal mouse position is outside ${terminal.cols}x${terminal.rows}`);
+    const modifiers = { ctrlKey: !!action.ctrl, altKey: !!action.alt, shiftKey: !!action.shift };
+    const send = async (event: Parameters<typeof terminalMouse>[0]) => {
+      const input = terminalMouse(event);
+      if (input) await invoke("write_terminal", { sessionId: this.id, input });
+    };
+    const button = "button" in action ? automationMouseButton(action.button) : undefined;
+    const allowed = (event: "press" | "release" | "move" | "wheel-up" | "wheel-down") => {
+      if (tracking === "x10" && event !== "press") return false;
+      if (tracking === "vt200" && event === "move") return false;
+      if (tracking === "drag" && event === "move" && !("heldButton" in action && action.heldButton)) return false;
+      return true;
+    };
+    const emit = async (event: "press" | "release" | "move" | "wheel-up" | "wheel-down", eventButton = button) => {
+      if (!allowed(event)) {
+        if (event === "release" && tracking === "x10") return;
+        throw new Error(`mouse action ${event} is not supported by ${tracking} tracking`);
+      }
+      await send({ action: event, button: eventButton, col: action.col, row: action.row, sgr: this.sgrMouseMode, ...modifiers });
+    };
+    if (action.action === "click") {
+      await emit("press", button);
+      await emit("release", button);
+      return;
+    }
+    if (action.action === "press" || action.action === "release") {
+      await emit(action.action, button);
+      return;
+    }
+    if (action.action === "move") {
+      await emit("move", action.heldButton ? automationMouseButton(action.heldButton) : undefined);
+      return;
+    }
+    const wheel = action as Extract<TerminalMouseAction, { action: "wheel" }>;
+    const steps = wheel.steps ?? 1;
+    if (!Number.isInteger(steps) || steps < 1 || steps > 100) throw new Error("terminal mouse steps must be an integer from 1 to 100");
+    for (let index = 0; index < steps; index += 1) await emit(wheel.direction === "up" ? "wheel-up" : "wheel-down", undefined);
+  }
+
+  snapshot(includeScrollback: boolean | "recent" | "full" = false): TerminalSnapshot {
     const terminal = this.terminal;
     if (!terminal) throw new Error("terminal is unavailable");
     const buffer = terminal.buffer.active;
-    const start = history === "recent" ? Math.max(0, buffer.length - 200) : 0;
+    const screenStart = buffer.baseY;
+    const screen = this.readLines(buffer, screenStart, Math.min(buffer.length, screenStart + terminal.rows), true);
+    const full = includeScrollback === true || includeScrollback === "full";
     return {
       status: this.live ? "running" : "exited",
       title: this.title,
@@ -366,23 +484,53 @@ export class TerminalSession {
       sequence: this.sequence,
       cursor: { x: buffer.cursorX, y: buffer.cursorY },
       viewportY: buffer.viewportY,
-      firstLine: start,
-      lines: Array.from(
-        { length: buffer.length - start },
-        (_, index) =>
-          buffer
-            .getLine(start + index)
-            ?.translateToString(true)
-            .replace(/\s+$/, "") ?? "",
-      ),
+      screen: { firstLine: screenStart, lines: screen.lines, styles: screen.styles },
+      ...(full ? { scrollback: { firstLine: 0 as const, lines: this.readLines(buffer, 0, buffer.length, false).lines } } : {}),
     };
+  }
+
+  private readLines(buffer: NonNullable<Terminal["buffer"]>["active"], start: number, end: number, styles: boolean): { lines: string[]; styles: TerminalStyleRun[] } {
+    const lines: string[] = [];
+    const styleRuns: TerminalStyleRun[] = [];
+    for (let lineIndex = start; lineIndex < end; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex);
+      if (!line) { lines.push(""); continue; }
+      const limit = Math.min(line.length, this.size.cols || 0);
+      let lastMeaningful = 0;
+      for (let column = 0; column < limit; column += 1) {
+        const cell = line.getCell(column);
+        if (!cell) continue;
+        if (cell.getChars() || !cell.isAttributeDefault()) lastMeaningful = Math.max(lastMeaningful, column + Math.max(1, cell.getWidth()));
+      }
+      lines.push(line.translateToString(false, 0, Math.min(limit, lastMeaningful)));
+      if (!styles) continue;
+      let previousKey: string | null = null;
+      let runStart = 0;
+      let previousStyle: Omit<TerminalStyleRun, "row" | "startColumn" | "endColumn"> = {};
+      const flush = (endColumn: number) => {
+        if (previousKey && previousKey !== "{}" && endColumn > runStart) styleRuns.push({ row: lineIndex - start, startColumn: runStart, endColumn, ...previousStyle });
+      };
+      for (let column = 0; column < limit; column += 1) {
+        const cell = line.getCell(column);
+        const style = cell ? cellStyle(cell) : {};
+        const key = styleKey(style);
+        if (key !== previousKey) {
+          flush(column);
+          previousKey = key;
+          previousStyle = style;
+          runStart = column;
+        }
+      }
+      flush(limit);
+    }
+    return { lines, styles: styleRuns };
   }
 
   waitForOutput(
     afterSequence: number,
     quietMs = 400,
     timeoutMs = 60_000,
-    history: "recent" | "full" = "recent",
+    includeScrollback: boolean | "recent" | "full" = false,
   ): Promise<TerminalObservation> {
     if (!this.live) return Promise.reject(new Error("terminal is not running"));
     const quiet = Math.max(0, Math.min(5_000, Number.isFinite(quietMs) ? quietMs : 400));
@@ -405,10 +553,10 @@ export class TerminalSession {
         const now = Date.now();
         if (changedAt !== null && now - changedAt >= quiet) {
           window.clearInterval(timer);
-          resolve({ snapshot: this.snapshot(history), timedOut: false });
+          resolve({ snapshot: this.snapshot(includeScrollback), timedOut: false });
         } else if (now - started >= timeout) {
           window.clearInterval(timer);
-          resolve({ snapshot: this.snapshot(history), timedOut: true });
+          resolve({ snapshot: this.snapshot(includeScrollback), timedOut: true });
         }
       }, 25);
     });
