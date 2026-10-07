@@ -38,7 +38,7 @@
     "windows": {
       "wix": {
         "fragmentPaths": ["wix/path.wxs"],
-        "componentRefs": ["ScanlineTermPath", "ScanlineTermMcp", "ScanlineTermFonts"]
+        "componentRefs": ["ScanlineTermPath", "ScanlineTermFonts"]
       }
     }
   },
