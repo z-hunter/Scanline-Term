@@ -17,6 +17,9 @@
           System="yes"
           Permanent="no" />
       </Component>
+      <Component Id="ScanlineTermMcp" Guid="3dd78edf-1556-4a54-93aa-f10e1e7e75af" Win64="yes">
+        <File Id="ScanlineTermMcpBinary" Source="..\..\scanline-term-mcp.exe" KeyPath="yes" />
+      </Component>
     </DirectoryRef>
     <DirectoryRef Id="FontsFolder">
       <Component Id="ScanlineTermFonts" Guid="016282cd-64a0-422f-a3cf-f41c31feb18f" Win64="yes">
