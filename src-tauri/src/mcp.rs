@@ -248,7 +248,6 @@ fn handle_connection(
     active: Arc<AtomicBool>,
     stream: Stream,
 ) {
-    let _ = stream.set_nonblocking(true);
     let (receiver, sender) = stream.split();
     let mut reader = BufReader::new(receiver);
     let sender = Arc::new(Mutex::new(sender));
