@@ -427,6 +427,8 @@ static SUMMON_SHOWING: AtomicBool = AtomicBool::new(false);
 static SUMMON_TARGET_X: AtomicI32 = AtomicI32::new(i32::MIN);
 #[cfg(windows)]
 static SUMMON_TARGET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
+#[cfg(windows)]
+static SUMMON_WAS_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(windows)]
 fn summon_hotkey() -> (u32, u32) {
@@ -578,6 +580,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowPlacement, GetWindowRect, SetWindowPos, WINDOWPLACEMENT, SWP_NOACTIVATE,
         SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, ShowWindow, SW_HIDE, SW_RESTORE,
+        SW_SHOWMAXIMIZED,
     };
 
     let Ok(hwnd) = window.hwnd() else { return; };
@@ -627,12 +630,18 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         SUMMON_SHOWING.store(true, Ordering::SeqCst);
         SUMMON_HIDING.store(false, Ordering::SeqCst);
         unsafe {
-            ShowWindow(hwnd as _, SW_RESTORE);
+            let show_cmd = if SUMMON_WAS_MAXIMIZED.swap(false, Ordering::SeqCst) {
+                SW_SHOWMAXIMIZED
+            } else {
+                SW_RESTORE
+            };
+            ShowWindow(hwnd as _, show_cmd);
             SetWindowPos(hwnd as _, std::ptr::null_mut(), target_x, from, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
         }
         let _ = window.set_focus();
         focus_webview(window);
     } else {
+        SUMMON_WAS_MAXIMIZED.store(placement.showCmd == SW_SHOWMAXIMIZED as u32, Ordering::SeqCst);
         SUMMON_SHOWING.store(false, Ordering::SeqCst);
         SUMMON_HIDING.store(true, Ordering::SeqCst);
     }

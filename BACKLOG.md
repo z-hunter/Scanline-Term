@@ -5,6 +5,24 @@
 After old saved settings and presets no longer need compatibility, remove the
 `circadia` → `chalkbox` profile-ID migration.
 
+## OSC 52 clipboard copy
+
+Support `OSC 52;c;<base64>` in terminal sessions by registering xterm's OSC 52
+handler in `TerminalSession`. Decode base64 as UTF-8 and write it to the system
+clipboard through `navigator.clipboard.writeText`.
+
+- Support clipboard writes only for selector `c`, including an empty payload to
+  clear the clipboard.
+- Ignore malformed payloads and clipboard write failures without surfacing
+  untrusted terminal output as UI errors.
+- Block clipboard reads and do not answer `OSC 52;c;?` queries.
+- Add TerminalSession unit coverage for UTF-8, BEL/ST terminators, malformed
+  data, query blocking and rejected clipboard writes.
+- Validate manually in the Windows Tauri app, including SSH/tmux.
+
+Risk: with the accepted auto-copy policy, any displayed remote output can
+overwrite the system clipboard.
+
 ## Kitty Terminal Graphics Protocol — V1
 
 ### Goal
