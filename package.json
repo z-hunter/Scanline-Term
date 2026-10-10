@@ -21,7 +21,7 @@
     "@xterm/xterm": "^6.0.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#993147a37eb33a9df2633d429431e0a35bc1c122"
+    "scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#964ce181cb2b8e90cb95f2483bda522c37e59bdf"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
