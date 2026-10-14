@@ -96,7 +96,7 @@ Renders the temporary static tab overview, including 400px-target matrix placeme
 | [`ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Pure Luna/medium preference and model-effort fallback logic for each terminal tab. |
 | [`ai/protocol.ts`](../src/ai/protocol.ts) | Small JSON-RPC `Json`, `Rpc` and event types used at the integration boundary. |
 | [`ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Renders the active session's local messages, slash-command palette, model/effort picker, sign-in action and debug console. |
-| [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools. |
+| [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools; resize/input ordering is serialized here. |
 
 ### Frontend Core
 

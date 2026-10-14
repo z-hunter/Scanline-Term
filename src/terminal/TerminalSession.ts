@@ -62,6 +62,7 @@ export type TerminalObservation = {
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
 type PendingOutput = { data: Uint8Array; acknowledge: () => void };
+type PendingInput = { input: string; resolve?: () => void; reject?: (reason: unknown) => void };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 
 const OUTPUT_CHUNK_BYTES = 16 * 1024;
@@ -175,6 +176,9 @@ export class TerminalSession {
   private exited = false;
   private sequence = 0;
   private pendingOutput: PendingOutput[] = [];
+  private pendingInput: PendingInput[] = [];
+  private pendingResize: TerminalSize | null = null;
+  private resizeTask: Promise<void> | null = null;
   private outputTimer: number | null = null;
   private outputWritePending = false;
   private outputCompletion: Promise<void> | null = null;
@@ -206,6 +210,8 @@ export class TerminalSession {
       rows: size.rows,
       scrollback: 10000,
       allowProposedApi: true,
+      // Keep xterm's scrollback geometry compatible with the minimum supported Windows build.
+      windowsPty: { backend: "conpty", buildNumber: 17763 },
       theme: { foreground: profile.foreground, background: profile.background },
     });
     this.terminal = terminal;
@@ -318,9 +324,34 @@ export class TerminalSession {
 
   sendInput(input: string): void {
     if (!this.live || !input) return;
-    void invoke("write_terminal", { sessionId: this.id, input }).catch(
+    if (this.resizeTask || this.pendingResize) {
+      this.pendingInput.push({ input });
+      return;
+    }
+    void this.writeInput(input).catch(
       (reason) => this.onError(`Terminal input failed: ${String(reason)}`),
     );
+  }
+
+  private writeInput(input: string): Promise<void> {
+    return invoke("write_terminal", { sessionId: this.id, input }).then(() => undefined);
+  }
+
+  private enqueueInput(input: string): Promise<void> {
+    if (!this.resizeTask && !this.pendingResize) return this.writeInput(input);
+    return new Promise((resolve, reject) => this.pendingInput.push({ input, resolve, reject }));
+  }
+
+  private async flushPendingInput(): Promise<void> {
+    const pending = this.pendingInput.shift();
+    if (!pending) return;
+    try {
+      await this.writeInput(pending.input);
+      pending.resolve?.();
+    } catch (reason) {
+      pending.reject?.(reason);
+      if (!pending.reject) this.onError(`Terminal input failed: ${String(reason)}`);
+    }
   }
 
   setCursorAppearance(style: CursorStyle, blink: boolean): void {
@@ -399,6 +430,7 @@ export class TerminalSession {
     }
     if (this.disposed) return;
     this.live = false;
+    for (const pending of this.pendingInput.splice(0)) pending.reject?.(new Error("terminal exited"));
     this.onState(false, this.size);
     this.onExit();
   }
@@ -420,7 +452,7 @@ export class TerminalSession {
         : terminalKey(event, this.terminal!.modes);
       input = input?.repeat(repeat) ?? null;
     }
-    if (input) await invoke("write_terminal", { sessionId: this.id, input });
+    if (input) await this.enqueueInput(input);
   }
 
   async sendAutomationMouse(action: TerminalMouseAction): Promise<void> {
@@ -433,7 +465,7 @@ export class TerminalSession {
     const modifiers = { ctrlKey: !!action.ctrl, altKey: !!action.alt, shiftKey: !!action.shift };
     const send = async (event: Parameters<typeof terminalMouse>[0]) => {
       const input = terminalMouse(event);
-      if (input) await invoke("write_terminal", { sessionId: this.id, input });
+      if (input) await this.enqueueInput(input);
     };
     const button = "button" in action ? automationMouseButton(action.button) : undefined;
     const allowed = (event: "press" | "release" | "move" | "wheel-up" | "wheel-down") => {
@@ -581,18 +613,45 @@ export class TerminalSession {
   }
 
   resize(size: TerminalSize): void {
-    if (
-      !this.live ||
-      !this.terminal ||
-      (size.cols === this.size.cols && size.rows === this.size.rows)
-    )
-      return;
-    this.size = size;
-    this.terminal.resize(size.cols, size.rows);
-    this.onState(true, size);
-    void invoke("resize_terminal", { sessionId: this.id, ...size }).catch(
-      (reason) => this.onError(`Terminal resize failed: ${String(reason)}`),
-    );
+    if (!this.live || !this.terminal) return;
+    if (!this.pendingResize && size.cols === this.size.cols && size.rows === this.size.rows) return;
+    if (this.pendingResize && size.cols === this.pendingResize.cols && size.rows === this.pendingResize.rows) return;
+    this.pendingResize = size;
+    if (this.resizeTask) return;
+    this.resizeTask = this.runResize().finally(() => {
+      this.resizeTask = null;
+      const pending = this.pendingResize;
+      this.pendingResize = null;
+      if (pending && this.live) this.resize(pending);
+    });
+  }
+
+  private async runResize(): Promise<void> {
+    while (this.live && this.terminal) {
+      if (this.pendingResize) {
+        const next = this.pendingResize;
+        this.pendingResize = null;
+        if (next.cols === this.size.cols && next.rows === this.size.rows) continue;
+        const previous = this.size;
+        const terminal = this.terminal;
+        terminal.resize(next.cols, next.rows);
+        this.size = next;
+        this.onState(true, next);
+        try {
+          await invoke("resize_terminal", { sessionId: this.id, ...next });
+        } catch (reason) {
+          if (!this.disposed && !this.exited && this.terminal === terminal) {
+            terminal.resize(previous.cols, previous.rows);
+            this.size = previous;
+            this.onState(true, previous);
+            this.onError(`Terminal resize failed: ${String(reason)}`);
+          }
+        }
+        continue;
+      }
+      if (!this.pendingInput.length) return;
+      await this.flushPendingInput();
+    }
   }
 
   async close(): Promise<void> {
@@ -625,6 +684,8 @@ export class TerminalSession {
     if (this.outputTimer !== null) window.clearTimeout(this.outputTimer);
     this.outputTimer = null;
     this.pendingOutput = [];
+    this.pendingResize = null;
+    for (const pending of this.pendingInput.splice(0)) pending.reject?.(new Error("terminal disposed"));
     this.resolveOutputCompletion?.();
     this.resolveOutputCompletion = null;
     this.outputCompletion = null;

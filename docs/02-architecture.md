@@ -287,6 +287,10 @@ sequenceDiagram
     Rust->>ConPTY: controller.resize(Size)
 ```
 
+`TerminalSession` applies the xterm resize immediately, but serializes the native resize
+request. Input received while that request is in flight is held until ConPTY confirms the
+new geometry; repeated resize requests are coalesced to the newest size.
+
 ### Per-tab preset settings
 
 The virtual-screen pipeline is supplied by the public [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) package. Scanline Term owns the host adapter (`terminal/ScanlineTerminalRenderer.ts`) and remains responsible for normalized image placement, tab-local state and xterm lifetime. The package API, lifecycle, profile migration and overlay semantics are specified in the SVS repository; this repository documents only its host integration.
@@ -335,7 +339,8 @@ On first launch, Rust parses the positional target, its following arguments, `-P
 - xterm output is compared against cached row signatures. Only changed rows, plus the old/new cursor row, redraw; scroll, resize, settings, and selection redraw the whole source canvas.
 - `TerminalSession` processes output in 16 KiB writes and schedules the next write as a separate task, preserving keyboard and tab-event responsiveness during sustained output.
 - The session drains pending xterm writes before changing `live` to false or invoking its exit callback, so final output precedes `terminal-exit` handling.
-- `ResizeObserver` triggers canvas and ConPTY resizes synchronously on the main thread.
+- `ResizeObserver` updates the local grid synchronously; `TerminalSession` serializes the
+  native ConPTY resize and holds concurrent input until it completes.
 - Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
 - MCP requests are handled asynchronously in `App.tsx`; ownership checks happen before routing to the same `TerminalSession` automation used by Codex. Active MCP tabs are marked with a blue frame glow, while built-in Codex control is green.
 

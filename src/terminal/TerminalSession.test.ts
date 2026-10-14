@@ -22,6 +22,7 @@ describe('TerminalSession', () => {
   it('routes events and commands by session id', async () => {
     const state = vi.fn(); const exited = vi.fn(); const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), state, exited, vi.fn(), vi.fn(), vi.fn());
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    expect(session.terminal!.options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 17763 });
     const write = vi.spyOn(session.terminal!, 'write');
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: 'other', data: [65] } });
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: [66] } });
@@ -36,6 +37,32 @@ describe('TerminalSession', () => {
     mocked.handlers.get('terminal-exit')!({ payload: { sessionId: session.id } });
     await vi.waitFor(() => expect(exited).toHaveBeenCalledOnce());
     expect(session.live).toBe(false);
+    session.dispose();
+  });
+
+  it('keeps input behind the native resize and coalesces pending sizes', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    mocked.invoke.mockClear();
+    const resizeResolvers: (() => void)[] = [];
+    mocked.invoke.mockImplementation((command: string) => command === 'resize_terminal'
+      ? new Promise<void>((resolve) => resizeResolvers.push(resolve))
+      : Promise.resolve('cmd.exe'));
+
+    session.resize({ cols: 100, rows: 24 });
+    session.resize({ cols: 120, rows: 24 });
+    session.sendInput('echo keyboard\r');
+    const input = session.sendAutomationInput({ kind: 'text', text: 'echo ready', submit: true });
+    expect(mocked.invoke).toHaveBeenCalledWith('resize_terminal', { sessionId: session.id, cols: 100, rows: 24 });
+    expect(mocked.invoke).not.toHaveBeenCalledWith('write_terminal', expect.anything());
+
+    resizeResolvers[0]();
+    await vi.waitFor(() => expect(resizeResolvers).toHaveLength(2));
+    expect(mocked.invoke).not.toHaveBeenCalledWith('write_terminal', expect.anything());
+    resizeResolvers[1]();
+    await input;
+    expect(mocked.invoke).toHaveBeenNthCalledWith(3, 'write_terminal', { sessionId: session.id, input: 'echo keyboard\r' });
+    expect(mocked.invoke).toHaveBeenNthCalledWith(4, 'write_terminal', { sessionId: session.id, input: 'echo ready\r' });
     session.dispose();
   });
 
