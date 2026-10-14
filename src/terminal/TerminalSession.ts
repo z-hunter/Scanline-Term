@@ -618,11 +618,17 @@ export class TerminalSession {
     if (this.pendingResize && size.cols === this.pendingResize.cols && size.rows === this.pendingResize.rows) return;
     this.pendingResize = size;
     if (this.resizeTask) return;
+    this.startResizeTask();
+  }
+
+  private startResizeTask(): void {
     this.resizeTask = this.runResize().finally(() => {
       this.resizeTask = null;
       const pending = this.pendingResize;
       this.pendingResize = null;
-      if (pending && this.live) this.resize(pending);
+      if (!this.live) return;
+      if (pending) this.pendingResize = pending;
+      if (this.pendingResize || this.pendingInput.length) this.startResizeTask();
     });
   }
 

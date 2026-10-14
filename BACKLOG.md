@@ -9,19 +9,19 @@ After old saved settings and presets no longer need compatibility, remove the
 
 Support `OSC 52;c;<base64>` in terminal sessions by registering xterm's OSC 52
 handler in `TerminalSession`. Decode base64 as UTF-8 and write it to the system
-clipboard through `navigator.clipboard.writeText`.
+clipboard through `navigator.clipboard.writeText` only when explicitly enabled or
+approved by the user; terminal-supplied text cannot modify the clipboard by default.
 
+- Keep OSC 52 clipboard writes disabled by default unless the user enables them,
+  or require explicit user consent for each session before allowing writes.
 - Support clipboard writes only for selector `c`, including an empty payload to
-  clear the clipboard.
+  clear the clipboard (once enabled/consented).
 - Ignore malformed payloads and clipboard write failures without surfacing
   untrusted terminal output as UI errors.
 - Block clipboard reads and do not answer `OSC 52;c;?` queries.
-- Add TerminalSession unit coverage for UTF-8, BEL/ST terminators, malformed
-  data, query blocking and rejected clipboard writes.
+- Add TerminalSession unit coverage for disabled-by-default behavior/consent, UTF-8,
+  BEL/ST terminators, malformed data, query blocking and rejected clipboard writes.
 - Validate manually in the Windows Tauri app, including SSH/tmux.
-
-Risk: with the accepted auto-copy policy, any displayed remote output can
-overwrite the system clipboard.
 
 ## Kitty Terminal Graphics Protocol — V1
 

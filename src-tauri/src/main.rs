@@ -630,7 +630,9 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         SUMMON_SHOWING.store(true, Ordering::SeqCst);
         SUMMON_HIDING.store(false, Ordering::SeqCst);
         unsafe {
-            let show_cmd = if SUMMON_WAS_MAXIMIZED.swap(false, Ordering::SeqCst) {
+            let show_cmd = if SUMMON_WAS_MAXIMIZED.swap(false, Ordering::SeqCst)
+                || placement.showCmd == SW_SHOWMAXIMIZED as u32
+            {
                 SW_SHOWMAXIMIZED
             } else {
                 SW_RESTORE
