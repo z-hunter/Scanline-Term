@@ -27,6 +27,7 @@ export function SettingsPanel({
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
+  onOpenHome = () => undefined,
   smoothScrollDiagnosticsEnabled = false,
   getSmoothScrollDiagnostics = () => '',
   geometryDiagnosticsEnabled = false,
@@ -46,6 +47,7 @@ export function SettingsPanel({
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
+  onOpenHome?: () => void;
   smoothScrollDiagnosticsEnabled?: boolean;
   getSmoothScrollDiagnostics?: () => string;
   geometryDiagnosticsEnabled?: boolean;
@@ -66,7 +68,10 @@ export function SettingsPanel({
   return (
     <aside className="settings-panel">
       <header>
-        <p className="eyebrow">SETTINGS</p>
+        <div className="settings-heading">
+          <p className="eyebrow">SETTINGS</p>
+          <button type="button" className="settings-home-button" data-testid="settings-home" aria-label="Open Scanline Term home" title="Open Scanline Term home" onClick={onOpenHome}>?</button>
+        </div>
         <p className="display-status">{browserTabActive ? 'BROWSER TAB' : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
       </header>
 

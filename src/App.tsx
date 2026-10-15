@@ -1451,6 +1451,7 @@ export default function App() {
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
+          onOpenHome={() => terminal.openBrowser('https://github.com/z-hunter/Scanline-Term')}
           smoothScrollDiagnosticsEnabled={SMOOTH_SCROLL_DIAGNOSTICS}
           getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
           geometryDiagnosticsEnabled={TERMINAL_GEOMETRY_DIAGNOSTICS}

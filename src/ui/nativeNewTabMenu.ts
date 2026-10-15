@@ -26,10 +26,13 @@ export async function showNativeTabMenu(actions: NewTabMenuActions) {
   await menu.popup();
 }
 
-export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse, onNewBrowser, ...actions }: NewTabMenuActions & {
+export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse, onNewBrowser, onToggleTabsBar, onOpenPresetPicker, onToggleGallery, ...actions }: NewTabMenuActions & {
   onFind: () => void;
   onFindBack: () => void;
   onCopyByMouse: () => void;
+  onToggleTabsBar: () => void;
+  onOpenPresetPicker: () => void;
+  onToggleGallery: () => void;
 }) {
   const separator = await PredefinedMenuItem.new({ item: 'Separator' });
   const menu = await Menu.new({ items: [
@@ -38,7 +41,9 @@ export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse
     { id: 'scanline-find-back', text: 'Find back [menu-shift-/]', action: onFindBack },
     { id: 'scanline-copy-by-mouse', text: 'Select and copy by mouse [menu-C]', action: onCopyByMouse },
     separator,
-    { id: 'scanline-term-home', text: 'Scanline Term home', action: () => onNewBrowser('https://github.com/z-hunter/Scanline-Term') },
+    { id: 'scanline-toggle-tabs-bar', text: 'Hide/show tab bar [menu-Z]', action: onToggleTabsBar },
+    { id: 'scanline-open-preset-browser', text: 'Open preset browser [menu-P]', action: onOpenPresetPicker },
+    { id: 'scanline-gallery', text: 'Gallery [menu-backspace]', action: onToggleGallery },
   ] });
   await menu.popup();
 }

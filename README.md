@@ -103,6 +103,7 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 | **`Menu + -`** / **`Menu + +`** | Terminal Font Size | Decrease / increase the active terminal font size by one point |
 | **`Menu + P`** | Quick Preset Picker | Preview presets immediately; Enter, a second `Menu + P`, or double-click applies; Esc or a click outside cancels and restores the prior preset |
 | **`Menu + A`** | AI Assistant Panel | Open / close the Codex AI assistant panel |
+| **`Menu + '`** | AI Assistant Focus | Switch keyboard focus between the AI assistant input and the terminal |
 | **`Menu + N`** | New Terminal Tab | Spawn a new independent ConPTY shell session |
 | **`Menu + B`** | New Browser Tab | Open a local bookmark home page; links promote the tab to WebView2 |
 | **`Menu + W`** | Close Tab | Close the active terminal session or browser tab |

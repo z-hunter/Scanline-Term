@@ -52,6 +52,18 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('opens Scanline Term home from the settings header', async () => {
+    const onOpenHome = vi.fn();
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, onOpenHome })); });
+    const home = container.querySelector<HTMLButtonElement>('[data-testid="settings-home"]');
+    expect(home?.textContent).toBe('?');
+    home?.click();
+    expect(onOpenHome).toHaveBeenCalledOnce();
+    root.unmount(); container.remove();
+  });
+
   it('shows only UI and System settings for a browser tab', async () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);

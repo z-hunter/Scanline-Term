@@ -776,6 +776,10 @@ footer,
   background: #101a14;
 }
 
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-home-button { width: 24px; height: 24px; padding: 0; border: 1px solid #355840; border-radius: 50%; color: #b9d7c1; background: #163321; font: 700 14px/20px ui-monospace, Consolas, monospace; cursor: pointer; }
+.settings-home-button:hover, .settings-home-button:focus-visible { color: #d7f5df; background: #204b2d; }
+
 .eyebrow {
   margin: 0 0 8px;
   color: #7dffae;
