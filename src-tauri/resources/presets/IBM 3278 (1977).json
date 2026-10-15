@@ -18,7 +18,7 @@
     "crtEmulation": true,
     "curvature": 0.060000000000000005,
     "glow": 1.05,
-    "glowRadius": 4.75,
+    "glowRadius": 6,
     "humBar": 0.1,
     "imageBrightness": 1.05,
     "imageContrast": 1.1,
@@ -46,10 +46,10 @@
     "cellWidthAdjustment": 0,
     "colorProfile": "dos-vga",
     "cursorBlink": true,
-    "cursorBrightness": 0,
-    "cursorStyle": "block",
+    "cursorBrightness": 0.15000000000000002,
+    "cursorStyle": "underline",
     "fontFamily": "IBM 3270 Semi-Narrow",
-    "fontSize": 26
+    "fontSize": 25
   },
   "virtualScreen": {
     "modeId": "physical-4x3"

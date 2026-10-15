@@ -1,6 +1,6 @@
 {
   "crt": {
-    "aberration": 1.25,
+    "aberration": 0.75,
     "aberrationFalloff": 1,
     "ambientGlassLight": 0.55,
     "antiAliasedPixels": true,
@@ -10,18 +10,18 @@
     "bezelGlowMode": "reflection",
     "bezelHighlight": 0.15000000000000002,
     "bezelThickness": 5,
-    "bloom": 0,
+    "bloom": 0.1,
     "bloomAlgorithm": "soft",
     "breathing": 0.4,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
     "curvature": 0.06,
-    "glow": 0.75,
-    "glowRadius": 2.5,
+    "glow": 1.05,
+    "glowRadius": 6.5,
     "humBar": 0,
-    "imageBrightness": 0.95,
-    "imageContrast": 1.1,
+    "imageBrightness": 1,
+    "imageContrast": 1,
     "imperfectSignal": 0.05,
     "maskStrength": 0.2,
     "maskType": "slot",
@@ -36,13 +36,13 @@
     "reflexBarPosY": 0.09,
     "reflexBarWidth": 1,
     "scanlineCount": 320,
-    "scanlineIntensity": 0.55,
+    "scanlineIntensity": 0.5,
     "showBezel": false,
     "vignette": 0.8
   },
   "schemaVersion": 1,
   "terminal": {
-    "cellHeightAdjustment": 0,
+    "cellHeightAdjustment": -2,
     "cellWidthAdjustment": 0,
     "colorProfile": "dos-vga",
     "cursorBlink": true,
@@ -50,7 +50,7 @@
     "cursorStyle": "underline",
     "fallbackFont": "Nouveau IBM Stretch",
     "fontFamily": "Ac437 IBM VGA 9x16",
-    "fontSize": 16
+    "fontSize": 18
   },
   "virtualScreen": {
     "modeId": "800x600"

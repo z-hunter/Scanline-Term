@@ -18,7 +18,7 @@
     "crtEmulation": true,
     "curvature": 0.04,
     "glow": 1,
-    "glowRadius": 3,
+    "glowRadius": 4.75,
     "humBar": 0,
     "imageBrightness": 1,
     "imageContrast": 1.15,
