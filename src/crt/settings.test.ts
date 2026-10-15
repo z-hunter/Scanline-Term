@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, shouldHideTabsBar } from './settings';
+import { DEFAULT_BROWSER_FORM_FACTOR, DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, shouldHideTabsBar } from './settings';
 
 describe('CRT settings', () => {
   it('rejects corrupt values and falls back to VGA', () => {
@@ -33,6 +33,13 @@ describe('CRT settings', () => {
     expect(loadStoredSettings(JSON.stringify({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: false }))).toMatchObject({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: false });
     expect(loadStoredSettings(JSON.stringify({ hideTabsWhenSingleSession: true }))).toMatchObject({ hideTabsBar: true, hideTabsBarOnlyIfSingleTab: true });
     expect(loadStoredSettings(JSON.stringify({ hideTabsBar: 'yes', hideTabsBarOnlyIfSingleTab: 'no' }))).toMatchObject({ hideTabsBar: false, hideTabsBarOnlyIfSingleTab: true });
+  });
+
+  it('defaults and validates browser form factors', () => {
+    expect(loadStoredSettings(null).browserFormFactor).toBe(DEFAULT_BROWSER_FORM_FACTOR);
+    expect(loadStoredSettings(JSON.stringify({ browserFormFactor: '4:3' })).browserFormFactor).toBe('4:3');
+    expect(loadStoredSettings(JSON.stringify({ browserFormFactor: '8:5' })).browserFormFactor).toBe('8:5');
+    expect(loadStoredSettings(JSON.stringify({ browserFormFactor: '16:10' })).browserFormFactor).toBe(DEFAULT_BROWSER_FORM_FACTOR);
   });
 
   it('hides the whole tab bar always or only for a single tab', () => {

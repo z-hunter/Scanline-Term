@@ -15,12 +15,21 @@ export const RESOLUTIONS = [
 ] as const;
 
 export type ResolutionId = (typeof RESOLUTIONS)[number]['id'];
+export const BROWSER_FORM_FACTORS = [
+  { id: 'physical', label: 'Physical windows' },
+  { id: '4:3', label: '4:3', width: 4, height: 3 },
+  { id: '8:5', label: '8:5', width: 8, height: 5 },
+] as const;
+
+export type BrowserFormFactorId = (typeof BROWSER_FORM_FACTORS)[number]['id'];
 export type TabPlacement = 'top' | 'left';
 
 export const DEFAULT_RESOLUTION: ResolutionId = '1024x768';
+export const DEFAULT_BROWSER_FORM_FACTOR: BrowserFormFactorId = 'physical';
 
 export type AppSettings = {
   version: 1;
+  browserFormFactor: BrowserFormFactorId;
   tabPlacement: TabPlacement;
   hideTabsBar: boolean;
   hideTabsBarOnlyIfSingleTab: boolean;
@@ -118,6 +127,7 @@ const integerInRange = (value: unknown, min: number, max: number): value is numb
 export function loadStoredSettings(raw: string | null): StoredSettings {
   const result: StoredSettings = {
     version: 1,
+    browserFormFactor: DEFAULT_BROWSER_FORM_FACTOR,
     resolution: DEFAULT_RESOLUTION,
     tabPlacement: 'top',
     hideTabsBar: false,
@@ -144,6 +154,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (!parsed || typeof parsed !== 'object') return result;
     const value = parsed as {
       resolution?: unknown;
+      browserFormFactor?: unknown;
       tabPlacement?: unknown;
       hideTabsBar?: unknown;
       hideTabsBarOnlyIfSingleTab?: unknown;
@@ -164,6 +175,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       crt?: Record<string, unknown>;
     };
     if (isResolution(value.resolution)) result.resolution = value.resolution;
+    if (BROWSER_FORM_FACTORS.some((factor) => factor.id === value.browserFormFactor)) result.browserFormFactor = value.browserFormFactor as BrowserFormFactorId;
     if (value.tabPlacement === 'top' || value.tabPlacement === 'left') result.tabPlacement = value.tabPlacement;
     if (typeof value.hideTabsBar === 'boolean') result.hideTabsBar = value.hideTabsBar;
     else if (typeof value.hideTabsWhenSingleSession === 'boolean') result.hideTabsBar = value.hideTabsWhenSingleSession;

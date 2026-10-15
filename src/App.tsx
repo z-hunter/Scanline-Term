@@ -16,6 +16,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import packageInfo from "../package.json";
 import {
   clonePresetSettings,
+  BROWSER_FORM_FACTORS,
   DEFAULT_PRESET_SETTINGS,
   loadPresetSettings,
   loadStoredSettings,
@@ -226,9 +227,13 @@ export default function App() {
   const activePresetState = terminal.activePresetState;
   const resolution =
     RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
-  const physicalWindow = resolution.id === "physical";
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === stored.browserFormFactor) ?? BROWSER_FORM_FACTORS[0];
+  const physicalWindow = activeBrowser ? browserFormFactor.id === "physical" : resolution.id === "physical";
+  const screenRatio = activeBrowser
+    ? "width" in browserFormFactor ? browserFormFactor.width / browserFormFactor.height : undefined
+    : !physicalWindow && "width" in resolution && "height" in resolution ? resolution.width / resolution.height : undefined;
   activeTabIdRef.current = terminal.activeTabId;
   presetPickerInitialRef.current = presetPickerInitial;
   presetPickerTabIdRef.current = presetPickerTabId;
@@ -402,6 +407,17 @@ export default function App() {
     onResizeSource: terminal.resizeSource,
     enabled: !activeBrowser && !galleryOpen,
   });
+  useEffect(() => {
+    const frame = screenRef.current;
+    if (!activeBrowser || !frame) return;
+    if (physicalWindow) {
+      frame.style.removeProperty("--screen-ratio");
+      frame.style.removeProperty("aspect-ratio");
+    } else if (screenRatio) {
+      frame.style.setProperty("--screen-ratio", String(screenRatio));
+      frame.style.setProperty("aspect-ratio", `${"width" in browserFormFactor ? browserFormFactor.width : 1} / ${"height" in browserFormFactor ? browserFormFactor.height : 1}`);
+    }
+  }, [activeBrowser, browserFormFactor, physicalWindow, screenRatio]);
   const aiVisible = aiEnabled && stored.showAiPanel && !terminal.isMcpSession(terminal.activeSessionId ?? "");
   useEffect(() => {
     if (!isTauri()) return;
@@ -538,7 +554,7 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -623,6 +639,7 @@ export default function App() {
       defaultShell: stored.defaultShell,
       smoothScrollback: stored.smoothScrollback,
       smoothTuiScrolling: stored.smoothTuiScrolling,
+      browserFormFactor: stored.browserFormFactor,
     }));
   }, [stored]);
   useEffect(() => {
@@ -1319,8 +1336,8 @@ export default function App() {
           style={
             {
               "--tab-space": `${tabsHidden && stored.tabPlacement === "left" ? 0 : tabSpace}px`,
-              ...(!physicalWindow && resolution.width && resolution.height
-                ? { "--screen-ratio": String(resolution.width / resolution.height) }
+              ...(screenRatio
+                ? { "--screen-ratio": String(screenRatio) }
                 : {}),
               ...(measuredTerminalWidth > 0
                 ? { "--terminal-screen-width": `${measuredTerminalWidth}px` }

@@ -9,7 +9,7 @@ import {
   TerminalSettingsSection,
 } from 'scanline-virtual-screen/react';
 import 'scanline-virtual-screen/react/styles.css';
-import { RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
+import { BROWSER_FORM_FACTORS, RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import type { ShellInfo } from '../terminal/useTerminal';
 
 export function SettingsPanel({
@@ -118,6 +118,21 @@ export function SettingsPanel({
         {smoothScrollDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Smooth scroll diagnostics</span><button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
         {geometryDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Terminal geometry diagnostics</span><button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
         <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+      </fieldset>}
+
+      {browserTabActive && <fieldset>
+        <legend>Browser</legend>
+        <label className="host-select-control">
+          Browser form factor
+          <select
+            aria-label="Browser form factor"
+            data-testid="browser-form-factor-select"
+            value={stored.browserFormFactor}
+            onChange={(event) => setStored((current) => ({ ...current, browserFormFactor: event.target.value as StoredSettings['browserFormFactor'] }))}
+          >
+            {BROWSER_FORM_FACTORS.map((factor) => <option key={factor.id} value={factor.id}>{factor.label}</option>)}
+          </select>
+        </label>
       </fieldset>}
 
       <fieldset>

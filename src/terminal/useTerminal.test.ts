@@ -175,6 +175,31 @@ describe('linkAt', () => {
 });
 
 describe('terminal launch event', () => {
+  it('does not overwrite browser frame form factor styles', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const frame = document.createElement('div'); const output = document.createElement('canvas'); frame.appendChild(output); document.body.appendChild(frame);
+    vi.spyOn(output, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+    await act(async () => { hookResult.openBrowser(); });
+    frame.style.setProperty('--screen-ratio', '1.6');
+    frame.style.setProperty('aspect-ratio', '8 / 5');
+    await act(async () => { hookResult.resizeSource(output); });
+    expect(frame.style.getPropertyValue('--screen-ratio')).toBe('1.6');
+    expect(frame.style.getPropertyValue('aspect-ratio')).toBe('8 / 5');
+    await act(async () => { root.unmount(); });
+    container.remove(); frame.remove(); vi.restoreAllMocks();
+  });
+
   it('sizes a first Physical 8:5 session from the CSS rect, not a stale canvas backing size', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

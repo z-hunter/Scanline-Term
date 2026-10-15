@@ -460,12 +460,15 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const preset = (activeRef.current ? sessions.current.get(activeRef.current)?.preset.settings : undefined) ?? defaultPresetRef.current;
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6];
     const frame = output.parentElement;
-    if (resolution.id === 'physical') {
-      frame?.style.removeProperty('--screen-ratio');
-      frame?.style.removeProperty('aspect-ratio');
-    } else if ('width' in resolution && 'height' in resolution) {
-      frame?.style.setProperty('--screen-ratio', String(resolution.width / resolution.height));
-      frame?.style.setProperty('aspect-ratio', `${resolution.width} / ${resolution.height}`);
+    const browserActive = tabsRef.current.some((tab) => tab.id === activeRef.current && tab.kind === 'browser');
+    if (!browserActive) {
+      if (resolution.id === 'physical') {
+        frame?.style.removeProperty('--screen-ratio');
+        frame?.style.removeProperty('aspect-ratio');
+      } else if ('width' in resolution && 'height' in resolution) {
+        frame?.style.setProperty('--screen-ratio', String(resolution.width / resolution.height));
+        frame?.style.setProperty('aspect-ratio', `${resolution.width} / ${resolution.height}`);
+      }
     }
     const outputSize = outputRasterSize(output);
     const width = resolution.id.startsWith('physical') ? outputSize.width : ('width' in resolution ? resolution.width : 1);

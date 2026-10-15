@@ -64,18 +64,29 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
-  it('shows only UI and System settings for a browser tab', async () => {
+  it('shows browser form factor, UI, and System settings for a browser tab', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => {
+      currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
+    });
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, browserTabActive: true })); });
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, stored: currentStored, setStored, browserTabActive: true })); });
     expect(container.textContent).toContain('SETTINGS');
     expect(container.textContent).toContain('BROWSER TAB');
     expect(container.textContent).not.toContain('CONSOLE BUFFER');
     expect(container.textContent).not.toContain('CRT display lab');
-    expect(container.querySelector('legend')?.textContent).toBe('UI');
-    expect(Array.from(container.querySelectorAll('legend')).map((legend) => legend.textContent)).toEqual(['UI', 'System']);
+    expect(container.querySelector('legend')?.textContent).toBe('Browser');
+    expect(Array.from(container.querySelectorAll('legend')).map((legend) => legend.textContent)).toEqual(['Browser', 'UI', 'System']);
     expect(container.textContent).not.toContain('Presets');
     expect(container.textContent).not.toContain('Virtual resolution');
+    const formFactor = container.querySelector<HTMLSelectElement>('[data-testid="browser-form-factor-select"]');
+    expect(formFactor?.options).toHaveLength(3);
+    await act(async () => {
+      formFactor!.value = '8:5';
+      formFactor!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(currentStored.browserFormFactor).toBe('8:5');
     root.unmount(); container.remove();
   });
 
