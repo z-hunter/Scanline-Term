@@ -4,7 +4,7 @@
 
 ## Resize reflow fix
 
-The pair is built from the Microsoft Windows Terminal `v1.24.10921.0` source tag (commit `8474eb8329f8da11c0fcd748e5b19543703ccaa6`) with [`resize-reflow.patch`](./resize-reflow.patch). Apply the patch with `git apply --ignore-space-change` to accommodate the upstream CRLF source files. The patch trims trailing rows that contain only spaces when determining the Reflow extent, while preserving wrap-aware copying of rows inside that extent. It includes the two regression tests and the corrected `export11` expectation. The full source is not vendored.
+The pair is built from the Microsoft Windows Terminal `v1.24.10921.0` source tag (commit `8474eb8329f8da11c0fcd748e5b19543703ccaa6`) with [`resize-reflow.patch`](./resize-reflow.patch). Apply the patch with `git apply --ignore-space-change` to accommodate the upstream CRLF source files. The patch trims trailing rows that contain only spaces when determining the Reflow extent, while retaining trailing rows that carry an image slice or scrollbar mark and preserving wrap-aware copying within that extent. It includes regression tests for the cursor, interior wrapped whitespace, image slices and scrollbar marks, plus the corrected `export11` expectation. The full source is not vendored.
 
 ## Reproduction notes
 
@@ -39,14 +39,14 @@ The pair is built from the Microsoft Windows Terminal `v1.24.10921.0` source tag
   </Project>
   ```
 - For the focused TAEF target, link `icuuc.lib;icuin.lib` before the umbrella ICU library so the test binary uses legacy system ICU DLLs available on Windows 10 17763.
-- Run `TextBuffer.Unit.Tests` with the `ReflowTests` class; all 17 Reflow cases passed after the patch.
+- Run `TextBuffer.Unit.Tests` with the `ReflowTests` class; all 19 Reflow cases pass after the patch.
 - Build `src/host/exe/Host.EXE.vcxproj` and `src/winconpty/dll/winconptydll.vcxproj` in Release/x64 with `/p:RepoRoot=<checkout>`, `WindowsTargetPlatformVersion=10.0.22621.0`, `SolutionDir` and `VcpkgRoot` pointing to checkout-local trailing-slash paths, and `/p:ForceImportBeforeCppProps=<before-cpp.props> /p:ForceImportAfterCppTargets=<after-cpp.targets>`. Set `VCPKG_MAX_CONCURRENCY=2`; use `/m:2 /nr:false`.
 
 ## Runtime provenance
 
 Current pair: ProductVersion `1.24.261020001`, FileVersion `1.24.2610.20001`.
 
-- `x64/conpty.dll` SHA-256: `206EE4BC1D94A7E5AB98CBCA2C66BE44A4EAAE93BEB90B74FA87A6C5E46EB278`
-- `x64/OpenConsole.exe` SHA-256: `16A61DB2C243A7FF0C43E8298632124B6597A632F317A1A9F257A3E0C3FB61C0`
+- `x64/conpty.dll` SHA-256: `7C649F9E68308D6B2DF6879169C329F30C611AFFCA6111D306BFDB850B2724B6`
+- `x64/OpenConsole.exe` SHA-256: `B70BECC755782478359FC4EA29FD97029A9583101B330927325EE7613B0AB2C0`
 
-Validation: all 17 native `ReflowTests` cases passed. Rust bundled-backend tests `bundled_conpty_streams_win32_input_request` and `win32_input_mode_delivers_function_key` passed. Live MCP resize checks passed with the bundled pair: (1) Settings open, default CMD 126×35 → Trinitron touch 108×36 (width shrink), marker remains at the prompt, banner intact; (2) fresh default CMD 126×35 → 138×40 (growth) with Settings closed and tabs visible, marker remains at prompt row 3, banner intact; and (3) a fresh fullscreen scenario via the Tauri window API, panels closed, default CMD 126×35 → Trinitron 162×45 (growth), cursor stays on prompt row 3 and marker/banner are correct. Do not substitute one DLL from a different build.
+All 19 native `ReflowTests` cases pass against the rebuilt source. Rust bundled-backend tests `bundled_conpty_streams_win32_input_request` and `win32_input_mode_delivers_function_key` also pass against the updated pair. The updated matching ConPTY pair uses the same Release/x64 recipe and metadata. Earlier live MCP resize checks passed with the prior matching pair: (1) Settings open, default CMD 126×35 → Trinitron touch 108×36 (width shrink), marker remains at the prompt, banner intact; (2) fresh default CMD 126×35 → 138×40 (growth) with Settings closed and tabs visible, marker remains at prompt row 3, banner intact; and (3) a fresh fullscreen scenario via the Tauri window API, panels closed, default CMD 126×35 → Trinitron 162×45 (growth), cursor stays on prompt row 3 and marker/banner are correct. Do not substitute one DLL from a different build.

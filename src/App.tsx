@@ -472,7 +472,7 @@ export default function App() {
           if (!loaded) throw new Error("invalid preset format");
           if (current.sessionOwner(sessionId) !== payload.ownerId) throw new Error("terminal session is unavailable");
           current.selectSession(sessionId, false, false);
-          current.replaceActivePreset(loaded, params.name);
+          current.replaceActivePreset(loaded, params.name, sessionId);
           respond(payload.requestId, { name: params.name, status: "applied" });
           return;
         }

@@ -2,7 +2,7 @@ diff --git a/src/buffer/out/textBuffer.cpp b/src/buffer/out/textBuffer.cpp
 index 6f0336e..49230ca 100644
 --- a/src/buffer/out/textBuffer.cpp
 +++ b/src/buffer/out/textBuffer.cpp
-@@ -2987,7 +2987,13 @@ void TextBuffer::Reflow(TextBuffer& oldBuffer, TextBuffer& newBuffer, const View
+@@ -2987,7 +2987,16 @@ void TextBuffer::Reflow(TextBuffer& oldBuffer, TextBuffer& newBuffer, const View
      oldCursorPos.x = std::clamp(oldCursorPos.x, 0, oldBuffer._width - 1);
      oldCursorPos.y = std::clamp(oldCursorPos.y, 0, oldBuffer._height - 1);
  
@@ -10,7 +10,10 @@ index 6f0336e..49230ca 100644
 +    const auto viewport = lastCharacterViewport ? *lastCharacterViewport : oldBuffer.GetSize();
 +    auto lastRowWithText = oldBuffer.GetLastNonSpaceCharacter(lastCharacterViewport).y;
 +    // Trailing wrapped blanks must not evict text and the cursor when the buffer shrinks.
-+    while (lastRowWithText > viewport.Top() && oldBuffer.GetRowByOffset(lastRowWithText).GetLastNonSpaceColumn() == 0)
++    while (lastRowWithText > viewport.Top() &&
++           oldBuffer.GetRowByOffset(lastRowWithText).GetLastNonSpaceColumn() == 0 &&
++           oldBuffer.GetRowByOffset(lastRowWithText).GetImageSlice() == nullptr &&
++           !oldBuffer.GetRowByOffset(lastRowWithText).GetScrollbarData().has_value())
 +    {
 +        lastRowWithText--;
 +    }
@@ -19,8 +22,11 @@ index 6f0336e..49230ca 100644
      auto visibleViewportTop = positionInfo ? positionInfo->visibleViewportTop : til::CoordTypeMax;
 diff --git a/src/buffer/out/ut_textbuffer/ReflowTests.cpp b/src/buffer/out/ut_textbuffer/ReflowTests.cpp
 index 58e7766..58245d7 100644
---- a/src/buffer/out/ut_textbuffer/ReflowTests.cpp
-+++ b/src/buffer/out/ut_textbuffer/ReflowTests.cpp
+@@ -8,2 +8,4 @@
+ #include "../textBuffer.hpp"
++#include "../ImageSlice.hpp"
++#include "../Marks.hpp"
+ #include "../../renderer/inc/DummyRenderer.hpp"
 @@ -506,13 +506,14 @@ namespace
                  TestBuffer{
                      { 2, 5 }, // reduce width aggressively
@@ -41,7 +47,7 @@ index 58e7766..58245d7 100644
                  },
              },
          },
-@@ -776,6 +777,46 @@ class ReflowTests
+@@ -776,6 +778,83 @@ class ReflowTests
          }
      }
  
@@ -83,6 +89,43 @@ index 58e7766..58245d7 100644
 +        VERIFY_ARE_EQUAL(true, resized->GetRowByOffset(0).WasWrapForced());
 +        VERIFY_ARE_EQUAL(true, resized->GetRowByOffset(1).WasWrapForced());
 +        VERIFY_ARE_EQUAL(L'C', resized->GetRowByOffset(2).GlyphAt(0).front());
++    }
++
++    TEST_METHOD(ReflowPreservesTrailingImageSlice)
++    {
++        auto original = _textBufferFromTestBuffer({
++            { 6, 5 },
++            { { L"text  ", false }, { L"      ", false }, { L"      ", true }, { L"      ", true }, { L"      ", true } },
++            { 4, 4 },
++        });
++        auto image = std::make_unique<ImageSlice>(til::size{ 1, 1 });
++        image->MutablePixels(0, 1)[0] = RGBQUAD{ 0, 0, 255, 0 };
++        original->GetMutableRowByOffset(3).SetImageSlice(std::move(image));
++        VERIFY_IS_NOT_NULL(original->GetRowByOffset(3).GetImageSlice());
++        VERIFY_ARE_EQUAL(4, original->GetLastNonSpaceCharacter().y);
++
++        auto resized = _textBufferByReflowingTextBuffer(*original, { 6, 3 });
++
++        const auto imageSlice = resized->GetRowByOffset(0).GetImageSlice() ? resized->GetRowByOffset(0).GetImageSlice() :
++                                resized->GetRowByOffset(1).GetImageSlice() ? resized->GetRowByOffset(1).GetImageSlice() :
++                                resized->GetRowByOffset(2).GetImageSlice();
++        VERIFY_IS_NOT_NULL(imageSlice);
++        VERIFY_ARE_EQUAL(1u, imageSlice ? imageSlice->Pixels().size() : 0u);
++        VERIFY_ARE_EQUAL(255, imageSlice ? imageSlice->Pixels()[0].rgbRed : 0);
++    }
++
++    TEST_METHOD(ReflowPreservesTrailingScrollbarMark)
++    {
++        auto original = _textBufferFromTestBuffer({
++            { 6, 5 },
++            { { L"text  ", false }, { L"      ", false }, { L"      ", true }, { L"      ", true }, { L"      ", true } },
++            { 4, 0 },
++        });
++        original->GetMutableRowByOffset(3).SetScrollbarData(ScrollbarData{});
++
++        auto resized = _textBufferByReflowingTextBuffer(*original, { 6, 3 });
++
++        VERIFY_IS_TRUE(resized->GetRowByOffset(2).GetScrollbarData().has_value());
 +    }
 +
      TEST_METHOD(TestReflowCases)

@@ -273,9 +273,17 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     settingsRef.current = next.settings.crt;
     renderer.current?.cancelScroll(); renderer.current?.markDirty();
   }, []);
-  const replaceActivePreset = useCallback((settings: PresetSettings, name: string) => {
-    updateActivePreset(() => ({ name, draftName: name, settings: clonePresetSettings(settings), dirty: false }));
-  }, [updateActivePreset]);
+  const replaceActivePreset = useCallback((settings: PresetSettings, name: string, sessionId = activeRef.current) => {
+    const record = sessionId ? sessions.current.get(sessionId) : undefined;
+    if (!record) return;
+    const next = { name, draftName: name, settings: clonePresetSettings(settings), dirty: false };
+    record.preset = next;
+    if (activeRef.current === sessionId) {
+      setActivePresetState(next);
+      settingsRef.current = next.settings.crt;
+      renderer.current?.cancelScroll(); renderer.current?.markDirty();
+    }
+  }, []);
   const markActivePresetSaved = useCallback((name: string) => {
     updateActivePreset((current) => ({ ...current, name, draftName: name, dirty: false }));
   }, [updateActivePreset]);

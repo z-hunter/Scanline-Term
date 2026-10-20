@@ -230,6 +230,30 @@ describe('terminal launch event', () => {
     container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
+  it('replaces the requested session preset even when another session is active', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    let first!: string | null; let second!: string | null;
+    await act(async () => { first = await hookResult.openSession(); second = await hookResult.openSession(); });
+    const replacement = { version: 1 as const, resolution: 'physical-8x5' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    await act(async () => { hookResult.selectSession(second!, false, false); hookResult.replaceActivePreset(replacement, 'Trinitron touch', first!); });
+    await act(async () => { hookResult.selectSession(first!, false, false); });
+    expect(hookResult.activePreset.resolution).toBe('physical-8x5');
+    await act(async () => { hookResult.selectSession(second!, false, false); });
+    expect(hookResult.activePreset.resolution).toBe('1024x768');
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.restoreAllMocks();
+  });
+
   it('starts a new session with the command and working directory from -T', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'initial_terminal_launch' ? {} : 'cmd.exe'));
