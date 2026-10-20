@@ -465,6 +465,17 @@ export default function App() {
         }
         const sessionId = typeof params.sessionId === "string" ? params.sessionId : undefined;
         if (!sessionId || current.sessionOwner(sessionId) !== payload.ownerId) throw new Error("terminal session is unavailable");
+        if (payload.method === "apply_terminal_preset") {
+          if (typeof params.name !== "string" || !params.name.trim()) throw new Error("preset name is required");
+          const raw = await invoke<unknown>("load_preset", { name: params.name });
+          const loaded = loadPresetSettings(JSON.stringify(raw));
+          if (!loaded) throw new Error("invalid preset format");
+          if (current.sessionOwner(sessionId) !== payload.ownerId) throw new Error("terminal session is unavailable");
+          current.selectSession(sessionId, false, false);
+          current.replaceActivePreset(loaded, params.name);
+          respond(payload.requestId, { name: params.name, status: "applied" });
+          return;
+        }
         if (payload.method === "observe_terminal" || payload.method === "send_terminal_input" || payload.method === "send_terminal_mouse") {
           const session = terminalSession(sessionId);
           if (!session) throw new Error("terminal session is unavailable");

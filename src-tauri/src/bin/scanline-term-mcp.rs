@@ -1,7 +1,11 @@
-use std::io::{self, BufRead, BufReader, Write};
+use std::{
+    env,
+    io::{self, BufRead, BufReader, Write},
+    process,
+};
 
-use interprocess::local_socket::{GenericNamespaced, Stream, prelude::*};
-use serde_json::{Value, json};
+use interprocess::local_socket::{prelude::*, GenericNamespaced, Stream};
+use serde_json::{json, Value};
 
 const SOCKET_NAME: &str = "scanline-term-mcp";
 const PROTOCOL_VERSION: &str = "2025-11-25";
@@ -9,19 +13,23 @@ const PROTOCOL_VERSION: &str = "2025-11-25";
 struct BridgeClient {
     reader: Option<BufReader<Stream>>,
     next_id: u64,
+    socket_name: String,
 }
 
 impl BridgeClient {
-    fn new() -> Self {
+    fn new(socket_name: String) -> Self {
         Self {
             reader: None,
             next_id: 1,
+            socket_name,
         }
     }
 
     fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
         if self.reader.is_none() {
-            let name = SOCKET_NAME
+            let name = self
+                .socket_name
+                .clone()
                 .to_ns_name::<GenericNamespaced>()
                 .map_err(|error| format!("invalid MCP socket name: {error}"))?;
             let stream = Stream::connect(name)
@@ -59,9 +67,34 @@ impl BridgeClient {
     }
 }
 
+fn socket_name_from_args(args: impl Iterator<Item = String>) -> Result<String, String> {
+    let mut args = args;
+    let mut socket_name = SOCKET_NAME.to_owned();
+    while let Some(argument) = args.next() {
+        match argument.as_str() {
+            "--pipe" => {
+                socket_name = args.next().ok_or("--pipe requires a named-pipe value")?;
+                if socket_name.is_empty() {
+                    return Err("--pipe requires a non-empty named-pipe value".into());
+                }
+            }
+            "--help" | "-h" => return Err("usage: scanline-term-mcp [--pipe <name>]".into()),
+            _ => return Err(format!("unknown argument: {argument}")),
+        }
+    }
+    Ok(socket_name)
+}
+
 fn main() {
+    let socket_name = match socket_name_from_args(env::args().skip(1)) {
+        Ok(socket_name) => socket_name,
+        Err(error) => {
+            eprintln!("{error}");
+            process::exit(2);
+        }
+    };
     let stdin = io::stdin();
-    let mut bridge = BridgeClient::new();
+    let mut bridge = BridgeClient::new(socket_name);
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -175,6 +208,14 @@ fn tool_definitions() -> Vec<Value> {
             }),
         ),
         tool(
+            "apply_terminal_preset",
+            "Apply a named saved preset to an owned terminal tab.",
+            json!({
+                "type": "object", "properties": { "handle": { "type": "string" }, "name": { "type": "string", "minLength": 1 } },
+                "required": ["handle", "name"], "additionalProperties": false
+            }),
+        ),
+        tool(
             "send_terminal_input",
             "Send text or a canonical key to a console TUI.",
             json!({
@@ -256,7 +297,7 @@ mod tests {
 
     #[test]
     fn initialize_reports_tools_capability() {
-        let mut bridge = BridgeClient::new();
+        let mut bridge = BridgeClient::new(SOCKET_NAME.into());
         let response = handle_request(
             &mut bridge,
             &json!({ "id": 1, "method": "initialize", "params": {} }),
@@ -270,7 +311,7 @@ mod tests {
 
     #[test]
     fn tools_list_contains_terminal_operations() {
-        let mut bridge = BridgeClient::new();
+        let mut bridge = BridgeClient::new(SOCKET_NAME.into());
         let response = handle_request(&mut bridge, &json!({ "id": 1, "method": "tools/list" }))
             .expect("tools/list response");
         let names = response["result"]["tools"]
@@ -280,18 +321,33 @@ mod tests {
             .filter_map(|tool| tool["name"].as_str())
             .collect::<Vec<_>>();
         assert!(names.contains(&"observe_terminal"));
+        assert!(names.contains(&"apply_terminal_preset"));
         assert!(names.contains(&"send_terminal_mouse"));
     }
 
     #[test]
     fn initialized_notification_has_no_response() {
-        let mut bridge = BridgeClient::new();
-        assert!(
-            handle_request(
-                &mut bridge,
-                &json!({ "method": "notifications/initialized" })
-            )
-            .is_none()
+        let mut bridge = BridgeClient::new(SOCKET_NAME.into());
+        assert!(handle_request(
+            &mut bridge,
+            &json!({ "method": "notifications/initialized" })
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn pipe_argument_overrides_the_production_default() {
+        assert_eq!(
+            socket_name_from_args(["--pipe".into(), "scanline-term-mcp-dev".into()].into_iter()),
+            Ok("scanline-term-mcp-dev".into()),
+        );
+    }
+
+    #[test]
+    fn missing_pipe_value_is_rejected() {
+        assert_eq!(
+            socket_name_from_args(["--pipe".into()].into_iter()),
+            Err("--pipe requires a named-pipe value".into()),
         );
     }
 }

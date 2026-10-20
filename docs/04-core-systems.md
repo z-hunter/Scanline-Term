@@ -22,7 +22,7 @@ Scanline Term runs a real Windows console session inside the Tauri application. 
 └──────────────────────────────────────────────────────┘
 ```
 
-**Why this approach:** Windows does not expose a traditional Unix PTY. ConPTY (Windows Pseudo Console API, introduced in Windows 10 1809) provides a pipe-based VT-compatible interface to Windows console applications. The `conpty-oxide` crate provides a Rust wrapper. The project bundles ConPTY DLLs (`resources/conpty/x64/`) rather than relying on the system's ConPTY, likely for version consistency and to support specific features like Win32 Input Mode.
+**Why this approach:** Windows does not expose a traditional Unix PTY. ConPTY (Windows Pseudo Console API, introduced in Windows 10 1809) provides a pipe-based VT-compatible interface to Windows console applications. The `conpty-oxide` crate provides a Rust wrapper. The project bundles a matched `conpty.dll`/`OpenConsole.exe` pair under `src-tauri/resources/conpty/x64/` rather than relying on the system's ConPTY; this keeps Win32 Input Mode support available on Windows 10 1809 and includes a native resize-reflow fix. See [`resources/conpty/README.md`](../src-tauri/resources/conpty/README.md) for source, licensing, reproducibility and binary provenance.
 
 **Shell selection:** `start_terminal()` reads `%ComSpec%` (typically `C:\Windows\System32\cmd.exe`), sets the working directory to `%USERPROFILE%`, and starts the process.
 
@@ -60,7 +60,7 @@ One isolated `codex app-server` process serves the app. The WebView maps each ep
 
 `terminal/terminal-automation.ts` is the shared validation/dispatch layer for observation, keyboard and TUI mouse actions. `TerminalSession.snapshot(false)` always returns the live screen as readable plain text plus independent style runs; complete active-buffer scrollback is opt-in and plain text only. `sendAutomationMouse()` maps semantic primary/secondary buttons to the existing xterm mouse encoder, honoring application tracking and leaving middle-button selection to Scanline Term.
 
-When enabled in Settings, `src-tauri/src/mcp.rs` listens on the current-user `scanline-term-mcp` local socket (a Windows named pipe). A connection gets an owner ID and an interruptible active flag; disabling MCP stops active streams, cancels pending requests and emits cleanup for every owner. The frontend tags every created tab with its owner. The broker translates opaque handles to internal session IDs, rejects cross-owner access, and emits a disconnect event that closes the owner's sessions. `src-tauri/src/bin/scanline-term-mcp.rs` is the stdio MCP adapter. MCP tabs receive a blue frame glow and do not expose the built-in Codex panel; active built-in Codex control uses green.
+When enabled in Settings, `src-tauri/src/mcp.rs` listens on a current-user local socket (a Windows named pipe): `scanline-term-mcp` for release builds and `scanline-term-mcp-dev` for debug builds. This keeps an installed production instance from intercepting development MCP calls. A connection gets an owner ID and an interruptible active flag; disabling MCP stops active streams, cancels pending requests and emits cleanup for every owner. The frontend tags every created tab with its owner. The broker translates opaque handles to internal session IDs, rejects cross-owner access, and emits a disconnect event that closes the owner's sessions. `src-tauri/src/bin/scanline-term-mcp.rs` is the stdio MCP adapter. MCP tabs receive a blue frame glow and do not expose the built-in Codex panel; active built-in Codex control uses green.
 
 ---
 
@@ -394,9 +394,9 @@ After the dimensions are rounded down to whole cells, the renderer centres the r
 | Mode | Source Canvas Size | Effect |
 |------|-------------------|--------|
 | **Virtual** (QVGA, VGA, SVGA, XGA) | Fixed size (e.g., 640×480) | Terminal grid fits the virtual buffer; CRT shader upscales to physical display |
-| **Physical** | `output.width × output.height` (physical pixels × DPR) | Terminal grid fits the actual window; no CRT upscaling — 1:1 pixels |
+| **Physical** | Output raster minus the CRT bezel inset on each edge (physical pixels × DPR) | Terminal grid fits the visible screen area; no CRT upscaling — 1:1 pixels |
 
-When resolution changes or the window resizes in Physical mode, the source canvas dimensions update, terminal dimensions are recalculated, and `invoke('resize_terminal')` is called.
+When CRT emulation is enabled, Physical mode subtracts the configured bezel thickness from each edge before sizing the source canvas, keeping terminal glyph pixels inside the visible screen area. When resolution changes or the window resizes in Physical mode, terminal dimensions are recalculated and `invoke('resize_terminal')` is called.
 
 ---
 

@@ -200,11 +200,11 @@ describe('terminal launch event', () => {
     container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
-  it('sizes a first Physical 8:5 session from the CSS rect, not a stale canvas backing size', async () => {
+  it('sizes a first Physical 8:5 session from the inner bezel raster, not a stale canvas backing size', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
-    const preset = { version: 1 as const, resolution: 'physical-8x5' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    const preset = { version: 1 as const, resolution: 'physical-8x5' as const, crt: { ...DEFAULT_CRT_SETTINGS, bezelThickness: 5 } };
     let hookResult!: ReturnType<typeof useTerminal>;
     function TestComponent() {
       const result = useTerminal({ defaultPreset: preset, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
@@ -222,7 +222,7 @@ describe('terminal launch event', () => {
     expect(JSON.parse(hookResult.exportGeometryDiagnostics()).entries).toEqual([]);
     hookResult.renderer.resizeSource(output.width, output.height);
     await act(async () => { hookResult.openSession(); await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1000, 500, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
+    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(990, 490, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
     const resizeCalls = mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal').length;
     await act(async () => { hookResult.resizeSource(output, 'preset-change', 'stale-session'); });
     expect(mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal')).toHaveLength(resizeCalls);

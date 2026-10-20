@@ -15,6 +15,7 @@ The interface can:
 - preserve screen colors and text attributes separately from readable text;
 - send text, named keys, modifiers and repeated key presses;
 - send semantic primary/secondary mouse input and wheel input to a TUI;
+- apply a saved preset to an owned terminal tab;
 - resize and close owned sessions.
 
 It is not a general filesystem, process-management or remote-control API. Commands typed into a terminal still run with the user's Windows privileges, so apply the same approval rules as for direct user input.
@@ -29,7 +30,7 @@ Typical executable locations are:
 
 | Build | Sidecar |
 |---|---|
-| Development | `src-tauri\\target\\debug\\scanline-term-mcp.exe` |
+| Development | `src-tauri\\target\\debug\\scanline-term-mcp.exe --pipe scanline-term-mcp-dev` |
 | Release build | `src-tauri\\target\\release\\scanline-term-mcp.exe` |
 | Installed/portable app | `scanline-term-mcp.exe` beside `sterm.exe` |
 
@@ -42,7 +43,7 @@ tools/list
 tools/call
 ```
 
-If MCP mode is disabled, Scanline Term is not running, or the sidecar cannot reach the local per-user named pipe, tool calls fail instead of creating a hidden fallback terminal.
+If MCP mode is disabled, Scanline Term is not running, or the sidecar cannot reach the local per-user named pipe, tool calls fail instead of creating a hidden fallback terminal. The sidecar defaults to the production `scanline-term-mcp` pipe; pass `--pipe scanline-term-mcp-dev` when controlling a development build. Debug and release builds intentionally use different pipe names, so an installed production instance cannot intercept development MCP calls.
 
 ## Ownership and handles
 
@@ -154,6 +155,14 @@ type Color =
   | { mode: "default" }
   | { mode: "palette"; index: number }
   | { mode: "rgb"; value: string };
+```
+
+### `apply_terminal_preset`
+
+Loads a named saved preset and applies it to the owned tab. Applying a preset selects that tab. The result is `{ "name": "Trinitron touch", "status": "applied" }`; terminal geometry may still be settling, so observe the tab before relying on its new cursor/grid.
+
+```json
+{ "name": "Trinitron touch", "handle": "terminal-0" }
 ```
 
 Style coordinates are terminal-cell coordinates relative to `screen.lines`, not UTF-16 offsets. Adjacent cells with the same attributes are merged into one run. A styled blank cell can extend a run beyond the last visible character.

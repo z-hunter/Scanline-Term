@@ -342,7 +342,7 @@ On first launch, Rust parses the positional target, its following arguments, `-P
 - `ResizeObserver` updates the local grid synchronously; `TerminalSession` serializes the
   native ConPTY resize and holds concurrent input until it completes.
 - Keyboard/mouse handlers are registered on `window` in the **capture phase** to intercept events before any other handler.
-- MCP requests are handled asynchronously in `App.tsx`; ownership checks happen before routing to the same `TerminalSession` automation used by Codex. Active MCP tabs are marked with a blue frame glow, while built-in Codex control is green.
+- MCP requests are handled asynchronously in `App.tsx`; ownership checks happen before routing to the same `TerminalSession` automation used by Codex. `apply_terminal_preset` loads a saved preset through the Rust command and applies it only to the owned tab; the response confirms application, while the resulting grid may still be settling. Active MCP tabs are marked with a blue frame glow, while built-in Codex control is green.
 
 ---
 

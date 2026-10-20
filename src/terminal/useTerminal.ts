@@ -38,6 +38,11 @@ function outputRasterSize(output: HTMLCanvasElement): { width: number; height: n
   return { width: Math.max(1, Math.round(width * dpr) || output.width || 1), height: Math.max(1, Math.round(height * dpr) || output.height || 1) };
 }
 
+function physicalSourceSize(output: { width: number; height: number }, settings: CRTSettings): { width: number; height: number } {
+  const inset = settings.crtEmulation ? Math.max(0, Math.round(settings.bezelThickness ?? 0)) : 0;
+  return { width: Math.max(1, output.width - inset * 2), height: Math.max(1, output.height - inset * 2) };
+}
+
 export function adjacentTabId(tabs: WorkspaceTab[], id: string): string | null {
   const index = tabs.findIndex((tab) => tab.id === id);
   return index < 0 ? null : tabs[index + 1]?.id ?? tabs[index - 1]?.id ?? null;
@@ -288,7 +293,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })));
     sessions.current.set(id, { tab, session, ownerId: ownerId ?? null, inputLocked: false, preset: { name: presetName ?? 'default', draftName: presetName ?? 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const width = resolution.id.startsWith('physical') ? outputSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? outputSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const physicalSize = physicalSourceSize(outputSize, preset.crt); const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     recordGeometry('session-start', { sessionId: id, resolution: preset.resolution, output: outputRef.current ? { width: outputRef.current.width, height: outputRef.current.height, css: elementBounds(outputRef.current) } : null, source: { width: source.width, height: source.height }, terminal: dimensions });
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'args' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, ...(Array.isArray(launch.args) && launch.args.length > 0 && { args: launch.args.filter((argument): argument is string => typeof argument === 'string') }), cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
@@ -471,8 +476,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       }
     }
     const outputSize = outputRasterSize(output);
-    const width = resolution.id.startsWith('physical') ? outputSize.width : ('width' in resolution ? resolution.width : 1);
-    const height = resolution.id.startsWith('physical') ? outputSize.height : ('height' in resolution ? resolution.height : 1);
+    const physicalSize = physicalSourceSize(outputSize, preset.crt);
+    const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1);
+    const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1);
     const sourceChanged = renderer.current!.resizeSource(width, height);
     const source = renderer.current!.sourceCanvas;
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
@@ -502,7 +508,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     }).catch((reason) => { if (!cancelled) onError(`Could not load font: ${String(reason)}`); });
     return () => { cancelled = true; };
   }, [activeTabId, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, onError, resizeSource]);
-  useEffect(() => { const sessionId = activeTabId; const output = outputRef.current; if (output) resizeSource(output, 'preset-change', sessionId); }, [activeTabId, resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment]);
+  useEffect(() => { const sessionId = activeTabId; const output = outputRef.current; if (output) resizeSource(output, 'preset-change', sessionId); }, [activeTabId, resizeSource, currentPreset.resolution, currentPreset.crt.consoleFont, currentPreset.crt.fallbackFont, currentPreset.crt.consoleFontSize, currentPreset.crt.cellWidthAdjustment, currentPreset.crt.cellHeightAdjustment, currentPreset.crt.crtEmulation, currentPreset.crt.bezelThickness]);
   useEffect(() => { renderer.current?.cancelScroll(); renderer.current?.markDirty(); }, [currentPreset.crt]);
   useEffect(() => {
     renderer.current!.cancelScroll(); renderer.current!.markDirty();

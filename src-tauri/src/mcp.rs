@@ -2,20 +2,26 @@ use std::{
     collections::HashMap,
     io::{self, BufRead, BufReader, BufWriter, Write},
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::Duration,
 };
 
-use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, prelude::*};
+use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
-const SOCKET_NAME: &str = "scanline-term-mcp";
+// Keep the development broker separate from an installed release build. Both
+// processes can otherwise run under the same Windows user and contend for one
+// named pipe.
+const SOCKET_NAME: &str = if cfg!(debug_assertions) {
+    "scanline-term-mcp-dev"
+} else {
+    "scanline-term-mcp"
+};
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(65);
 
 #[derive(Clone, Default)]

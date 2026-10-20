@@ -1,0 +1,90 @@
+diff --git a/src/buffer/out/textBuffer.cpp b/src/buffer/out/textBuffer.cpp
+index 6f0336e..49230ca 100644
+--- a/src/buffer/out/textBuffer.cpp
++++ b/src/buffer/out/textBuffer.cpp
+@@ -2987,7 +2987,13 @@ void TextBuffer::Reflow(TextBuffer& oldBuffer, TextBuffer& newBuffer, const View
+     oldCursorPos.x = std::clamp(oldCursorPos.x, 0, oldBuffer._width - 1);
+     oldCursorPos.y = std::clamp(oldCursorPos.y, 0, oldBuffer._height - 1);
+ 
+-    const auto lastRowWithText = oldBuffer.GetLastNonSpaceCharacter(lastCharacterViewport).y;
++    const auto viewport = lastCharacterViewport ? *lastCharacterViewport : oldBuffer.GetSize();
++    auto lastRowWithText = oldBuffer.GetLastNonSpaceCharacter(lastCharacterViewport).y;
++    // Trailing wrapped blanks must not evict text and the cursor when the buffer shrinks.
++    while (lastRowWithText > viewport.Top() && oldBuffer.GetRowByOffset(lastRowWithText).GetLastNonSpaceColumn() == 0)
++    {
++        lastRowWithText--;
++    }
+ 
+     auto mutableViewportTop = positionInfo ? positionInfo->mutableViewportTop : til::CoordTypeMax;
+     auto visibleViewportTop = positionInfo ? positionInfo->visibleViewportTop : til::CoordTypeMax;
+diff --git a/src/buffer/out/ut_textbuffer/ReflowTests.cpp b/src/buffer/out/ut_textbuffer/ReflowTests.cpp
+index 58e7766..58245d7 100644
+--- a/src/buffer/out/ut_textbuffer/ReflowTests.cpp
++++ b/src/buffer/out/ut_textbuffer/ReflowTests.cpp
+@@ -506,13 +506,14 @@ namespace
+                 TestBuffer{
+                     { 2, 5 }, // reduce width aggressively
+                     {
++                        // Wrapped blank padding must not scroll away the remaining real text.
++                        { L"CD", true },
++                        { L"EF", true },
++                        { L"$ ", true },
+                         { L"  ", true },
+-                        { L"  ", true },
+-                        { L"  ", true },
+-                        { L"  ", true },
+-                        { L"  ", true },
++                        { L"  ", false },
+                     },
+-                    { 1, 0 },
++                    { 1, 4 },
+                 },
+             },
+         },
+@@ -776,6 +777,46 @@ class ReflowTests
+         }
+     }
+ 
++    TEST_METHOD(ReflowDoesNotScrollCursorForTrailingWrappedBlankRows)
++    {
++        std::vector<TestRow> rows(30, { L"", true });
++        rows[0] = { L"header", false };
++        rows[1] = { L"copyright", false };
++        rows[2] = { L"", false };
++        rows[3] = { L"cmd>", true };
++
++        auto original = _textBufferFromTestBuffer({ { 80, 30 }, std::move(rows), { 5, 3 } });
++        auto resized = _textBufferByReflowingTextBuffer(*original, { 80, 27 });
++
++        VERIFY_ARE_EQUAL((til::point{ 5, 3 }), resized->GetCursor().GetPosition());
++        VERIFY_ARE_EQUAL(L'h', resized->GetRowByOffset(0).GlyphAt(0).front());
++        VERIFY_ARE_EQUAL(L'c', resized->GetRowByOffset(1).GlyphAt(0).front());
++        VERIFY_ARE_EQUAL(L'c', resized->GetRowByOffset(3).GlyphAt(0).front());
++    }
++
++    TEST_METHOD(ReflowPreservesInteriorWrappedWhitespaceBeforeText)
++    {
++        auto original = _textBufferFromTestBuffer({
++            { 6, 5 },
++            {
++                { L"AB    ", true },
++                { L"      ", true },
++                { L"CD    ", false },
++                { L"      ", true },
++                { L"      ", true },
++            },
++            { 2, 2 },
++        });
++        auto resized = _textBufferByReflowingTextBuffer(*original, { 6, 4 });
++
++        VERIFY_ARE_EQUAL((til::point{ 2, 2 }), resized->GetCursor().GetPosition());
++        VERIFY_ARE_EQUAL(L'A', resized->GetRowByOffset(0).GlyphAt(0).front());
++        VERIFY_ARE_EQUAL(L' ', resized->GetRowByOffset(0).GlyphAt(5).front());
++        VERIFY_ARE_EQUAL(true, resized->GetRowByOffset(0).WasWrapForced());
++        VERIFY_ARE_EQUAL(true, resized->GetRowByOffset(1).WasWrapForced());
++        VERIFY_ARE_EQUAL(L'C', resized->GetRowByOffset(2).GlyphAt(0).front());
++    }
++
+     TEST_METHOD(TestReflowCases)
+     {
+         BEGIN_TEST_METHOD_PROPERTIES()
