@@ -24,7 +24,8 @@ It is not a general filesystem, process-management or remote-control API. Comman
 
 1. Start Scanline Term.
 2. Enable **MCP terminal mode** in Settings. It is disabled by default.
-3. Configure the MCP client to launch the `scanline-term-mcp` executable using its standard MCP stdio transport. The exact client configuration key is client-specific.
+3. Optionally enable **Не закрывать MCP табы после окончания сессии** to keep MCP tabs open after the client disconnects.
+4. Configure the MCP client to launch the `scanline-term-mcp` executable using its standard MCP stdio transport. The exact client configuration key is client-specific.
 
 Typical executable locations are:
 
@@ -52,7 +53,7 @@ Each stdio connection receives its own owner ID. `create_terminal` returns an op
 - `list_terminals` returns only sessions owned by the current connection.
 - A handle from another connection is rejected.
 - Closing a tab in the UI invalidates its handle immediately.
-- Closing the MCP connection closes all tabs and ConPTY processes owned by it.
+- By default, closing the MCP connection closes all tabs and ConPTY processes owned by it. The Settings option above keeps those tabs and processes open for the user to inspect.
 - A handle is valid only while its session remains open.
 
 Keep a local map of handles to the task they represent, but expect handles to become invalid after user action or disconnect cleanup.

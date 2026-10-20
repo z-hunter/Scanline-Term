@@ -113,6 +113,8 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const mcpKeepTabsOpenRef = useRef(stored.mcpKeepTabsOpen);
+  mcpKeepTabsOpenRef.current = stored.mcpKeepTabsOpen;
   const [defaultPreset, setDefaultPreset] = useState<PresetSettings>(() => clonePresetSettings(DEFAULT_PRESET_SETTINGS));
   const [presets, setPresets] = useState<string[]>(["default"]);
   const [presetsReady, setPresetsReady] = useState(!isTauri());
@@ -497,7 +499,7 @@ export default function App() {
       }
     };
     const requestListener = listen<McpRequest>("mcp-request", (event) => { void handleRequest(event); });
-    const disconnectListener = listen<McpOwnerDisconnected>("mcp-owner-disconnected", ({ payload }) => { void terminalRef.current.closeOwnedSessions(payload.ownerId); });
+    const disconnectListener = listen<McpOwnerDisconnected>("mcp-owner-disconnected", ({ payload }) => { if (!mcpKeepTabsOpenRef.current) void terminalRef.current.closeOwnedSessions(payload.ownerId); });
     void invoke("mcp_set_enabled", { enabled: true }).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
     return () => {
       disposed = true;
@@ -647,6 +649,7 @@ export default function App() {
       showAiPanel: stored.showAiPanel,
       aiAssistantDisabled: stored.aiAssistantDisabled,
       mcpEnabled: stored.mcpEnabled,
+      mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
       defaultShell: stored.defaultShell,
       smoothScrollback: stored.smoothScrollback,
       smoothTuiScrolling: stored.smoothTuiScrolling,

@@ -41,6 +41,7 @@ export type AppSettings = {
   showAiPanel: boolean;
   aiAssistantDisabled: boolean;
   mcpEnabled: boolean;
+  mcpKeepTabsOpen: boolean;
   defaultShell: string;
   smoothScrollback: boolean;
   smoothTuiScrolling: boolean;
@@ -140,6 +141,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     showAiPanel: false,
     aiAssistantDisabled: false,
     mcpEnabled: false,
+    mcpKeepTabsOpen: false,
     defaultShell: '',
     smoothScrollback: true,
     smoothTuiScrolling: true,
@@ -167,6 +169,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       showAiPanel?: unknown;
       aiAssistantDisabled?: unknown;
       mcpEnabled?: unknown;
+      mcpKeepTabsOpen?: unknown;
       defaultShell?: unknown;
       smoothScrollback?: unknown;
       smoothTuiScrolling?: unknown;
@@ -188,6 +191,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
     if (typeof value.aiAssistantDisabled === 'boolean') result.aiAssistantDisabled = value.aiAssistantDisabled;
     if (typeof value.mcpEnabled === 'boolean') result.mcpEnabled = value.mcpEnabled;
+    if (typeof value.mcpKeepTabsOpen === 'boolean') result.mcpKeepTabsOpen = value.mcpKeepTabsOpen;
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
     if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;
