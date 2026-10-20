@@ -648,6 +648,7 @@ export default function App() {
       showSettingsPanel: stored.showSettingsPanel,
       showAiPanel: stored.showAiPanel,
       aiAssistantDisabled: stored.aiAssistantDisabled,
+      lastAiSelection: stored.lastAiSelection,
       mcpEnabled: stored.mcpEnabled,
       mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
       defaultShell: stored.defaultShell,
@@ -1064,7 +1065,7 @@ export default function App() {
   const sessionId = terminal.activeSessionId;
   const selection = effectiveAiSelection(
     modelCatalog,
-    sessionId ? modelSelections[sessionId] : undefined,
+    (sessionId ? modelSelections[sessionId] : undefined) ?? stored.lastAiSelection,
   );
   const addAction = (text: string) => {
     if (!sessionId) return;
@@ -1077,26 +1078,23 @@ export default function App() {
     if (!sessionId) return;
     const model = modelCatalog.find((item) => item.id === modelId);
     if (!model) return;
-    setModelSelections((current) => {
-      const currentSelection = effectiveAiSelection(
-        modelCatalog,
-        current[sessionId],
-      );
-      const effort =
-        currentSelection && supportsEffort(model, currentSelection.effort)
-          ? currentSelection.effort
-          : model.defaultReasoningEffort;
-      return { ...current, [sessionId]: { model: model.id, effort } };
-    });
+    const effort = selection && supportsEffort(model, selection.effort)
+      ? selection.effort
+      : model.defaultReasoningEffort;
+    const next = { model: model.id, effort };
+    setModelSelections((current) => ({ ...current, [sessionId]: next }));
+    setStored((current) => ({ ...current, lastAiSelection: next }));
   };
   const selectEffort = (effort: string) => {
     if (!sessionId || !selection) return;
     const model = modelCatalog.find((item) => item.id === selection.model);
     if (!model || !supportsEffort(model, effort)) return;
+    const next = { model: model.id, effort };
     setModelSelections((current) => ({
       ...current,
-      [sessionId]: { model: model.id, effort },
+      [sessionId]: next,
     }));
+    setStored((current) => ({ ...current, lastAiSelection: next }));
   };
   const handleAiCommand = (command: "status" | "help" | "unknown", raw?: string) => {
     if (command === "help") {

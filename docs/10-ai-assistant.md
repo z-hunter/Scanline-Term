@@ -61,7 +61,7 @@ This prevents a repository `AGENTS.md`, personal Codex plugin, hook or MCP confi
 
 The client sends `initialize` with `experimentalApi: true`, then `initialized`, then `account/read`. For browser sign-in it calls `account/login/start`; the returned HTTPS URL is opened through `@tauri-apps/plugin-opener`, not `window.open`. `account/login/completed` triggers a fresh `account/read` and updates the panel. Each process has a monotonically increasing `generation`; send and stop commands include it, so a stale client cannot write to or terminate a newer app-server process.
 
-After authentication the client calls `model/list` (following its cursor until exhausted) and shows only the account-visible models and their supported reasoning efforts. A new terminal tab prefers `gpt-5.6-luna` with `medium` effort. If that combination is unavailable, it uses the app-server default model and effort, then the first returned model as a last resort. The selection is local to the terminal tab and lasts until that tab closes; it is not persisted across app restarts.
+After authentication the client calls `model/list` (following its cursor until exhausted) and shows only the account-visible models and their supported reasoning efforts. A new terminal tab uses the last model and reasoning effort selected by the user; before any explicit selection, it prefers `gpt-5.6-luna` with `medium` effort. If the saved selection is unavailable, it falls back to the app-server default model and effort, then the first returned model as a last resort. Each existing tab keeps its own selection, while the latest explicit selection is persisted across app restarts for new tabs.
 
 The opener capability permits only `https://**` URLs in [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json).
 
@@ -169,7 +169,7 @@ The following are not implemented yet and must not be documented as guarantees:
 - `inputLocked` exists in terminal state but is not wired to block human keyboard input while a turn runs.
 - Closing a terminal tab does not yet interrupt and explicitly delete/archive its Codex thread.
 - Debug output contains JSON-RPC messages only; `codex-stderr` is not currently subscribed in `CodexClient`.
-- There is no provider abstraction, chat persistence or policy engine. Model and effort choices are ephemeral, per-tab controls only. MCP currently exposes the local named-pipe transport and core terminal tools only; it is not a general filesystem or process-management API.
+- There is no provider abstraction, chat persistence or policy engine. Model and effort choices are per-tab controls; the latest selection is persisted as the default for new tabs. MCP currently exposes the local named-pipe transport and core terminal tools only; it is not a general filesystem or process-management API.
 
 When implementing any item above, update this document, [`docs/02-architecture.md`](./02-architecture.md), [`docs/04-core-systems.md`](./04-core-systems.md), [`docs/07-testing.md`](./07-testing.md), and the root [`AGENT_GUIDE.md`](../AGENT_GUIDE.md).
 

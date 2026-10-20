@@ -40,6 +40,7 @@ export type AppSettings = {
   showSettingsPanel: boolean;
   showAiPanel: boolean;
   aiAssistantDisabled: boolean;
+  lastAiSelection?: { model: string; effort: string };
   mcpEnabled: boolean;
   mcpKeepTabsOpen: boolean;
   defaultShell: string;
@@ -168,6 +169,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
       aiAssistantDisabled?: unknown;
+      lastAiSelection?: unknown;
       mcpEnabled?: unknown;
       mcpKeepTabsOpen?: unknown;
       defaultShell?: unknown;
@@ -190,6 +192,12 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
     if (typeof value.aiAssistantDisabled === 'boolean') result.aiAssistantDisabled = value.aiAssistantDisabled;
+    if (value.lastAiSelection && typeof value.lastAiSelection === 'object') {
+      const selection = value.lastAiSelection as { model?: unknown; effort?: unknown };
+      if (typeof selection.model === 'string' && selection.model.length > 0 && selection.model.length <= 128 && typeof selection.effort === 'string' && selection.effort.length > 0 && selection.effort.length <= 64) {
+        result.lastAiSelection = { model: selection.model, effort: selection.effort };
+      }
+    }
     if (typeof value.mcpEnabled === 'boolean') result.mcpEnabled = value.mcpEnabled;
     if (typeof value.mcpKeepTabsOpen === 'boolean') result.mcpKeepTabsOpen = value.mcpKeepTabsOpen;
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;

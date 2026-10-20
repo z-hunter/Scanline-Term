@@ -24,7 +24,7 @@ It is not a general filesystem, process-management or remote-control API. Comman
 
 1. Start Scanline Term.
 2. Enable **MCP terminal mode** in Settings. It is disabled by default.
-3. Optionally enable **Не закрывать MCP табы после окончания сессии** to keep MCP tabs open after the client disconnects.
+3. Optionally enable **Keep MCP tabs open** to keep MCP tabs open after the client disconnects.
 4. Configure the MCP client to launch the `scanline-term-mcp` executable using its standard MCP stdio transport. The exact client configuration key is client-specific.
 
 Typical executable locations are:
