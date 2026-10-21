@@ -402,7 +402,7 @@ export default function App() {
     setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
   }, [activePreset, stored, terminal]);
   const crt = useCRT({
-    settings: activePreset.crt,
+    settings: { ...activePreset.crt, channelSwitchEffect: stored.channelSwitchEffect },
     resolution,
     renderer: terminal.renderer,
     onError: reportError,
