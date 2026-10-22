@@ -12,7 +12,7 @@
     "bezelThickness": 0,
     "bloom": 0.05,
     "bloomAlgorithm": "soft",
-    "breathing": 0.4,
+    "breathing": 0,
     "channelSwitchEffect": true,
     "colorMode": "color",
     "crtEmulation": true,
@@ -36,7 +36,7 @@
     "reflexBarPosY": 0.08,
     "reflexBarWidth": 1,
     "scanlineCount": 310,
-    "scanlineIntensity": 0.5,
+    "scanlineIntensity": 0.45,
     "showBezel": false,
     "vignette": 0.55
   },

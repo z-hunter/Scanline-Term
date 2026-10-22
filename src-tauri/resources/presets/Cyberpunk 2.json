@@ -20,7 +20,7 @@
     "glow": 0.75,
     "glowRadius": 7,
     "humBar": 0,
-    "imageBrightness": 1.25,
+    "imageBrightness": 1.05,
     "imageContrast": 1.05,
     "imperfectSignal": 0.1,
     "maskStrength": 0.1,
@@ -49,9 +49,9 @@
     "cursorBrightness": 0,
     "cursorStyle": "block",
     "fontFamily": "IBM Plex Mono Text",
-    "fontSize": 18
+    "fontSize": 16
   },
   "virtualScreen": {
-    "modeId": "physical"
+    "modeId": "1280x800"
   }
 }

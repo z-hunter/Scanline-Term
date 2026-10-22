@@ -18,10 +18,10 @@
     "crtEmulation": true,
     "curvature": 0.05,
     "glow": 0.8,
-    "glowRadius": 2.25,
+    "glowRadius": 4.25,
     "humBar": 0,
     "imageBrightness": 1.05,
-    "imageContrast": 1.05,
+    "imageContrast": 1.15,
     "imperfectSignal": 0.05,
     "maskStrength": 0.1,
     "maskType": "off",
@@ -36,7 +36,7 @@
     "reflexBarPosY": 0.04,
     "reflexBarWidth": 0.985,
     "scanlineCount": 300,
-    "scanlineIntensity": 0.30000000000000004,
+    "scanlineIntensity": 0.25000000000000006,
     "showBezel": false,
     "vignette": 0.4
   },
@@ -49,9 +49,9 @@
     "cursorBrightness": 0.15000000000000002,
     "cursorStyle": "underline",
     "fontFamily": "IBM Plex Mono Medium",
-    "fontSize": 18
+    "fontSize": 19
   },
   "virtualScreen": {
-    "modeId": "physical"
+    "modeId": "physical-8x5"
   }
 }
