@@ -175,6 +175,50 @@ describe('linkAt', () => {
 });
 
 describe('terminal launch event', () => {
+  it('moves focus reports with the active terminal when the canvas keeps focus', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    await act(async () => { hookResult.resizeSource(output); });
+    let first!: string | null; let second!: string | null;
+    await act(async () => { first = await hookResult.openSession(); second = await hookResult.openSession(); });
+    const firstSession = terminalSession(first!);
+    const secondSession = terminalSession(second!);
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const enableFocusReporting = (session: TerminalSession) => new Promise<void>((resolve) => session.terminal!.write('\x1b[?1004h', resolve));
+    await act(async () => { await enableFocusReporting(firstSession!); await enableFocusReporting(secondSession!); });
+    mocked.invoke.mockClear();
+    output.focus();
+    await act(async () => { hookResult.canvasProps.onFocus(); });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: second, input: '\x1b[I' });
+
+    mocked.invoke.mockClear();
+    await act(async () => { hookResult.selectSession(first!, false, false); });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: second, input: '\x1b[O' });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: first, input: '\x1b[I' });
+
+    mocked.invoke.mockClear();
+    hasFocus.mockReturnValue(false);
+    await act(async () => { hookResult.selectSession(second!, false, false); });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: first, input: '\x1b[O' });
+    expect(mocked.invoke).not.toHaveBeenCalledWith('write_terminal', { sessionId: second, input: '\x1b[I' });
+
+    firstSession?.dispose();
+    secondSession?.dispose();
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
   it('does not overwrite browser frame form factor styles', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

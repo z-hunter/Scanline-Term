@@ -219,6 +219,55 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('reports focus only when the application enables focus reporting', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    const write = (data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
+    mocked.invoke.mockClear();
+
+    session.setTerminalFocused(true);
+    expect(session.terminal!.modes.sendFocusMode).toBe(false);
+    expect(mocked.invoke).not.toHaveBeenCalled();
+
+    await write('\x1b[?1004h');
+    expect(session.terminal!.modes.sendFocusMode).toBe(true);
+    await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[I' }));
+
+    mocked.invoke.mockClear();
+    session.setTerminalFocused(false);
+    session.setTerminalFocused(false);
+    expect(mocked.invoke).toHaveBeenCalledOnce();
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[O' });
+
+    await write('\x1b[?1004l');
+    mocked.invoke.mockClear();
+    session.setTerminalFocused(true);
+    expect(mocked.invoke).not.toHaveBeenCalled();
+    await write('\x1b[?1004h');
+    await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[I' }));
+
+    session.dispose();
+  });
+
+  it('reports the current focus if focus reporting is enabled during startup', async () => {
+    let resolveStart!: (shellName: string) => void;
+    mocked.invoke.mockImplementation((command: string) => command === 'start_terminal'
+      ? new Promise<string>((resolve) => { resolveStart = resolve; })
+      : Promise.resolve('cmd.exe'));
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    const start = session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await vi.waitFor(() => expect(resolveStart).toBeTypeOf('function'));
+    session.setTerminalFocused(true);
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b[?1004h', resolve));
+    await Promise.resolve();
+    expect(mocked.invoke).not.toHaveBeenCalledWith('write_terminal', expect.anything());
+
+    resolveStart('cmd.exe');
+    await start;
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[I' });
+    session.dispose();
+  });
+
   it('replaces the startup shell title with the active child process', async () => {
     const onProcessName = vi.fn();
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onProcessName);

@@ -186,6 +186,7 @@ export class TerminalSession {
   private cursorStyle: CursorStyle = 'block';
   private cursorBlink = true;
   private applicationCursorStyle = false;
+  private terminalFocused = false;
 
   constructor(
     readonly id: string,
@@ -221,6 +222,7 @@ export class TerminalSession {
         { prefix: "?", final: "h" },
         (params) => {
           if (params.includes(1006)) this.sgrMouseMode = true;
+          if (params.includes(1004)) queueMicrotask(() => this.sendFocusReport());
           if (params.length !== 1 || params[0] !== 9001) return false;
           this.win32InputMode = true;
           return true;
@@ -312,6 +314,7 @@ export class TerminalSession {
       this.live = true;
       this.size = size;
       this.onState(true, size);
+      this.sendFocusReport();
       return shellName;
     } catch (reason) {
       this.onError(`Windows console could not start: ${String(reason)}`);
@@ -360,6 +363,17 @@ export class TerminalSession {
     if (this.applicationCursorStyle || !this.terminal) return;
     this.terminal.options.cursorStyle = style;
     this.terminal.options.cursorBlink = blink;
+  }
+
+  setTerminalFocused(focused: boolean): void {
+    if (this.terminalFocused === focused) return;
+    this.terminalFocused = focused;
+    this.sendFocusReport();
+  }
+
+  private sendFocusReport(): void {
+    if (!this.terminal?.modes.sendFocusMode) return;
+    this.sendInput(this.terminalFocused ? '\x1b[I' : '\x1b[O');
   }
 
   private queueOutput(data: number[]): void {
@@ -699,6 +713,7 @@ export class TerminalSession {
     this.cursorStyle = 'block';
     this.cursorBlink = true;
     this.applicationCursorStyle = false;
+    this.terminalFocused = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);
   }
