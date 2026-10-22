@@ -18,6 +18,9 @@ jobs:
           node-version: 24
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - name: Use HTTPS for public GitHub dependencies
+        shell: pwsh
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - run: npm ci
       - run: npm test
       - uses: tauri-apps/tauri-action@v1
