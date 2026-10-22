@@ -1,3 +1,14 @@
 {
-  "identifier": "com.zhunter.scanlineterm.dev"
+  "identifier": "com.zhunter.scanlineterm.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "Scanline Term  [dev]",
+        "width": 1440,
+        "height": 960,
+        "resizable": true,
+        "theme": "Dark"
+      }
+    ]
+  }
 }
