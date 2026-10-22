@@ -117,6 +117,7 @@ export function TabGallery({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const layoutKey = layout.map(({ tab, position }) => `${tab.id}:${position.row},${position.column}`).join('|');
+  const previousLayoutKey = useRef(layoutKey);
   const resolvedSelectedId = selectedId && tabs.some((tab) => tab.id === selectedId) ? selectedId : activeId ?? tabs[0]?.id ?? null;
 
   useEffect(() => {
@@ -150,12 +151,17 @@ export function TabGallery({
   }, [layout, originRect, resolvedSelectedId]);
 
   useLayoutEffect(() => {
-    if (skipNextLayoutAnimation.current) { skipNextLayoutAnimation.current = false; return; }
+    if (skipNextLayoutAnimation.current) {
+      skipNextLayoutAnimation.current = false;
+      previousLayoutKey.current = layoutKey;
+      return;
+    }
+    const layoutChanged = previousLayoutKey.current !== layoutKey;
     const currentLayout = layoutRef.current;
     const previous = previousRects.current;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const nextRects = new Map(currentLayout.map(({ tab }) => [tab.id, cardRefs.current.get(tab.id)?.getBoundingClientRect() ?? new DOMRect()]));
-    if (!reduced) currentLayout.forEach(({ tab }) => {
+    if (layoutChanged && !reduced) currentLayout.forEach(({ tab }) => {
       const node = cardRefs.current.get(tab.id); const oldRect = previous.get(tab.id); const nextRect = nextRects.get(tab.id);
       if (!node || !oldRect || !nextRect) return;
       const dx = oldRect.left - nextRect.left; const dy = oldRect.top - nextRect.top;
@@ -163,7 +169,8 @@ export function TabGallery({
       node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
     });
     previousRects.current = nextRects;
-  }, [layoutKey]);
+    previousLayoutKey.current = layoutKey;
+  });
 
   useEffect(() => {
     if (!resolvedSelectedId) return;

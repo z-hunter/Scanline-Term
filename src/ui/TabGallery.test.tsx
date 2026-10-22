@@ -122,7 +122,6 @@ describe('TabGallery', () => {
       act(() => root.render(createElement(TabGallery, { ...props, tabs: updatedTabs })));
       expect(animate).not.toHaveBeenCalled();
 
-      geometryOffset = 0;
       const reorderedTabs = [updatedTabs[1], updatedTabs[0], updatedTabs[2]];
       act(() => root.render(createElement(TabGallery, { ...props, tabs: reorderedTabs })));
       expect(animate).toHaveBeenCalledTimes(2);
