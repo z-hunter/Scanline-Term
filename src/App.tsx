@@ -402,11 +402,12 @@ export default function App() {
     setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
   }, [activePreset, stored, terminal]);
   const crt = useCRT({
-    settings: { ...activePreset.crt, channelSwitchEffect: stored.channelSwitchEffect },
+    settingsRef: terminal.settingsRef,
     resolution,
     renderer: terminal.renderer,
     onError: reportError,
     onResizeSource: terminal.resizeSource,
+    onFrame: TERMINAL_GEOMETRY_DIAGNOSTICS ? terminal.recordFirstDraw : undefined,
     enabled: !activeBrowser && !galleryOpen,
   });
   useEffect(() => {

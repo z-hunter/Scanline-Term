@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent, type Ref } from 'react';
+import { flushSync } from 'react-dom';
 import { isTauri } from '@tauri-apps/api/core';
 import type { TabPlacement } from '../crt/settings';
 import type { ShellInfo, WorkspaceTab } from '../terminal/useTerminal';
@@ -120,10 +121,11 @@ export function TerminalTabs({
     event.preventDefault();
     if (isTauri()) openNativeNewTabMenu(); else setNewTabMenuOpen(true);
   };
-  const selectByMouse = (event: MouseEvent<HTMLElement>, id: string) => {
+  const selectByMouse = (event: MouseEvent<HTMLElement>, id: string, synchronous = false) => {
     hoveredTab.current = { id, x: event.clientX, y: event.clientY };
     mouseSelection.current = { id, x: event.clientX, y: event.clientY };
-    onSelect(id);
+    if (synchronous) flushSync(() => onSelect(id));
+    else onSelect(id);
   };
   const selectByHover = (event: MouseEvent<HTMLDivElement>, id: string) => {
     if (layoutHoverBlocked.current === id) return;
@@ -131,7 +133,7 @@ export function TerminalTabs({
       mouseSelection.current = { id, x: event.clientX, y: event.clientY };
       return;
     }
-    selectByMouse(event, id);
+    selectByMouse(event, id, true);
   };
   const clearHoverBlock = (id: string) => {
     if (hoveredTab.current?.id === id) hoveredTab.current = null;

@@ -1,4 +1,4 @@
-import { act, createElement } from 'react';
+import { act, createElement, useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import { TerminalTabs } from './TerminalTabs';
@@ -12,6 +12,29 @@ const testTabs: WorkspaceTab[] = [
 ];
 
 describe('TerminalTabs', () => {
+  it('commits hover selection and its layout effects before the mousemove returns', async () => {
+    const layoutCommits: string[] = [];
+    function TestComponent() {
+      const [activeId, setActiveId] = useState<string | null>('tab-1');
+      useLayoutEffect(() => { if (activeId) layoutCommits.push(activeId); }, [activeId]);
+      return createElement(TerminalTabs, {
+        tabs: testTabs, activeId, placement: 'top', onSelect: setActiveId,
+        onClose: vi.fn(), onNew: vi.fn(), onToggleSettings: vi.fn(),
+      });
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => root.render(createElement(TestComponent)));
+    const second = container.querySelectorAll<HTMLElement>('.terminal-tab')[1];
+    act(() => {
+      second.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 40, clientY: 10 }));
+      expect(layoutCommits).toEqual(['tab-1', 'tab-2']);
+    });
+    expect(container.querySelector('#terminal-tab-tab-2')?.getAttribute('aria-selected')).toBe('true');
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
   it('renders all tabs and controls', async () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();

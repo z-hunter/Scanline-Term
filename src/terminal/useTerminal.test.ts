@@ -1,4 +1,4 @@
-import { act, createElement, useEffect } from 'react';
+import { act, createElement, useEffect, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -234,24 +234,60 @@ describe('terminal launch event', () => {
     mocked.handlers.clear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
     let hookResult!: ReturnType<typeof useTerminal>;
+    let expectedTargetId: string | null = null;
+    let targetSourceAtLayout: { width: number; height: number } | null = null;
+    let outputBackingAtLayout: { width: number; height: number } | null = null;
+    let targetOutput: HTMLCanvasElement | null = null;
     function TestComponent() {
-      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, channelSwitchEffect: false, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useLayoutEffect(() => {
+        if (result.activeTabId === expectedTargetId && expectedTargetId) {
+          targetSourceAtLayout = { width: result.renderer.sourceCanvas.width, height: result.renderer.sourceCanvas.height };
+          if (targetOutput) outputBackingAtLayout = { width: targetOutput.width, height: targetOutput.height };
+        }
+      }, [result.activeTabId, result.renderer]);
       useEffect(() => { hookResult = result; });
       return null;
     }
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => { root.render(createElement(TestComponent)); });
+    const frame = document.createElement('div'); const output = document.createElement('canvas'); frame.appendChild(output); document.body.appendChild(frame);
+    targetOutput = output;
+    vi.spyOn(output, 'getBoundingClientRect').mockImplementation(() => {
+      const ratio = frame.style.getPropertyValue('aspect-ratio');
+      const [width, height] = ratio ? ratio.split('/').map(Number) : [4, 3];
+      const cssHeight = 800 * height / width;
+      return { left: 0, top: 0, right: 800, bottom: cssHeight, width: 800, height: cssHeight, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    await act(async () => { hookResult.resizeSource(output); });
     let first!: string | null; let second!: string | null;
     await act(async () => { first = await hookResult.openSession(); second = await hookResult.openSession(); });
-    const replacement = { version: 1 as const, resolution: 'physical-8x5' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    const replacement = { version: 1 as const, resolution: '1280x800' as const, crt: { ...DEFAULT_CRT_SETTINGS, consoleFontSize: 22 } };
     await act(async () => { hookResult.selectSession(second!, false, false); hookResult.replaceActivePreset(replacement, 'Trinitron touch', first!); });
+    expectedTargetId = first;
+    await act(async () => {
+      hookResult.selectSession(first!, false, false);
+      expect(hookResult.settingsRef.current.consoleFontSize).toBe(22);
+      expect(hookResult.settingsRef.current.channelSwitchEffect).toBe(false);
+    });
+    expect(targetSourceAtLayout).toEqual({ width: 1280, height: 800 });
+    output.width = 1404; output.height = 912;
+    await act(async () => { hookResult.selectSession(second!, false, false); });
+    output.width = 1404; output.height = 912;
     await act(async () => { hookResult.selectSession(first!, false, false); });
-    expect(hookResult.activePreset.resolution).toBe('physical-8x5');
+    expect(outputBackingAtLayout).toEqual({ width: 800, height: 500 });
+    expect(output.width).toBe(Math.round(output.getBoundingClientRect().width * (window.devicePixelRatio || 1)));
+    expect(output.height).toBe(Math.round(output.getBoundingClientRect().height * (window.devicePixelRatio || 1)));
+    expect(hookResult.activePreset.resolution).toBe('1280x800');
+    const targetResizeCalls = mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal').length;
+    await act(async () => { hookResult.resizeSource(output, 'preset-change', second!); });
+    expect(hookResult.renderer.sourceCanvas).toMatchObject({ width: 1280, height: 800 });
+    expect(mocked.invoke.mock.calls.filter(([command]) => command === 'resize_terminal')).toHaveLength(targetResizeCalls);
     await act(async () => { hookResult.selectSession(second!, false, false); });
     expect(hookResult.activePreset.resolution).toBe('1024x768');
     await act(async () => { root.unmount(); });
-    container.remove(); vi.restoreAllMocks();
+    container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
   it('starts a new session with the command and working directory from -T', async () => {

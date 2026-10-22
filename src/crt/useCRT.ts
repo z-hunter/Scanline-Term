@@ -4,9 +4,8 @@ import type { CRTSettings } from 'scanline-virtual-screen/core';
 import type { Resolution, TerminalRenderer } from '../terminal/ScanlineTerminalRenderer';
 import { VirtualScreenRenderer } from 'scanline-virtual-screen/core';
 
-export function useCRT({ settings, resolution, renderer, onError, onResizeSource, enabled = true }: { settings: CRTSettings; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement, reason?: string) => void; enabled?: boolean }) {
-  const outputRef = useRef<HTMLCanvasElement>(null); const screenRef = useRef<VirtualScreenRenderer | null>(null); const settingsRef = useRef(settings); const [fps, setFps] = useState(0);
-  settingsRef.current = settings;
+export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSource, onFrame, enabled = true }: { settingsRef: { current: CRTSettings }; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onResizeSource: (output: HTMLCanvasElement, reason?: string) => void; onFrame?: (output: HTMLCanvasElement, now: number, changed: boolean) => void; enabled?: boolean }) {
+  const outputRef = useRef<HTMLCanvasElement>(null); const screenRef = useRef<VirtualScreenRenderer | null>(null); const [fps, setFps] = useState(0);
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   useEffect(() => { 
     const output = outputRef.current; if (!output) return; 
@@ -19,8 +18,10 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     const resize = () => { 
       const rect = output.getBoundingClientRect(); 
       const dpr = window.devicePixelRatio || 1; 
-      output.width = Math.max(1, Math.round(rect.width * dpr)); 
-      output.height = Math.max(1, Math.round(rect.height * dpr)); 
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      if (output.width !== width) output.width = width;
+      if (output.height !== height) output.height = height;
       onResizeSource(output, initialResize ? 'crt-initial' : 'output-resize-observer');
       initialResize = false;
       renderer.markDirty(); 
@@ -34,9 +35,11 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
         const changed = renderer.draw(now / 1000, settingsRef.current); 
         if (!screen.isValid() && settingsRef.current.crtEmulation && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); }
         if (!breathingPrimed && renderer.hasMeasuredLuma) { screen.restartBreathing(); breathingPrimed = true; }
+        let rendered = false;
         if (!renderFailed && (changed || wasScrollAnimating || renderer.isScrollAnimating || screen.isChannelSwitchAnimating() || settingsRef.current.crtEmulation)) {
-          try { screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed); } catch (reason) { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
+          try { screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed); rendered = true; } catch (reason) { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
         }
+        if (rendered) onFrame?.(output, now, changed);
         count += 1; 
       } 
       if (now - started >= 500) { 
@@ -53,7 +56,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
       screen.dispose();
       screenRef.current = null;
     }; 
-  }, [onError, onResizeSource, renderer]);
+  }, [onError, onFrame, onResizeSource, renderer, settingsRef]);
   useEffect(() => { screenRef.current?.clearPersistence(); }, [resolution]);
   const captureFrame = useCallback((maxWidth = 720): HTMLCanvasElement | null => {
     const output = outputRef.current;
@@ -75,7 +78,7 @@ export function useCRT({ settings, resolution, renderer, onError, onResizeSource
     context.imageSmoothingEnabled = true;
     context.drawImage(output, 0, 0, snapshot.width, snapshot.height);
     return snapshot;
-  }, [onError, renderer]);
+  }, [onError, renderer, settingsRef]);
   const clearPersistence = useCallback(() => screenRef.current?.clearPersistence(), []);
   const startChannelSwitch = useCallback(() => screenRef.current?.startChannelSwitch(), []);
   const joinChannelSwitch = useCallback(() => screenRef.current?.joinChannelSwitch(), []);
