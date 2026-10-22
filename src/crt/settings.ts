@@ -44,6 +44,7 @@ export type AppSettings = {
   mcpEnabled: boolean;
   mcpKeepTabsOpen: boolean;
   defaultShell: string;
+  explorerIntegrationEnabled: boolean;
   smoothScrollback: boolean;
   smoothTuiScrolling: boolean;
   rmbMenuInTerm: boolean;
@@ -144,6 +145,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     mcpEnabled: false,
     mcpKeepTabsOpen: false,
     defaultShell: '',
+    explorerIntegrationEnabled: false,
     smoothScrollback: true,
     smoothTuiScrolling: true,
     rmbMenuInTerm: true,
@@ -173,6 +175,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       mcpEnabled?: unknown;
       mcpKeepTabsOpen?: unknown;
       defaultShell?: unknown;
+      explorerIntegrationEnabled?: unknown;
       smoothScrollback?: unknown;
       smoothTuiScrolling?: unknown;
       rmbMenuInTerm?: unknown;
@@ -201,6 +204,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.mcpEnabled === 'boolean') result.mcpEnabled = value.mcpEnabled;
     if (typeof value.mcpKeepTabsOpen === 'boolean') result.mcpKeepTabsOpen = value.mcpKeepTabsOpen;
     if (typeof value.defaultShell === 'string' && value.defaultShell.length <= 1024) result.defaultShell = value.defaultShell;
+    if (typeof value.explorerIntegrationEnabled === 'boolean') result.explorerIntegrationEnabled = value.explorerIntegrationEnabled;
     if (typeof value.smoothScrollback === 'boolean') result.smoothScrollback = value.smoothScrollback;
     if (typeof value.smoothTuiScrolling === 'boolean') result.smoothTuiScrolling = value.smoothTuiScrolling;
     if (typeof value.rmbMenuInTerm === 'boolean') result.rmbMenuInTerm = value.rmbMenuInTerm;

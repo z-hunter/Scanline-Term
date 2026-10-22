@@ -114,7 +114,7 @@ The desktop process owns one hidden `codex app-server --stdio` child. It launche
 | Mouse → SGR/X10 encoding | PTY output reader (pipe → Tauri event emission) |
 | Canvas 2D terminal drawing | PTY resize (`controller.resize()`) |
 | WebGL CRT shader rendering | Win32 GDI monospace font enumeration |
-| `localStorage` settings persistence; signed update check/install | Bundled ConPTY DLL resolution; global `Win+~` registration and optional slide-from-top window show/hide animation; updater plugin |
+| `localStorage` settings persistence; signed update check/install | Bundled ConPTY DLL resolution; global `Win+~` registration and optional slide-from-top window show/hide animation; per-user Windows Explorer folder verbs; updater plugin |
 | Copy/paste via `navigator.clipboard` | — |
 
 ## Data Flows
@@ -300,6 +300,10 @@ Terminal tabs own a `TabPresetState` containing the complete `PresetSettings` sn
 Preset files are kept outside the WebView at `%APPDATA%\\com.zhunter.scanlineterm\\presets`. The WebView calls `list_presets`, `load_preset`, and `save_preset`; Rust validates the filename, reads regular bounded JSON files, and performs atomic writes with a backup. The WebView normalizes canonical `{ schemaVersion, virtualScreen, terminal, crt }` profiles and legacy `{ version, resolution, crt }` files before applying them; new writes use the canonical profile. Global UI settings remain in `localStorage`; preset visual settings do not.
 
 `Menu+P` opens `QuickPresetPicker` in the upper-right corner above the active terminal without obscuring the rendered display. Selection loads and applies a preset immediately; the picker keeps a cloned `TabPresetState` from opening time so Escape or an outside click restores it. Enter, a repeated `Menu+P`, and a double-click keep the previewed preset.
+
+### Windows Explorer folder integration
+
+The **Windows Explorer: Open with ScanlineTerm here** setting is stored with the other global UI settings. Enabling it calls `set_explorer_integration`, which writes only Scanline Term's per-user verbs under `HKCU\\Software\\Classes` for folder objects and folder backgrounds. Their commands use the running executable and `-T -P` so an existing instance opens a new terminal tab at the selected directory. Disabling the setting removes those two owned keys. The MSI removes those same keys on uninstall.
 
 ### Command Line → Workspace Tab
 

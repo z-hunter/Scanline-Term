@@ -175,7 +175,7 @@ The active CRT pipeline, compositor, profile validation, optional terminal rende
 | `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
 | `DEFAULT_RESOLUTION` | `'1024x768'` |
 | `ResolutionId` | Union type of resolution identifiers |
-| `StoredSettings` | Global UI/shell/hotkey/update settings; legacy `resolution` and `crt` fields are read only for migration |
+| `StoredSettings` | Global UI/shell/hotkey/update settings, including the Windows Explorer integration switch; legacy `resolution` and `crt` fields are read only for migration |
 | `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |
 
 `ScreenProfile` is supplied by the pinned SVS package. Scanline Term keeps its `PresetSettings` compatibility shape and per-tab `{ name, draftName, settings, dirty }` state while writing canonical profiles. The SVS schema and migration rules are documented upstream; the host-specific persistence boundary is documented in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
@@ -272,6 +272,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
 | **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
 | **`#[tauri::command] set_global_hotkey_enabled(app, enabled, slide_from_top)`** | Registers or unregisters global `Win+~`; optionally animates the main window from above the monitor when toggling it |
+| **`#[tauri::command] set_explorer_integration(enabled)`** | Registers or removes Scanline Term's per-user folder and folder-background context-menu verbs |
 | `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener/global-shortcut plugins and command handlers |
 | **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
 
@@ -291,6 +292,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `list_available_shells` | — | `{ name, command }[]` | Default-shell selector |
 | `operating_system` | — | OS/version string | Terminal-assistant instructions |
 | `set_global_hotkey_enabled` | `enabled: boolean, slideFromTop: boolean` | `Result<(), String>` | Persisted global-hotkey and slide-animation settings effect |
+| `set_explorer_integration` | `enabled: boolean` | `Result<(), String>` | System settings; writes or removes only the app-owned HKCU Explorer keys |
 | `load_home_config` | — | `{ path, config }` | Home dashboard initialization/reload |
 | `save_home_config` | `config` | `{ path, config }` | Home dashboard editor actions |
 | `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |

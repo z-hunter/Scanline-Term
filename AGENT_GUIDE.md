@@ -151,6 +151,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add window chrome / system tray** | `tauri.conf.json`, `main.rs`, `App.tsx` | All | `tauri:dev` |
 | **Add multi-tab / split** | `App.tsx`, `terminal/useTerminal.ts`, `main.rs`, settings and styles | Major refactor | `cargo test`, `npm test`, `tauri:dev` |
 | **Change tab/terminal context menu** | `ui/TerminalTabs.tsx`, `ui/nativeNewTabMenu.ts`, `terminal/useTerminal.ts`, `App.tsx`, `capabilities/default.json` | Same frontend/native menu path | `npm test`, `npm run build`, `tauri:dev`: right-click `+` and terminal canvas in terminal/browser tabs |
+| **Add Windows Explorer integration** | `crt/settings.ts`, `ui/SettingsPanel.tsx`, `App.tsx`, `src-tauri/src/main.rs`, `src-tauri/wix/path.wxs` | Persisted System switch, per-user folder verbs, uninstall cleanup | `cargo test`, `npm test`, `tauri:dev`: enable/disable, selected folder/background, existing-instance tab launch, MSI uninstall |
 | **Change command-line session launch** | `main.rs`, `terminal/useTerminal.ts`, `TerminalSession.ts` | Rust target/argument parsing + frontend event handling | `cargo test`, `npm test`, `tauri:dev` |
 | **Change CSP** | `tauri.conf.json` | `tauri.conf.json` | `tauri:dev` |
 | **Add a new Tauri event** | `main.rs`, `App.tsx` | Both | `tauri:dev` |

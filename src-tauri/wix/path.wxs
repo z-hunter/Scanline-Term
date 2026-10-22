@@ -8,6 +8,8 @@
     <DirectoryRef Id="INSTALLDIR">
         <Component Id="ScanlineTermPath" Guid="55c52bf9-6608-4d1b-9019-3fd06596a91a" Win64="yes">
           <CreateFolder />
+          <RegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes" />
+          <RegistryKey Root="HKCU" Key="Software\Classes\Directory\Background\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes" />
           <Environment
           Id="AddScanlineTermToPath"
           Name="PATH"

@@ -29,6 +29,7 @@ export function SettingsPanel({
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
   onOpenHome = () => undefined,
+  onSetExplorerIntegrationEnabled = () => undefined,
   smoothScrollDiagnosticsEnabled = false,
   getSmoothScrollDiagnostics = () => '',
   geometryDiagnosticsEnabled = false,
@@ -50,6 +51,7 @@ export function SettingsPanel({
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
   onOpenHome?: () => void;
+  onSetExplorerIntegrationEnabled?: (enabled: boolean) => void;
   smoothScrollDiagnosticsEnabled?: boolean;
   getSmoothScrollDiagnostics?: () => string;
   geometryDiagnosticsEnabled?: boolean;
@@ -224,6 +226,7 @@ export function SettingsPanel({
           </select>
         </label>
         <Switch label="Check for updates automatically" checked={stored.autoUpdateEnabled} onChange={(autoUpdateEnabled) => setStored((current) => ({ ...current, autoUpdateEnabled }))} />
+        <Switch label="Windows Explorer: Open with ScanlineTerm here" checked={stored.explorerIntegrationEnabled} onChange={onSetExplorerIntegrationEnabled} />
         <Switch label="Disable AI assistant" checked={stored.aiAssistantDisabled} onChange={(aiAssistantDisabled) => setStored((current) => ({ ...current, aiAssistantDisabled, ...(aiAssistantDisabled ? { showAiPanel: false } : {}) }))} />
         <Switch label="Enable MCP terminal mode" checked={stored.mcpEnabled} onChange={(mcpEnabled) => setStored((current) => ({ ...current, mcpEnabled }))} />
         {stored.mcpEnabled && <Switch label="Keep MCP tabs open" checked={stored.mcpKeepTabsOpen} onChange={(mcpKeepTabsOpen) => setStored((current) => ({ ...current, mcpKeepTabsOpen }))} />}

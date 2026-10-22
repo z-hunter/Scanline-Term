@@ -111,6 +111,7 @@ function terminalAssistantBaseInstructions(): string {
 
 export default function App() {
   const mcpStateQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const explorerIntegrationQueue = useRef(Promise.resolve());
   const setMcpEnabled = useCallback((enabled: boolean) => {
     const update = mcpStateQueue.current.then(() => invoke("mcp_set_enabled", { enabled }));
     mcpStateQueue.current = update.catch(() => undefined);
@@ -187,6 +188,23 @@ export default function App() {
       return [...current, { id: nextToastId.current++, message, resetKey: 0 }];
     });
   }, []);
+  const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
+    if (!isTauri()) {
+      reportError("Windows Explorer integration is available in the desktop app only.");
+      return Promise.resolve();
+    }
+    const update = explorerIntegrationQueue.current.then(async () => {
+      try {
+        await invoke("set_explorer_integration", { enabled });
+        setStored((current) => ({ ...current, explorerIntegrationEnabled: enabled }));
+      } catch (reason) {
+        if (enabled) setStored((current) => ({ ...current, explorerIntegrationEnabled: false }));
+        reportError(`Windows Explorer integration could not be ${enabled ? "enabled" : "disabled"}: ${String(reason)}`);
+      }
+    });
+    explorerIntegrationQueue.current = update;
+    return update;
+  }, [reportError]);
   const dismissError = useCallback((id: number) => setErrorToasts((current) => current.filter((toast) => toast.id !== id)), []);
   const toggleSettings = useCallback(
     () =>
@@ -683,11 +701,15 @@ export default function App() {
       mcpEnabled: stored.mcpEnabled,
       mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
       defaultShell: stored.defaultShell,
+      explorerIntegrationEnabled: stored.explorerIntegrationEnabled,
       smoothScrollback: stored.smoothScrollback,
       smoothTuiScrolling: stored.smoothTuiScrolling,
       browserFormFactor: stored.browserFormFactor,
     }));
   }, [stored]);
+  useEffect(() => {
+    if (isTauri() && stored.explorerIntegrationEnabled) void setExplorerIntegrationEnabled(true);
+  }, [setExplorerIntegrationEnabled, stored.explorerIntegrationEnabled]);
   useEffect(() => {
     const onResize = () =>
       setWindowSize({
@@ -1513,6 +1535,7 @@ export default function App() {
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}
           onOpenHome={() => terminal.openBrowser('https://github.com/z-hunter/Scanline-Term')}
+          onSetExplorerIntegrationEnabled={setExplorerIntegrationEnabled}
           smoothScrollDiagnosticsEnabled={SMOOTH_SCROLL_DIAGNOSTICS}
           getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
           geometryDiagnosticsEnabled={TERMINAL_GEOMETRY_DIAGNOSTICS}
