@@ -99,4 +99,42 @@ describe('useCRT settings ref', () => {
     await act(async () => { root.unmount(); });
     container.remove();
   });
+
+  it('resizes the source when the window moves to a different DPI monitor', async () => {
+    const oldDpr = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+    let onDprChange!: EventListener;
+    const matchMedia = vi.fn(() => ({
+      addEventListener: (_type: string, listener: EventListener) => { onDprChange = listener; },
+      removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    vi.stubGlobal('matchMedia', matchMedia);
+    const onResizeSource = vi.fn();
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    function TestComponent() {
+      const result = useCRT({
+        settingsRef: { current: { ...DEFAULT_CRT_SETTINGS } },
+        resolution: { id: 'physical' } as never,
+        renderer: { draw: vi.fn(() => false), compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: false, markDirty: vi.fn(), getOverlays: vi.fn(() => []) } as never,
+        onError: vi.fn(), onResizeSource,
+      });
+      return createElement('canvas', { ref: result.outputRef });
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    expect(onResizeSource).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.5 });
+    await act(async () => { onDprChange(new Event('change')); });
+    expect(onResizeSource).toHaveBeenCalledTimes(2);
+    expect(matchMedia).toHaveBeenLastCalledWith('(resolution: 1.5dppx)');
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+    if (oldDpr) Object.defineProperty(window, 'devicePixelRatio', oldDpr);
+    else Reflect.deleteProperty(window, 'devicePixelRatio');
+  });
 });

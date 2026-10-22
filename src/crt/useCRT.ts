@@ -27,7 +27,17 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
       renderer.markDirty(); 
       screen.clearPersistence();
     }; 
+    let dprQuery: MediaQueryList | null = null;
+    const watchDpr = () => {
+      if (!window.matchMedia) return;
+      dprQuery?.removeEventListener('change', onDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      dprQuery.addEventListener('change', onDprChange, { once: true });
+    };
+    const onDprChange = () => { resize(); watchDpr(); };
     const observer = new ResizeObserver(resize); observer.observe(output); resize(); 
+    window.addEventListener('resize', resize);
+    watchDpr();
     
     const render = (now: number) => { 
       if (enabledRef.current) { 
@@ -53,6 +63,8 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
     return () => { 
       cancelAnimationFrame(raf); 
       observer.disconnect(); 
+      window.removeEventListener('resize', resize);
+      dprQuery?.removeEventListener('change', onDprChange);
       screen.dispose();
       screenRef.current = null;
     }; 

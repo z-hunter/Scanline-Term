@@ -223,8 +223,8 @@ fn run_listener(
         Ok(name) => name,
         Err(error) => {
             eprintln!("MCP socket name failed: {error}");
-            let _ = ready.send(Err(format!("MCP socket name failed: {error}")));
             state.listener_finished(&stop);
+            let _ = ready.send(Err(format!("MCP socket name failed: {error}")));
             return;
         }
     };
@@ -232,8 +232,8 @@ fn run_listener(
         Ok(listener) => listener,
         Err(error) => {
             eprintln!("MCP listener failed: {error}");
-            let _ = ready.send(Err(format!("MCP listener failed: {error}")));
             state.listener_finished(&stop);
+            let _ = ready.send(Err(format!("MCP listener failed: {error}")));
             return;
         }
     };

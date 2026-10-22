@@ -312,6 +312,49 @@ describe('terminal launch event', () => {
     container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
+  it('scales physical terminal fonts by fractional DPI without changing preset values or fixed modes', async () => {
+    const oldDpr = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.25 });
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    const preset = { version: 1 as const, resolution: 'physical' as const, crt: { ...DEFAULT_CRT_SETTINGS, consoleFontSize: 16 } };
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: preset, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); document.body.appendChild(output);
+    vi.spyOn(output, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, right: 1000, bottom: 500, width: 1000, height: 500, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+    await act(async () => { hookResult.resizeSource(output); });
+    expect(hookResult.settingsRef.current.consoleFontSize).toBe(20);
+    let physicalTab!: string | null;
+    let fixedTab!: string | null;
+    await act(async () => { physicalTab = await hookResult.openSession(); fixedTab = await hookResult.openSession(); });
+    expect(mocked.invoke).toHaveBeenCalledWith('start_terminal', expect.objectContaining(terminalDimensions(1250, 625, 20, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment)));
+
+    const fixedPreset = { version: 1 as const, resolution: '1024x768' as const, crt: { ...DEFAULT_CRT_SETTINGS, consoleFontSize: 16 } };
+    await act(async () => { hookResult.replaceActivePreset(fixedPreset, 'Fixed', fixedTab!); });
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1.5 });
+    await act(async () => { hookResult.resizeSource(output); });
+    expect(hookResult.settingsRef.current.consoleFontSize).toBe(16);
+    await act(async () => { hookResult.selectSession(physicalTab!, false, false); });
+    expect(hookResult.settingsRef.current.consoleFontSize).toBe(24);
+    expect(hookResult.activePreset.crt.consoleFontSize).toBe(16);
+    await act(async () => { hookResult.selectSession(fixedTab!, false, false); });
+    expect(hookResult.settingsRef.current.consoleFontSize).toBe(16);
+
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove();
+    if (oldDpr) Object.defineProperty(window, 'devicePixelRatio', oldDpr);
+    else Reflect.deleteProperty(window, 'devicePixelRatio');
+    vi.restoreAllMocks();
+  });
+
   it('replaces the requested session preset even when another session is active', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));

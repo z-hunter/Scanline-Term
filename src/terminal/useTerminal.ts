@@ -43,6 +43,12 @@ function physicalSourceSize(output: { width: number; height: number }, settings:
   return { width: Math.max(1, output.width - inset * 2), height: Math.max(1, output.height - inset * 2) };
 }
 
+function displaySettings(settings: CRTSettings, resolutionId: string): CRTSettings {
+  return resolutionId.startsWith('physical')
+    ? { ...settings, consoleFontSize: settings.consoleFontSize * (window.devicePixelRatio || 1) }
+    : settings;
+}
+
 export function adjacentTabId(tabs: WorkspaceTab[], id: string): string | null {
   const index = tabs.findIndex((tab) => tab.id === id);
   return index < 0 ? null : tabs[index + 1]?.id ?? tabs[index - 1]?.id ?? null;
@@ -152,7 +158,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const galleryOpenRef = useRef(galleryOpen); galleryOpenRef.current = galleryOpen;
   const presetPickerOpenRef = useRef(presetPickerOpen); presetPickerOpenRef.current = presetPickerOpen;
   const onBeforeTabChangeRef = useRef(onBeforeTabChange); onBeforeTabChangeRef.current = onBeforeTabChange;
-  defaultPresetRef.current = initialPreset; channelSwitchEffectRef.current = channelSwitchEffect; settingsRef.current = { ...(activePresetState?.settings.crt ?? initialPreset.crt), channelSwitchEffect }; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; rmbMenuInTermRef.current = rmbMenuInTerm; renderer.current.setTuiScrollingEnabled(smoothScrollback && smoothTuiScrolling); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
+  defaultPresetRef.current = initialPreset; channelSwitchEffectRef.current = channelSwitchEffect; settingsRef.current = { ...displaySettings(activePresetState?.settings.crt ?? initialPreset.crt, activePresetState?.settings.resolution ?? initialPreset.resolution), channelSwitchEffect }; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; rmbMenuInTermRef.current = rmbMenuInTerm; renderer.current.setTuiScrollingEnabled(smoothScrollback && smoothTuiScrolling); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const moveTab = useCallback((id: string, targetIndex: number) => {
     setTabs((current) => {
@@ -258,11 +264,11 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     sessions.current.get(activeRef.current ?? '')?.session.setTerminalFocused(false);
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
     activeRef.current = id; pendingFirstDraw.current = record && TERMINAL_GEOMETRY_DIAGNOSTICS ? id : null; setActiveTabId(id); scrollIntentRef.current = false; scrollbackRef.current = null; setScrollback(null); clearSearch();
-    if (!record) { setActivePresetState(null); setCursorStyleOverridden(false); settingsRef.current = { ...defaultPresetRef.current.crt, channelSwitchEffect: channelSwitchEffectRef.current }; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: defaultPresetRef.current.resolution })); return; }
+    if (!record) { setActivePresetState(null); setCursorStyleOverridden(false); settingsRef.current = { ...displaySettings(defaultPresetRef.current.crt, defaultPresetRef.current.resolution), channelSwitchEffect: channelSwitchEffectRef.current }; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: defaultPresetRef.current.resolution })); return; }
     setCursorStyleOverridden(record.session.cursorStyleOverridden);
     record.session.setTerminalFocused(Boolean(document.hasFocus() && outputRef.current && document.activeElement === outputRef.current));
     setActivePresetState(record.preset);
-    settingsRef.current = { ...record.preset.settings.crt, channelSwitchEffect: channelSwitchEffectRef.current };
+    settingsRef.current = { ...displaySettings(record.preset.settings.crt, record.preset.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
     renderer.current!.bindTerminal(record.session.terminal, (viewportY) => { if (activeRef.current === id && (scrollIntentRef.current || scrollbackRef.current?.sessionId === id)) { const userInitiated = scrollIntentRef.current; scrollIntentRef.current = false; publishScrollback(id, record.session.terminal, userInitiated, viewportY); } }); renderer.current!.setImages(record.images); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
     recordGeometry('tab-select', { sessionId: id, resolution: record.preset.settings.resolution, terminal: record.session.size, source: { width: renderer.current!.sourceCanvas.width, height: renderer.current!.sourceCanvas.height }, output: elementBounds(outputRef.current), frame: elementBounds(outputRef.current?.parentElement ?? null) });
     requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: record.preset.settings.resolution }));
@@ -273,7 +279,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const next = update(record.preset);
     record.preset = next;
     setActivePresetState(next);
-    settingsRef.current = { ...next.settings.crt, channelSwitchEffect: channelSwitchEffectRef.current };
+    settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
     renderer.current?.cancelScroll(); renderer.current?.markDirty();
   }, []);
   const replaceActivePreset = useCallback((settings: PresetSettings, name: string, sessionId = activeRef.current) => {
@@ -283,7 +289,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     record.preset = next;
     if (activeRef.current === sessionId) {
       setActivePresetState(next);
-      settingsRef.current = { ...next.settings.crt, channelSwitchEffect: channelSwitchEffectRef.current };
+      settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
       renderer.current?.cancelScroll(); renderer.current?.markDirty();
     }
   }, []);
@@ -304,7 +310,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
     const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })), (overridden) => { if (activeRef.current === id) setCursorStyleOverridden(overridden); });
     sessions.current.set(id, { tab, session, ownerId: ownerId ?? null, inputLocked: false, preset: { name: presetName ?? 'default', draftName: presetName ?? 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
-    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const physicalSize = physicalSourceSize(outputSize, preset.crt); const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
+    const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const physicalSize = physicalSourceSize(outputSize, preset.crt); const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, displaySettings(preset.crt, resolution.id).consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     recordGeometry('session-start', { sessionId: id, resolution: preset.resolution, output: outputRef.current ? { width: outputRef.current.width, height: outputRef.current.height, css: elementBounds(outputRef.current) } : null, source: { width: source.width, height: source.height }, terminal: dimensions });
     const validLaunch = launch && typeof launch === 'object' && !('nativeEvent' in launch) && ('command' in launch || 'args' in launch || 'cwd' in launch) ? { command: typeof launch.command === 'string' ? launch.command : null, ...(Array.isArray(launch.args) && launch.args.length > 0 && { args: launch.args.filter((argument): argument is string => typeof argument === 'string') }), cwd: typeof launch.cwd === 'string' ? launch.cwd : null } : undefined;
     const effectiveLaunch = validLaunch || defaultShellRef.current ? { ...validLaunch, command: validLaunch?.command || defaultShellRef.current || null } : undefined;
@@ -499,8 +505,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     const sourceChanged = renderer.current!.resizeSource(width, height);
     const source = renderer.current!.sourceCanvas;
     const session = activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
-    const dimensions = terminalDimensions(source.width, source.height, preset.crt.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
-    const cell = TERMINAL_GEOMETRY_DIAGNOSTICS ? fontCellSize(preset.crt.consoleFontSize, preset.crt.consoleFont, undefined, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont) : undefined;
+    const displayCRT = displaySettings(preset.crt, resolution.id);
+    settingsRef.current = { ...displayCRT, channelSwitchEffect: channelSwitchEffectRef.current };
+    const dimensions = terminalDimensions(source.width, source.height, displayCRT.consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
+    const cell = TERMINAL_GEOMETRY_DIAGNOSTICS ? fontCellSize(displayCRT.consoleFontSize, preset.crt.consoleFont, undefined, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont) : undefined;
     const terminalChanged = Boolean(session && (session.size.cols !== dimensions.cols || session.size.rows !== dimensions.rows));
     if (session) session.resize(dimensions);
     const workspace = frame?.closest('.terminal-workspace') ?? null;
