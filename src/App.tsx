@@ -110,6 +110,12 @@ function terminalAssistantBaseInstructions(): string {
 }
 
 export default function App() {
+  const mcpStateQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const setMcpEnabled = useCallback((enabled: boolean) => {
+    const update = mcpStateQueue.current.then(() => invoke("mcp_set_enabled", { enabled }));
+    mcpStateQueue.current = update.catch(() => undefined);
+    return update;
+  }, []);
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
@@ -425,7 +431,7 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     if (!stored.mcpEnabled) {
-      void invoke("mcp_set_enabled", { enabled: false }).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
+      void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
       return;
     }
     let disposed = false;
@@ -501,13 +507,37 @@ export default function App() {
     };
     const requestListener = listen<McpRequest>("mcp-request", (event) => { void handleRequest(event); });
     const disconnectListener = listen<McpOwnerDisconnected>("mcp-owner-disconnected", ({ payload }) => { if (!mcpKeepTabsOpenRef.current) void terminalRef.current.closeOwnedSessions(payload.ownerId); });
-    void invoke("mcp_set_enabled", { enabled: true }).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
+    let unlistenRequest: (() => void) | undefined;
+    let unlistenDisconnect: (() => void) | undefined;
+    const cleanupListeners = () => {
+      unlistenRequest?.();
+      unlistenDisconnect?.();
+      unlistenRequest = undefined;
+      unlistenDisconnect = undefined;
+    };
+    void (async () => {
+      try {
+        const [requestResult, disconnectResult] = await Promise.allSettled([requestListener, disconnectListener]);
+        if (requestResult.status === "fulfilled") unlistenRequest = requestResult.value;
+        if (disconnectResult.status === "fulfilled") unlistenDisconnect = disconnectResult.value;
+        if (requestResult.status === "rejected") throw requestResult.reason;
+        if (disconnectResult.status === "rejected") throw disconnectResult.reason;
+        if (disposed) {
+          cleanupListeners();
+          return;
+        }
+        await setMcpEnabled(true);
+      } catch (reason) {
+        cleanupListeners();
+        if (!disposed) reportError(`MCP mode could not be configured: ${String(reason)}`);
+      }
+    })();
     return () => {
       disposed = true;
-      void invoke("mcp_set_enabled", { enabled: false }).catch((reason) => reportError(`MCP mode could not be stopped: ${String(reason)}`));
-      void Promise.all([requestListener, disconnectListener]).then((cleanups) => cleanups.forEach((cleanup) => cleanup()));
+      void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be stopped: ${String(reason)}`));
+      cleanupListeners();
     };
-  }, [reportError, stored.mcpEnabled]);
+  }, [reportError, setMcpEnabled, stored.mcpEnabled]);
   const { clearPersistence, outputRef, fps, captureFrame, startChannelSwitch, joinChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
   joinChannelSwitchRef.current = joinChannelSwitch;

@@ -137,7 +137,9 @@ Run: `cd src-tauri && cargo test`
 
 ### After Changes to MCP Terminal Mode
 
-- [ ] Enable MCP terminal mode; `scanline-term-mcp` completes `initialize`, `tools/list`, and `ping` over stdio
+- [ ] Unless the user requests otherwise, test with `npm run tauri:dev` and confirm the title is `Scanline Term  [dev]`
+- [ ] Enable MCP terminal mode; the dev sidecar `src-tauri\target\debug\scanline-term-mcp.exe --pipe scanline-term-mcp-dev` completes `initialize`, `tools/list`, and `ping` over stdio
+- [ ] Create test tabs with MCP `create_terminal`; do not use tab-bar mouse clicks unless specifically testing mouse behavior
 - [ ] Create two owned sessions and verify `list_terminals`, screen/style snapshots, opt-in plain scrollback, keyboard and primary/secondary/wheel TUI input
 - [ ] Verify middle-button input is rejected/reserved and disabled application mouse tracking returns an error
 - [ ] Verify resize and close affect only the connection's opaque handles

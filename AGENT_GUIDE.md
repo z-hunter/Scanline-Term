@@ -97,6 +97,14 @@ You **must** test with `npm run tauri:dev` on Windows when:
 - ❌ Modifying clipboard behavior
 - ❌ Modifying resize logic (terminalDimensions → invoke resize_terminal)
 
+### Tauri and MCP Test Defaults
+
+- Test product behavior in the **development Tauri build** (`npm run tauri:dev`) unless the user asks for another build. Confirm the window title is `Scanline Term  [dev]` before interacting with it.
+- The dev build and processes launched for it are disposable test resources: stop, restart, and rebuild them freely when needed. Do not apply this assumption to release/installed builds.
+- For terminal interaction, use the Scanline Term MCP tools when available. Create test tabs with `create_terminal`; use `list_terminals`, `observe_terminal`, `send_terminal_input`, and `close_terminal` for owned sessions. Do not open tabs by clicking the tab-bar `+` or other UI controls unless the test specifically covers that mouse behavior. This avoids physical-button mapping mistakes and accidentally entering Gallery.
+- The debug app listens on `scanline-term-mcp-dev`; pair it with `src-tauri\target\debug\scanline-term-mcp.exe --pipe scanline-term-mcp-dev`. The release app and sidecar use `scanline-term-mcp`.
+- If MCP is unavailable, verify that the dev app is running with MCP enabled, the client launches the debug sidecar, and its arguments include `--pipe scanline-term-mcp-dev`. Treat mismatched builds or a missing app pipe as a test setup problem before suspecting product behavior. See [MCP Agent Guide](./docs/14-mcp-agent-guide.md).
+
 ---
 
 ## Avoiding Common Regressions

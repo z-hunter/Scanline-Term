@@ -94,11 +94,24 @@ impl McpState {
             }
             let stop = Arc::new(AtomicBool::new(false));
             *stop_guard = Some(stop.clone());
+            drop(stop_guard);
             let state = self.clone();
-            thread::Builder::new()
+            let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+            let listener_stop = stop.clone();
+            if let Err(error) = thread::Builder::new()
                 .name("scanline-term-mcp".into())
-                .spawn(move || run_listener(app, state, stop))
-                .map_err(|error| format!("could not start MCP listener: {error}"))?;
+                .spawn(move || run_listener(app, state, listener_stop, ready_tx))
+            {
+                self.listener_finished(&stop);
+                return Err(format!("could not start MCP listener: {error}"));
+            }
+            return match ready_rx.recv() {
+                Ok(result) => result,
+                Err(_) => {
+                    self.listener_finished(&stop);
+                    Err("MCP listener stopped before it was ready".into())
+                }
+            };
         } else {
             let stop = self
                 .inner
@@ -200,11 +213,17 @@ impl McpState {
     }
 }
 
-fn run_listener(app: AppHandle, state: McpState, stop: Arc<AtomicBool>) {
+fn run_listener(
+    app: AppHandle,
+    state: McpState,
+    stop: Arc<AtomicBool>,
+    ready: mpsc::SyncSender<Result<(), String>>,
+) {
     let name = match socket_name() {
         Ok(name) => name,
         Err(error) => {
             eprintln!("MCP socket name failed: {error}");
+            let _ = ready.send(Err(format!("MCP socket name failed: {error}")));
             state.listener_finished(&stop);
             return;
         }
@@ -213,10 +232,17 @@ fn run_listener(app: AppHandle, state: McpState, stop: Arc<AtomicBool>) {
         Ok(listener) => listener,
         Err(error) => {
             eprintln!("MCP listener failed: {error}");
+            let _ = ready.send(Err(format!("MCP listener failed: {error}")));
             state.listener_finished(&stop);
             return;
         }
     };
+    if stop.load(Ordering::Acquire) {
+        drop(listener);
+        state.listener_finished(&stop);
+        return;
+    }
+    let _ = ready.send(Ok(()));
     for incoming in listener.incoming() {
         if stop.load(Ordering::Acquire) {
             break;
