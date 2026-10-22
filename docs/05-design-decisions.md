@@ -11,8 +11,8 @@
 **Rationale:**
 - The CRT pipeline requires a pixel-level source image. xterm's built-in canvas/DOM renderers produce their own styled output that cannot be fed into a fragment shader pipeline.
 - By keeping xterm headless, the project gets a battle-tested VT100/VT220/xterm parser (cursor movement, alternate screen, scrollback, 256/RGB color, mouse modes, application keypad mode, etc.) without being constrained by xterm's rendering pipeline.
-- The custom `drawTerminal()` reads xterm's buffer cells and color attributes directly, then applies the active color profile and draws to the virtual-resolution source canvas.
-- This separation means new text attributes (bold, underline, strikethrough — listed in [BACKLOG.md](../BACKLOG.md)) only need `drawTerminal()` changes, not xterm renderer patches.
+- The custom canvas renderer reads xterm's buffer cells and color attributes directly, then applies the active color profile and draws to the virtual-resolution source canvas.
+- Text attributes such as bold, underline, and strikethrough are drawn in this canvas pass, without patching xterm's renderer.
 
 ---
 

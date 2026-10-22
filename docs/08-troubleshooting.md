@@ -103,7 +103,6 @@
 | **WebGL required** | The CRT pipeline requires WebGL 1. Software-rendered WebView2 may work but with degraded performance. |
 | **Single window** | The app supports one main window with multiple terminal tabs; it does not support multiple app windows. |
 | **Per-tab shell session** | Each tab owns one ConPTY session. Closing a shell leaves its exited tab and screen buffer available until the user closes it. |
-| **No text attributes** | Bold, underline, and strikethrough are not yet rendered (tracked in BACKLOG.md). `isDim()` is supported. |
 
 ---
 
