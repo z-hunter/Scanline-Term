@@ -96,6 +96,47 @@ describe('TabGallery', () => {
     container.remove();
   });
 
+  it('animates card reordering but ignores geometry changes from tab metadata updates', () => {
+    const animate = vi.fn();
+    const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    const originalRect = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect');
+    let geometryOffset = 0;
+    try {
+      Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate });
+      Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+        configurable: true,
+        value(this: HTMLElement) {
+          if (this.classList.contains('tab-gallery-card')) return new DOMRect(0, (Number(this.style.gridRow) - 1) * 328 + geometryOffset, 400, 300);
+          return originalRect?.value.call(this) ?? new DOMRect();
+        },
+      });
+      const galleryTabs = tabs.slice(0, 3);
+      const props = { tabs: galleryTabs, activeId: 'tab-1', frames: new Map(), originRect: null, onChoose: vi.fn(), onCancel: vi.fn() };
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      act(() => root.render(createElement(TabGallery, props)));
+
+      geometryOffset = 4;
+      const updatedTabs = galleryTabs.map((tab) => tab.id === 'tab-1' ? { ...tab, background: '#111111' } : tab);
+      act(() => root.render(createElement(TabGallery, { ...props, tabs: updatedTabs })));
+      expect(animate).not.toHaveBeenCalled();
+
+      geometryOffset = 0;
+      const reorderedTabs = [updatedTabs[1], updatedTabs[0], updatedTabs[2]];
+      act(() => root.render(createElement(TabGallery, { ...props, tabs: reorderedTabs })));
+      expect(animate).toHaveBeenCalledTimes(2);
+
+      act(() => root.unmount());
+      container.remove();
+    } finally {
+      if (originalAnimate) Object.defineProperty(HTMLElement.prototype, 'animate', originalAnimate);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'animate');
+      if (originalRect) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', originalRect);
+      else Reflect.deleteProperty(HTMLElement.prototype, 'getBoundingClientRect');
+    }
+  });
+
   it('does not replay the entry animation on a no-op rerender', () => {
     const animate = vi.fn();
     const originalAnimate = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');

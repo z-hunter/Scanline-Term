@@ -114,6 +114,9 @@ export function TabGallery({
   const [closing, setClosing] = useState(false);
   const timer = useRef<number | null>(null);
   const layout = useMemo(() => buildGalleryLayout(tabs, activeId, columns), [tabs, activeId, columns]);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const layoutKey = layout.map(({ tab, position }) => `${tab.id}:${position.row},${position.column}`).join('|');
   const resolvedSelectedId = selectedId && tabs.some((tab) => tab.id === selectedId) ? selectedId : activeId ?? tabs[0]?.id ?? null;
 
   useEffect(() => {
@@ -148,17 +151,19 @@ export function TabGallery({
 
   useLayoutEffect(() => {
     if (skipNextLayoutAnimation.current) { skipNextLayoutAnimation.current = false; return; }
+    const currentLayout = layoutRef.current;
     const previous = previousRects.current;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (!reduced) layout.forEach(({ tab }) => {
-      const node = cardRefs.current.get(tab.id); const oldRect = previous.get(tab.id); const nextRect = node?.getBoundingClientRect();
+    const nextRects = new Map(currentLayout.map(({ tab }) => [tab.id, cardRefs.current.get(tab.id)?.getBoundingClientRect() ?? new DOMRect()]));
+    if (!reduced) currentLayout.forEach(({ tab }) => {
+      const node = cardRefs.current.get(tab.id); const oldRect = previous.get(tab.id); const nextRect = nextRects.get(tab.id);
       if (!node || !oldRect || !nextRect) return;
       const dx = oldRect.left - nextRect.left; const dy = oldRect.top - nextRect.top;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
       node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'translate(0, 0)' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
     });
-    previousRects.current = new Map(layout.map(({ tab }) => [tab.id, cardRefs.current.get(tab.id)?.getBoundingClientRect() ?? new DOMRect()]));
-  }, [layout]);
+    previousRects.current = nextRects;
+  }, [layoutKey]);
 
   useEffect(() => {
     if (!resolvedSelectedId) return;
