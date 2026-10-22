@@ -380,7 +380,7 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('renders Bezel controls and places Channel switch roll in UI', async () => {
+  it('renders Bezel controls and places Tab switch animation in UI', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
       currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
@@ -532,17 +532,17 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(currentStored.crt.showBezel).toBe(true);
     setStored.mockClear();
 
-    // Channel switch roll is an application UI preference.
+    // Tab switch animation is an application UI preference.
     const displayFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'Display');
     const uiFieldset = fieldsets.find((fs) => fs.querySelector('legend')?.textContent === 'UI');
-    expect(displayFieldset?.textContent).not.toContain('Channel switch roll');
-    expect(uiFieldset?.textContent).toContain('Channel switch roll');
+    expect(displayFieldset?.textContent).not.toContain('Tab switch animation');
+    expect(uiFieldset?.textContent).toContain('Tab switch animation');
 
-    // Toggle Channel switch roll
-    const channelSwitch = Array.from(uiFieldset?.querySelectorAll('.switch-control') ?? []).find((element) => element.textContent?.includes('Channel switch roll'));
-    const channelSwitchCheckbox = channelSwitch?.querySelector('input');
+    // Toggle Tab switch animation
+    const tabSwitchAnimation = Array.from(uiFieldset?.querySelectorAll('.switch-control') ?? []).find((element) => element.textContent?.includes('Tab switch animation'));
+    const tabSwitchAnimationCheckbox = tabSwitchAnimation?.querySelector('input');
     await act(async () => {
-      channelSwitchCheckbox?.click();
+      tabSwitchAnimationCheckbox?.click();
     });
     expect(setStored).toHaveBeenCalled();
     expect(currentStored.channelSwitchEffect).toBe(false);
