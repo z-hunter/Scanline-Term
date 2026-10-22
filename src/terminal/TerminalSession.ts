@@ -196,6 +196,7 @@ export class TerminalSession {
     private readonly onOutput: (scroll?: TerminalOutputScroll) => void,
     private readonly onTitle: (title: string) => void,
     private readonly onProcessName: (name: string) => void,
+    private readonly onCursorStyleOverrideChange: (overridden: boolean) => void = () => undefined,
   ) {
     sessions.set(id, this);
   }
@@ -242,11 +243,11 @@ export class TerminalSession {
         (params) => {
           const param = params.length === 0 ? 1 : params[0];
           if (typeof param !== 'number') return false;
-          if (param === 0) this.applicationCursorStyle = false;
+          if (param === 0) this.setApplicationCursorStyle(false);
           else {
             const style = ({ 1: 'block', 2: 'block', 3: 'underline', 4: 'underline', 5: 'bar', 6: 'bar' } as const)[param as 1 | 2 | 3 | 4 | 5 | 6];
             if (!style) return false;
-            this.applicationCursorStyle = true;
+            this.setApplicationCursorStyle(true);
             terminal.options.cursorStyle = style;
             terminal.options.cursorBlink = param % 2 === 1;
             return true;
@@ -259,7 +260,7 @@ export class TerminalSession {
       terminal.parser.registerEscHandler(
         { final: 'c' },
         () => {
-          this.applicationCursorStyle = false;
+          this.setApplicationCursorStyle(false);
           terminal.options.cursorStyle = this.cursorStyle;
           terminal.options.cursorBlink = this.cursorBlink;
           return false;
@@ -363,6 +364,16 @@ export class TerminalSession {
     if (this.applicationCursorStyle || !this.terminal) return;
     this.terminal.options.cursorStyle = style;
     this.terminal.options.cursorBlink = blink;
+  }
+
+  get cursorStyleOverridden(): boolean {
+    return this.applicationCursorStyle;
+  }
+
+  private setApplicationCursorStyle(overridden: boolean): void {
+    if (this.applicationCursorStyle === overridden) return;
+    this.applicationCursorStyle = overridden;
+    this.onCursorStyleOverrideChange(overridden);
   }
 
   setTerminalFocused(focused: boolean): void {

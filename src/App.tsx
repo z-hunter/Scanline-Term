@@ -1505,6 +1505,7 @@ export default function App() {
           fps={fps}
           appVersion={appVersion}
           presetState={activePresetState}
+          cursorStyleOverridden={terminal.cursorStyleOverridden}
           presetNames={presets}
           presetDisabled={Boolean(activeBrowser)}
           browserTabActive={Boolean(activeBrowser)}

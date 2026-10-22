@@ -175,6 +175,44 @@ describe('linkAt', () => {
 });
 
 describe('terminal launch event', () => {
+  it('tracks cursor overrides separately for the active terminal tab', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    await act(async () => { hookResult.resizeSource(output); });
+    let first: string | null = null; let second: string | null = null;
+    await act(async () => { first = await hookResult.openSession(); second = await hookResult.openSession(); });
+    const firstSession = terminalSession(first!);
+    const secondSession = terminalSession(second!);
+    const write = (session: TerminalSession, data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
+
+    await act(async () => { await write(firstSession!, '\x1b[5 q'); });
+    expect(hookResult.cursorStyleOverridden).toBe(false);
+    await act(async () => { await write(secondSession!, '\x1b[3 q'); });
+    expect(hookResult.cursorStyleOverridden).toBe(true);
+    await act(async () => { hookResult.selectSession(first!, false, false); });
+    expect(hookResult.cursorStyleOverridden).toBe(true);
+    await act(async () => { await write(firstSession!, '\x1b[0 q'); });
+    expect(hookResult.cursorStyleOverridden).toBe(false);
+    await act(async () => { hookResult.selectSession(second!, false, false); });
+    expect(hookResult.cursorStyleOverridden).toBe(true);
+
+    firstSession?.dispose();
+    secondSession?.dispose();
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
   it('moves focus reports with the active terminal when the canvas keeps focus', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

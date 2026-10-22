@@ -37,6 +37,19 @@ describe('SettingsPanel font-size editing flow', () => {
     input.dispatchEvent(new Event('blur'));
   };
 
+  it('marks the cursor style as overridden when the active app controls it', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, defaultProps)); });
+    expect(container.querySelector('.cursor-style-overridden')).toBeNull();
+
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, cursorStyleOverridden: true })); });
+    expect(container.querySelector('.preset-controls.cursor-style-overridden .terminal-section .setting-label')?.textContent).toBe('Cursor style');
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('shows the TUI heuristic switch only with smooth terminal scrolling', async () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);

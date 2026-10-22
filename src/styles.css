@@ -912,6 +912,7 @@ legend {
 .settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item::after { content: ''; display: block; width: 12px; height: 16px; margin: 0 auto; background: currentColor; }
 .settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item:nth-child(2)::after { width: 14px; height: 3px; margin-top: 10px; margin-bottom: 3px; }
 .settings-panel [data-testid="cursor-style-segmented"] .svs-segmented-control-item:nth-child(3)::after { width: 3px; }
+.settings-panel .preset-controls.cursor-style-overridden .terminal-section .setting-label::after { content: ' [overridden by app]'; color: #9eb5a5; font-size: 11px; }
 
 footer {
   margin-top: 18px;

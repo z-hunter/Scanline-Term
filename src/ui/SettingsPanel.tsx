@@ -21,6 +21,7 @@ export function SettingsPanel({
   fps,
   appVersion,
   presetState = null,
+  cursorStyleOverridden = false,
   presetNames = [],
   presetDisabled = false,
   browserTabActive = false,
@@ -41,6 +42,7 @@ export function SettingsPanel({
   fps: number;
   appVersion: string;
   presetState?: TabPresetState | null;
+  cursorStyleOverridden?: boolean;
   presetNames?: string[];
   presetDisabled?: boolean;
   browserTabActive?: boolean;
@@ -75,7 +77,7 @@ export function SettingsPanel({
         <p className="display-status">{browserTabActive ? 'BROWSER TAB' : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
       </header>
 
-      {!browserTabActive && <fieldset className="preset-controls" disabled={presetDisabled}>
+      {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'} disabled={presetDisabled}>
         <fieldset className="preset-picker">
           <legend>Presets</legend>
           <div className="preset-picker-row">
