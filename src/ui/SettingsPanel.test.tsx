@@ -77,6 +77,42 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('keeps a panel scroll from changing a knob until the pointer leaves and returns', async () => {
+    const setStored = vi.fn();
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, setStored })); });
+
+    const panel = container.querySelector<HTMLElement>('.settings-panel')!;
+    const knob = container.querySelector<HTMLElement>('.knob[aria-label="Cursor brightness"]')!;
+    vi.spyOn(knob, 'getBoundingClientRect').mockReturnValue({ left: 40, right: 60, top: 40, bottom: 60 } as DOMRect);
+    vi.spyOn(document, 'elementFromPoint').mockReturnValue(knob);
+
+    await act(async () => {
+      panel.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, clientX: 50, clientY: 50, bubbles: true }));
+      panel.scrollTop = 1;
+      panel.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    const panelWheel = new WheelEvent('wheel', { deltaY: 100, clientX: 50, clientY: 50, bubbles: true, cancelable: true });
+    await act(async () => { knob.dispatchEvent(panelWheel); });
+    expect(panelWheel.defaultPrevented).toBe(false);
+    expect(setStored).not.toHaveBeenCalled();
+
+    await act(async () => {
+      panel.dispatchEvent(new PointerEvent('pointermove', { clientX: 10, clientY: 10, bubbles: true }));
+      panel.dispatchEvent(new PointerEvent('pointermove', { clientX: 50, clientY: 50, bubbles: true }));
+    });
+    const knobWheel = new WheelEvent('wheel', { deltaY: 100, clientX: 50, clientY: 50, bubbles: true, cancelable: true });
+    await act(async () => { knob.dispatchEvent(knobWheel); });
+    expect(knobWheel.defaultPrevented).toBe(true);
+    expect(setStored).toHaveBeenCalledOnce();
+
+    vi.restoreAllMocks();
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('shows browser form factor, UI, and System settings for a browser tab', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

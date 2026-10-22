@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { ScreenProfile } from 'scanline-virtual-screen/core';
 import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';
 import {
@@ -55,6 +55,29 @@ export function SettingsPanel({
   geometryDiagnosticsEnabled?: boolean;
   getGeometryDiagnostics?: () => string;
 }) {
+  const wheelBlockedKnobs = useRef(new Map<HTMLElement, { x: number; y: number }>()).current;
+  const panelRef = useRef<HTMLElement>(null);
+  const pointerPosition = useRef({ x: 0, y: 0 });
+  const panelScrollTop = useRef<number | null>(null);
+  const releaseKnobsOutsidePointer = (x: number, y: number) => {
+    for (const [knob, blockedAt] of wheelBlockedKnobs) {
+      const bounds = knob.getBoundingClientRect();
+      const outside = (pointX: number, pointY: number) => pointX < bounds.left || pointX > bounds.right || pointY < bounds.top || pointY > bounds.bottom;
+      if (outside(blockedAt.x, blockedAt.y) || outside(x, y)) wheelBlockedKnobs.delete(knob);
+    }
+  };
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const preventPanelScrollOverKnobs = (event: WheelEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const knob = target.closest<HTMLElement>('.knob');
+      if (knob && knob.getAttribute('aria-disabled') !== 'true' && !wheelBlockedKnobs.has(knob)) event.preventDefault();
+    };
+    panel.addEventListener('wheel', preventPanelScrollOverKnobs, { capture: true, passive: false });
+    return () => panel.removeEventListener('wheel', preventPanelScrollOverKnobs, true);
+  }, [wheelBlockedKnobs]);
   const canSavePreset = Boolean(presetState && (presetState.dirty || presetState.draftName !== presetState.name));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
   const [geometryDiagnosticsCopied, setGeometryDiagnosticsCopied] = useState<boolean | null>(null);
@@ -68,7 +91,36 @@ export function SettingsPanel({
   }));
 
   return (
-    <aside className="settings-panel">
+    <aside
+      ref={panelRef}
+      className="settings-panel"
+      onWheelCapture={(event) => {
+        pointerPosition.current = { x: event.clientX, y: event.clientY };
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const knob = target.closest<HTMLElement>('.knob');
+        const panel = event.currentTarget;
+        const panelWasScrolling = panelScrollTop.current !== null && panel.scrollTop !== panelScrollTop.current;
+        panelScrollTop.current = panel.scrollTop;
+        if (knob && (wheelBlockedKnobs.has(knob) || panelWasScrolling)) {
+          wheelBlockedKnobs.set(knob, { x: event.clientX, y: event.clientY });
+          event.stopPropagation();
+        }
+      }}
+      onScrollCapture={(event) => {
+        const scrollTop = event.currentTarget.scrollTop;
+        if (scrollTop === panelScrollTop.current) return;
+        panelScrollTop.current = scrollTop;
+        const { x, y } = pointerPosition.current;
+        const knob = document.elementFromPoint(x, y)?.closest<HTMLElement>('.knob');
+        if (knob && event.currentTarget.contains(knob)) wheelBlockedKnobs.set(knob, { x, y });
+      }}
+      onPointerMoveCapture={(event) => {
+        pointerPosition.current = { x: event.clientX, y: event.clientY };
+        releaseKnobsOutsidePointer(event.clientX, event.clientY);
+      }}
+      onPointerLeave={(event) => releaseKnobsOutsidePointer(event.clientX, event.clientY)}
+    >
       <header>
         <div className="settings-heading">
           <p className="eyebrow">SETTINGS</p>
