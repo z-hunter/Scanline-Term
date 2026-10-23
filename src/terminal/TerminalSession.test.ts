@@ -323,6 +323,25 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('uses the launched executable when no child is observable and restores it after a child exits', async () => {
+    let activeProcess: string | null = null;
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(
+      command === 'start_terminal' ? 'hx.exe' : command === 'active_terminal_process' ? activeProcess : undefined,
+    ));
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await vi.waitFor(() => expect(session.localProcessName).toBe('hx.exe'));
+
+    activeProcess = 'nvim.exe';
+    Reflect.get(session, 'pollProcess').call(session);
+    await vi.waitFor(() => expect(session.localProcessName).toBe('nvim.exe'));
+
+    activeProcess = null;
+    Reflect.get(session, 'pollProcess').call(session);
+    await vi.waitFor(() => expect(session.localProcessName).toBe('hx.exe'));
+    session.dispose();
+  });
+
   it('preserves custom OSC title when child process changes', async () => {
     const onProcessName = vi.fn();
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onProcessName);

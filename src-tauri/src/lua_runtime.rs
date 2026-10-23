@@ -77,6 +77,7 @@ pub enum RuntimeEvent {
         old_cursor: CursorStyle,
         new_cursor: CursorStyle,
     },
+    ContextUpdated,
     TabFocusChanged {
         focused: bool,
     },
@@ -1215,6 +1216,7 @@ fn event_name(event: &RuntimeEvent) -> &'static str {
         RuntimeEvent::TabTitleChanged { .. } => "tab-title-changed",
         RuntimeEvent::LocalProcessChanged { .. } => "local-process-changed",
         RuntimeEvent::CursorStyleChanged { .. } => "cursor-style-changed",
+        RuntimeEvent::ContextUpdated => "context-updated",
         RuntimeEvent::TabFocusChanged { .. } => "tab-focus-changed",
         RuntimeEvent::WindowFocusChanged { .. } => "window-focus-changed",
         RuntimeEvent::InputLanguageChanged { .. } => "input-language-changed",
@@ -1230,6 +1232,7 @@ fn valid_event_name(name: &str) -> bool {
             | "tab-title-changed"
             | "local-process-changed"
             | "cursor-style-changed"
+            | "context-updated"
             | "tab-focus-changed"
             | "window-focus-changed"
             | "input-language-changed"
@@ -1277,7 +1280,10 @@ fn event_to_json(event: &RuntimeEvent) -> JsonValue {
         RuntimeEvent::InputLanguageChanged { layout } => {
             object.insert("language".into(), layout.clone().into());
         }
-        RuntimeEvent::TabCreated | RuntimeEvent::TabActivated | RuntimeEvent::TabDeactivated => {}
+        RuntimeEvent::TabCreated
+        | RuntimeEvent::TabActivated
+        | RuntimeEvent::TabDeactivated
+        | RuntimeEvent::ContextUpdated => {}
     }
     JsonValue::Object(object)
 }
@@ -1645,6 +1651,234 @@ end)
                 "cursor-style-changed",
                 "fr-FR"
             )]
+        );
+    }
+
+    #[test]
+    fn shared_example_supports_per_binding_normal_shapes_and_focus_reactivation() {
+        let dir = TempDir::new();
+        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        dir.write(
+            "scripts/modal-layout.lua",
+            include_str!("../../examples/lua/scripts/modal-layout.lua"),
+        );
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        assert_eq!(snapshot.attachments.len(), 2);
+
+        let mut runtime = LuaRuntime::new(snapshot);
+        let nvim = tab("nvim", Some("nvim.exe"), true, true);
+        assert_eq!(
+            runtime
+                .attach_tab(
+                    nvim.clone(),
+                    InputState {
+                        current_layout: Some("ru-RU".into())
+                    },
+                )
+                .actions,
+            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+        );
+        let mut nvim_insert = nvim.clone();
+        nvim_insert.cursor_style.shape = CursorShape::Bar;
+        runtime.dispatch(
+            &nvim_insert,
+            &InputState {
+                current_layout: Some("ru-RU".into()),
+            },
+            RuntimeEvent::InputLanguageChanged {
+                layout: "ru-RU".into(),
+            },
+        );
+        let mut helix = tab("helix", Some("hx.exe"), true, true);
+        helix.cursor_style.shape = CursorShape::Underline;
+        assert_eq!(
+            runtime
+                .attach_tab(
+                    helix.clone(),
+                    InputState {
+                        current_layout: Some("ru-RU".into())
+                    },
+                )
+                .actions,
+            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+        );
+        let mut helix_insert = helix.clone();
+        helix_insert.cursor_style.shape = CursorShape::Bar;
+        runtime.dispatch(
+            &helix_insert,
+            &InputState {
+                current_layout: Some("de-DE".into()),
+            },
+            RuntimeEvent::InputLanguageChanged {
+                layout: "de-DE".into(),
+            },
+        );
+        assert!(
+            runtime
+                .dispatch(
+                    &helix_insert,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::CursorStyleChanged {
+                        old_cursor: helix.cursor_style.clone(),
+                        new_cursor: helix_insert.cursor_style.clone(),
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_insert,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "de-DE"
+            )]
+        );
+
+        assert!(
+            runtime
+                .dispatch(
+                    &nvim_insert,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::CursorStyleChanged {
+                        old_cursor: nvim.cursor_style.clone(),
+                        new_cursor: nvim_insert.cursor_style.clone(),
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &nvim_insert,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "ru-RU"
+            )]
+        );
+
+        let mut helix_unfocused = helix.clone();
+        helix_unfocused.focused = false;
+        assert!(
+            runtime
+                .dispatch(
+                    &helix_unfocused,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::TabFocusChanged { focused: false },
+                )
+                .actions
+                .is_empty()
+        );
+        let mut helix_unfocused_normal = helix_unfocused.clone();
+        helix_unfocused_normal.cursor_style.shape = CursorShape::Underline;
+        assert!(
+            runtime
+                .dispatch(
+                    &helix_unfocused_normal,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::CursorStyleChanged {
+                        old_cursor: helix_insert.cursor_style.clone(),
+                        new_cursor: helix_unfocused_normal.cursor_style.clone(),
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        let mut helix_refocused = helix_unfocused_normal.clone();
+        helix_refocused.focused = true;
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_refocused,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::TabFocusChanged { focused: true },
+                )
+                .actions,
+            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+        );
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_refocused,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "en-US"
+            )]
+        );
+
+        let background = tab("background", Some("hx.exe"), false, true);
+        let mut background_normal = background.clone();
+        background_normal.cursor_style.shape = CursorShape::Underline;
+        assert!(
+            runtime
+                .attach_tab(
+                    background.clone(),
+                    InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        assert!(
+            runtime
+                .dispatch(
+                    &background_normal,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::CursorStyleChanged {
+                        old_cursor: background.cursor_style.clone(),
+                        new_cursor: background_normal.cursor_style.clone(),
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        assert!(
+            runtime
+                .dispatch(
+                    &background_normal,
+                    &InputState {
+                        current_layout: Some("de-DE".into())
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions
+                .is_empty()
         );
     }
 

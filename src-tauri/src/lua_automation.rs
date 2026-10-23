@@ -675,6 +675,14 @@ fn worker_loop(
                     }
                     previous_window_focus = focused;
                 }
+                if is_current(&shared, &frontend_id, Some(generation), epoch) {
+                    if let Some(tab) = tabs.iter().find(|tab| tab.active && tab.focused) {
+                        results.push((
+                            tab.id.clone(),
+                            runtime.dispatch(tab, &input, RuntimeEvent::ContextUpdated),
+                        ));
+                    }
+                }
                 previous = next;
                 last_layout = language.clone();
                 apply_results(
@@ -1376,7 +1384,10 @@ fn hkl_string(hkl: isize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use crate::lua_runtime::ActionIntent;
 
     fn shared_state() -> Shared {
         Shared {
@@ -1438,6 +1449,86 @@ mod tests {
         ));
         assert!(!action_context_is_current(&state, "front-1", 4, 2, "tab-1"));
         assert!(!action_context_is_current(&state, "front-1", 5, 1, "tab-1"));
+    }
+
+    #[test]
+    fn stale_generation_intent_is_rejected_and_fresh_context_update_reissues_it() {
+        let root = std::env::temp_dir().join(format!(
+            "scanline-lua-context-test-{}-{}",
+            std::process::id(),
+            NEXT_FRONTEND_TOKEN.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::write(
+            root.join("config.lua"),
+            include_str!("../../examples/lua/sterm.lua"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("scripts/modal-layout.lua"),
+            include_str!("../../examples/lua/scripts/modal-layout.lua"),
+        )
+        .unwrap();
+        let snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
+        let mut runtime = LuaRuntime::new(snapshot);
+        let mut tab = TabState {
+            id: "tab-1".into(),
+            title: "Helix".into(),
+            local_process_name: Some("hx.exe".into()),
+            cursor_style: CursorStyle {
+                shape: CursorShape::Underline,
+                blink: Some(false),
+            },
+            active: true,
+            focused: true,
+        };
+        let input = InputState {
+            current_layout: Some("ru-RU".into()),
+        };
+        let attached = runtime.attach_tab(tab.clone(), input.clone());
+        assert_eq!(
+            attached.actions[0].action,
+            Action::SetLayout("en-US".into())
+        );
+
+        let stale = runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
+        assert_eq!(
+            stale.actions,
+            vec![ActionIntent {
+                action: Action::SetLayout("en-US".into()),
+                script: "scripts/modal-layout.lua".into(),
+                event: "context-updated".into(),
+            }]
+        );
+        let mut current = shared_state();
+        current.generation = 7;
+        current.tabs = vec![tab.clone()];
+        assert!(!action_context_is_current(
+            &current,
+            "front-1",
+            6,
+            current.action_epoch,
+            "tab-1"
+        ));
+
+        tab.title = "Helix: file.txt".into();
+        let fresh = runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
+        assert_eq!(
+            fresh.actions,
+            vec![ActionIntent {
+                action: Action::SetLayout("en-US".into()),
+                script: "scripts/modal-layout.lua".into(),
+                event: "context-updated".into(),
+            }]
+        );
+        assert!(action_context_is_current(
+            &current,
+            "front-1",
+            current.generation,
+            current.action_epoch,
+            "tab-1"
+        ));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

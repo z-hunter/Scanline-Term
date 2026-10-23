@@ -653,13 +653,14 @@ export class TerminalSession {
     this.processPollPending = true;
     void invoke<string | null>("active_terminal_process", { sessionId: this.id })
       .then((name) => {
-        if (this.disposed || this.exited || name === this.processName) return;
+        const processName = name ?? this.shellName;
+        if (this.disposed || this.exited || processName === this.processName) return;
         if (this.title?.toLowerCase() === this.shellName?.toLowerCase())
           this.title = null;
-        this.processName = name;
+        this.processName = processName;
         this.onAutomationStateChange();
-        if (!this.title && (name ?? this.shellName))
-          this.onProcessName(name ?? this.shellName!);
+        if (!this.title && processName)
+          this.onProcessName(processName);
       })
       .catch((reason) => {
         if (!this.disposed && !this.exited)
