@@ -36,6 +36,7 @@ const TRACE_CAPACITY: usize = 128;
 const TRACE_TICK_SHIFT: u32 = 13;
 const LAYOUT_POLL_INTERVAL_MS: u32 = 20;
 const VK_H: u32 = 0x48;
+const WM_RELEASE_PENDING_TOKEN: u32 = 0x8001;
 
 static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
 static TARGET_WEBVIEW_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -44,11 +45,12 @@ static STATUS_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TARGET_PID: AtomicU32 = AtomicU32::new(0);
 static CONTEXT_FOCUSED: AtomicBool = AtomicBool::new(false);
 static CONTEXT_GENERATION: AtomicU64 = AtomicU64::new(0);
-static CAPS_DOWN_GENERATION: AtomicU64 = AtomicU64::new(0);
 // Keep the physical-down latch until the matching up or hook teardown, even
 // after the logical frontend context has been canceled.
 static CAPS_SUPPRESSED_DOWN: AtomicBool = AtomicBool::new(false);
 static CAPS_LOGICAL_DOWN: AtomicBool = AtomicBool::new(false);
+// A token up remains owed until it is delivered to this app while it owns focus.
+static TOKEN_UP_PENDING: AtomicBool = AtomicBool::new(false);
 static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 static HOOK_STARTED_TICK: AtomicU64 = AtomicU64::new(0);
@@ -668,6 +670,10 @@ fn hook_thread(ready: mpsc::SyncSender<Result<(), String>>) {
                     quit = true;
                     break;
                 }
+                if message.message == WM_RELEASE_PENDING_TOKEN {
+                    release_pending_token_up();
+                    continue;
+                }
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
@@ -675,6 +681,8 @@ fn hook_thread(ready: mpsc::SyncSender<Result<(), String>>) {
                 break;
             }
         }
+        // shortcut: shutdown outside owned focus cannot flush a pending token up; revisit before production use.
+        release_pending_token_up();
         HOOK_ACTIVE.store(false, Ordering::Release);
         UnhookWindowsHookEx(hook);
         HOOK_THREAD_ID.store(0, Ordering::Release);
@@ -722,6 +730,12 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         && target_foreground
         && CONTEXT_FOCUSED.load(Ordering::Acquire)
     {
+        if TOKEN_UP_PENDING.load(Ordering::Acquire) {
+            release_pending_token_up();
+            if TOKEN_UP_PENDING.load(Ordering::Acquire) {
+                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+            }
+        }
         if CAPS_SUPPRESSED_DOWN
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -729,33 +743,74 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             return 1;
         }
         let generation = CONTEXT_GENERATION.load(Ordering::Acquire);
-        CAPS_DOWN_GENERATION.store(generation, Ordering::Release);
+        CAPS_LOGICAL_DOWN.store(true, Ordering::Release);
         let result = send_token(true);
         if let Some(slot) = slot {
             set_send_result(slot, if result == 1 { 1 } else { 2 });
         }
         if result == 1 {
-            CAPS_LOGICAL_DOWN.store(true, Ordering::Release);
+            TOKEN_UP_PENDING.store(true, Ordering::Release);
+            if generation != CONTEXT_GENERATION.load(Ordering::Acquire)
+                || !CONTEXT_FOCUSED.load(Ordering::Acquire)
+            {
+                CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
+            }
+            release_pending_token_up();
             return 1;
         }
         CAPS_SUPPRESSED_DOWN.store(false, Ordering::Release);
         CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
     }
     if vk == VK_CAPITAL as u32 && up && CAPS_SUPPRESSED_DOWN.swap(false, Ordering::AcqRel) {
-        let should_release = CAPS_LOGICAL_DOWN.swap(false, Ordering::AcqRel)
-            && CAPS_DOWN_GENERATION.load(Ordering::Acquire)
-                == CONTEXT_GENERATION.load(Ordering::Acquire)
-            && CONTEXT_FOCUSED.load(Ordering::Acquire)
-            && target_foreground;
-        if should_release {
-            let result = send_token(false);
-            if let Some(slot) = slot {
-                set_send_result(slot, if result == 1 { 1 } else { 2 });
-            }
+        CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
+        if let (Some(slot), Some(result)) = (slot, release_pending_token_up()) {
+            set_send_result(slot, if result == 1 { 1 } else { 2 });
         }
         return 1;
     }
     unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) }
+}
+
+fn release_pending_token_up() -> Option<u32> {
+    if !token_up_ready(
+        TOKEN_UP_PENDING.load(Ordering::Acquire),
+        CAPS_LOGICAL_DOWN.load(Ordering::Acquire),
+        CAPS_SUPPRESSED_DOWN.load(Ordering::Acquire),
+        target_is_foreground(),
+    )
+    {
+        return None;
+    }
+    let result = send_token(false);
+    if result == 1 {
+        TOKEN_UP_PENDING.store(false, Ordering::Release);
+    }
+    Some(result)
+}
+
+fn post_pending_token_up() {
+    if !token_up_ready(
+        TOKEN_UP_PENDING.load(Ordering::Acquire),
+        CAPS_LOGICAL_DOWN.load(Ordering::Acquire),
+        CAPS_SUPPRESSED_DOWN.load(Ordering::Acquire),
+        target_is_foreground(),
+    )
+    {
+        return;
+    }
+    let thread_id = HOOK_THREAD_ID.load(Ordering::Acquire);
+    if thread_id != 0 {
+        unsafe { PostThreadMessageW(thread_id, WM_RELEASE_PENDING_TOKEN, 0, 0) };
+    }
+}
+
+fn token_up_ready(
+    pending: bool,
+    logical_down: bool,
+    physical_down: bool,
+    target_foreground: bool,
+) -> bool {
+    pending && target_foreground && (!logical_down || !physical_down)
 }
 
 fn tick_ms() -> u64 {
@@ -997,6 +1052,7 @@ fn emit_probe_error(
 
 fn layout_poll_loop(app: AppHandle) {
     while !LAYOUT_POLL_STOP.load(Ordering::Acquire) {
+        post_pending_token_up();
         if let Some(probe) = app.try_state::<Probe>() {
             let context = probe.context.lock().ok().map(|context| context.clone());
             if let Some(context) = context
@@ -1140,7 +1196,7 @@ fn set_send_result(slot: usize, send_result: u64) {
 mod tests {
     use super::{
         context_matches_frontend, decode_trace_tick_and_result, pack_trace_fields, parse_hkl,
-        reset_context_for_frontend, validate_hkl, ProbeContext,
+        reset_context_for_frontend, token_up_ready, validate_hkl, ProbeContext,
     };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::HKL;
 
@@ -1184,6 +1240,40 @@ mod tests {
         assert!(!context_matches_frontend(&reset, &old_context));
         assert!(reset_context_for_frontend(&reset, "frontend-new").is_none());
         assert!(reset_context_for_frontend(&reset, "").is_none());
+    }
+
+    #[test]
+    fn owed_token_up_waits_for_cancellation_and_owned_focus_then_releases_once() {
+        let mut pending = true;
+        let mut logical_down = true;
+        let physical_down = true;
+        let mut ups_sent = 0;
+
+        // A valid physical hold keeps the synthetic token held.
+        if token_up_ready(pending, logical_down, physical_down, true) {
+            ups_sent += 1;
+            pending = false;
+        }
+        assert_eq!(ups_sent, 0);
+
+        // The down succeeded; cancellation ends its logical context, creating
+        // an owed up even though Caps itself remains physically held.
+        logical_down = false;
+        if token_up_ready(pending, logical_down, physical_down, false) {
+            ups_sent += 1;
+            pending = false;
+        }
+        assert!(pending);
+        assert_eq!(ups_sent, 0);
+
+        // Once this app owns focus, release the marker and clear the debt.
+        if token_up_ready(pending, logical_down, physical_down, true) {
+            ups_sent += 1;
+            pending = false;
+        }
+        assert!(!pending);
+        assert_eq!(ups_sent, 1);
+        assert!(!token_up_ready(pending, logical_down, physical_down, true));
     }
 }
 

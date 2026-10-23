@@ -2005,6 +2005,11 @@ describe('automation probe input routing', () => {
     await act(async () => { hookResult.canvasProps.onBlur(); });
     expect(firstSend).toHaveBeenCalledTimes(2);
     expect(firstSend.mock.calls[1][0]).toContain(';0;8;1_');
+    const lateTokenDown = dispatch('keydown', { key: 'Unidentified', code: '' }, 252);
+    const lateTokenUp = dispatch('keyup', { key: 'Unidentified', code: '' }, 252);
+    const unmatchedTokenUp = dispatch('keyup', { key: 'Unidentified', code: '' }, 252);
+    expect([lateTokenDown.defaultPrevented, lateTokenUp.defaultPrevented, unmatchedTokenUp.defaultPrevented]).toEqual([true, true, true]);
+    expect(firstSend).toHaveBeenCalledTimes(2);
 
     let secondId: string | null = null;
     await act(async () => { secondId = await hookResult.openSession(); });
@@ -2014,8 +2019,8 @@ describe('automation probe input routing', () => {
     const secondSend = vi.spyOn(second!, 'sendInput');
     await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); });
     const lateHUp = dispatch('keyup', { key: 'р', code: '' }, 72);
-    const lateTokenUp = dispatch('keyup', { key: 'Unidentified', code: '' }, 252);
-    expect([lateHUp.defaultPrevented, lateTokenUp.defaultPrevented]).toEqual([true, true]);
+    const refocusedTokenUp = dispatch('keyup', { key: 'Unidentified', code: '' }, 252);
+    expect([lateHUp.defaultPrevented, refocusedTokenUp.defaultPrevented]).toEqual([true, true]);
     expect(firstSend).toHaveBeenCalledTimes(2);
     expect(secondSend).not.toHaveBeenCalled();
 

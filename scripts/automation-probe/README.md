@@ -33,11 +33,19 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/automation-probe/Run.ps1 -
 # Guarded terminal-recording paths. These never inject CapsLock.
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/automation-probe/Run.ps1 -McpTerminalSmoke
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/automation-probe/Run.ps1 -NvimLayoutSmoke
+
+# Compare configured Helix and Neovim cursor behavior with inherited TERM and a process-local TERM value
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/automation-probe/Run.ps1 -CursorEditorSmoke
+
+# Helix cursor transitions with owned-window and canvas focus checks
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/automation-probe/Run.ps1 -FocusedCursorSmoke
 ```
 
 `-TimeoutSeconds N` sets the timeout for individual startup, reload, or focus waits (1–300 seconds; default 90); it is not a total runtime limit. MCP fixture readiness and recorder waits have their own deadlines. `-TerminalRecorderSmoke` remains as a legacy fallback; `-McpTerminalSmoke` is preferred because it starts VT and Win32 recorder fixtures through the debug MCP sidecar and waits for their `READY` records instead of typing a shell command into the app.
 
 `-McpTerminalSmoke` snapshots `scanline-term.settings.v1` only on `http://localhost:5173`, enables `mcpEnabled` for that dev origin, and restores the exact saved raw value during cleanup. It uses `src-tauri/target/debug/scanline-term-mcp.exe --pipe scanline-term-mcp-dev` through `mcp-client.mjs`; it does not change the release origin or persistent release settings. `-NvimLayoutSmoke` selects installed US and Russian HKLs from the live Windows list. Its scan-code `SendInput` stimuli are synthetic, not physical keyboard input.
+
+`-CursorEditorSmoke` launches the installed Helix and Neovim with their normal user configs and unique empty scratch files, first with inherited process environment and then with `TERM=xterm-256color` set only in a child launcher. It captures only the child values for `TERM`, `COLORTERM`, and `WT_SESSION`. Before input, the runner correlates the newly selected tab's session id with the MCP screen using the unique scratch filename, then records output bytes before xterm parsing, the non-consuming DECSCUSR observer, the session override state, and the renderer-effective xterm cursor style. It sends Insert and Escape through the owned MCP handle; this mode does not test physical keyboard delivery.
 
 ## Artifacts and cleanup
 

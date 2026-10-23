@@ -851,7 +851,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       return true;
     };
     const down = (event: KeyboardEvent) => {
-      if (matchingToken(event)) { tokenDown(event); return; }
+      if (matchingToken(event)) {
+        if (probeSuppressedTokenUp.current) { consume(event); return; }
+        tokenDown(event); return;
+      }
       const session = focusedSession();
       if (!session || tapHold.current.downAt === null) return;
       consume(event);
@@ -869,11 +872,11 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     };
     const up = (event: KeyboardEvent) => {
       if (matchingToken(event)) {
+        consume(event);
         if (tapHold.current.downAt === null) {
-          if (probeSuppressedTokenUp.current) { consume(event); probeSuppressedTokenUp.current = false; }
+          probeSuppressedTokenUp.current = false;
           return;
         }
-        consume(event);
         if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
         tapHoldTimer.current = null;
         const result = updateTapHold(tapHold.current, 'up', performance.now(), thresholdMs);

@@ -20,14 +20,16 @@ The feature is intended to enable small workflow automations without turning Sca
 
 Unlike WezTerm, Scanline Term does not aim to make Lua the mandatory or primary configuration surface. The product advantage is that ordinary configuration remains accessible through GUI controls while Lua provides an advanced escape hatch for programmable behavior.
 
-The canonical acceptance scenario is automatic Windows input-language management for Vim/Neovim based on terminal state:
+The canonical acceptance scenario is automatic Windows input-language management for Vim, Neovim, or Helix based on terminal state:
 
-- detect that the active terminal tab is running Vim/Neovim;
+- detect that the active, focused terminal tab is running a configured editor such as Vim, Neovim, or Helix;
 - observe application-requested cursor type changes (for example via DECSCUSR), which a user script may use as an editor-mode heuristic;
 - remember the user's last input language while in Insert mode;
 - force English when entering Normal mode;
 - restore the remembered Insert-mode language when returning to Insert mode;
 - never allow a background tab to change the user's global input language.
+
+The mapping from cursor shape to editor mode is per-editor and user-configured. Scanline Term does not promise that any editor emits a complete shape transition for every mode change.
 
 ## 2. Design principles
 
@@ -554,7 +556,7 @@ Potential return shape:
 local ok, err = ctx.input:set_layout('en-US')
 ```
 
-## 15. Canonical Vim / Neovim automation
+## 15. Canonical Vim / Neovim / Helix automation
 
 Application identification and mode interpretation are separate concerns. Sterm determines only tab-local evidence; the user script decides what that evidence means.
 
@@ -564,6 +566,10 @@ Illustrative script semantics:
 local insert_layout = nil
 
 local function apply_layout(ctx)
+  if not ctx.tab:is_active() or not ctx.tab:is_focused() then
+    return
+  end
+
   local cursor = ctx.tab:cursor_style()
 
   if cursor.shape == 'bar' then
@@ -571,13 +577,16 @@ local function apply_layout(ctx)
     if insert_layout then
       ctx.input:set_layout(insert_layout)
     end
-  else
-    -- User configuration interprets block/other as Normal mode.
+  elseif cursor.shape == 'block' then
+    -- This editor's user configuration maps block to Normal mode.
     local current = ctx.input:current_layout()
     if current ~= 'en-US' then
       insert_layout = current
     end
     ctx.input:set_layout('en-US')
+  else
+    -- Unknown/reset shapes do not identify a mode.
+    return
   end
 end
 

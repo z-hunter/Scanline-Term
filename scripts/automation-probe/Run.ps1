@@ -9,6 +9,8 @@ param(
     [Parameter(ParameterSetName = 'TerminalRecorderSmoke', Mandatory)] [switch] $TerminalRecorderSmoke,
     [Parameter(ParameterSetName = 'McpTerminalSmoke', Mandatory)] [switch] $McpTerminalSmoke,
     [Parameter(ParameterSetName = 'NvimLayoutSmoke', Mandatory)] [switch] $NvimLayoutSmoke,
+    [Parameter(ParameterSetName = 'CursorEditorSmoke', Mandatory)] [switch] $CursorEditorSmoke,
+    [Parameter(ParameterSetName = 'FocusedCursorSmoke', Mandatory)] [switch] $FocusedCursorSmoke,
     [Parameter(ParameterSetName = 'Smoke')]
     [Parameter(ParameterSetName = 'ProbeStress')]
     [Parameter(ParameterSetName = 'CallbackSmoke')]
@@ -16,7 +18,9 @@ param(
     [Parameter(ParameterSetName = 'HookSequenceSmoke')]
     [Parameter(ParameterSetName = 'TerminalRecorderSmoke')]
     [Parameter(ParameterSetName = 'McpTerminalSmoke')]
-    [Parameter(ParameterSetName = 'NvimLayoutSmoke')] [ValidateRange(1, 300)] [int] $TimeoutSeconds = 90
+    [Parameter(ParameterSetName = 'NvimLayoutSmoke')]
+    [Parameter(ParameterSetName = 'CursorEditorSmoke')]
+    [Parameter(ParameterSetName = 'FocusedCursorSmoke')] [ValidateRange(1, 300)] [int] $TimeoutSeconds = 90
 )
 
 $ErrorActionPreference = 'Stop'
@@ -189,6 +193,24 @@ function Get-RecorderProcesses([string] $FixturePath, [string] $Mode, [int] $Roo
     return @($matches)
 }
 
+function Get-OwnedEditorProcesses([string] $ImageName, [int] $RootPid, [string] $EditorFile) {
+    $editorFilePath = [IO.Path]::GetFullPath($EditorFile)
+    $processes = @(Get-CimInstance Win32_Process)
+    $byId = @{}; foreach ($item in $processes) { $byId[[int]$item.ProcessId] = $item }
+    $matches = [Collections.Generic.List[object]]::new()
+    foreach ($item in $processes) {
+        if ($item.Name -ine $ImageName -or -not $item.CommandLine -or -not $item.CommandLine.Contains($editorFilePath, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        $parentPid = [int]$item.ParentProcessId
+        $descendant = $false
+        for ($depth = 0; $depth -lt 16 -and $byId.ContainsKey($parentPid); $depth++) {
+            if ($parentPid -eq $RootPid) { $descendant = $true; break }
+            $parentPid = [int]$byId[$parentPid].ParentProcessId
+        }
+        if ($descendant) { $matches.Add([pscustomobject]@{ pid = [int]$item.ProcessId; parentPid = [int]$item.ParentProcessId; name = $item.Name; path = $item.ExecutablePath; commandLine = $item.CommandLine }) }
+    }
+    return @($matches)
+}
+
 function Send-KeyBatch([int] $ExpectedPid, [object[]] $Keys, [UIntPtr] $Marker, [Collections.Generic.List[object]] $Log) {
     $hasCapsVk = @($Keys | Where-Object { $_.VirtualKey -eq 0x14 }).Count -gt 0
     $hasCapsScan = @($Keys | Where-Object { $_.Kind -eq 'Scan' -and $_.ScanCode -eq 0x3A }).Count -gt 0
@@ -272,10 +294,10 @@ if ($SelfTest) {
     exit 0
 }
 
-if (-not $TransportSmoke -and -not $ProbeStress -and -not $CallbackSmoke -and -not $CapsOnlySmoke -and -not $HookSequenceSmoke -and -not $TerminalRecorderSmoke -and -not $McpTerminalSmoke -and -not $NvimLayoutSmoke) { throw 'Choose -SelfTest, -TransportSmoke, -CallbackSmoke, -CapsOnlySmoke, -HookSequenceSmoke, -TerminalRecorderSmoke, -McpTerminalSmoke, -NvimLayoutSmoke, or -ProbeStress' }
+if (-not $TransportSmoke -and -not $ProbeStress -and -not $CallbackSmoke -and -not $CapsOnlySmoke -and -not $HookSequenceSmoke -and -not $TerminalRecorderSmoke -and -not $McpTerminalSmoke -and -not $NvimLayoutSmoke -and -not $CursorEditorSmoke -and -not $FocusedCursorSmoke) { throw 'Choose a supported automation probe mode' }
 New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 $runId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
-$modeName = if ($ProbeStress) { 'hook-order' } elseif ($CallbackSmoke) { 'hook-callback' } elseif ($CapsOnlySmoke) { 'hook-caps-only' } elseif ($HookSequenceSmoke) { 'hook-sequence' } elseif ($McpTerminalSmoke) { 'mcp-pty-recorders' } elseif ($NvimLayoutSmoke) { 'nvim-layout' } elseif ($TerminalRecorderSmoke) { 'terminal-recorders' } else { 'transport' }
+$modeName = if ($ProbeStress) { 'hook-order' } elseif ($CallbackSmoke) { 'hook-callback' } elseif ($CapsOnlySmoke) { 'hook-caps-only' } elseif ($HookSequenceSmoke) { 'hook-sequence' } elseif ($McpTerminalSmoke) { 'mcp-pty-recorders' } elseif ($NvimLayoutSmoke) { 'nvim-layout' } elseif ($FocusedCursorSmoke) { 'focused-helix-cursor' } elseif ($CursorEditorSmoke) { 'configured-editor-cursors' } elseif ($TerminalRecorderSmoke) { 'terminal-recorders' } else { 'transport' }
 $artifactPath = Join-Path $artifactDir "$runId-$modeName.json"
 $log = [Collections.Generic.List[object]]::new()
 $marker = [UIntPtr]::new([UInt64]0x535445524D434150)
@@ -334,7 +356,7 @@ if ($NvimLayoutSmoke -or $McpTerminalSmoke) {
 try {
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$cdpPort"
     if ($ProbeStress -or $CallbackSmoke -or $CapsOnlySmoke -or $HookSequenceSmoke -or $TerminalRecorderSmoke -or $McpTerminalSmoke -or $NvimLayoutSmoke) { $env:SCANLINE_TERM_AUTOMATION_PROBE = '1' }
-    if ($McpTerminalSmoke -or $NvimLayoutSmoke) {
+    if ($McpTerminalSmoke -or $NvimLayoutSmoke -or $CursorEditorSmoke -or $FocusedCursorSmoke -or $CallbackSmoke -or $HookSequenceSmoke) {
         if ($layoutTargets) {
             $env:SCANLINE_TERM_AUTOMATION_PROBE_NORMAL_HKL = $layoutTargets.normal
             $env:SCANLINE_TERM_AUTOMATION_PROBE_INSERT_HKL = $layoutTargets.insert
@@ -357,9 +379,11 @@ try {
 
     $app = Get-Process -Id $ownedAppPid -ErrorAction Stop
     if (-not [string]::Equals($app.Path, $debugExe, [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing non-debug executable '$($app.Path)'" }
-    $focusReport = [HookProbeNative]::FocusOwnedWindow($app.MainWindowHandle)
-    $focusAttempts.Add($focusReport)
-    if (-not $focusReport.Success) { throw "Could not activate the exact owned dev HWND within 2 seconds; manual click is required, no input was sent: $($focusReport | ConvertTo-Json -Compress -Depth 4)" }
+    if (-not $CursorEditorSmoke -or $FocusedCursorSmoke) {
+        $focusReport = [HookProbeNative]::FocusOwnedWindow($app.MainWindowHandle)
+        $focusAttempts.Add($focusReport)
+        if (-not $focusReport.Success) { throw "Could not activate the exact owned dev HWND within 2 seconds; manual click is required, no input was sent: $($focusReport | ConvertTo-Json -Compress -Depth 4)" }
+    }
     $cdpDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $initial = $null
     while ([DateTime]::UtcNow -lt $cdpDeadline) {
@@ -370,7 +394,7 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if (-not $initial -or $initial.target.title -cne 'Scanline Term') { throw 'Timed out waiting for the Scanline Term CDP page' }
-    if ($McpTerminalSmoke -or $NvimLayoutSmoke) {
+    if ($McpTerminalSmoke -or $NvimLayoutSmoke -or $CursorEditorSmoke -or $FocusedCursorSmoke -or $CallbackSmoke -or $HookSequenceSmoke) {
         $storage = Invoke-Cdp 'storageSnapshot'
         if ($storage.result.origin -cne 'http://localhost:5173' -or $storage.result.key -cne 'scanline-term.settings.v1') { throw "Unsafe MCP storage snapshot response: $($storage | ConvertTo-Json -Compress -Depth 5)" }
         $devStorageRaw = $storage.result.raw
@@ -437,7 +461,142 @@ try {
             } while ([DateTime]::UtcNow -lt $nvimReadyDeadline)
             if (-not $nvimReady) { throw "Neovim fixture did not record READY within 20s: output=$(Get-Content -LiteralPath $recordPath -Raw -ErrorAction SilentlyContinue)" }
             $terminalRuns.Add([pscustomobject]@{ stage = 'bootstrap-nvim-ready'; handle = $handle; output = $recordPath; ready = $true; command = $commandText; targets = $layoutTargets })
+        } elseif ($CallbackSmoke -or $HookSequenceSmoke) {
+            $shell = (Get-Command pwsh.exe -ErrorAction Stop).Source
+            $created = Invoke-Mcp 'create_terminal' @{ command = $shell; args = @('-NoLogo', '-NoProfile'); cwd = $root; cols = 100; rows = 30 }
+            $handle = Get-McpHandle $created
+            $mcpHandles.Add($handle)
+            $terminalReadyDeadline = [DateTime]::UtcNow.AddSeconds(15)
+            $terminalReady = $false
+            do {
+                $bootstrapObservation = Invoke-Mcp 'observe_terminal' @{ handle = $handle; timeoutMs = 700; quietMs = 100; includeScrollback = $false }
+                if ($bootstrapObservation.snapshot.status -eq 'running') { $terminalReady = $true; break }
+            } while ([DateTime]::UtcNow -lt $terminalReadyDeadline)
+            if (-not $terminalReady) { throw "Native hook MCP terminal did not become live: $($bootstrapObservation | ConvertTo-Json -Compress -Depth 5)" }
+            $terminalRuns.Add([pscustomobject]@{ stage = 'native-hook-mcp-terminal-ready'; handle = $handle; create = $created; observation = $bootstrapObservation.snapshot; settings = $mcpUiCycle.result })
         }
+    }
+    if ($CursorEditorSmoke -or $FocusedCursorSmoke) {
+        $helixConfigPath = Join-Path $env:APPDATA 'helix\config.toml'
+        $helixCursorConfigLines = if (Test-Path -LiteralPath $helixConfigPath) { @(Get-Content -LiteralPath $helixConfigPath | Where-Object { $_ -match '^\s*\[editor\.cursor-shape\]\s*$|^\s*(normal|insert)\s*=' }) } else { @() }
+        $editorCommands = @(
+            @{ name = 'helix'; command = 'D:\Text.dir\helix\hx.exe'; image = 'hx.exe'; screenPattern = '\bNOR\b|\bINS\b' },
+            @{ name = 'neovim'; command = (Get-Command nvim.exe -ErrorAction Stop).Source; image = 'nvim.exe'; screenPattern = 'NVIM v|\[No Name\]|\.txt' }
+        )
+        $scratchDirectory = Join-Path $artifactDir 'scratch'
+        New-Item -ItemType Directory -Force -Path $scratchDirectory | Out-Null
+        $launchHelper = Join-Path $scratchDirectory "$runId-editor-launch.ps1"
+        @'
+param([Parameter(Mandatory)][string]$EditorExe, [Parameter(Mandatory)][string]$EditorFile, [Parameter(Mandatory)][string]$EnvironmentCapture, [Parameter(Mandatory)][ValidateSet('inherited','term-xterm-256color')][string]$TermMode)
+$inherited = [ordered]@{ TERM = $env:TERM; COLORTERM = $env:COLORTERM; WT_SESSION = $env:WT_SESSION }
+if ($TermMode -eq 'term-xterm-256color') { $env:TERM = 'xterm-256color' }
+$effective = [ordered]@{ TERM = $env:TERM; COLORTERM = $env:COLORTERM; WT_SESSION = $env:WT_SESSION }
+@{ inherited = $inherited; effective = $effective; mode = $TermMode } | ConvertTo-Json -Compress | Set-Content -LiteralPath $EnvironmentCapture -Encoding utf8
+& $EditorExe $EditorFile
+'@ | Set-Content -LiteralPath $launchHelper -Encoding utf8
+        $pwshExe = (Get-Command pwsh.exe -ErrorAction Stop).Source
+        $capsLockBefore = ([HookProbeNative]::GetKeyState(0x14) -band 1)
+        if ($capsLockBefore -ne 0) { throw "Configured-editor cursor run requires CapsLock OFF, current=$capsLockBefore; no editor input sent" }
+        $editorFailures = [Collections.Generic.List[string]]::new()
+        if ($FocusedCursorSmoke) { $editorCommands = @($editorCommands | Where-Object name -eq 'helix') }
+        foreach ($editor in $editorCommands) {
+            if (-not (Test-Path -LiteralPath $editor.command -PathType Leaf)) { throw "Configured editor executable is unavailable: $($editor.command)" }
+            foreach ($termMode in $(if ($FocusedCursorSmoke) { @('inherited') } else { @('inherited', 'term-xterm-256color') })) {
+            $caseName = "$($editor.name)-$termMode"
+            $scratchFile = Join-Path $scratchDirectory "$runId-$caseName.txt"
+            $environmentCapture = Join-Path $scratchDirectory "$runId-$caseName-env.json"
+            New-Item -ItemType File -Path $scratchFile | Out-Null
+            $tabsBefore = @((Invoke-Cdp 'terminalTabs').result.tabs)
+            $beforeIds = @($tabsBefore | ForEach-Object { [string]$_.tabId })
+            $created = Invoke-Mcp 'create_terminal' @{ command = $pwshExe; args = @('-NoLogo', '-NoProfile', '-File', $launchHelper, '-EditorExe', $editor.command, '-EditorFile', $scratchFile, '-EnvironmentCapture', $environmentCapture, '-TermMode', $termMode); cwd = $root; cols = 100; rows = 30 }
+            $handle = Get-McpHandle $created
+            $mcpHandles.Add($handle)
+            if ($created.title -notmatch '^\s*(\d+)\.') { throw "$caseName MCP create returned no stable tab ordinal: $($created | ConvertTo-Json -Compress -Depth 4)" }
+            $tabOrdinal = $Matches[1]
+            $tabsAfter = @()
+            $selectedMcpTabs = @()
+            $mcpHandleEntries = @()
+            $mcpListed = @()
+            $tabSelectDeadline = [DateTime]::UtcNow.AddSeconds(5)
+            do {
+                $tabsAfter = @((Invoke-Cdp 'terminalTabs').result.tabs)
+                $selectedMcpTabs = @($tabsAfter | Where-Object { $_.selected -and [string]$_.label -match "^$tabOrdinal\." -and [string]$_.tabId -notin $beforeIds })
+                $mcpListed = @(Invoke-Mcp 'list_terminals' @{})
+                $mcpHandleEntries = @($mcpListed | Where-Object { $_.handle -ceq $handle -and [string]$_.title -match "^$tabOrdinal\." })
+                if ($selectedMcpTabs.Count -eq 1 -and $mcpHandleEntries.Count -eq 1) { break }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $tabSelectDeadline)
+            if ($selectedMcpTabs.Count -ne 1 -or $mcpHandleEntries.Count -ne 1) { throw "$caseName MCP handle/UI tab correlation failed: before=$($tabsBefore | ConvertTo-Json -Compress -Depth 4), after=$($tabsAfter | ConvertTo-Json -Compress -Depth 4), created=$($created | ConvertTo-Json -Compress -Depth 4), handleEntries=$($mcpHandleEntries | ConvertTo-Json -Compress -Depth 4)" }
+            $targetTabId = [string]$selectedMcpTabs[0].tabId
+            $selectedImmediately = (Invoke-Cdp 'cursorSnapshot' $targetTabId).result
+            $observation = Invoke-Mcp 'observe_terminal' @{ handle = $handle; timeoutMs = 5000; quietMs = 150; includeScrollback = $false }
+            $readyDeadline = [DateTime]::UtcNow.AddSeconds(15)
+            $processMatches = @()
+            $screenReady = $false
+            do {
+                $screenText = (@($observation.snapshot.screen.lines) -join "`n")
+                $processMatches = @(Get-OwnedEditorProcesses $editor.image $ownedAppPid $scratchFile)
+                $screenReady = $screenText.Trim().Length -gt 10 -and $screenText -match $editor.screenPattern
+                if ($observation.snapshot.status -eq 'running' -and $processMatches.Count -gt 0 -and $screenReady) { break }
+                Start-Sleep -Milliseconds 100
+                $observation = Invoke-Mcp 'observe_terminal' @{ handle = $handle; timeoutMs = 700; quietMs = 100; includeScrollback = $false }
+            } while ([DateTime]::UtcNow -lt $readyDeadline)
+            if ($observation.snapshot.status -ne 'running' -or $processMatches.Count -eq 0 -or -not $screenReady) { throw "$($editor.name) did not prove its owned process and live editor screen within 15s: processMatches=$($processMatches | ConvertTo-Json -Compress -Depth 4), observation=$($observation | ConvertTo-Json -Compress -Depth 6)" }
+            $focusBefore = $null
+            if ($FocusedCursorSmoke) {
+                $focusReport = [HookProbeNative]::FocusOwnedWindow($app.MainWindowHandle)
+                $focusAttempts.Add($focusReport)
+                if (-not $focusReport.Success) { throw "Could not focus the exact owned dev HWND for Helix: $($focusReport | ConvertTo-Json -Compress -Depth 4)" }
+                $focusedCanvas = Invoke-Cdp 'focusTerminal'
+                if (-not $focusedCanvas.result.terminalFocused) { throw "Could not focus the live terminal canvas for Helix: $($focusedCanvas | ConvertTo-Json -Compress -Depth 4)" }
+                $focusBefore = Assert-DevTarget $ownedAppPid
+            }
+            $initial = (Invoke-Cdp 'cursorSnapshot' $targetTabId).result
+            $editorSamples = [Collections.Generic.List[object]]::new()
+            $editorSamples.Add([pscustomobject]@{ stage = 'launch'; observation = $observation.snapshot; cursor = $initial; captureArmed = $selectedImmediately; targetTabId = $targetTabId })
+            $editorRecord = [pscustomobject]@{ mode = $editor.name; environmentMode = $termMode; environmentCapture = $environmentCapture; environment = if (Test-Path -LiteralPath $environmentCapture) { Get-Content -LiteralPath $environmentCapture -Raw | ConvertFrom-Json } else { $null }; executable = $editor.command; image = $editor.image; command = $pwshExe; args = @('-NoLogo', '-NoProfile', '-File', $launchHelper, '-EditorExe', $editor.command, '-EditorFile', $scratchFile, '-EnvironmentCapture', $environmentCapture, '-TermMode', $termMode); scratchFile = $scratchFile; configuration = 'normal installed user configuration'; cursorConfigPath = if ($editor.name -eq 'helix') { $helixConfigPath } else { $null }; cursorConfigLines = if ($editor.name -eq 'helix') { @($helixCursorConfigLines) } else { @() }; ownedProcesses = @($processMatches); handle = $handle; tabId = $targetTabId; create = $created; samples = @($editorSamples.ToArray()); rawCursorSequences = @(); rawCursorStyles = @(); observedBarAndBlock = $false; applicationShapeMatchesEffective = $false; rawStylesObserved = @{ bar = $false; block = $false } }
+            $terminalRuns.Add($editorRecord)
+            foreach ($step in @(@{ stage = 'insert'; key = 'i'; expected = 'bar' }, @{ stage = 'normal'; key = 'Escape'; expected = 'block' })) {
+                $focusAtStepStart = if ($FocusedCursorSmoke) { Assert-DevTarget $ownedAppPid } else { $null }
+                $canvasAtStepStart = if ($FocusedCursorSmoke) { (Invoke-Cdp 'state').result } else { $null }
+                if ($FocusedCursorSmoke -and (-not $canvasAtStepStart.pageFocused -or -not $canvasAtStepStart.terminalFocused -or $focusAtStepStart.Hwnd -ne $focusBefore.Hwnd)) { throw "Helix focused-cursor precondition lost before $($step.stage)" }
+                $beforeSequence = [long]$observation.snapshot.sequence
+                $inputResult = Invoke-Mcp 'send_terminal_input' @{ handle = $handle; action = @{ kind = 'key'; key = $step.key } }
+                $observation = Invoke-Mcp 'observe_terminal' @{ handle = $handle; afterSequence = $beforeSequence; timeoutMs = 3000; quietMs = 100; includeScrollback = $false }
+                $cursor = (Invoke-Cdp 'cursorSnapshot' $targetTabId).result
+                $focusAtStepEnd = if ($FocusedCursorSmoke) { Assert-DevTarget $ownedAppPid } else { $null }
+                $canvasAtStepEnd = if ($FocusedCursorSmoke) { (Invoke-Cdp 'state').result } else { $null }
+                $screenText = @($observation.snapshot.screen.lines) -join "`n"
+                $modeVisible = if ($editor.name -eq 'helix') { $screenText -match "\b$($step.expected -eq 'bar' ? 'INS' : 'NOR')\b" } elseif ($step.expected -eq 'bar') { $screenText.Contains('-- INSERT --', [StringComparison]::Ordinal) } else { -not $screenText.Contains('-- INSERT --', [StringComparison]::Ordinal) -and $screenText -match $editor.screenPattern }
+                $screenMatchesTargetSession = [string]::Equals((@($cursor.screenLines) -join "`n"), $screenText, [StringComparison]::Ordinal)
+                $editorSamples.Add([pscustomobject]@{ stage = $step.stage; key = $step.key; input = $inputResult; observation = $observation.snapshot; cursor = $cursor; targetTabId = $targetTabId; visibleExpectedMode = $modeVisible; screenMatchesTargetSession = $screenMatchesTargetSession; focusBefore = $focusAtStepStart; focusAfter = $focusAtStepEnd; canvasBefore = $canvasAtStepStart; canvasAfter = $canvasAtStepEnd })
+                if ($FocusedCursorSmoke -and (-not $canvasAtStepEnd.pageFocused -or -not $canvasAtStepEnd.terminalFocused -or $focusAtStepEnd.Hwnd -ne $focusBefore.Hwnd)) { throw "Helix foreground HWND or terminal canvas focus changed during $($step.stage)" }
+                $editorRecord.samples = @($editorSamples.ToArray())
+                if (-not $modeVisible) { $editorFailures.Add("$caseName $($step.stage) expected editor mode was not visible in MCP screen") }
+                if (-not $screenMatchesTargetSession) { $editorFailures.Add("$caseName $($step.stage) selected TerminalSession screen does not match the MCP handle screen") }
+                if ($cursor.xtermCursorStyle -ne $step.expected) { $editorFailures.Add("$caseName $($step.stage) renderer-effective xterm cursor expected $($step.expected), saw $($cursor.xtermCursorStyle)") }
+                if (-not $cursor.cursorStyleOverridden) { $editorFailures.Add("$caseName $($step.stage) app did not report an application cursor override") }
+            }
+            $trace = (Invoke-Cdp 'cursorSnapshot' $targetTabId).result.rawSequences
+            $rawStyles = @($trace | Where-Object source -eq 'parser-observer' | ForEach-Object { @($_.params) -join ';' })
+            $editorRecord.rawCursorSequences = @($trace)
+            $editorRecord.rawCursorStyles = $rawStyles
+            $editorRecord.observedBarAndBlock = ($editorSamples[1].cursor.xtermCursorStyle -eq 'bar' -and $editorSamples[2].cursor.xtermCursorStyle -eq 'block')
+            $editorRecord.applicationShapeMatchesEffective = @($editorSamples | Where-Object { $_.stage -ne 'launch' -and $_.cursor.applicationCursorShape -ne $_.cursor.xtermCursorStyle }).Count -eq 0
+            $editorRecord.rawStylesObserved = @{ bar = @($rawStyles | Where-Object { $_ -match '(^|;)5($|;)|(^|;)6($|;)' }).Count -gt 0; block = @($rawStyles | Where-Object { $_ -match '(^|;)1($|;)|(^|;)2($|;)' }).Count -gt 0 }
+            }
+        }
+        $capsLockAfter = ([HookProbeNative]::GetKeyState(0x14) -band 1)
+        if ($capsLockAfter -ne $capsLockBefore) { throw "CapsLock changed during configured-editor cursor run ($capsLockBefore -> $capsLockAfter)" }
+        $events = @($terminalRuns)
+        if ($editorFailures.Count) { throw ($editorFailures -join '; ') }
+    } else {
+    if ($CallbackSmoke -or $HookSequenceSmoke) {
+        # MCP tab creation can outlast the initial activation while the user foregrounds another window.
+        # Re-arm the exact owned window once, immediately before the native hook input preflight.
+        $focusReport = [HookProbeNative]::FocusOwnedWindow((Get-Process -Id $ownedAppPid).MainWindowHandle)
+        $focusAttempts.Add($focusReport)
+        if (-not $focusReport.Success) { throw "Could not refocus exact owned dev HWND before hook preflight: $($focusReport | ConvertTo-Json -Compress -Depth 4)" }
     }
     $focusDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {
@@ -1196,6 +1355,7 @@ try {
     $events = @($f24Events)
     if ($tokenFailure) { $failure = $tokenFailure }
     }
+    }
 } catch {
     $failure = $_.Exception.Message
 } finally {
@@ -1294,8 +1454,8 @@ try {
     $failure = @(@($primaryFailure) + @($cleanupFailures | ForEach-Object { "cleanup: $_" }) | Where-Object { $_ }) -join '; '
     $artifact = [ordered]@{
         runId = $runId; status = if ($failure) { 'fail' } else { 'pass' }; target = $windowTitle
-        executable = $debugExe; pid = $ownedAppPid; token = if ($CallbackSmoke -or $CapsOnlySmoke -or $HookSequenceSmoke) { 'none; native hook diagnostic only' } else { 'VK_NONAME (0xFC)' }; marker = '0x535445524D434150'
-        sequence = if ($ProbeStress) { @('CapsLock down', 'H down', 'H up', 'CapsLock up') } elseif ($CallbackSmoke) { @('A down', 'A up') } elseif ($CapsOnlySmoke) { @('CapsLock down', 'CapsLock up') } elseif ($HookSequenceSmoke) { @('up to four A down/up warmups until hook callback observed', 'CapsLock VK down/up comparison', 'CapsLock VK down/up restore if changed', 'single array: scan Caps 0x3A down, H down, H up, scan Caps up') } elseif ($McpTerminalSmoke) { @('dev-only mcpEnabled raw snapshot', 'MCP debug-sidecar Win32 then VT recorder create + READY', 'marked VK_NONAME tap => Escape', 'marked VK_NONAME/H chord => Ctrl-H; Caps never injected') } elseif ($NvimLayoutSmoke) { @('MCP-created Neovim fixture', 'physical scan-code Insert and H under selected layouts', 'physical Escape and text assertion') } elseif ($TerminalRecorderSmoke) { @('legacy typed recorder path; no longer preferred', 'marked VK_NONAME down/up tap → terminal Escape', 'marked VK_NONAME down, H down/up, VK_NONAME up → terminal Ctrl-H') } else { @('VK_NONAME down', 'VK_NONAME up', 'A down', 'A up', 'F24 down', 'F24 up') }
+        executable = $debugExe; pid = $ownedAppPid; token = if ($CursorEditorSmoke) { 'none; MCP editor keys only' } elseif ($CallbackSmoke -or $CapsOnlySmoke -or $HookSequenceSmoke) { 'none; native hook diagnostic only' } else { 'VK_NONAME (0xFC)' }; marker = '0x535445524D434150'
+        sequence = if ($ProbeStress) { @('CapsLock down', 'H down', 'H up', 'CapsLock up') } elseif ($CallbackSmoke) { @('A down', 'A up') } elseif ($CapsOnlySmoke) { @('CapsLock down', 'CapsLock up') } elseif ($HookSequenceSmoke) { @('up to four A down/up warmups until hook callback observed', 'CapsLock VK down/up comparison', 'CapsLock VK down/up restore if changed', 'single array: scan Caps 0x3A down, H down, H up, scan Caps up') } elseif ($McpTerminalSmoke) { @('dev-only mcpEnabled raw snapshot', 'MCP debug-sidecar Win32 then VT recorder create + READY', 'marked VK_NONAME tap => Escape', 'marked VK_NONAME/H chord => Ctrl-H; Caps never injected') } elseif ($CursorEditorSmoke) { @('dev-only mcpEnabled raw snapshot', 'four MCP-owned editor sessions: Helix/Neovim with inherited env and process-local TERM=xterm-256color', 'MCP Insert/Escape; correlate exact tab, capture pre-parser bytes, parser, application override, and effective renderer cursor') } elseif ($NvimLayoutSmoke) { @('MCP-created Neovim fixture', 'physical scan-code Insert and H under selected layouts', 'physical Escape and text assertion') } elseif ($TerminalRecorderSmoke) { @('legacy typed recorder path; no longer preferred', 'marked VK_NONAME down/up tap → terminal Escape', 'marked VK_NONAME down, H down/up, VK_NONAME up → terminal Ctrl-H') } else { @('VK_NONAME down', 'VK_NONAME up', 'A down', 'A up', 'F24 down', 'F24 up') }
         sendInputCalls = @($log); recorderLaunches = @($recorderLaunches); hookSteps = @($hookSteps); terminalRuns = @($terminalRuns); syntheticEvents = @($syntheticEvents); controlAEvents = @($controlAEvents); controlAState = $controlAState; tokenEvents = @($tokenEvents); f24Events = @($f24Events); cdpDiagnostic = $cdpDiagnostic; partialBatchRecovery = $releaseAttempt; error = $failure
         focusReport = $focusReport; focusAttempts = @($focusAttempts); probeStatus = $probeStatus; webviewHostClass = if ($script:pinnedWebviewHwnd -eq [IntPtr]::Zero) { $null } else { Get-HwndClassName $script:pinnedWebviewHwnd }; probeContext = $probeContext; probeTraceBefore = $probeTraceBefore; probeTraceAfter = $probeTraceAfter; probeFrontendBefore = $probeFrontendBefore; probeFrontendAfter = $probeFrontendAfter; probeNativeEventsAtFailure = @($probeNativeEventsAtFailure); domEventsAtFailure = @($domEventsAtFailure); probeDomEvents = @($probeDomEvents); capsLockBefore = $capsLockBefore; capsLockAfter = $capsLockAfter; capsLockRestore = $capsRestore
         physicalKeyStatus = 'not tested; this smoke uses synthetic SendInput only'
