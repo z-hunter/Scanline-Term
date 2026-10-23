@@ -1,7 +1,7 @@
 ﻿# Scanline Term — Lua Configuration & Automation Layer
 
-Status: Backlog specification  
-Target: post-v0.5.x / implementation only after explicit prioritization  
+Status: Future-scope backlog specification; an incremental Windows runtime slice is implemented. See the [Lua automation guide](lua-automation.md) for its current API, setup, and limits.
+Target: Remaining specification items are future work and require prioritization. The implemented slice does not claim completion of this backlog.
 Scope: lightweight, sandboxed Lua 5.4 event automation, tab-local scripting, host-side input remapping, and optional configuration-as-code  
 
 ## 1. Purpose
@@ -395,6 +395,8 @@ No direct DOM, renderer, xterm, ConPTY, HWND, or process handle should be expose
 
 A runtime script may be attached to a tab without being active. Scanline Term evaluates user-defined matching rules against tab-local application evidence.
 
+Initial configurable activation can use the locally running process name together with current cursor type; editor names are examples, not built-in targets. An unavailable/unknown process name or cursor type does not activate the behavior. Application markers and title/OSC matching are optional fallbacks, not prerequisites.
+
 Candidate evidence sources, in preferred order when available:
 
 1. **Explicit application marker** — set by the terminal application/plugin through a dedicated Sterm user-variable/OSC mechanism, e.g. `app = "nvim"`. This is the most reliable signal when supported.
@@ -564,9 +566,19 @@ Illustrative script semantics:
 
 ```lua
 local insert_layout = nil
+local target_processes = { ['vim.exe'] = true, ['nvim.exe'] = true, ['hx.exe'] = true }
+
+local function is_target_process(ctx)
+  local process = ctx.tab:local_process_name()
+  return process ~= nil and target_processes[process:lower()]
+end
 
 local function apply_layout(ctx)
   if not ctx.tab:is_active() or not ctx.tab:is_focused() then
+    return
+  end
+
+  if not is_target_process(ctx) then
     return
   end
 
@@ -599,14 +611,14 @@ sterm.on('cursor-style-changed', function(ctx, event)
 end)
 
 sterm.on('input-language-changed', function(ctx, event)
-  if ctx.tab:is_active() and ctx.tab:is_focused()
+  if ctx.tab:is_active() and ctx.tab:is_focused() and is_target_process(ctx)
       and ctx.tab:cursor_style().shape == 'bar' then
     insert_layout = event.language
   end
 end)
 ```
 
-The script instance is attached/activated using matching rules, for example `app = nvim`, local process `nvim.exe`, or title fallback. It therefore does not need to perform global tab discovery.
+The process-name set is user-configurable; the example checks it before interpreting cursor type and keeps the active/focused guard. Unknown process names and cursor shapes do nothing. No editor-specific marker or title/OSC signal is required.
 
 The script intentionally treats cursor shape as a user-defined heuristic. Scanline Term exposes terminal state; it does not claim to know Vim mode semantically. A Vim/Neovim plugin may provide an explicit `STERM_APP=nvim` marker to make application identification reliable, while mode interpretation may still remain user-script logic.
 
@@ -697,7 +709,7 @@ Matching may use:
 - tab title / OSC title as a user-defined fallback heuristic;
 - terminal kind where useful.
 
-Remote applications over SSH cannot be identified reliably from the local process tree, so explicit markers/title heuristics remain necessary. Sterm must not claim semantic knowledge of the remote application.
+Remote applications over SSH cannot be identified reliably from the local process tree; users may opt into explicit markers/title heuristics when they need remote matching. Sterm must not claim semantic knowledge of the remote application.
 
 Deactivation is atomic from the input system's perspective: pending tap-hold candidates are cancelled and any synthetic modifier state is released before ordinary input resumes.
 

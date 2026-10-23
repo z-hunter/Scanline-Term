@@ -10,6 +10,7 @@
 | [Architecture](./02-architecture.md) | All | Diagrams, data flows, WebView/Rust boundary, concurrency model |
 | [Codebase Guide](./03-codebase-guide.md) | Developers | Repository tree, file-by-file walkthrough, public API surface |
 | [Core Systems](./04-core-systems.md) | Developers | Console host, ConPTY, input handling, rendering, CRT pipeline, fonts |
+| [Lua Automation](./lua-automation.md) | Users/Developers | Incremental Windows Lua setup, script API, sandbox limits, reload and diagnostics |
 | [Design Decisions](./05-design-decisions.md) | All | Rationale for key architectural choices |
 | [Development Workflow](./06-development.md) | Developers | Prerequisites, commands, Tauri config, troubleshooting builds |
 | [Testing & Validation](./07-testing.md) | Developers/QA | Test layout, validation checklists, manual vs automated |

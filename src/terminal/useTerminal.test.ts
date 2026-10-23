@@ -177,6 +177,96 @@ describe('linkAt', () => {
 });
 
 describe('terminal launch event', () => {
+  it('publishes only native-ready sessions and excludes a failed startup from snapshots', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    let completeStart!: (shellName: string) => void;
+    let failNextStart = false;
+    mocked.invoke.mockImplementation((command: string) => {
+      if (command === 'lua_automation_start') return Promise.resolve({ frontendId: 'frontend-startup', state: 'ready', configPath: null, error: null, diagnostics: [] });
+      if (command === 'start_terminal') {
+        if (failNextStart) { failNextStart = false; return Promise.reject(new Error('startup failed')); }
+        return new Promise<string>((resolve) => { completeStart = resolve; });
+      }
+      return Promise.resolve({});
+    });
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      hookResult = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    await act(async () => { hookResult.resizeSource(output); });
+
+    let liveId!: string | null;
+    let starting!: Promise<string | null>;
+    await act(async () => { starting = hookResult.openSession(); await Promise.resolve(); });
+    const latestSnapshot = () => mocked.invoke.mock.calls.filter(([command]) => command === 'lua_automation_update').at(-1)?.[1]?.snapshot as Record<string, unknown>;
+    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: [] });
+    await act(async () => { completeStart('cmd.exe'); liveId = await starting; });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: liveId, tabs: [expect.objectContaining({ id: liveId })] });
+
+    failNextStart = true;
+    let failedId!: string | null;
+    await act(async () => { failedId = await hookResult.openSession(); });
+    expect(failedId).not.toBeNull();
+    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: [expect.objectContaining({ id: liveId })] });
+    expect((latestSnapshot().tabs as { id: string }[]).some((tab) => tab.id === failedId)).toBe(false);
+
+    await act(async () => { root.unmount(); });
+    terminalSession(liveId!)?.dispose(); terminalSession(failedId!)?.dispose();
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
+  it('publishes process and cursor state with active focus, and disarms when a browser tab is selected', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    const processBySession = new Map<string, string>();
+    mocked.invoke.mockImplementation((command: string, args?: { sessionId?: string }) => {
+      if (command === 'lua_automation_start') return Promise.resolve({ frontendId: 'frontend-test', state: 'ready', configPath: null, error: null, diagnostics: [] });
+      if (command === 'start_terminal') {
+        processBySession.set(args!.sessionId!, processBySession.size === 0 ? 'nvim.exe' : 'pwsh.exe');
+        return Promise.resolve('cmd.exe');
+      }
+      if (command === 'active_terminal_process') return Promise.resolve(processBySession.get(args?.sessionId ?? '') ?? null);
+      return Promise.resolve({});
+    });
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, channelSwitchEffect: false, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    await act(async () => { hookResult.resizeSource(output); output.focus(); });
+    let nvimId!: string | null;
+    let shellId!: string | null;
+    await act(async () => { nvimId = await hookResult.openSession(); shellId = await hookResult.openSession(); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const latestSnapshot = () => mocked.invoke.mock.calls.filter(([command]) => command === 'lua_automation_update').at(-1)?.[1]?.snapshot as Record<string, unknown>;
+    expect(latestSnapshot()).toMatchObject({ activeTabId: shellId, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, processName: 'nvim.exe' })]) });
+
+    await act(async () => { hookResult.selectSession(nvimId!, false, false); hookResult.canvasProps.onFocus(); });
+    await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[5 q', resolve)); });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: nvimId, focused: true, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: true } })]) });
+
+    await act(async () => { hookResult.openBrowser(); });
+    await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[6 q', resolve)); });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: false } })]) });
+
+    await act(async () => { root.unmount(); });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: [] });
+    terminalSession(nvimId!)?.dispose(); terminalSession(shellId!)?.dispose();
+    container.remove(); output.remove(); hasFocus.mockRestore(); vi.restoreAllMocks();
+  });
+
   it('tracks cursor overrides separately for the active terminal tab', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

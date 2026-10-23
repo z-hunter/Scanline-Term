@@ -11,6 +11,7 @@ import {
 import 'scanline-virtual-screen/react/styles.css';
 import { BROWSER_FORM_FACTORS, RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import type { ShellInfo } from '../terminal/useTerminal';
+import { LuaAutomationPanel } from './LuaAutomationPanel';
 
 export function SettingsPanel({
   stored,
@@ -217,6 +218,7 @@ export function SettingsPanel({
 
       <fieldset>
         <legend>System</legend>
+        <LuaAutomationPanel />
         <label className="host-select-control">
           Default shell
           <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>

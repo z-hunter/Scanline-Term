@@ -64,6 +64,8 @@ type TerminalExit = { sessionId: string };
 type PendingOutput = { data: Uint8Array; acknowledge: () => void };
 type PendingInput = { input: string; resolve?: () => void; reject?: (reason: unknown) => void };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
+export type ApplicationCursorShape = CursorStyle | 'unknown' | null;
+export type ApplicationCursorState = { shape: ApplicationCursorShape; blink: boolean | null };
 
 const OUTPUT_CHUNK_BYTES = 16 * 1024;
 
@@ -186,7 +188,9 @@ export class TerminalSession {
   private cursorStyle: CursorStyle = 'block';
   private cursorBlink = true;
   private applicationCursorStyle = false;
-  private applicationCursorShape: CursorStyle | null = null;
+  private applicationCursorShape: ApplicationCursorShape = null;
+  private applicationCursorBlink: boolean | null = null;
+  private processPollPending = false;
   private terminalFocused = false;
 
   constructor(
@@ -199,6 +203,7 @@ export class TerminalSession {
     private readonly onProcessName: (name: string) => void,
     private readonly onCursorStyleOverrideChange: (overridden: boolean) => void = () => undefined,
     private readonly onCursorStyleChange: (style: CursorStyle | null) => void = () => undefined,
+    private readonly onAutomationStateChange: () => void = () => undefined,
   ) {
     sessions.set(id, this);
   }
@@ -245,11 +250,14 @@ export class TerminalSession {
         (params) => {
           const param = params.length === 0 ? 1 : params[0];
           if (typeof param !== 'number') return false;
-          if (param === 0) this.setApplicationCursorStyle(null);
+          if (param === 0) this.setApplicationCursorState(null, null);
           else {
             const style = ({ 1: 'block', 2: 'block', 3: 'underline', 4: 'underline', 5: 'bar', 6: 'bar' } as const)[param as 1 | 2 | 3 | 4 | 5 | 6];
-            if (!style) return false;
-            this.setApplicationCursorStyle(style);
+            if (!style) {
+              this.setApplicationCursorState('unknown', null);
+              return true;
+            }
+            this.setApplicationCursorState(style, param % 2 === 1);
             terminal.options.cursorStyle = style;
             terminal.options.cursorBlink = param % 2 === 1;
             return true;
@@ -262,7 +270,7 @@ export class TerminalSession {
       terminal.parser.registerEscHandler(
         { final: 'c' },
         () => {
-          this.setApplicationCursorStyle(null);
+          this.setApplicationCursorState(null, null);
           terminal.options.cursorStyle = this.cursorStyle;
           terminal.options.cursorBlink = this.cursorBlink;
           return false;
@@ -372,14 +380,25 @@ export class TerminalSession {
     return this.applicationCursorStyle;
   }
 
-  private setApplicationCursorStyle(style: CursorStyle | null): void {
-    const overridden = style !== null;
+  get applicationCursorState(): ApplicationCursorState {
+    return { shape: this.applicationCursorShape, blink: this.applicationCursorBlink };
+  }
+
+  get localProcessName(): string | null {
+    return this.processName;
+  }
+
+  private setApplicationCursorState(shape: ApplicationCursorShape, blink: boolean | null): void {
+    const overridden = shape === 'unknown' ? this.applicationCursorStyle : shape !== null;
     const overrideChanged = this.applicationCursorStyle !== overridden;
-    if (this.applicationCursorShape === style && !overrideChanged) return;
+    if (this.applicationCursorShape === shape && this.applicationCursorBlink === blink && !overrideChanged) return;
+    const shapeChanged = this.applicationCursorShape !== shape;
     this.applicationCursorStyle = overridden;
-    this.applicationCursorShape = style;
+    this.applicationCursorShape = shape;
+    this.applicationCursorBlink = blink;
     if (overrideChanged) this.onCursorStyleOverrideChange(overridden);
-    this.onCursorStyleChange(style);
+    if (shapeChanged || overrideChanged) this.onCursorStyleChange(shape === 'unknown' ? null : shape);
+    this.onAutomationStateChange();
   }
 
   setTerminalFocused(focused: boolean): void {
@@ -461,6 +480,10 @@ export class TerminalSession {
     }
     if (this.disposed) return;
     this.live = false;
+    if (this.processInterval !== null) window.clearInterval(this.processInterval);
+    this.processInterval = null;
+    this.processName = null;
+    this.onAutomationStateChange();
     for (const pending of this.pendingInput.splice(0)) pending.reject?.(new Error("terminal exited"));
     this.onState(false, this.size);
     this.onExit();
@@ -626,21 +649,23 @@ export class TerminalSession {
   }
 
   private pollProcess(): void {
-    void invoke<string | null>("active_terminal_process", {
-      sessionId: this.id,
-    })
+    if (this.processPollPending || this.disposed || this.exited) return;
+    this.processPollPending = true;
+    void invoke<string | null>("active_terminal_process", { sessionId: this.id })
       .then((name) => {
-        if (this.disposed || name === this.processName) return;
+        if (this.disposed || this.exited || name === this.processName) return;
         if (this.title?.toLowerCase() === this.shellName?.toLowerCase())
           this.title = null;
         this.processName = name;
+        this.onAutomationStateChange();
         if (!this.title && (name ?? this.shellName))
           this.onProcessName(name ?? this.shellName!);
       })
       .catch((reason) => {
         if (!this.disposed && !this.exited)
           this.onError(`Terminal process lookup failed: ${String(reason)}`);
-      });
+      })
+      .finally(() => { this.processPollPending = false; });
   }
 
   resize(size: TerminalSize): void {
@@ -731,6 +756,8 @@ export class TerminalSession {
     this.cursorBlink = true;
     this.applicationCursorStyle = false;
     this.applicationCursorShape = null;
+    this.applicationCursorBlink = null;
+    this.processPollPending = false;
     this.terminalFocused = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);

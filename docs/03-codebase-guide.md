@@ -36,6 +36,8 @@ ScanlineTerm/
 │   ├── terminal/terminal-input.test.ts # Unit tests for VT key encoding
 │   ├── terminal/automation-probe.ts # Dev-only context/layout bridge; no per-key IPC
 │   ├── terminal/automation-probe-state.ts # Dev-only tap-hold and layout state
+│   ├── terminal/lua-automation.ts # Frontend snapshot and Lua automation commands
+│   ├── ui/LuaAutomationPanel.tsx # Lua status, diagnostics, and reload controls
 │   ├── win32-input.ts             # Win32 Input Mode key encoding
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
 │   ├── terminal/terminal-mouse.ts # Mouse event SGR/X10 encoding
@@ -49,6 +51,8 @@ ScanlineTerm/
 │   │   ├── home.rs               # Validated home.json load/save and backup handling
 │   │   ├── presets.rs            # Bounded preset catalog and atomic JSON file commands
 │   │   ├── automation_probe.rs   # Debug/env-gated Windows hook and layout probe
+│   │   ├── lua_automation.rs     # Bounded native worker and Windows layout bridge
+│   │   ├── lua_runtime.rs        # Sandboxed per-tab Lua VM and event dispatch
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
@@ -221,6 +225,10 @@ Contains lookup tables for:
 #### [`src-tauri/src/automation_probe.rs`](../src-tauri/src/automation_probe.rs)
 
 Debug-build-only Windows experiment enabled with `SCANLINE_TERM_AUTOMATION_PROBE=1`. Owns the dedicated low-level hook thread, guarded marked-token injection, pinned-main-WebView focus checks, installed-HKL inventory, and layout request/readback events. The frontend bridge in `terminal/automation-probe.ts` runs only in dev builds, handles token events synchronously through existing encoders, and sends tab/focus context and cursor-driven layout requests. Each frontend instance emits `automation-probe-ready { frontendId }` and carries the ID on context and layout request/change/error messages; native status echoes it. Native logical context and generations reset only for a new ID, while the physical swallowed-down latch remains until matching key-up or hook teardown. A 20 ms native poll observes focused-thread HKL changes. This is probe infrastructure, not a product setting or production API; CapsLock input ordering still requires live validation.
+
+#### Lua terminal automation
+
+[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, and Windows layout request/readback. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, per-tab VMs, lifecycle handlers, and action intents. The React bridge publishes terminal snapshots and receives status/diagnostics; it does not forward per-key events to Lua. The repository Vim/Neovim example entry and reusable cursor-layout module are under [`examples/lua`](../examples/lua); installers do not currently include them. See the [Lua automation guide](lua-automation.md) before changing the supported API or sandbox.
 
 ---
 
