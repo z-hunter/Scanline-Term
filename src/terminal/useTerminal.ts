@@ -10,6 +10,8 @@ import { TerminalSession, initialProfile, scrollToBottomOnKey, type TerminalLaun
 import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
+import { TerminalAutomationProbe } from './automation-probe';
+import { emptyTapHoldState, forwardedKeyIdentity, updateTapHold, type TapHoldState } from './automation-probe-state';
 import { findTerminalMatches, nextSearchIndex, type TerminalSearchMatch } from './terminal-search';
 import { showNativeImageMenu, showNativeTerminalMenu } from '../ui/nativeNewTabMenu';
 import { clonePresetSettings, DEFAULT_PRESET_SETTINGS, loadPresetSettings, type PresetSettings, type TabPresetState } from '../crt/settings';
@@ -152,6 +154,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const [live, setLive] = useState(false); const [size, setSize] = useState<TerminalSize>({ cols: 0, rows: 0 }); const [fonts, setFonts] = useState(['Consolas']); const [tabs, setTabs] = useState<WorkspaceTab[]>([]); const [activeTabId, setActiveTabId] = useState<string | null>(null); const [addressTabId, setAddressTabId] = useState<string | null>(null);
   const [activePresetState, setActivePresetState] = useState<TabPresetState | null>(null); const [cursorStyleOverridden, setCursorStyleOverridden] = useState(false); const [scrollback, setScrollback] = useState<ScrollbackScrollbarState | null>(null); const [search, setSearch] = useState<TerminalSearchState>({ open: false, query: '', matches: [], activeIndex: -1, buffer: null, direction: 1 });
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
+  const automationProbe = useRef<TerminalAutomationProbe | null>(null);
+  const probeSnapshot = useRef<{ enabled: boolean; status: unknown; context: { tabId: string | null; generation: number; focused: boolean } | null; trace: Record<string, unknown>[] }>({ enabled: false, status: null, context: null, trace: [] });
+  const probeSuppressedTokenUp = useRef(false);
+  const tapHold = useRef<TapHoldState>(emptyTapHoldState()); const tapHoldTimer = useRef<number | null>(null); const probeForwardedKeys = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>());
   const geometryDiagnostics = useRef<Record<string, unknown>[]>([]);
   const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const smoothScrollbackRef = useRef(smoothScrollback); const rmbMenuInTermRef = useRef(rmbMenuInTerm); const channelSwitchEffectRef = useRef(channelSwitchEffect); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const linkClick = useRef<{ url: string; selection: { start: CopyPoint; end: CopyPoint } } | null>(null); const copyMode = useRef(false); const imageDrag = useRef<{ image: TerminalImage; x: number; y: number } | null>(null); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null); const pendingFirstDraw = useRef<string | null>(null); const scrollbackActivity = useRef(0); const scrollbackRef = useRef<ScrollbackScrollbarState | null>(null); const scrollIntentRef = useRef(false);
   const searchRef = useRef(search); searchRef.current = search;
@@ -159,6 +165,20 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const presetPickerOpenRef = useRef(presetPickerOpen); presetPickerOpenRef.current = presetPickerOpen;
   const onBeforeTabChangeRef = useRef(onBeforeTabChange); onBeforeTabChangeRef.current = onBeforeTabChange;
   defaultPresetRef.current = initialPreset; channelSwitchEffectRef.current = channelSwitchEffect; settingsRef.current = { ...displaySettings(activePresetState?.settings.crt ?? initialPreset.crt, activePresetState?.settings.resolution ?? initialPreset.resolution), channelSwitchEffect }; defaultShellRef.current = defaultShell; smoothScrollbackRef.current = smoothScrollback; rmbMenuInTermRef.current = rmbMenuInTerm; renderer.current.setTuiScrollingEnabled(smoothScrollback && smoothTuiScrolling); tabsRef.current = tabs; activeRef.current = activeTabId; onErrorRef.current = onError; onTerminalTabTransitionRef.current = onTerminalTabTransition;
+  const traceAutomationProbe = useCallback((kind: string, details: Record<string, unknown> = {}) => {
+    if (!import.meta.env.DEV || !automationProbe.current?.enabled) return;
+    const entry = { at: performance.now(), kind, tabId: activeRef.current, ...details };
+    probeSnapshot.current.trace.push(entry);
+    if (probeSnapshot.current.trace.length > 256) probeSnapshot.current.trace.splice(0, probeSnapshot.current.trace.length - 256);
+  }, []);
+  if (import.meta.env.DEV && !automationProbe.current) automationProbe.current = new TerminalAutomationProbe((status) => {
+    probeSnapshot.current.enabled = status.enabled;
+    probeSnapshot.current.status = status;
+    probeSnapshot.current.context = automationProbe.current?.currentContext ?? null;
+    const target = window as Window & { __scanlineAutomationProbe?: typeof probeSnapshot.current };
+    if (status.enabled && import.meta.env.DEV) target.__scanlineAutomationProbe = probeSnapshot.current;
+    else delete target.__scanlineAutomationProbe;
+  }, (message) => { traceAutomationProbe('layout-error', { message }); onErrorRef.current(message); });
   const updateTab = useCallback((id: string, update: (tab: WorkspaceTab) => WorkspaceTab) => setTabs((current) => current.map((tab) => tab.id === id ? update(tab) : tab)), []);
   const moveTab = useCallback((id: string, targetIndex: number) => {
     setTabs((current) => {
@@ -209,6 +229,30 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       publishScrollback(id, terminal, true, to);
     }
   }, [publishScrollback]);
+  const probeSuppressedKeyUps = useRef(new Set<string>());
+  const refreshAutomationProbeContext = useCallback(() => {
+    if (!import.meta.env.DEV) return;
+    const id = activeRef.current;
+    automationProbe.current?.setContext(id && sessions.current.has(id) ? id : null, Boolean(document.hasFocus() && outputRef.current && document.activeElement === outputRef.current));
+    probeSnapshot.current.context = automationProbe.current?.currentContext ?? null;
+  }, []);
+  const cancelAutomationProbeInput = useCallback((reason: string) => {
+    if (!import.meta.env.DEV) return;
+    if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
+    tapHoldTimer.current = null;
+    const wasActive = tapHold.current.downAt !== null || probeForwardedKeys.current.size > 0;
+    if (tapHold.current.downAt !== null) probeSuppressedTokenUp.current = true;
+    tapHold.current = updateTapHold(tapHold.current, 'cancel', performance.now(), 180).state;
+    if (wasActive) traceAutomationProbe('token-cancel', { reason });
+    for (const [code, forwarded] of probeForwardedKeys.current) {
+      if (forwarded.session.live && forwarded.session.win32InputMode) {
+        forwarded.session.sendInput(win32InputKey(forwarded.event, false));
+        traceAutomationProbe('win32-keyup', { code, reason, key: forwarded.event.key });
+      }
+      probeSuppressedKeyUps.current.add(code);
+    }
+    probeForwardedKeys.current.clear();
+  }, [traceAutomationProbe]);
   const openSearch = useCallback((direction: 1 | -1) => {
     const id = activeRef.current;
     const record = id ? sessions.current.get(id) : undefined;
@@ -262,8 +306,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       return;
     }
     sessions.current.get(activeRef.current ?? '')?.session.setTerminalFocused(false);
+    cancelAutomationProbeInput('tab-change');
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
-    activeRef.current = id; pendingFirstDraw.current = record && TERMINAL_GEOMETRY_DIAGNOSTICS ? id : null; setActiveTabId(id); scrollIntentRef.current = false; scrollbackRef.current = null; setScrollback(null); clearSearch();
+    activeRef.current = id; refreshAutomationProbeContext(); pendingFirstDraw.current = record && TERMINAL_GEOMETRY_DIAGNOSTICS ? id : null; setActiveTabId(id); scrollIntentRef.current = false; scrollbackRef.current = null; setScrollback(null); clearSearch();
     if (!record) { setActivePresetState(null); setCursorStyleOverridden(false); settingsRef.current = { ...displaySettings(defaultPresetRef.current.crt, defaultPresetRef.current.resolution), channelSwitchEffect: channelSwitchEffectRef.current }; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: defaultPresetRef.current.resolution })); return; }
     setCursorStyleOverridden(record.session.cursorStyleOverridden);
     record.session.setTerminalFocused(Boolean(document.hasFocus() && outputRef.current && document.activeElement === outputRef.current));
@@ -272,7 +317,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     renderer.current!.bindTerminal(record.session.terminal, (viewportY) => { if (activeRef.current === id && (scrollIntentRef.current || scrollbackRef.current?.sessionId === id)) { const userInitiated = scrollIntentRef.current; scrollIntentRef.current = false; publishScrollback(id, record.session.terminal, userInitiated, viewportY); } }); renderer.current!.setImages(record.images); renderer.current!.setSelection(null); pressed.current.clear(); copyStart.current = null; copyMode.current = false; setLive(record.session.live); setSize(record.session.size);
     recordGeometry('tab-select', { sessionId: id, resolution: record.preset.settings.resolution, terminal: record.session.size, source: { width: renderer.current!.sourceCanvas.width, height: renderer.current!.sourceCanvas.height }, output: elementBounds(outputRef.current), frame: elementBounds(outputRef.current?.parentElement ?? null) });
     requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: record.preset.settings.resolution }));
-  }, [clearSearch, publishScrollback, recordGeometry]);
+  }, [cancelAutomationProbeInput, clearSearch, publishScrollback, recordGeometry, refreshAutomationProbeContext]);
   const updateActivePreset = useCallback((update: (current: TabPresetState) => TabPresetState) => {
     const record = activeRef.current ? sessions.current.get(activeRef.current) : undefined;
     if (!record) return;
@@ -308,7 +353,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       preset = loaded;
     } catch (reason) { if (signal?.aborted) return null; onError(`Could not load launch preset ${presetName}: ${String(reason)}`); return null; }
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
-    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })), (overridden) => { if (activeRef.current === id) setCursorStyleOverridden(overridden); });
+    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })), (overridden) => { if (activeRef.current === id) setCursorStyleOverridden(overridden); }, (style) => { if (import.meta.env.DEV) { if (activeRef.current === id) traceAutomationProbe('cursor-style', { style }); automationProbe.current?.setCursorStyle(id, style); } });
     sessions.current.set(id, { tab, session, ownerId: ownerId ?? null, inputLocked: false, preset: { name: presetName ?? 'default', draftName: presetName ?? 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const physicalSize = physicalSourceSize(outputSize, preset.crt); const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, displaySettings(preset.crt, resolution.id).consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     recordGeometry('session-start', { sessionId: id, resolution: preset.resolution, output: outputRef.current ? { width: outputRef.current.width, height: outputRef.current.height, css: elementBounds(outputRef.current) } : null, source: { width: source.width, height: source.height }, terminal: dimensions });
@@ -325,7 +370,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       onError(`Terminal startup failed: ${String(reason)}`);
     }
     return id;
-  }, [applySearch, onError, publishScrollback, recordGeometry, refreshTabColor, selectSession, updateTab]);
+  }, [applySearch, onError, publishScrollback, recordGeometry, refreshTabColor, selectSession, traceAutomationProbe, updateTab]);
   const addImage = useCallback(async () => {
     const id = activeRef.current; const record = id ? sessions.current.get(id) : undefined;
     if (!record || !isTauri()) return;
@@ -381,6 +426,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       return;
     }
     closing.current.delete(id); record.images.forEach((image) => { image.image.onload = null; image.image.onerror = null; image.image.src = ''; if (image.objectUrl) URL.revokeObjectURL(image.objectUrl); }); sessions.current.delete(id); recentTabs.current = recentTabs.current.filter((item) => item !== id);
+    if (activeRef.current === id) { cancelAutomationProbeInput('session-close'); refreshAutomationProbeContext(); }
     const surviving = tabsRef.current.filter((tab) => tab.id === id || sessions.current.has(tab.id) || tab.kind === 'browser');
     const nextId = adjacentTabId(surviving, id);
     const remaining = renumberTabs(tabsRef.current.filter((tab) => tab.id !== id));
@@ -395,7 +441,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       const targetId = nextId ?? sessions.current.keys().next().value;
       if (targetId) selectSession(targetId);
     }
-  }, [onError, selectSession, updateTab]);
+  }, [cancelAutomationProbeInput, onError, refreshAutomationProbeContext, selectSession, updateTab]);
   const sessionOwner = useCallback((id: string) => sessions.current.get(id)?.ownerId ?? null, []);
   const ownedSessionInfo = useCallback((ownerId: string): OwnedTerminalInfo[] => [...sessions.current.values()]
     .filter((record) => record.ownerId === ownerId)
@@ -742,6 +788,128 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   }, [publishScrollback]);
   const activeSession = () => activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
   const keyboardSession = useCallback(() => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : activeSession(), []);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const probe = automationProbe.current;
+    if (!probe) return;
+    void probe.start();
+    refreshAutomationProbeContext();
+    const blur = () => { cancelAutomationProbeInput('window-blur'); probe.setContext(activeRef.current && sessions.current.has(activeRef.current) ? activeRef.current : null, false); };
+    const focus = () => refreshAutomationProbeContext();
+    window.addEventListener('blur', blur);
+    window.addEventListener('focus', focus);
+    return () => { window.removeEventListener('blur', blur); window.removeEventListener('focus', focus); cancelAutomationProbeInput('probe-cleanup'); probe.dispose(); };
+  }, [cancelAutomationProbeInput, refreshAutomationProbeContext]);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const thresholdMs = 180;
+    const focusedSession = () => {
+      if (!automationProbe.current?.enabled || !document.hasFocus() || !outputRef.current || document.activeElement !== outputRef.current) return undefined;
+      const session = activeSession();
+      return session?.live && session.terminal ? session : undefined;
+    };
+    const consume = (event: KeyboardEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
+    const matchingToken = (event: KeyboardEvent) => event.key === 'Unidentified' && event.code === '' && event.keyCode === 252;
+    const sendEncoded = (session: TerminalSession, event: KeyboardEvent, keyDown: boolean) => {
+      if (!session.live || !session.terminal) return;
+      const input = session.win32InputMode ? win32InputKey(event, keyDown) : keyDown ? terminalKey(event, session.terminal.modes) : null;
+      if (input) session.sendInput(input);
+      traceAutomationProbe('terminal-send', { encoder: session.win32InputMode ? 'win32' : 'vt', phase: keyDown ? 'down' : 'up', key: event.key, code: event.code, ctrlKey: event.ctrlKey, textLength: input?.length ?? 0 });
+      if (keyDown && event.key === 'Escape' && scrollToBottomOnKey(event.key)) session.terminal.scrollToBottom();
+    };
+    const modified = (event: KeyboardEvent) => {
+      let key = event.key;
+      if (key.length === 1 && key.charCodeAt(0) > 127) {
+        const physicalLetter = /^Key([A-Z])$/.exec(event.code)?.[1];
+        const virtualKey = event.keyCode || event.which || 0;
+        const letter = physicalLetter ?? (!event.code && virtualKey >= 65 && virtualKey <= 90 ? String.fromCharCode(virtualKey) : undefined);
+        if (letter) key = event.shiftKey ? letter : letter.toLowerCase();
+      }
+      return {
+      key, code: event.code, location: event.location, repeat: event.repeat,
+      ctrlKey: true, altKey: event.altKey, shiftKey: event.shiftKey, metaKey: event.metaKey,
+      keyCode: event.keyCode, which: event.which,
+      getModifierState: (key: string) => typeof event.getModifierState === 'function' && event.getModifierState(key),
+      } as KeyboardEvent;
+    };
+    const tokenDown = (event: KeyboardEvent) => {
+      const session = focusedSession();
+      if (!session) return false;
+      consume(event);
+      const now = performance.now();
+      const repeated = tapHold.current.downAt !== null;
+      tapHold.current = updateTapHold(tapHold.current, repeated ? 'repeat' : 'down', now, thresholdMs).state;
+      traceAutomationProbe(repeated ? 'token-repeat' : 'token-down', { encoder: session.win32InputMode ? 'win32' : 'vt', downAt: tapHold.current.downAt });
+      if (!repeated) {
+        tapHoldTimer.current = window.setTimeout(() => {
+          tapHoldTimer.current = null;
+          const before = tapHold.current.control;
+          tapHold.current = updateTapHold(tapHold.current, 'timeout', performance.now(), thresholdMs).state;
+          if (!before && tapHold.current.control) traceAutomationProbe('token-control-armed', { reason: 'hold-threshold' });
+        }, thresholdMs);
+      }
+      return true;
+    };
+    const down = (event: KeyboardEvent) => {
+      if (matchingToken(event)) { tokenDown(event); return; }
+      const session = focusedSession();
+      if (!session || tapHold.current.downAt === null) return;
+      consume(event);
+      const result = updateTapHold(tapHold.current, 'other-key', performance.now(), thresholdMs);
+      tapHold.current = result.state;
+      if (!tapHold.current.control) return;
+      traceAutomationProbe('chord-keydown', { encoder: session.win32InputMode ? 'win32' : 'vt', key: event.key, code: event.code, repeat: event.repeat });
+      if (event.key === 'Control' || event.key === 'Shift' || event.key === 'Alt' || event.key === 'Meta') return;
+      const chordEvent = modified(event);
+      const identity = forwardedKeyIdentity(event);
+      if (session.win32InputMode) {
+        if (!probeForwardedKeys.current.has(identity)) probeForwardedKeys.current.set(identity, { event: chordEvent, session });
+        sendEncoded(session, chordEvent, true);
+      } else sendEncoded(session, chordEvent, true);
+    };
+    const up = (event: KeyboardEvent) => {
+      if (matchingToken(event)) {
+        if (tapHold.current.downAt === null) {
+          if (probeSuppressedTokenUp.current) { consume(event); probeSuppressedTokenUp.current = false; }
+          return;
+        }
+        consume(event);
+        if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
+        tapHoldTimer.current = null;
+        const result = updateTapHold(tapHold.current, 'up', performance.now(), thresholdMs);
+        tapHold.current = result.state;
+        traceAutomationProbe('token-up', { action: result.escape ? 'escape' : 'control-or-held' });
+        if (result.escape) {
+          const session = focusedSession();
+          if (session) {
+            const escape = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' });
+            sendEncoded(session, escape, true);
+            if (session.win32InputMode) sendEncoded(session, new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false);
+          }
+        }
+        return;
+      }
+      const identity = forwardedKeyIdentity(event);
+      const forwarded = probeForwardedKeys.current.get(identity);
+      if (forwarded) {
+        consume(event);
+        if (forwarded.session.live && forwarded.session.win32InputMode) {
+          forwarded.session.sendInput(win32InputKey(forwarded.event, false));
+          traceAutomationProbe('win32-keyup', { code: event.code, key: forwarded.event.key });
+        }
+        probeForwardedKeys.current.delete(identity);
+        probeSuppressedKeyUps.current.delete(identity);
+        return;
+      }
+      if (probeSuppressedKeyUps.current.has(identity)) {
+        consume(event);
+        probeSuppressedKeyUps.current.delete(identity);
+      }
+    };
+    window.addEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); cancelAutomationProbeInput('input-listener-cleanup'); };
+  }, [cancelAutomationProbeInput, traceAutomationProbe]);
   const cell = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => renderer.current!.cellAtPoint(event.clientX, event.clientY, event.currentTarget, settingsRef.current);
   const imagePoint = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => renderer.current!.sourcePointAt(event.clientX, event.clientY, event.currentTarget, settingsRef.current);
   const imageAt = (event: MouseEvent<HTMLCanvasElement> | WheelEvent<HTMLCanvasElement>) => { const point = imagePoint(event); return point ? renderer.current!.imageAtSourcePoint(point.x, point.y) : null; };
@@ -752,5 +920,5 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const copy = async (start: CopyPoint, end: CopyPoint) => { const terminal = activeSession()?.terminal; if (!terminal) return; const [first,last] = start.row < end.row || start.row === end.row && start.column <= end.column ? [start,end] : [end,start]; const text = Array.from({ length: last.row - first.row + 1 }, (_, index) => { const row = first.row + index; return terminal.buffer.active.getLine(row)?.translateToString(index === last.row - first.row, row === first.row ? first.column : 0, row === last.row ? last.column + 1 : terminal.cols) ?? ''; }).join('\r\n').replace(/(?:\r\n|\r|\n)$/, ''); if (text) await navigator.clipboard.writeText(text); };
   const openNativeContextMenu = (event: MouseEvent<HTMLCanvasElement>) => { event.preventDefault(); if (!rmbMenuInTermRef.current || !isTauri()) return; const image = imageAt(event); if (image) { void showNativeImageMenu({ onDelete: () => removeImage(image) }).catch((reason) => onError(`Could not open image menu: ${String(reason)}`)); return; } void showNativeTerminalMenu({ onNew: () => openSession(), onNewBrowser: (url) => openBrowser(url), onNewShell: (command) => openSession({ command }), shells, onFind: () => openSearch(1), onFindBack: () => openSearch(-1), onCopyByMouse: () => { copyMode.current = true; }, onToggleTabsBar: () => onToggleTabsBar?.(), onOpenPresetPicker: () => onTogglePresetPicker?.(), onToggleGallery: () => onToggleGallery?.() }).catch((reason) => onError(`Could not open terminal context menu: ${String(reason)}`)); };
   useEffect(() => { const down = async (event: KeyboardEvent) => { if (event.code === 'AltLeft' || event.code === 'AltRight' || event.key === 'AltGraph') alt.current = true; if ((event.code === 'F4' || event.key === 'F4') && (event.altKey || alt.current || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')))) && !event.ctrlKey && !event.shiftKey && !event.metaKey) return; if (event.key === 'ContextMenu') { menu.current = true; menuShortcut.current = false; menuEvent.current = event; event.preventDefault(); return; } if (menu.current && event.code !== 'ContextMenu') menuShortcut.current = true; if (presetPickerOpenRef.current) { if (!(event.target instanceof Element && event.target.closest('.quick-preset-picker'))) event.preventDefault(); return; } if (menu.current && event.code === 'Backspace') { event.preventDefault(); if (!event.repeat) onToggleGallery?.(); return; } if (galleryOpenRef.current) { if (event.code === 'Tab' || event.key === 'Tab') { event.preventDefault(); const dialog = document.querySelector<HTMLElement>('.tab-gallery[role="dialog"]'); const focusable = dialog ? Array.from(dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true') : []; if (focusable.length) { const current = focusable.indexOf(document.activeElement as HTMLElement); const offset = event.shiftKey ? -1 : 1; focusable[(current + offset + focusable.length) % focusable.length].focus(); } } else event.preventDefault(); return; } if (menu.current && event.code === 'KeyW') { event.preventDefault(); if (!event.repeat && activeRef.current) void closeSession(activeRef.current); return; } if (event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address')) return; if (menu.current && event.code === 'Slash') { event.preventDefault(); menuShortcut.current = true; if (!event.repeat) openSearch(event.shiftKey ? -1 : 1); return; } if (searchRef.current.open) { const inputTarget = event.target instanceof Element && event.target.closest('.terminal-search-input'); if (event.key === 'Escape') { event.preventDefault(); clearSearch(); (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus(); return; } if (event.key === 'Enter') { event.preventDefault(); moveSearch(searchRef.current.direction); (document.querySelector('.output-canvas') as HTMLCanvasElement | null)?.focus(); return; } if (!inputTarget && (event.key === 'n' || event.key === 'N')) { event.preventDefault(); moveSearch(event.key === 'N' ? (searchRef.current.direction === 1 ? -1 : 1) : searchRef.current.direction); return; } if (inputTarget) return; event.preventDefault(); return; } const session = keyboardSession(); const terminal = session?.terminal; if (menu.current && event.code === 'KeyS') { event.preventDefault(); if (!event.repeat) onToggleSettings(); return; } if (menu.current && event.code === 'KeyZ') { event.preventDefault(); if (!event.repeat) onToggleTabsBar?.(); return; } if (menu.current && event.code === 'KeyP') { event.preventDefault(); if (!event.repeat) onTogglePresetPicker?.(); return; } if (menu.current && (event.code === 'Minus' || event.code === 'NumpadSubtract' || event.code === 'Equal' || event.code === 'NumpadAdd')) { event.preventDefault(); if (!event.repeat) updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, consoleFontSize: Math.max(6, Math.min(32, current.settings.crt.consoleFontSize + (event.code === 'Minus' || event.code === 'NumpadSubtract' ? -1 : 1))) } }, dirty: true })); return; } if (menu.current && event.code === 'KeyA') { event.preventDefault(); if (!event.repeat) onToggleAi?.(); return; } if (menu.current && event.code === 'KeyB') { event.preventDefault(); if (!event.repeat) openBrowser(); return; } if (menu.current && event.code === 'KeyV') { event.preventDefault(); if (!event.repeat) navigator.clipboard.readText().then((input) => session?.sendInput(input)).catch((reason) => onError(`Clipboard paste failed: ${String(reason)}`)); return; } if (menu.current && event.code === 'KeyC') { event.preventDefault(); if (!event.repeat) copyMode.current = true; return; } if (menu.current && event.code === 'KeyN') { event.preventDefault(); if (!event.repeat) openSession(); return; } if (menu.current && event.code === 'Quote') { event.preventDefault(); if (!event.repeat) { const aiComposer = document.querySelector('.ai-composer textarea') as HTMLTextAreaElement | null; if (document.activeElement?.closest('.ai-panel') || document.activeElement === aiComposer) { const canvas = document.querySelector('.terminal-workspace canvas') as HTMLCanvasElement | null; canvas?.focus(); } else { if (aiComposer) aiComposer.focus(); else onToggleAi?.(); } } return; } if (menu.current && /^Digit[0-9]$/.test(event.code)) { event.preventDefault(); if (!event.repeat) { const id = tabIdAtOrdinal(tabsRef.current, event.code === 'Digit0' ? 10 : Number(event.code.at(-1))); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'ArrowRight' || event.code === 'Period' || event.key === '>')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = nextTabId(tabsRef.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'ArrowLeft' || event.code === 'Comma' || event.key === '<')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = previousTabId(tabsRef.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'Tab' || event.key === 'Tab')) { event.preventDefault(); if (!event.repeat && activeRef.current) { const id = previousActiveTabId(tabsRef.current, recentTabs.current, activeRef.current); if (id) selectSession(id); } return; } if (menu.current && (event.code === 'PageUp' || event.code === 'PageDown')) { event.preventDefault(); if (terminal && terminal.buffer.active === terminal.buffer.normal) { const from = terminal.buffer.active.viewportY; terminal.scrollLines((event.code === 'PageUp' ? -1 : 1) * (terminal.rows - 1)); const to = terminal.buffer.active.viewportY; if (to === from) scrollIntentRef.current = false; } else { scrollIntentRef.current = false; } return; } if (menu.current && (event.code === 'KeyJ' || event.code === 'KeyK')) { event.preventDefault(); const isUp = event.code === 'KeyK'; if (document.activeElement?.closest('.ai-panel')) { const aiMessages = document.querySelector('.ai-messages'); if (aiMessages) aiMessages.scrollBy(0, (isUp ? -1 : 1) * aiMessages.clientHeight * 0.8); scrollIntentRef.current = false; } else if (terminal && terminal.buffer.active === terminal.buffer.normal) { const from = terminal.buffer.active.viewportY; terminal.scrollLines((isUp ? -1 : 1) * (terminal.rows - 1)); const to = terminal.buffer.active.viewportY; if (to === from) scrollIntentRef.current = false; } else { scrollIntentRef.current = false; } return; } if ((event.altKey || alt.current || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')))) && (event.code === 'Enter' || event.code === 'NumpadEnter' || event.key === 'Enter') && isTauri()) { event.preventDefault(); fullscreen.current = true; if (!event.repeat) try { const window = getCurrentWindow(); await window.setFullscreen(!(await window.isFullscreen())); } catch (reason) { onError(`Fullscreen toggle failed: ${String(reason)}`); } return; } if (!session?.live || !terminal) return; const input = session.win32InputMode ? win32InputKey(event, true) : terminalKey(event, terminal.modes); event.preventDefault(); if (input) { if (scrollToBottomOnKey(event.key)) terminal.scrollToBottom(); session.sendInput(input); } }; const up = (event: KeyboardEvent) => { if (event.code === 'AltLeft' || event.code === 'AltRight' || event.key === 'AltGraph') alt.current = false; if ((event.code === 'F4' || event.key === 'F4') && (event.altKey || alt.current || (typeof event.getModifierState === 'function' && (event.getModifierState('Alt') || event.getModifierState('AltGraph')))) && !event.ctrlKey && !event.shiftKey && !event.metaKey) return; if (event.key === 'ContextMenu') { const source = menuEvent.current; const standalone = !menuShortcut.current; menu.current = false; menuEvent.current = null; event.preventDefault(); if (standalone && source && !(event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address'))) { const session = keyboardSession(); if (session?.live && session.win32InputMode) { session.sendInput(win32InputKey(source, true)); session.sendInput(win32InputKey(event, false)); } } return; } if (fullscreen.current && (event.code === 'Enter' || event.code === 'NumpadEnter')) { fullscreen.current = false; event.preventDefault(); return; } if (galleryOpenRef.current || presetPickerOpenRef.current) { event.preventDefault(); return; } if (event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address')) return; if (searchRef.current.open) { if (!(event.target instanceof Element && event.target.closest('.terminal-search-input'))) event.preventDefault(); return; } if (fullscreen.current && (event.code === 'Enter' || event.code === 'NumpadEnter')) { fullscreen.current = false; event.preventDefault(); return; } const session = keyboardSession(); if (!session?.live || !session.terminal) return; event.preventDefault(); if (session.win32InputMode) session.sendInput(win32InputKey(event, false)); }; const clearAlt = () => { alt.current = false; fullscreen.current = false; menu.current = false; menuEvent.current = null; menuShortcut.current = false; renderer.current?.setFocused(false); scrollIntentRef.current = false; }; window.addEventListener('keydown', down, true); window.addEventListener('keyup', up, true); window.addEventListener('blur', clearAlt); return () => { window.removeEventListener('keydown', down, true); window.removeEventListener('keyup', up, true); window.removeEventListener('blur', clearAlt); }; }, [clearSearch, closeSession, keyboardSession, moveSearch, onError, onToggleAi, onToggleGallery, onTogglePresetPicker, onToggleSettings, onToggleTabsBar, openBrowser, openSearch, openSession, selectSession, updateActivePreset]);
-  return { moveTab, search, openSearch, clearSearch, setSearchQuery: (query: string) => applySearch(query, 0), moveSearch, renderer: renderer.current, settingsRef, recordFirstDraw, live, size, fonts, tabs, activeTabId, activeSessionId: sessions.current.has(activeTabId ?? '') ? activeTabId : null, activePreset: activePresetState?.settings ?? defaultPresetRef.current, activePresetState, cursorStyleOverridden, scrollback, scrollToLine, updateActivePreset, replaceActivePreset, markActivePresetSaved, addressTabId, openAddress: (id: string) => setAddressTabId(id), closeAddress: () => setAddressTabId(null), navigateBrowser, openSession, openBrowser, selectSession, closeSession, sessionOwner, ownedSessionInfo, closeOwnedSessions, resizeSession, isMcpSession: (id: string) => Boolean(sessions.current.get(id)?.ownerId), resizeSource, exportGeometryDiagnostics: () => JSON.stringify({ version: 1, entries: geometryDiagnostics.current }, null, 2), canvasProps: { onFocus: () => { activeSession()?.setTerminalFocused(true); renderer.current?.setFocused(true); }, onBlur: () => { activeSession()?.setTerminalFocused(false); renderer.current?.setFocused(false); }, onWheel: (event: WheelEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (!terminal || event.deltaY === 0) { scrollIntentRef.current = false; return; } if (sendMouse(event, event.deltaY < 0 ? 'wheel-up' : 'wheel-down')) { scrollIntentRef.current = false; return; } event.preventDefault(); if (terminal.buffer.active === terminal.buffer.normal) { const from = terminal.buffer.active.viewportY; terminal.scrollLines(Math.sign(event.deltaY) * 3); const to = terminal.buffer.active.viewportY; if (to === from) scrollIntentRef.current = false; else if (smoothScrollbackRef.current) renderer.current?.beginScroll(from, to); } else { scrollIntentRef.current = false; } }, onMouseDown: (event: MouseEvent<HTMLCanvasElement>) => { event.currentTarget.focus(); renderer.current?.cancelScroll(); const terminal = activeSession()?.terminal; const point = terminal ? cell(event) : null; if (event.button === 1 && event.ctrlKey && point) { linkClick.current = linkAtPoint(point); if (linkClick.current) { event.preventDefault(); renderer.current!.setSelection(linkClick.current.selection); return; } } if (terminal && ((copyMode.current && event.button === 0) || event.button === 1)) { if (point) { event.preventDefault(); copyStart.current = copyPoint(point); renderer.current!.setSelection({ start: copyStart.current, end: copyStart.current }); } return; } if (event.button <= 2 && sendMouse(event, 'press', event.button as 0|1|2)) pressed.current.add(event.button); }, onMouseMove: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (linkClick.current) { const point = event.ctrlKey ? cell(event) : null; const link = point ? linkAtPoint(point) : null; renderer.current!.setSelection(link?.url === linkClick.current.url ? linkClick.current.selection : null); return; } if (terminal && copyStart.current && event.buttons) { const point = cell(event); if (point) renderer.current!.setSelection({ start: copyStart.current, end: copyPoint(point) }); return; } const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined; if (tracking && tracking !== 'none' && !(tracking === 'drag' && pressed.current.size === 0) && tracking !== 'x10' && tracking !== 'vt200') sendMouse(event, 'move', pressed.current.values().next().value as 0|1|2|undefined); }, onMouseUp: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (event.button === 1 && linkClick.current) { const clicked = linkClick.current; const point = event.ctrlKey ? cell(event) : null; const link = point ? linkAtPoint(point) : null; linkClick.current = null; renderer.current!.setSelection(null); if (link?.url === clicked.url) openBrowser(clicked.url); return; } if (terminal && copyStart.current) { const start = copyStart.current; copyStart.current = null; copyMode.current = false; const point = cell(event); if (point) void copy(start, copyPoint(point)).catch((reason) => onError(`Clipboard copy failed: ${String(reason)}`)); renderer.current!.setSelection(null); return; } if (event.button <= 2) { sendMouse(event, 'release', event.button as 0|1|2); pressed.current.delete(event.button); } }, onMouseLeave: (event: MouseEvent<HTMLCanvasElement>) => { if (linkClick.current) { linkClick.current = null; renderer.current!.setSelection(null); } for (const button of pressed.current) sendMouse(event, 'release', button as 0|1|2); pressed.current.clear(); }, onContextMenu: openNativeContextMenu, onPaste: (event: ClipboardEvent<HTMLCanvasElement>) => { const input = event.clipboardData.getData('text'); if (!input) return; event.preventDefault(); renderer.current?.cancelScroll(); activeSession()?.terminal?.scrollToBottom(); activeSession()?.sendInput(input); } } };
+  return { moveTab, search, openSearch, clearSearch, setSearchQuery: (query: string) => applySearch(query, 0), moveSearch, renderer: renderer.current, settingsRef, recordFirstDraw, live, size, fonts, tabs, activeTabId, activeSessionId: sessions.current.has(activeTabId ?? '') ? activeTabId : null, activePreset: activePresetState?.settings ?? defaultPresetRef.current, activePresetState, cursorStyleOverridden, scrollback, scrollToLine, updateActivePreset, replaceActivePreset, markActivePresetSaved, addressTabId, openAddress: (id: string) => setAddressTabId(id), closeAddress: () => setAddressTabId(null), navigateBrowser, openSession, openBrowser, selectSession, closeSession, sessionOwner, ownedSessionInfo, closeOwnedSessions, resizeSession, isMcpSession: (id: string) => Boolean(sessions.current.get(id)?.ownerId), resizeSource, exportGeometryDiagnostics: () => JSON.stringify({ version: 1, entries: geometryDiagnostics.current }, null, 2), canvasProps: { onFocus: () => { activeSession()?.setTerminalFocused(true); renderer.current?.setFocused(true); refreshAutomationProbeContext(); }, onBlur: () => { activeSession()?.setTerminalFocused(false); renderer.current?.setFocused(false); cancelAutomationProbeInput('canvas-blur'); refreshAutomationProbeContext(); }, onWheel: (event: WheelEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (!terminal || event.deltaY === 0) { scrollIntentRef.current = false; return; } if (sendMouse(event, event.deltaY < 0 ? 'wheel-up' : 'wheel-down')) { scrollIntentRef.current = false; return; } event.preventDefault(); if (terminal.buffer.active === terminal.buffer.normal) { const from = terminal.buffer.active.viewportY; terminal.scrollLines(Math.sign(event.deltaY) * 3); const to = terminal.buffer.active.viewportY; if (to === from) scrollIntentRef.current = false; else if (smoothScrollbackRef.current) renderer.current?.beginScroll(from, to); } else { scrollIntentRef.current = false; } }, onMouseDown: (event: MouseEvent<HTMLCanvasElement>) => { event.currentTarget.focus(); renderer.current?.cancelScroll(); const terminal = activeSession()?.terminal; const point = terminal ? cell(event) : null; if (event.button === 1 && event.ctrlKey && point) { linkClick.current = linkAtPoint(point); if (linkClick.current) { event.preventDefault(); renderer.current!.setSelection(linkClick.current.selection); return; } } if (terminal && ((copyMode.current && event.button === 0) || event.button === 1)) { if (point) { event.preventDefault(); copyStart.current = copyPoint(point); renderer.current!.setSelection({ start: copyStart.current, end: copyStart.current }); } return; } if (event.button <= 2 && sendMouse(event, 'press', event.button as 0|1|2)) pressed.current.add(event.button); }, onMouseMove: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (linkClick.current) { const point = event.ctrlKey ? cell(event) : null; const link = point ? linkAtPoint(point) : null; renderer.current!.setSelection(link?.url === linkClick.current.url ? linkClick.current.selection : null); return; } if (terminal && copyStart.current && event.buttons) { const point = cell(event); if (point) renderer.current!.setSelection({ start: copyStart.current, end: copyPoint(point) }); return; } const tracking = terminal?.modes.mouseTrackingMode as MouseTrackingMode | undefined; if (tracking && tracking !== 'none' && !(tracking === 'drag' && pressed.current.size === 0) && tracking !== 'x10' && tracking !== 'vt200') sendMouse(event, 'move', pressed.current.values().next().value as 0|1|2|undefined); }, onMouseUp: (event: MouseEvent<HTMLCanvasElement>) => { const terminal = activeSession()?.terminal; if (event.button === 1 && linkClick.current) { const clicked = linkClick.current; const point = event.ctrlKey ? cell(event) : null; const link = point ? linkAtPoint(point) : null; linkClick.current = null; renderer.current!.setSelection(null); if (link?.url === clicked.url) openBrowser(clicked.url); return; } if (terminal && copyStart.current) { const start = copyStart.current; copyStart.current = null; copyMode.current = false; const point = cell(event); if (point) void copy(start, copyPoint(point)).catch((reason) => onError(`Clipboard copy failed: ${String(reason)}`)); renderer.current!.setSelection(null); return; } if (event.button <= 2) { sendMouse(event, 'release', event.button as 0|1|2); pressed.current.delete(event.button); } }, onMouseLeave: (event: MouseEvent<HTMLCanvasElement>) => { if (linkClick.current) { linkClick.current = null; renderer.current!.setSelection(null); } for (const button of pressed.current) sendMouse(event, 'release', button as 0|1|2); pressed.current.clear(); }, onContextMenu: openNativeContextMenu, onPaste: (event: ClipboardEvent<HTMLCanvasElement>) => { const input = event.clipboardData.getData('text'); if (!input) return; event.preventDefault(); renderer.current?.cancelScroll(); activeSession()?.terminal?.scrollToBottom(); activeSession()?.sendInput(input); } } };
 }

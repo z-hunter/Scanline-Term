@@ -1,4 +1,4 @@
-type KeyEvent = Pick<KeyboardEvent, 'key' | 'code' | 'altKey' | 'ctrlKey' | 'shiftKey'> & Partial<Pick<KeyboardEvent, 'getModifierState' | 'keyCode'>>;
+type KeyEvent = Pick<KeyboardEvent, 'key' | 'code' | 'altKey' | 'ctrlKey' | 'shiftKey'> & Partial<Pick<KeyboardEvent, 'getModifierState' | 'keyCode' | 'which'>>;
 
 type Win32Key = readonly [virtualKey: number, scanCode: number];
 
@@ -37,7 +37,7 @@ function keyInfo(event: KeyEvent): Win32Key {
     const index = Number(functionKey[1]) - 1;
     return [0x70 + index, functionScans[index]];
   }
-  return [event.keyCode ?? 0, 0];
+  return [event.keyCode || event.which || 0, 0];
 }
 
 function controlState(event: KeyEvent, keyDown: boolean): number {

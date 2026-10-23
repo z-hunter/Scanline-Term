@@ -9,6 +9,7 @@ const mocked = vi.hoisted(() => ({
   mockCloseWindow: vi.fn(),
   mockSetFullscreen: vi.fn(),
   mockIsFullscreen: vi.fn().mockResolvedValue(false),
+  emit: vi.fn(async (...args: [string, unknown?]): Promise<void> => { void args; }),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock('@tauri-apps/api/window', () => ({
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
+  emit: mocked.emit,
   listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { mocked.handlers.set(name, handler); return () => mocked.handlers.delete(name); }),
 }));
 
@@ -1843,5 +1845,182 @@ describe('useTerminal closeSession concurrent closures', () => {
     });
     container.remove();
     vi.restoreAllMocks();
+  });
+});
+
+describe('automation probe input routing', () => {
+  it('de-arms the probe after closing its active last terminal while preserving the window', async () => {
+    mocked.handlers.clear();
+    mocked.emit.mockClear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { hookResult.resizeSource(output); });
+    let id: string | null = null;
+    await act(async () => { id = await hookResult.openSession(); });
+    expect(terminalSession(id!)?.live).toBe(true);
+    await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const frontendId = (mocked.emit.mock.calls.find(([name]) => name === 'automation-probe-ready')?.[1] as { frontendId: string }).frontendId;
+    mocked.handlers.get('automation-probe-status')?.({ payload: { frontendId, enabled: true, layouts: [], targets: null } });
+    expect((window as Window & { __scanlineAutomationProbe?: { context: unknown } }).__scanlineAutomationProbe?.context).toMatchObject({ tabId: id, focused: true });
+
+    await act(async () => { await hookResult.closeSession(id!, true, true); });
+
+    expect((window as Window & { __scanlineAutomationProbe?: { context: unknown } }).__scanlineAutomationProbe?.context).toMatchObject({ tabId: null, focused: false });
+    const sentContexts = mocked.emit.mock.calls.filter(([name]) => name === 'automation-probe-context').map(([, payload]) => payload as { focused: boolean; tabId: string | null });
+    expect(sentContexts.at(-1)).toMatchObject({ tabId: null, focused: false });
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
+  it.each(['vt', 'win32'] as const)('routes Cyrillic physical H and empty-code VK H as Ctrl+H through the %s encoder', async (encoder) => {
+    mocked.handlers.clear();
+    mocked.emit.mockClear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { hookResult.resizeSource(output); });
+    let id: string | null = null;
+    await act(async () => { id = await hookResult.openSession(); });
+    const session = terminalSession(id!);
+    expect(session?.live).toBe(true);
+    if (encoder === 'win32') session!.win32InputMode = true;
+    const sendInput = vi.spyOn(session!, 'sendInput');
+
+    await act(async () => {
+      output.focus();
+      hookResult.canvasProps.onFocus();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mocked.emit).toHaveBeenCalledWith('automation-probe-ready', { frontendId: expect.any(String) });
+    const frontendId = (mocked.emit.mock.calls.find(([name]) => name === 'automation-probe-ready')?.[1] as { frontendId: string }).frontendId;
+    const statusHandler = mocked.handlers.get('automation-probe-status');
+    expect(statusHandler).toBeDefined();
+    await act(async () => { statusHandler!({ payload: { frontendId, enabled: true, layouts: [], targets: null } }); });
+
+    const dispatch = (type: 'keydown' | 'keyup', init: KeyboardEventInit, keyCode?: number) => {
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init });
+      if (keyCode !== undefined) Object.defineProperty(event, 'keyCode', { value: keyCode });
+      window.dispatchEvent(event);
+      return event;
+    };
+    const tokenTapDown = dispatch('keydown', { key: 'Unidentified', code: '', repeat: false }, 252);
+    const tokenTapUp = dispatch('keyup', { key: 'Unidentified', code: '', repeat: false }, 252);
+    const chordTokenDown = dispatch('keydown', { key: 'Unidentified', code: '', repeat: false }, 252);
+    const hDown = dispatch('keydown', { key: 'р', code: 'KeyH' }, 72);
+    const hUp = dispatch('keyup', { key: 'р', code: 'KeyH' }, 72);
+    const chordTokenUp = dispatch('keyup', { key: 'Unidentified', code: '', repeat: false }, 252);
+    const vkChordTokenDown = dispatch('keydown', { key: 'Unidentified', code: '', repeat: false }, 252);
+    const vkHDown = dispatch('keydown', { key: 'р', code: '' }, 72);
+    const vkHUp = dispatch('keyup', { key: 'р', code: '' }, 72);
+    const vkChordTokenUp = dispatch('keyup', { key: 'Unidentified', code: '', repeat: false }, 252);
+    expect([tokenTapDown.defaultPrevented, tokenTapUp.defaultPrevented, chordTokenDown.defaultPrevented, hDown.defaultPrevented, hUp.defaultPrevented, chordTokenUp.defaultPrevented, vkChordTokenDown.defaultPrevented, vkHDown.defaultPrevented, vkHUp.defaultPrevented, vkChordTokenUp.defaultPrevented]).toEqual(Array(10).fill(true));
+
+    if (encoder === 'vt') {
+      expect(sendInput.mock.calls.map(([input]) => input)).toEqual(['\x1b', '\x08', '\x08']);
+    } else {
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' });
+      const h = new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', ctrlKey: true });
+      const vkH = new KeyboardEvent('keydown', { key: 'h', code: '', ctrlKey: true });
+      const vkHUp = new KeyboardEvent('keyup', { key: 'h', code: '', ctrlKey: true });
+      Object.defineProperty(vkH, 'keyCode', { value: 72 });
+      Object.defineProperty(vkHUp, 'keyCode', { value: 72 });
+      expect(sendInput.mock.calls.map(([input]) => input)).toEqual([
+        win32InputKey(escape, true),
+        win32InputKey(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false),
+        win32InputKey(h, true),
+        win32InputKey(h, false),
+        win32InputKey(vkH, true),
+        win32InputKey(vkHUp, false),
+      ]);
+      expect(sendInput).toHaveBeenCalledTimes(6);
+    }
+    const trace = (window as Window & { __scanlineAutomationProbe?: { trace: { kind: string }[] } }).__scanlineAutomationProbe?.trace;
+    expect(trace?.map(({ kind }) => kind)).toEqual(expect.arrayContaining(['token-down', 'token-up', 'chord-keydown', 'terminal-send']));
+
+    session?.dispose();
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
+  it('releases a held Win32 chord to its original tab on blur and suppresses late releases after refocus', async () => {
+    mocked.handlers.clear();
+    mocked.emit.mockClear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { hookResult.resizeSource(output); });
+    let firstId: string | null = null;
+    await act(async () => { firstId = await hookResult.openSession(); });
+    const first = terminalSession(firstId!);
+    expect(first?.live).toBe(true);
+    first!.win32InputMode = true;
+    const firstSend = vi.spyOn(first!, 'sendInput');
+    await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const frontendId = (mocked.emit.mock.calls.find(([name]) => name === 'automation-probe-ready')?.[1] as { frontendId: string }).frontendId;
+    mocked.handlers.get('automation-probe-status')?.({ payload: { frontendId, enabled: true, layouts: [], targets: null } });
+
+    const dispatch = (type: 'keydown' | 'keyup', init: KeyboardEventInit, keyCode?: number) => {
+      const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init });
+      if (keyCode !== undefined) Object.defineProperty(event, 'keyCode', { value: keyCode });
+      window.dispatchEvent(event);
+      return event;
+    };
+    const tokenDown = dispatch('keydown', { key: 'Unidentified', code: '' }, 252);
+    const hDown = dispatch('keydown', { key: 'р', code: '' }, 72);
+    expect([tokenDown.defaultPrevented, hDown.defaultPrevented]).toEqual([true, true]);
+    expect(firstSend).toHaveBeenCalledTimes(1);
+
+    output.blur();
+    await act(async () => { hookResult.canvasProps.onBlur(); });
+    expect(firstSend).toHaveBeenCalledTimes(2);
+    expect(firstSend.mock.calls[1][0]).toContain(';0;8;1_');
+
+    let secondId: string | null = null;
+    await act(async () => { secondId = await hookResult.openSession(); });
+    const second = terminalSession(secondId!);
+    expect(second?.live).toBe(true);
+    second!.win32InputMode = true;
+    const secondSend = vi.spyOn(second!, 'sendInput');
+    await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); });
+    const lateHUp = dispatch('keyup', { key: 'р', code: '' }, 72);
+    const lateTokenUp = dispatch('keyup', { key: 'Unidentified', code: '' }, 252);
+    expect([lateHUp.defaultPrevented, lateTokenUp.defaultPrevented]).toEqual([true, true]);
+    expect(firstSend).toHaveBeenCalledTimes(2);
+    expect(secondSend).not.toHaveBeenCalled();
+
+    first?.dispose(); second?.dispose();
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
   });
 });

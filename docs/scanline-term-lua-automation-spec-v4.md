@@ -23,7 +23,7 @@ Unlike WezTerm, Scanline Term does not aim to make Lua the mandatory or primary 
 The canonical acceptance scenario is automatic Windows input-language management for Vim/Neovim based on terminal state:
 
 - detect that the active terminal tab is running Vim/Neovim;
-- infer Insert vs Normal mode from cursor style changes emitted by the application (for example via DECSCUSR);
+- observe application-requested cursor type changes (for example via DECSCUSR), which a user script may use as an editor-mode heuristic;
 - remember the user's last input language while in Insert mode;
 - force English when entering Normal mode;
 - restore the remembered Insert-mode language when returning to Insert mode;
@@ -327,14 +327,14 @@ old_cursor
 new_cursor
 ```
 
-Cursor state should expose normalized values such as:
+Cursor state keeps the existing `.shape` event field and exposes the application's requested type, independently of the effective preset appearance:
 
 ```text
-shape: block | underline | bar
-blink: boolean
+shape: block | underline | bar | unknown | null
+blink: boolean | null
 ```
 
-The event should reflect actual terminal state after DECSCUSR or equivalent parsing has completed.
+DECSCUSR codes 1–6 normalize to block, underline, and bar. An unsupported code is `unknown`; it is not guessed from the renderer. Code 0, RIS, or another terminal reset clears the application request (`shape: null`, `blink: null`) and returns to the current preset appearance. Lua must receive change events for application requests and resets. These are terminal-state signals only: Scanline Term does not guarantee that they identify Vim/Helix mode or any other editor mode.
 
 ### `tab-focus-changed`
 

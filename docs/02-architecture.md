@@ -171,6 +171,12 @@ sequenceDiagram
     ConPTY->>Shell: stdin delivery
 ```
 
+#### Debug-only keyboard automation probe
+
+Windows development builds also contain an opt-in experiment in `src-tauri/src/automation_probe.rs`. It is enabled only by `SCANLINE_TERM_AUTOMATION_PROBE=1`; it installs a low-level hook on a dedicated message-pump thread and uses a marked `VK_NONAME` event as a frontend edge token. The frontend handles that token synchronously and continues through the existing VT or Win32 encoder, so normal key delivery does not add a Tauri/IPC round trip. Each WebView frontend instance sends `{ frontendId }` on ready and includes that ID on context and layout request/change/error messages; native status also echoes it. Native logical context and generation reset only when the ready ID changes, and native rejects stale-ID messages. A reset clears the logical Caps policy but retains the physical swallowed-down latch until its matching key-up or hook teardown. The native provider reports installed HKLs and accepts layout requests only for the current frontend instance and tab/generation while the pinned main WebView is foreground. It posts `WM_INPUTLANGCHANGEREQUEST` to the focused WebView HWND and reports a change only after focused-thread HKL readback. Because the experiment polls readback every 20 ms, its layout timing includes that polling delay.
+
+This is experimental scaffolding, not a shipped input feature or a verified CapsLock ordering guarantee. It has no Lua integration. The probe is disabled by default, compiled only in debug builds, and its event `allow-emit` permission exists only in the Tauri development configuration.
+
 ### Native Browser Tab Switching and Keyboard Focus
 
 Browser tabs are separate native WebView2 child surfaces, not DOM elements in the terminal WebView. Consequently, a focused top-level Tauri window is not proof that the terminal WebView can receive keyboard events: WebView2 controller focus is a separate state.

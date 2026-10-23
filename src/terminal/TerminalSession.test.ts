@@ -200,7 +200,8 @@ describe('TerminalSession', () => {
 
   it('uses DECSCUSR cursor appearance until reset restores the preset', async () => {
     const onCursorStyleOverrideChange = vi.fn();
-    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onCursorStyleOverrideChange);
+    const onCursorStyleChange = vi.fn();
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onCursorStyleOverrideChange, onCursorStyleChange);
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
     session.setCursorAppearance('underline', false);
     const write = (data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
@@ -208,6 +209,7 @@ describe('TerminalSession', () => {
     await write('\x1b[5 q');
     expect(session.cursorStyleOverridden).toBe(true);
     expect(onCursorStyleOverrideChange).toHaveBeenLastCalledWith(true);
+    expect(onCursorStyleChange).toHaveBeenLastCalledWith('bar');
     expect(session.terminal!.options.cursorStyle).toBe('bar');
     expect(session.terminal!.options.cursorBlink).toBe(true);
     await write('\x1b[6 q');
@@ -215,6 +217,7 @@ describe('TerminalSession', () => {
     await write('\x1b[5 q\x1bc');
     expect(session.cursorStyleOverridden).toBe(false);
     expect(onCursorStyleOverrideChange).toHaveBeenLastCalledWith(false);
+    expect(onCursorStyleChange).toHaveBeenLastCalledWith(null);
     expect(session.terminal!.options.cursorStyle).toBe('underline');
     expect(session.terminal!.options.cursorBlink).toBe(false);
     await write('\x1b[5 q');
@@ -222,6 +225,7 @@ describe('TerminalSession', () => {
     expect(session.cursorStyleOverridden).toBe(false);
     expect(session.terminal!.options.cursorStyle).toBe('underline');
     expect(session.terminal!.options.cursorBlink).toBe(false);
+    expect(onCursorStyleChange).toHaveBeenLastCalledWith(null);
     session.dispose();
   });
 

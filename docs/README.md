@@ -19,6 +19,7 @@
 | [Portable ZIP Installation](./13-portable-installation.md) | Users/QA | Manual installation and runtime requirements for the portable Windows ZIP |
 | [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md) | Developers/Coding agents | Dependency pinning, host ownership, local package development and validation |
 | [MCP Agent Guide](./14-mcp-agent-guide.md) | MCP agents/Developers | Local setup, session ownership, screen/scrollback snapshots, keyboard, mouse and lifecycle tools |
+| [Lua Automation Spike](./scanline-term-lua-automation-spike.md) | Developers/Product | V1 scope, Caps/layout feasibility evidence, platform limits and gate outcome |
 | [Agent Guide](../AGENT_GUIDE.md) | Coding agents | Safe editing, high-risk files, change impact map |
 
 ## Quick Links

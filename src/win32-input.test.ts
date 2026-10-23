@@ -4,6 +4,16 @@ import { win32InputKey } from './win32-input';
 const key = (code: string, overrides: Partial<KeyboardEvent> = {}) => ({ key: code, code, altKey: false, ctrlKey: false, shiftKey: false, repeat: false, ...overrides } as KeyboardEvent);
 
 describe('Win32 Input Mode encoding', () => {
+  it('encodes Ctrl+H for VK events with empty code and physical code events while keeping lock modifiers', () => {
+    const locks = (name: string) => name === 'CapsLock' || name === 'NumLock';
+    const injectedH = key('h', { code: '', keyCode: 72, which: 72, ctrlKey: true, getModifierState: locks });
+    const physicalH = key('h', { code: 'KeyH', keyCode: 72, which: 72, ctrlKey: true, getModifierState: locks });
+    expect(win32InputKey(injectedH, true)).toBe('\x1b[72;0;8;1;168;1_');
+    expect(win32InputKey(injectedH, false)).toBe('\x1b[72;0;8;0;168;1_');
+    expect(win32InputKey(physicalH, true)).toBe('\x1b[72;35;8;1;168;1_');
+    expect(win32InputKey(physicalH, false)).toBe('\x1b[72;35;8;0;168;1_');
+  });
+
   it('preserves modifier-only down/up events and standard virtual keys', () => {
     expect(win32InputKey(key('ControlLeft', { key: 'Control', ctrlKey: true }), true)).toBe('\x1b[17;29;0;1;8;1_');
     expect(win32InputKey(key('ControlLeft', { key: 'Control' }), false)).toBe('\x1b[17;29;0;0;0;1_');

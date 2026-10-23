@@ -122,6 +122,12 @@ const input = session.win32InputMode
   : terminalKey(event, terminal.modes);
 ```
 
+### Debug-only CapsLock and layout probe
+
+Windows dev builds include an opt-in experiment (`SCANLINE_TERM_AUTOMATION_PROBE=1`) in `src-tauri/src/automation_probe.rs`. A dedicated low-level hook thread may replace a guarded CapsLock edge with a marked `VK_NONAME` edge token; the frontend handles that token synchronously and runs it through the existing VT or Win32 encoder. Ordinary terminal keys do not make an additional Tauri/IPC call. The native side also reports `GetKeyboardLayoutList` entries, validates optional normal/insert HKL environment targets, and posts `WM_INPUTLANGCHANGEREQUEST` to the focused HWND inside the pinned main WebView. A request is reported only after focused-thread HKL readback.
+
+The readback observer is a 20 ms probe-only poll, so measured layout changes include up to one polling interval plus the Windows asynchronous language-change delay. It pauses outside the current focused tab and cancels pending requests on focus/tab-generation changes. A fresh frontend-instance ID resets the native logical generation on WebView reload; every context and layout message carries that ID so delayed messages from the prior instance are ignored. This is not enabled in release builds, has no user-facing setting or Lua behavior, and is not evidence that CapsLock suppression and the surrogate are ordered correctly for all input paths. See the retained spike report for live-test results.
+
 ### Standard VT Mode (`terminal/terminal-input.ts`)
 
 | Key Category | Encoding |

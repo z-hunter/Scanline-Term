@@ -34,6 +34,8 @@ ScanlineTerm/
 │   ├── terminal/terminal-input.ts # VT key encoding (standard terminal mode)
 │   ├── terminal/terminal-search.ts # Literal smart-case search over xterm buffers
 │   ├── terminal/terminal-input.test.ts # Unit tests for VT key encoding
+│   ├── terminal/automation-probe.ts # Dev-only context/layout bridge; no per-key IPC
+│   ├── terminal/automation-probe-state.ts # Dev-only tap-hold and layout state
 │   ├── win32-input.ts             # Win32 Input Mode key encoding
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
 │   ├── terminal/terminal-mouse.ts # Mouse event SGR/X10 encoding
@@ -46,6 +48,7 @@ ScanlineTerm/
 │   │   ├── bin/scanline-term-mcp.rs # stdio MCP JSON-RPC sidecar
 │   │   ├── home.rs               # Validated home.json load/save and backup handling
 │   │   ├── presets.rs            # Bounded preset catalog and atomic JSON file commands
+│   │   ├── automation_probe.rs   # Debug/env-gated Windows hook and layout probe
 │   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
 │   ├── capabilities/
 │   │   └── default.json          # Tauri security capability grants
@@ -214,6 +217,10 @@ Contains lookup tables for:
 - Letter scan codes (QWERTY layout, `letterScans`)
 - Digit scan codes (`digitScans`)
 - Function key scan codes F1–F24 (`functionScans`)
+
+#### [`src-tauri/src/automation_probe.rs`](../src-tauri/src/automation_probe.rs)
+
+Debug-build-only Windows experiment enabled with `SCANLINE_TERM_AUTOMATION_PROBE=1`. Owns the dedicated low-level hook thread, guarded marked-token injection, pinned-main-WebView focus checks, installed-HKL inventory, and layout request/readback events. The frontend bridge in `terminal/automation-probe.ts` runs only in dev builds, handles token events synchronously through existing encoders, and sends tab/focus context and cursor-driven layout requests. Each frontend instance emits `automation-probe-ready { frontendId }` and carries the ID on context and layout request/change/error messages; native status echoes it. Native logical context and generations reset only for a new ID, while the physical swallowed-down latch remains until matching key-up or hook teardown. A 20 ms native poll observes focused-thread HKL changes. This is probe infrastructure, not a product setting or production API; CapsLock input ordering still requires live validation.
 
 ---
 

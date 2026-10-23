@@ -36,6 +36,8 @@ mod browser;
 mod home;
 mod mcp;
 mod presets;
+#[cfg(all(windows, debug_assertions))]
+mod automation_probe;
 
 struct TerminalSession {
     child: Child,
@@ -1057,6 +1059,8 @@ fn main() {
             window.set_icon(icon)?;
             #[cfg(windows)]
             setup_window_restore_listener(&window);
+            #[cfg(all(windows, debug_assertions))]
+            automation_probe::setup(app.handle(), &window);
             Ok(())
         })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -1067,8 +1071,16 @@ fn main() {
             }
         }))
         .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
-        .run(tauri::generate_context!())
-        .expect("error while running Scanline Term");
+        .build(tauri::generate_context!())
+        .expect("error while building Scanline Term")
+        .run(|_app_handle, _event| {
+            #[cfg(all(windows, debug_assertions))]
+            if matches!(_event, tauri::RunEvent::Exit) {
+                if let Some(probe) = _app_handle.try_state::<automation_probe::Probe>() {
+                    probe.shutdown();
+                }
+            }
+        });
 }
 
 #[cfg(test)]

@@ -1,6 +1,17 @@
 {
   "identifier": "com.zhunter.scanlineterm.dev",
   "app": {
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "automation-probe-debug",
+          "description": "Allows the debug automation probe frontend to emit its ready, context, trace, and layout requests.",
+          "windows": ["main"],
+          "permissions": ["core:event:allow-emit"]
+        }
+      ]
+    },
     "windows": [
       {
         "title": "Scanline Term  [dev]",

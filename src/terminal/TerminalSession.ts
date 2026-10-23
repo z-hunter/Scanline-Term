@@ -186,6 +186,7 @@ export class TerminalSession {
   private cursorStyle: CursorStyle = 'block';
   private cursorBlink = true;
   private applicationCursorStyle = false;
+  private applicationCursorShape: CursorStyle | null = null;
   private terminalFocused = false;
 
   constructor(
@@ -197,6 +198,7 @@ export class TerminalSession {
     private readonly onTitle: (title: string) => void,
     private readonly onProcessName: (name: string) => void,
     private readonly onCursorStyleOverrideChange: (overridden: boolean) => void = () => undefined,
+    private readonly onCursorStyleChange: (style: CursorStyle | null) => void = () => undefined,
   ) {
     sessions.set(id, this);
   }
@@ -243,11 +245,11 @@ export class TerminalSession {
         (params) => {
           const param = params.length === 0 ? 1 : params[0];
           if (typeof param !== 'number') return false;
-          if (param === 0) this.setApplicationCursorStyle(false);
+          if (param === 0) this.setApplicationCursorStyle(null);
           else {
             const style = ({ 1: 'block', 2: 'block', 3: 'underline', 4: 'underline', 5: 'bar', 6: 'bar' } as const)[param as 1 | 2 | 3 | 4 | 5 | 6];
             if (!style) return false;
-            this.setApplicationCursorStyle(true);
+            this.setApplicationCursorStyle(style);
             terminal.options.cursorStyle = style;
             terminal.options.cursorBlink = param % 2 === 1;
             return true;
@@ -260,7 +262,7 @@ export class TerminalSession {
       terminal.parser.registerEscHandler(
         { final: 'c' },
         () => {
-          this.setApplicationCursorStyle(false);
+          this.setApplicationCursorStyle(null);
           terminal.options.cursorStyle = this.cursorStyle;
           terminal.options.cursorBlink = this.cursorBlink;
           return false;
@@ -370,10 +372,14 @@ export class TerminalSession {
     return this.applicationCursorStyle;
   }
 
-  private setApplicationCursorStyle(overridden: boolean): void {
-    if (this.applicationCursorStyle === overridden) return;
+  private setApplicationCursorStyle(style: CursorStyle | null): void {
+    const overridden = style !== null;
+    const overrideChanged = this.applicationCursorStyle !== overridden;
+    if (this.applicationCursorShape === style && !overrideChanged) return;
     this.applicationCursorStyle = overridden;
-    this.onCursorStyleOverrideChange(overridden);
+    this.applicationCursorShape = style;
+    if (overrideChanged) this.onCursorStyleOverrideChange(overridden);
+    this.onCursorStyleChange(style);
   }
 
   setTerminalFocused(focused: boolean): void {
@@ -724,6 +730,7 @@ export class TerminalSession {
     this.cursorStyle = 'block';
     this.cursorBlink = true;
     this.applicationCursorStyle = false;
+    this.applicationCursorShape = null;
     this.terminalFocused = false;
     this.size = { cols: 0, rows: 0 };
     this.onState(false, this.size);
