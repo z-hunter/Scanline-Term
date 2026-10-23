@@ -134,7 +134,7 @@ const unlisten = await listen<PayloadType>('my-event', (event) => {
 
 ## Windows Explorer integration
 
-The System setting `Windows Explorer: Open with ScanlineTerm here` is persisted in `StoredSettings`. The native `set_explorer_integration` command owns the matching per-user registry verbs under `HKCU\\Software\\Classes`; keep enable, disable, and the MSI's `ForceDeleteOnUninstall` entries in sync. Commands use `-T -P` for folder objects and folder backgrounds, so the regular CLI and single-instance launch path remain the only terminal-start path.
+The System setting `Windows Explorer: Open with ScanlineTerm here` is persisted in `StoredSettings`. The native `set_explorer_integration` command owns the matching per-user registry verbs under `HKCU\\Software\\Classes`, including the `Icon` value sourced from the bundled window icon; keep enable, disable, and the MSI's `ForceDeleteOnUninstall` entries in sync. Commands use `-T -P` for folder objects and folder backgrounds, so the regular CLI and single-instance launch path remain the only terminal-start path.
 
 ## Adding a System Menu Action
 

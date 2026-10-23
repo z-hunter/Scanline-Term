@@ -8,8 +8,6 @@
     <DirectoryRef Id="INSTALLDIR">
         <Component Id="ScanlineTermPath" Guid="55c52bf9-6608-4d1b-9019-3fd06596a91a" Win64="yes">
           <CreateFolder />
-          <RegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes" />
-          <RegistryKey Root="HKCU" Key="Software\Classes\Directory\Background\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes" />
           <Environment
           Id="AddScanlineTermToPath"
           Name="PATH"
@@ -18,6 +16,12 @@
           Part="last"
           System="yes"
           Permanent="no" />
+      </Component>
+      <Component Id="ScanlineTermExplorerVerbs" Guid="087276b3-9b3b-4579-88f6-95390e8d76ec" Win64="yes">
+        <RegistryKey Root="HKCU" Key="Software\Classes\Directory\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="ScanlineTermMsiComponent" Type="integer" Value="1" KeyPath="yes" />
+        </RegistryKey>
+        <RegistryKey Root="HKCU" Key="Software\Classes\Directory\Background\shell\ScanlineTerm.OpenHere" ForceDeleteOnUninstall="yes" />
       </Component>
     </DirectoryRef>
     <DirectoryRef Id="FontsFolder">

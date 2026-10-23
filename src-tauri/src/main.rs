@@ -444,7 +444,7 @@ fn remove_explorer_context_key(key: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn apply_explorer_integration(enabled: bool) -> Result<(), String> {
+fn apply_explorer_integration(enabled: bool, icon_path: Option<&Path>) -> Result<(), String> {
     let directory_key = explorer_context_key("Directory");
     let background_key = explorer_context_key("Directory\\Background");
     if !enabled {
@@ -456,10 +456,13 @@ fn apply_explorer_integration(enabled: bool) -> Result<(), String> {
     let executable = executable.to_string_lossy();
     let command = format!("\"{executable}\" -T -P \"%1\"");
     let background_command = format!("\"{executable}\" -T -P \"%V\"");
+    let icon_path = icon_path.ok_or("Scanline Term window icon is unavailable")?.to_string_lossy();
     let register = || {
-        set_registry_string(&directory_key, None, "Open with ScanlineTerm here")?;
+        set_registry_string(&directory_key, None, "Open ScanlineTerm here")?;
+        set_registry_string(&directory_key, Some("Icon"), &icon_path)?;
         set_registry_string(&format!("{directory_key}\\command"), None, &command)?;
-        set_registry_string(&background_key, None, "Open with ScanlineTerm here")?;
+        set_registry_string(&background_key, None, "Open ScanlineTerm here")?;
+        set_registry_string(&background_key, Some("Icon"), &icon_path)?;
         set_registry_string(&format!("{background_key}\\command"), None, &background_command)
     };
     if let Err(error) = register() {
@@ -471,11 +474,18 @@ fn apply_explorer_integration(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_explorer_integration(enabled: bool) -> Result<(), String> {
+fn set_explorer_integration(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(windows)]
-    { apply_explorer_integration(enabled) }
+    {
+        let icon_path = if enabled {
+            Some(app.path().resolve("window-icon.ico", BaseDirectory::Resource).map_err(|error| format!("could not locate Scanline Term window icon: {error}"))?)
+        } else {
+            None
+        };
+        apply_explorer_integration(enabled, icon_path.as_deref())
+    }
     #[cfg(not(windows))]
-    { let _ = enabled; Err("Windows Explorer integration is only available on Windows".into()) }
+    { let _ = (app, enabled); Err("Windows Explorer integration is only available on Windows".into()) }
 }
 
 #[cfg(windows)]

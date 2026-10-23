@@ -3177,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "scanline_term"
-version = "0.5.6"
+version = "0.5.7"
 dependencies = [
  "conpty-oxide",
  "interprocess",

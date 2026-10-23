@@ -120,12 +120,12 @@ Host-side keyboard remapping is a separate latency-sensitive path. Scripts that 
 Recommended names and lookup order on Windows:
 
 ```text
-1. <sterm executable directory>\sterm.lua
-2. %APPDATA%\com.zhunter.scanlineterm\config.lua
+1. <sterm executable directory>\sterm.lua, if present
+2. %APPDATA%\com.zhunter.scanlineterm\config.lua, otherwise
 3. no Lua file → current built-in/saved settings behavior
 ```
 
-The executable-directory file is important for portable ZIP installations.
+These are alternative locations for the same canonical entrypoint, not separate files to load. The executable-directory file takes precedence in both portable and installed builds; the AppData path is the fallback when it is absent.
 
 A future CLI override may be added:
 
@@ -230,16 +230,17 @@ Example:
 config.launch_menu = {
   {
     label = 'PowerShell',
-    args = { 'pwsh.exe', '-NoLogo' },
+    command = 'pwsh.exe',
+    args = { '-NoLogo' },
   },
   {
     label = 'FAR',
-    args = { 'far.exe' },
+    command = 'far.exe',
     preset = 'IBM 3278 (1977)',
   },
   {
     label = 'TurboIDE',
-    args = { 'D:\\Tools\\TurboIDE\\turboide.exe' },
+    command = 'D:\\Tools\\TurboIDE\\turboide.exe',
     cwd = 'D:\\Projects\\C',
     preset = 'IBM 5151 PC -MDA- (1981)',
   },
@@ -362,7 +363,7 @@ Arguments:
 language
 ```
 
-This event should be produced from native Windows input-language notifications, e.g. `WM_INPUTLANGCHANGE` or equivalent application-level handling.
+This event originates from a Windows-level input-language notification (for example, `WM_INPUTLANGCHANGE`). The host dispatches it only to the active, focused terminal tab; unfocused/background tab contexts do not receive it. The event describes a process/window-level change, not a per-tab Windows notification.
 
 ## 10. Tab object
 
@@ -412,9 +413,9 @@ sterm.use('scripts/caps-escape-control.lua', {
 
 Matching semantics in V1:
 
-- evidence categories (`app`, `process`, `title`) are OR alternatives;
+- evidence categories use precedence: `app` marker, then local `process`, then `title`; evaluate only the highest-precedence configured category for which evidence is available;
 - values inside one category are OR alternatives;
-- a script is active while at least one configured alternative matches;
+- a script is active when a value in the selected category matches; a mismatch does not fall through to a lower-precedence category;
 - a script without a `when` clause is always active in its owning tab;
 - transition from unmatched to matched emits/executes `on_activate`;
 - transition from matched to unmatched emits/executes `on_deactivate`;
@@ -429,8 +430,10 @@ Sterm should reserve a small terminal-to-host metadata mechanism analogous in sp
 Conceptually:
 
 ```text
-application/plugin -> OSC/user variable -> tab metadata -> Lua match/event
+application/plugin -> OSC/user variable -> untrusted tab metadata -> Lua match/event
 ```
+
+An OSC application marker is an untrusted hint, never authenticated identity. By default, OSC-supplied markers, including markers emitted by remote applications, must not be exposed to Lua matching or events. A user must explicitly opt in to accepting OSC markers for a tab before they can be used; local process evidence remains host-observed, and title text remains user/script-controlled fallback evidence.
 
 Candidate metadata:
 
@@ -578,7 +581,7 @@ local function apply_layout(ctx)
   end
 end
 
-sterm.on('activate', function(ctx)
+sterm.on('tab-activated', function(ctx)
   apply_layout(ctx)
 end)
 
@@ -587,7 +590,8 @@ sterm.on('cursor-style-changed', function(ctx, event)
 end)
 
 sterm.on('input-language-changed', function(ctx, event)
-  if ctx.tab:cursor_style().shape == 'bar' then
+  if ctx.tab:is_active() and ctx.tab:is_focused()
+      and ctx.tab:cursor_style().shape == 'bar' then
     insert_layout = event.language
   end
 end)
@@ -658,10 +662,14 @@ For Caps→Esc/Ctrl:
 
 ```text
 Caps down
-  + released alone before threshold/without chord -> send Esc
-  + another key pressed while held              -> synthesize Ctrl+that key
-  + release after chord                         -> end Ctrl state
+  + released alone before timeout_ms             -> send Esc
+  + timeout_ms expires while still held          -> enter Ctrl-hold state
+  + another key pressed while held               -> synthesize Ctrl+that key
+  + release after timeout with no chord          -> consume release; send neither Esc nor Caps
+  + release after chord                          -> end Ctrl state
 ```
+
+Releasing Caps after the timeout without pressing another key is consumed, so a long hold with no chord produces no tap action or Caps keystroke.
 
 The implementation should avoid perceptible latency for ordinary keys. Only the ambiguous tap-hold key may require short deferred resolution.
 
@@ -777,7 +785,7 @@ All GUI-configurable tab settings should be available through a bounded tab-loca
 Example:
 
 ```lua
-sterm.on('activate', function(ctx)
+on_activate(function(ctx)
   ctx.settings:override {
     font = 'Iosevka Term',
     font_size = 15,
@@ -892,7 +900,7 @@ Some events may be noisy. V1 should define coalescing rules where useful.
 Candidates:
 
 - repeated identical cursor-state notifications may collapse;
-- repeated title changes may keep only the latest pending value;
+- title changes may keep only the latest pending value while the match result stays on the same side of the activation boundary; if a sequence crosses that boundary (matched → unmatched → matched, or the reverse), preserve each transition in order;
 - focus and tab activation events must preserve ordering;
 - input-language events must preserve ordering relative to script-requested language changes sufficiently to prevent feedback loops.
 
@@ -966,6 +974,7 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 - duplicate layout change suppression;
 - title/local-process/cursor/application-marker event translation;
 - deterministic ordering of multiple input transformers in one tab;
+- Caps tap-hold release after `timeout_ms` with no chord is consumed without sending Esc or Caps;
 - GUI and Lua paths produce identical normalized values for the same setting;
 - scoped runtime setting overrides do not persist unless explicitly requested;
 - removing an override reveals the latest underlying GUI value rather than a stale snapshot;
@@ -997,6 +1006,13 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 11. While Vim remains open, activate another tab and type there.
 12. Trigger cursor/state changes in the background Vim tab; verify the foreground input language does not change.
 13. Return to Vim and verify layout is reconciled to the current cursor mode.
+
+### Manual acceptance: Caps tap-hold timeout
+
+1. Configure Caps→Esc/Ctrl with a known `timeout_ms`.
+2. Release Caps alone before the timeout and verify the terminal receives Esc.
+3. Hold Caps beyond the timeout, press no other key, then release it; verify the terminal receives neither Esc nor Caps.
+4. Hold Caps beyond the timeout, press another key, and verify the terminal receives that key with Ctrl held.
 
 ## 27. Phased scope
 
