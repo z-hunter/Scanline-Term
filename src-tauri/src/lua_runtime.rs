@@ -1728,22 +1728,16 @@ end)
                 .actions
                 .is_empty()
         );
-        assert_eq!(
-            runtime
-                .dispatch(
-                    &helix_insert,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::ContextUpdated,
-                )
-                .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "de-DE"
-            )]
-        );
+        assert!(runtime
+            .dispatch(
+                &helix_insert,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::ContextUpdated,
+            )
+            .actions
+            .is_empty());
 
         assert!(
             runtime
@@ -1879,6 +1873,162 @@ end)
                 )
                 .actions
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn shared_example_captures_and_restores_exact_insert_layout_across_mode_events() {
+        let dir = TempDir::new();
+        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        dir.write(
+            "scripts/modal-layout.lua",
+            include_str!("../../examples/lua/scripts/modal-layout.lua"),
+        );
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let mut runtime = LuaRuntime::new(snapshot);
+        let mut normal = tab("helix", Some("hx.exe"), true, true);
+        normal.cursor_style.shape = CursorShape::Underline;
+        let old_russian = "0x04190419";
+        let typewriter_russian = "0xF0080419";
+        let input = |layout: &str| InputState {
+            current_layout: Some(layout.into()),
+        };
+
+        assert_eq!(
+            runtime
+                .attach_tab(normal.clone(), input(old_russian))
+                .actions,
+            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+        );
+
+        let mut insert = normal.clone();
+        insert.cursor_style.shape = CursorShape::Bar;
+        assert!(runtime
+            .dispatch(
+                &insert,
+                &input("en-US"),
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: normal.cursor_style.clone(),
+                    new_cursor: insert.cursor_style.clone(),
+                },
+            )
+            .actions
+            .is_empty());
+        assert_eq!(
+            runtime
+                .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                old_russian
+            )]
+        );
+        runtime.dispatch(
+            &insert,
+            &input(old_russian),
+            RuntimeEvent::InputLanguageChanged {
+                layout: old_russian.into(),
+            },
+        );
+
+        assert!(runtime
+            .dispatch(
+                &normal,
+                &input(typewriter_russian),
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: insert.cursor_style.clone(),
+                    new_cursor: normal.cursor_style.clone(),
+                },
+            )
+            .actions
+            .is_empty());
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &normal,
+                    &input(typewriter_russian),
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "en-US"
+            )]
+        );
+        assert_eq!(
+            runtime
+                .dispatch(&normal, &input("en-US"), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "en-US"
+            )]
+        );
+
+        let mut block = normal.clone();
+        block.cursor_style.shape = CursorShape::Block;
+        runtime.dispatch(&block, &input("en-US"), RuntimeEvent::ContextUpdated);
+        assert_eq!(
+            runtime
+                .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                typewriter_russian
+            )]
+        );
+
+        runtime.dispatch(
+            &insert,
+            &input("en-US"),
+            RuntimeEvent::InputLanguageChanged {
+                layout: "en-US".into(),
+            },
+        );
+        assert_eq!(
+            runtime
+                .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                typewriter_russian
+            )]
+        );
+        runtime.dispatch(
+            &insert,
+            &input(typewriter_russian),
+            RuntimeEvent::InputLanguageChanged {
+                layout: typewriter_russian.into(),
+            },
+        );
+        assert!(runtime
+            .dispatch(&insert, &input(old_russian), RuntimeEvent::ContextUpdated,)
+            .actions
+            .is_empty());
+        assert_eq!(
+            runtime
+                .dispatch(&normal, &input(old_russian), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "en-US"
+            )]
+        );
+        assert_eq!(
+            runtime
+                .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                old_russian
+            )]
         );
     }
 

@@ -59,7 +59,7 @@ end)
 
 The host runs Lua on a dedicated bounded worker and applies only returned intents. It rechecks frontend instance, tab generation, active/focused state, and live terminal ownership before requesting a Windows keyboard layout. Layout names can be locale names such as `en-US` or an installed HKL identifier. A request is reported as observed only after the focused thread's layout matches it. Diagnostics identify the script and event, and layout traces include tab and generation.
 
-Every attachment and tab has a separate Lua VM and script state. The generic shared script does not check editor names; process filtering belongs in `sterm.use`. Unknown or absent cursor shapes do not trigger layout changes. The example remembers the active input layout while the cursor is a bar and applies `normal_layout` when the shape matches that binding's `normal_cursor_shapes` policy. Helix's block and underline shapes both select its normal layout; the script still reacts to reported cursor metadata, not editor mode or visual cell highlighting.
+Every attachment and tab has a separate Lua VM and script state. The generic shared script does not check editor names; process filtering belongs in `sterm.use`. Unknown or absent cursor shapes do not trigger layout changes. The example captures the active layout when entering a normal cursor shape, then restores that exact identifier on entering a bar shape. It keeps the configured `normal_layout` applied while normal and stops enforcing the restored layout once Windows reports it, so a manual layout choice in Insert is retained. Helix's block and underline shapes both select its normal layout; the script still reacts to reported cursor metadata, not editor mode or visual cell highlighting.
 
 ## Runtime limits
 
