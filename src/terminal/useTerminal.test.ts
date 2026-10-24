@@ -976,6 +976,113 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
+  it('routes Menu+V clipboard text to the active session without writing clipboard in either input mode', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'powershell.exe' : {}));
+
+    const onError = vi.fn();
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ settings: DEFAULT_CRT_SETTINGS, resolution: RESOLUTIONS[1], ready: false, onError, onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+
+    const clipboardText = 'Get-ChildItem C:\\';
+    const readText = vi.fn().mockResolvedValue(clipboardText);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let session: TerminalSession | undefined;
+
+    try {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText, writeText } });
+      await act(async () => {
+        root.render(createElement(TestComponent));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      await act(async () => { await hookResult.openSession(); });
+      const sessionId = hookResult.activeSessionId!;
+      session = terminalSession(sessionId);
+      expect(session).not.toBeNull();
+
+      for (const win32InputMode of [false, true]) {
+        session!.win32InputMode = win32InputMode;
+        mocked.invoke.mockClear();
+        const keyDown = new KeyboardEvent('keydown', { code: 'KeyQ', key: 'q', bubbles: true, cancelable: true });
+        const keyUp = new KeyboardEvent('keyup', { code: 'KeyQ', key: 'q', bubbles: true, cancelable: true });
+        await act(async () => {
+          window.dispatchEvent(keyDown);
+          window.dispatchEvent(keyUp);
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        expect(mocked.invoke.mock.calls.filter(([command]) => command === 'write_terminal')).toEqual(win32InputMode
+          ? [
+              ['write_terminal', { sessionId, input: win32InputKey(keyDown, true) }],
+              ['write_terminal', { sessionId, input: win32InputKey(keyUp, false) }],
+            ]
+          : [['write_terminal', { sessionId, input: 'q' }]]);
+      }
+
+      session!.win32InputMode = true;
+      mocked.invoke.mockClear();
+      const modeSwitchDown = new KeyboardEvent('keydown', { code: 'KeyT', key: 't', bubbles: true, cancelable: true });
+      await act(async () => { window.dispatchEvent(modeSwitchDown); });
+      session!.win32InputMode = false;
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyT', key: 't', bubbles: true, cancelable: true }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(mocked.invoke.mock.calls.filter(([command]) => command === 'write_terminal')).toEqual([
+        ['write_terminal', { sessionId, input: win32InputKey(modeSwitchDown, true) }],
+      ]);
+
+      const observed: { win32InputMode: boolean; releaseMenuFirst: boolean; writes: unknown[] }[] = [];
+      for (const win32InputMode of [false, true]) {
+        for (const releaseMenuFirst of [false, true]) {
+          session!.win32InputMode = win32InputMode;
+          mocked.invoke.mockClear();
+          readText.mockClear();
+          await act(async () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyV', key: 'v', bubbles: true, cancelable: true }));
+            if (releaseMenuFirst) {
+              window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true, cancelable: true }));
+              window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV', key: 'v', bubbles: true, cancelable: true }));
+            } else {
+              window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV', key: 'v', bubbles: true, cancelable: true }));
+              window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', bubbles: true, cancelable: true }));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          });
+
+          expect(readText).toHaveBeenCalledOnce();
+          observed.push({
+            win32InputMode,
+            releaseMenuFirst,
+            writes: mocked.invoke.mock.calls.filter(([command]) => command === 'write_terminal'),
+          });
+        }
+      }
+      expect(observed).toEqual([false, true].flatMap((win32InputMode) => [false, true].map((releaseMenuFirst) => ({
+        win32InputMode,
+        releaseMenuFirst,
+        writes: [['write_terminal', { sessionId, input: clipboardText }]],
+      }))));
+      expect(writeText).not.toHaveBeenCalled();
+    } finally {
+      session?.dispose();
+      await act(async () => { root.unmount(); });
+      container.remove();
+      if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+      vi.restoreAllMocks();
+    }
+  });
+
   it('switches between tabs on Menu+ArrowRight and Menu+ArrowLeft shortcuts', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();
@@ -1197,13 +1304,12 @@ describe('useTerminal closeSession concurrent closures', () => {
 
     sendInputSpy.mockClear();
 
-    // Later, an Enter keyup event is received in the terminal
+    // The consumed Alt+Enter keydown has no matching terminal keyup to send.
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', bubbles: true }));
     });
 
-    // Fullscreen guard was cleared on blur, so the keyup event reaches the session instead of being consumed
-    expect(sendInputSpy).toHaveBeenCalled();
+    expect(sendInputSpy).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -1719,7 +1825,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     });
 
     expect(spy2).toHaveBeenCalledWith(win32InputKey(altRight, false));
-    expect(spy1).not.toHaveBeenCalled();
+    expect(spy1).toHaveBeenCalledWith(win32InputKey(keyA, false));
 
     await act(async () => {
       root.unmount();
