@@ -28,6 +28,7 @@ import {
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
+import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
@@ -188,6 +189,7 @@ export default function App() {
       return [...current, { id: nextToastId.current++, message, resetKey: 0 }];
     });
   }, []);
+  const luaAutomation = useLuaAutomationStatus(reportError);
   const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
     if (!isTauri()) {
       reportError("Windows Explorer integration is available in the desktop app only.");
@@ -1540,6 +1542,10 @@ export default function App() {
           getSmoothScrollDiagnostics={() => terminal.renderer.exportSmoothScrollDiagnostics()}
           geometryDiagnosticsEnabled={TERMINAL_GEOMETRY_DIAGNOSTICS}
           getGeometryDiagnostics={terminal.exportGeometryDiagnostics}
+          luaAutomationStatus={luaAutomation.status}
+          reloadLuaConfig={luaAutomation.reload}
+          luaAutomationAvailable={luaAutomation.available}
+          onError={reportError}
         />
       )}
     </main>

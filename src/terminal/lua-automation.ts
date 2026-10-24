@@ -20,8 +20,10 @@ export type LuaAutomationStatus = {
   state: 'disabled' | 'loading' | 'ready' | 'error';
   configPath: string | null;
   error: string | null;
-  diagnostics: string[];
+  diagnostics: LuaAutomationDiagnostic[];
 };
+
+export type LuaAutomationDiagnostic = { level: 'info' | 'error'; message: string };
 
 type Started = LuaAutomationStatus & { frontendId: string };
 type InvokeLua = (command: string, args?: Record<string, unknown>) => Promise<unknown>;

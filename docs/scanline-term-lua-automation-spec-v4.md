@@ -951,7 +951,7 @@ The event should not simply be suppressed globally because scripts may legitimat
 Minimum implementation:
 
 - load Lua configuration at application startup;
-- provide an explicit `Reload Lua Configuration` action;
+- provide a Settings action named `Reload config` and an `Edit config` action that opens the current entry file in the operating system's default editor;
 - on reload, discard old callbacks and rebuild the Lua VM/config cleanly.
 
 Automatic file watching is not required for V1.
@@ -961,6 +961,8 @@ Open tabs should not be recreated on reload. New configuration applies to future
 ## 25. Diagnostics
 
 Lua errors should be visible without breaking normal terminal use.
+
+The Settings panel reports the Lua automation state. Load/runtime errors appear as error toasts, and diagnostic messages are written to the WebView console with a `[Lua]` prefix, using info or error level as appropriate.
 
 Recommended diagnostic information:
 

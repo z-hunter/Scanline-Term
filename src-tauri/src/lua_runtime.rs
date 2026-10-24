@@ -19,6 +19,7 @@ use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 const MAX_CONFIG_BYTES: usize = 256 * 1024;
 const MAX_SCRIPT_BYTES: usize = 256 * 1024;
 const MAX_ATTACHMENTS: usize = 64;
+const MAX_MODULES: usize = 64;
 const MAX_TOTAL_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_INSTANCES: usize = 64;
 const MAX_HANDLERS_PER_VM: usize = 128;
@@ -124,12 +125,25 @@ struct Attachment {
     events: HashSet<String>,
 }
 
+#[derive(Clone)]
+struct LuaModule {
+    source_name: String,
+    source: Arc<str>,
+}
+
+#[derive(Clone, Default)]
+struct ConfigRegistrations {
+    attachments: Vec<(String, Option<Vec<String>>, JsonValue)>,
+    modules: HashMap<String, String>,
+}
+
 /// Immutable source generation. Reload by constructing a new snapshot and then
 /// replacing the runtime's current generation on its owning controller worker.
 #[derive(Clone)]
 pub struct RuntimeSnapshot {
     config_path: PathBuf,
     attachments: Vec<Attachment>,
+    modules: HashMap<String, LuaModule>,
     wants_input_language_events: bool,
 }
 
@@ -190,9 +204,7 @@ impl RuntimeSnapshot {
             Ok(lua) => lua,
             Err(error) => return Err(vec![diagnostic(None, None, error.to_string())]),
         };
-        let registrations = Arc::new(Mutex::new(
-            Vec::<(String, Option<Vec<String>>, JsonValue)>::new(),
-        ));
+        let registrations = Arc::new(Mutex::new(ConfigRegistrations::default()));
         if let Err(error) = install_registration_api(&registration_lua, registrations.clone()) {
             return Err(vec![diagnostic(Some(entry_name), None, error.to_string())]);
         }
@@ -206,18 +218,66 @@ impl RuntimeSnapshot {
                 .map(|items| items.clone())
                 .unwrap_or_default(),
         };
-        if registrations.len() > MAX_ATTACHMENTS {
+        if registrations.attachments.len() > MAX_ATTACHMENTS {
             return Err(vec![diagnostic(
                 Some(entry_name),
                 None,
                 format!("configuration declares more than {MAX_ATTACHMENTS} script attachments"),
             )]);
         }
+        if registrations.modules.len() > MAX_MODULES {
+            return Err(vec![diagnostic(
+                Some(entry_name),
+                None,
+                format!("configuration declares more than {MAX_MODULES} Lua modules"),
+            )]);
+        }
 
         let mut source_cache = HashMap::<PathBuf, Arc<str>>::new();
         let mut total_bytes = entry_source.len();
-        let mut attachments = Vec::with_capacity(registrations.len());
-        for (relative, process_matches, options) in registrations {
+        let mut modules = HashMap::with_capacity(registrations.modules.len());
+        for (name, relative) in registrations.modules {
+            let resolved = match confined_script_path(root, &relative) {
+                Ok(path) => path,
+                Err(error) => {
+                    diagnostics.push(diagnostic(Some(entry_name.clone()), None, error));
+                    continue;
+                }
+            };
+            let source_name = relative.replace('\\', "/");
+            let source = if let Some(source) = source_cache.get(&resolved) {
+                source.clone()
+            } else {
+                match read_limited(&resolved, MAX_SCRIPT_BYTES) {
+                    Ok(source) => {
+                        total_bytes += source.len();
+                        if total_bytes > MAX_TOTAL_SCRIPT_BYTES {
+                            return Err(vec![diagnostic(
+                                Some(entry_name),
+                                None,
+                                "Lua source snapshot exceeds the total size limit",
+                            )]);
+                        }
+                        let source = Arc::<str>::from(source);
+                        source_cache.insert(resolved.clone(), source.clone());
+                        source
+                    }
+                    Err(error) => {
+                        diagnostics.push(diagnostic(Some(source_name), None, error));
+                        continue;
+                    }
+                }
+            };
+            modules.insert(
+                name,
+                LuaModule {
+                    source_name,
+                    source,
+                },
+            );
+        }
+        let mut attachments = Vec::with_capacity(registrations.attachments.len());
+        for (relative, process_matches, options) in registrations.attachments {
             let resolved = match confined_script_path(root, &relative) {
                 Ok(path) => path,
                 Err(error) => {
@@ -285,7 +345,7 @@ impl RuntimeSnapshot {
                     }
                 };
                 let (lua, options) = options_value;
-                if let Err(error) = install_script_api(&lua, &source_name, &source) {
+                if let Err(error) = install_script_api(&lua, &modules) {
                     diagnostics.push(diagnostic(
                         Some(source_name.clone()),
                         None,
@@ -331,6 +391,7 @@ impl RuntimeSnapshot {
         Ok(Self {
             config_path: entry_path,
             attachments,
+            modules,
             wants_input_language_events,
         })
     }
@@ -405,9 +466,7 @@ impl LuaRuntime {
                 tab.local_process_name.as_deref(),
             ) && tab.active
                 && tab.focused;
-            if let Err(error) =
-                install_script_api(&lua, &attachment.source_name, &attachment.source)
-            {
+            if let Err(error) = install_script_api(&lua, &self.snapshot.modules) {
                 result.diagnostics.push(diagnostic(
                     Some(attachment.source_name.clone()),
                     None,
@@ -727,9 +786,35 @@ fn execute_limited_with_args(lua: &Lua, source: &str, name: &str, args: Value) -
 
 fn install_registration_api(
     lua: &Lua,
-    registrations: Arc<Mutex<Vec<(String, Option<Vec<String>>, JsonValue)>>>,
+    registrations: Arc<Mutex<ConfigRegistrations>>,
 ) -> mlua::Result<()> {
     let module = lua.create_table()?;
+    module.set("module", {
+        let registrations = registrations.clone();
+        lua.create_function(move |_, (name, path): (String, String)| {
+            if !valid_module_name(&name) || name == "sterm" {
+                return Err(mlua::Error::RuntimeError(
+                    "module name must be a simple identifier other than 'sterm'".into(),
+                ));
+            }
+            let path = validate_relative_script(&path).map_err(mlua::Error::RuntimeError)?;
+            let mut registrations = registrations.lock().map_err(|_| {
+                mlua::Error::RuntimeError("Lua registration state is unavailable".into())
+            })?;
+            if registrations.modules.contains_key(&name) {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "Lua module '{name}' is already registered"
+                )));
+            }
+            if registrations.modules.len() >= MAX_MODULES {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "configuration exceeds the {MAX_MODULES}-module limit"
+                )));
+            }
+            registrations.modules.insert(name, path);
+            Ok(())
+        })?
+    })?;
     module.set(
         "use",
         lua.create_function(move |_, (path, options): (String, Option<Table>)| {
@@ -814,12 +899,14 @@ fn install_registration_api(
             let mut registrations = registrations.lock().map_err(|_| {
                 mlua::Error::RuntimeError("Lua registration state is unavailable".into())
             })?;
-            if registrations.len() >= MAX_ATTACHMENTS {
+            if registrations.attachments.len() >= MAX_ATTACHMENTS {
                 return Err(mlua::Error::RuntimeError(format!(
                     "configuration exceeds the {MAX_ATTACHMENTS}-attachment limit"
                 )));
             }
-            registrations.push((path, process, script_options));
+            registrations
+                .attachments
+                .push((path, process, script_options));
             Ok(())
         })?,
     )?;
@@ -837,7 +924,7 @@ fn install_registration_api(
     )
 }
 
-fn install_script_api(lua: &Lua, source_name: &str, source: &str) -> mlua::Result<()> {
+fn install_script_api(lua: &Lua, modules: &HashMap<String, LuaModule>) -> mlua::Result<()> {
     let handlers = lua.create_table()?;
     lua.globals().set("__sterm_handlers", handlers.clone())?;
     let handler_count = Arc::new(AtomicUsize::new(0));
@@ -897,20 +984,54 @@ fn install_script_api(lua: &Lua, source_name: &str, source: &str) -> mlua::Resul
             Ok(())
         })?
     })?;
-    let _ = (source_name, source);
     lua.globals().set("sterm", module.clone())?;
+    let module_cache = lua.create_table()?;
+    let modules_loading = lua.create_table()?;
+    let modules = modules.clone();
     lua.globals().set(
         "require",
-        lua.create_function(move |_, name: String| {
+        lua.create_function(move |lua, name: String| {
             if name == "sterm" {
-                Ok(module.clone())
-            } else {
-                Err(mlua::Error::RuntimeError(
-                    "script modules may require only the built-in 'sterm' module".into(),
-                ))
+                return Ok(Value::Table(module.clone()));
             }
+            let cached = module_cache.get::<Value>(name.as_str())?;
+            if !matches!(cached, Value::Nil) {
+                return Ok(cached);
+            }
+            if !matches!(modules_loading.get::<Value>(name.as_str())?, Value::Nil) {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "cyclic Lua module dependency involving '{name}'"
+                )));
+            }
+            let source = modules.get(&name).ok_or_else(|| {
+                mlua::Error::RuntimeError(format!(
+                    "Lua module '{name}' is not registered in the trusted configuration"
+                ))
+            })?;
+            modules_loading.set(name.as_str(), true)?;
+            let loaded = lua
+                .load(source.source.as_ref())
+                .set_name(source.source_name.as_str())
+                .eval::<Value>();
+            modules_loading.set(name.as_str(), Value::Nil)?;
+            let value = loaded?;
+            let value = if matches!(value, Value::Nil) {
+                Value::Boolean(true)
+            } else {
+                value
+            };
+            module_cache.set(name.as_str(), value.clone())?;
+            Ok(value)
         })?,
-    )
+    )?;
+    Ok(())
+}
+
+fn valid_module_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+        && name.len() <= 64
 }
 
 fn get_or_create_list(lua: &Lua, handlers: &Table, key: &str) -> mlua::Result<Table> {
@@ -1396,6 +1517,21 @@ mod tests {
         let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
         (dir, LuaRuntime::new(snapshot))
     }
+    fn write_shared_examples(dir: &TempDir) {
+        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        dir.write(
+            "editors/nvim.lua",
+            include_str!("../../examples/lua/editors/nvim.lua"),
+        );
+        dir.write(
+            "editors/hx.lua",
+            include_str!("../../examples/lua/editors/hx.lua"),
+        );
+        dir.write(
+            "modules/modal_editor.lua",
+            include_str!("../../examples/lua/modules/modal_editor.lua"),
+        );
+    }
     fn intent(script: &str, event: &str, layout: &str) -> ActionIntent {
         ActionIntent {
             action: Action::SetLayout(layout.into()),
@@ -1660,15 +1796,23 @@ end)
     #[test]
     fn shared_example_supports_per_binding_normal_shapes_and_focus_reactivation() {
         let dir = TempDir::new();
-        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
-        dir.write(
-            "scripts/modal-layout.lua",
-            include_str!("../../examples/lua/scripts/modal-layout.lua"),
-        );
+        write_shared_examples(&dir);
         let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
         assert_eq!(snapshot.attachments.len(), 2);
 
         let mut runtime = LuaRuntime::new(snapshot);
+        let vim = tab("vim", Some("vim.exe"), true, true);
+        assert_eq!(
+            runtime
+                .attach_tab(
+                    vim,
+                    InputState {
+                        current_layout: Some("ru-RU".into())
+                    },
+                )
+                .actions,
+            vec![intent("editors/nvim.lua", "activate", "en-US")]
+        );
         let nvim = tab("nvim", Some("nvim.exe"), true, true);
         assert_eq!(
             runtime
@@ -1679,7 +1823,7 @@ end)
                     },
                 )
                 .actions,
-            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+            vec![intent("editors/nvim.lua", "activate", "en-US")]
         );
         let mut nvim_insert = nvim.clone();
         nvim_insert.cursor_style.shape = CursorShape::Bar;
@@ -1703,7 +1847,7 @@ end)
                     },
                 )
                 .actions,
-            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+            vec![intent("editors/hx.lua", "activate", "en-US")]
         );
         let mut helix_insert = helix.clone();
         helix_insert.cursor_style.shape = CursorShape::Bar;
@@ -1716,8 +1860,7 @@ end)
                 layout: "de-DE".into(),
             },
         );
-        assert!(
-            runtime
+        assert!(runtime
                 .dispatch(
                     &helix_insert,
                     &InputState {
@@ -1729,8 +1872,7 @@ end)
                     },
                 )
                 .actions
-                .is_empty()
-        );
+            .is_empty());
         assert!(runtime
             .dispatch(
                 &helix_insert,
@@ -1742,8 +1884,7 @@ end)
             .actions
             .is_empty());
 
-        assert!(
-            runtime
+        assert!(runtime
                 .dispatch(
                     &nvim_insert,
                     &InputState {
@@ -1755,8 +1896,7 @@ end)
                     },
                 )
                 .actions
-                .is_empty()
-        );
+            .is_empty());
         assert_eq!(
             runtime
                 .dispatch(
@@ -1767,17 +1907,12 @@ end)
                     RuntimeEvent::ContextUpdated,
                 )
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "ru-RU"
-            )]
+            vec![intent("editors/nvim.lua", "context-updated", "ru-RU")]
         );
 
         let mut helix_unfocused = helix.clone();
         helix_unfocused.focused = false;
-        assert!(
-            runtime
+        assert!(runtime
                 .dispatch(
                     &helix_unfocused,
                     &InputState {
@@ -1786,12 +1921,10 @@ end)
                     RuntimeEvent::TabFocusChanged { focused: false },
                 )
                 .actions
-                .is_empty()
-        );
+            .is_empty());
         let mut helix_unfocused_normal = helix_unfocused.clone();
         helix_unfocused_normal.cursor_style.shape = CursorShape::Underline;
-        assert!(
-            runtime
+        assert!(runtime
                 .dispatch(
                     &helix_unfocused_normal,
                     &InputState {
@@ -1803,8 +1936,7 @@ end)
                     },
                 )
                 .actions
-                .is_empty()
-        );
+            .is_empty());
         let mut helix_refocused = helix_unfocused_normal.clone();
         helix_refocused.focused = true;
         assert_eq!(
@@ -1817,7 +1949,7 @@ end)
                     RuntimeEvent::TabFocusChanged { focused: true },
                 )
                 .actions,
-            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+            vec![intent("editors/hx.lua", "activate", "en-US")]
         );
         assert_eq!(
             runtime
@@ -1829,18 +1961,13 @@ end)
                     RuntimeEvent::ContextUpdated,
                 )
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "en-US"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
 
         let background = tab("background", Some("hx.exe"), false, true);
         let mut background_normal = background.clone();
         background_normal.cursor_style.shape = CursorShape::Underline;
-        assert!(
-            runtime
+        assert!(runtime
                 .attach_tab(
                     background.clone(),
                     InputState {
@@ -1848,10 +1975,8 @@ end)
                     },
                 )
                 .actions
-                .is_empty()
-        );
-        assert!(
-            runtime
+            .is_empty());
+        assert!(runtime
                 .dispatch(
                     &background_normal,
                     &InputState {
@@ -1863,10 +1988,8 @@ end)
                     },
                 )
                 .actions
-                .is_empty()
-        );
-        assert!(
-            runtime
+            .is_empty());
+        assert!(runtime
                 .dispatch(
                     &background_normal,
                     &InputState {
@@ -1875,18 +1998,13 @@ end)
                     RuntimeEvent::ContextUpdated,
                 )
                 .actions
-                .is_empty()
-        );
+            .is_empty());
     }
 
     #[test]
     fn hidden_cursor_policy_is_opt_in_and_preserves_the_exact_insert_layout() {
         let dir = TempDir::new();
-        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
-        dir.write(
-            "scripts/modal-layout.lua",
-            include_str!("../../examples/lua/scripts/modal-layout.lua"),
-        );
+        write_shared_examples(&dir);
         let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
         let mut runtime = LuaRuntime::new(snapshot);
         let input = InputState {
@@ -1904,13 +2022,9 @@ end)
         helix_normal.cursor_style.visible = false;
         assert_eq!(
             runtime
-                .dispatch(
-                    &helix_normal,
-                    &input,
-                    RuntimeEvent::ContextUpdated,
-                )
+                .dispatch(&helix_normal, &input, RuntimeEvent::ContextUpdated,)
                 .actions,
-            vec![intent("scripts/modal-layout.lua", "context-updated", "en-US")]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
 
         let unexpected_layout = InputState {
@@ -1934,11 +2048,7 @@ end)
                     RuntimeEvent::ContextUpdated
                 )
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "en-US"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
 
         assert_eq!(
@@ -1951,11 +2061,7 @@ end)
                     RuntimeEvent::ContextUpdated,
                 )
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "0xF0080419"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "0xF0080419")]
         );
 
         let mut nvim_insert = tab("nvim", Some("nvim.exe"), true, true);
@@ -1967,11 +2073,7 @@ end)
         let mut nvim_hidden_bar = nvim_insert.clone();
         nvim_hidden_bar.cursor_style.visible = false;
         assert!(runtime
-            .dispatch(
-                &nvim_hidden_bar,
-                &input,
-                RuntimeEvent::ContextUpdated,
-            )
+            .dispatch(&nvim_hidden_bar, &input, RuntimeEvent::ContextUpdated,)
             .actions
             .is_empty());
     }
@@ -1979,11 +2081,7 @@ end)
     #[test]
     fn shared_example_captures_and_restores_exact_insert_layout_across_mode_events() {
         let dir = TempDir::new();
-        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
-        dir.write(
-            "scripts/modal-layout.lua",
-            include_str!("../../examples/lua/scripts/modal-layout.lua"),
-        );
+        write_shared_examples(&dir);
         let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
         let mut runtime = LuaRuntime::new(snapshot);
         let mut normal = tab("helix", Some("hx.exe"), true, true);
@@ -1998,7 +2096,7 @@ end)
             runtime
                 .attach_tab(normal.clone(), input(old_russian))
                 .actions,
-            vec![intent("scripts/modal-layout.lua", "activate", "en-US")]
+            vec![intent("editors/hx.lua", "activate", "en-US")]
         );
 
         let mut insert = normal.clone();
@@ -2018,11 +2116,7 @@ end)
             runtime
                 .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                old_russian
-            )]
+            vec![intent("editors/hx.lua", "context-updated", old_russian)]
         );
         runtime.dispatch(
             &insert,
@@ -2051,21 +2145,13 @@ end)
                     RuntimeEvent::ContextUpdated,
                 )
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "en-US"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
         assert_eq!(
             runtime
                 .dispatch(&normal, &input("en-US"), RuntimeEvent::ContextUpdated)
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "en-US"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
 
         let mut block = normal.clone();
@@ -2076,7 +2162,7 @@ end)
                 .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
                 .actions,
             vec![intent(
-                "scripts/modal-layout.lua",
+                "editors/hx.lua",
                 "context-updated",
                 typewriter_russian
             )]
@@ -2094,7 +2180,7 @@ end)
                 .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
                 .actions,
             vec![intent(
-                "scripts/modal-layout.lua",
+                "editors/hx.lua",
                 "context-updated",
                 typewriter_russian
             )]
@@ -2114,21 +2200,13 @@ end)
             runtime
                 .dispatch(&normal, &input(old_russian), RuntimeEvent::ContextUpdated)
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                "en-US"
-            )]
+            vec![intent("editors/hx.lua", "context-updated", "en-US")]
         );
         assert_eq!(
             runtime
                 .dispatch(&insert, &input("en-US"), RuntimeEvent::ContextUpdated)
                 .actions,
-            vec![intent(
-                "scripts/modal-layout.lua",
-                "context-updated",
-                old_russian
-            )]
+            vec![intent("editors/hx.lua", "context-updated", old_russian)]
         );
     }
 
@@ -2205,23 +2283,152 @@ sterm.on('cursor-style-changed', function() stale.input:set_layout('en-US') end)
     #[test]
     fn execution_and_memory_budgets_stop_loops_and_large_allocations() {
         let lua = new_lua().unwrap();
-        assert!(
-            execute_limited(
+        assert!(execute_limited(
                 &lua,
                 "while true do if pcall then pcall(function() end) end end",
                 "loop"
             )
-            .is_err()
-        );
+        .is_err());
         let lua = new_lua().unwrap();
-        assert!(
-            execute_limited(
+        assert!(execute_limited(
                 &lua,
                 "local t={}; while true do t[#t+1]=string.rep('x',100000) end",
                 "memory"
             )
-            .is_err()
+        .is_err());
+    }
+
+    #[test]
+    fn declared_modules_are_cached_per_vm_and_isolated_per_tab() {
+        let dir = TempDir::new();
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('counter', 'modules/counter.lua'); sterm.use('editor.lua', {when={process={'nvim.exe'}}})",
         );
+        dir.write(
+            "modules/counter.lua",
+            "local count=0; return function() count=count+1; return count end",
+        );
+        dir.write(
+            "editor.lua",
+            "local next=require 'counter'; assert(next == require 'counter'); local sterm=require 'sterm'; sterm.on('tab-activated', function(ctx) ctx.input:set_layout(tostring(next())) end)",
+        );
+
+        let mut runtime = LuaRuntime::new(RuntimeSnapshot::load(&dir.entry()).unwrap());
+        let first = tab("first", Some("nvim.exe"), true, true);
+        let second = tab("second", Some("nvim.exe"), true, true);
+        runtime.attach_tab(first.clone(), InputState::default());
+        runtime.attach_tab(second.clone(), InputState::default());
+
+        for state in [&first, &second] {
+            assert_eq!(
+                runtime
+                    .dispatch(state, &InputState::default(), RuntimeEvent::TabActivated)
+                    .actions,
+                vec![intent("editor.lua", "tab-activated", "1")]
+            );
+        }
+        assert_eq!(
+            runtime
+                .dispatch(&first, &InputState::default(), RuntimeEvent::TabActivated)
+                .actions,
+            vec![intent("editor.lua", "tab-activated", "2")]
+        );
+    }
+
+    #[test]
+    fn module_source_stays_snapshotted_until_reload() {
+        let dir = TempDir::new();
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('value', 'value.lua'); sterm.use('editor.lua', {when={process={'nvim.exe'}}})",
+        );
+        dir.write("value.lua", "return 'before'");
+        dir.write(
+            "editor.lua",
+            "local value=require 'value'; local sterm=require 'sterm'; sterm.on('tab-activated', function(ctx) ctx.input:set_layout(value) end)",
+        );
+        let mut runtime = LuaRuntime::new(RuntimeSnapshot::load(&dir.entry()).unwrap());
+        let state = tab("tab", Some("nvim.exe"), true, true);
+        runtime.attach_tab(state.clone(), InputState::default());
+        dir.write("value.lua", "return 'after'");
+
+        assert_eq!(
+            runtime
+                .dispatch(&state, &InputState::default(), RuntimeEvent::TabActivated)
+                .actions,
+            vec![intent("editor.lua", "tab-activated", "before")]
+        );
+
+        let next_snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        runtime.reload(next_snapshot, [(state.clone(), InputState::default())]);
+        assert_eq!(
+            runtime
+                .dispatch(&state, &InputState::default(), RuntimeEvent::TabActivated)
+                .actions,
+            vec![intent("editor.lua", "tab-activated", "after")]
+        );
+    }
+
+    #[test]
+    fn module_manifest_rejects_unregistered_paths_and_cycles() {
+        let dir = TempDir::new();
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('shared', '../outside.lua')",
+        );
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('shared', 'shared.lua'); sterm.use('editor.lua', {})",
+        );
+        dir.write("shared.lua", "return true");
+        dir.write("editor.lua", "require 'not_registered'");
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('first', 'first.lua'); sterm.module('second', 'second.lua'); sterm.use('editor.lua', {})",
+        );
+        dir.write("first.lua", "return require 'second'");
+        dir.write("second.lua", "return require 'first'");
+        dir.write("editor.lua", "require 'first'");
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+
+        for invalid_config in [
+            "local sterm=require 'sterm'; sterm.module('sterm', 'shared.lua')",
+            "local sterm=require 'sterm'; sterm.module('bad-name', 'shared.lua')",
+            "local sterm=require 'sterm'; sterm.module('same', 'first.lua'); sterm.module('same', 'second.lua')",
+        ] {
+            dir.write("config.lua", invalid_config);
+            assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+        }
+
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('missing', 'missing.lua')",
+        );
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.module('loop', 'loop.lua'); sterm.use('editor.lua', {})",
+        );
+        dir.write("loop.lua", "while true do end");
+        dir.write("editor.lua", "require 'loop'");
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+
+        let mut config = String::from("local sterm=require 'sterm';");
+        for index in 0..8 {
+            config.push_str(&format!(" sterm.module('m{index}', 'm{index}.lua');"));
+            dir.write(
+                &format!("m{index}.lua"),
+                &format!("--{}", "x".repeat(MAX_SCRIPT_BYTES - 2)),
+            );
+        }
+        dir.write("config.lua", &config);
+        assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
     }
 
     #[test]

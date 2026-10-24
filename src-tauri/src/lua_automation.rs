@@ -73,7 +73,30 @@ pub(crate) struct AutomationStatus {
     state: &'static str,
     config_path: Option<String>,
     error: Option<String>,
-    diagnostics: Vec<String>,
+    diagnostics: Vec<AutomationDiagnostic>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationDiagnostic {
+    level: &'static str,
+    message: String,
+}
+
+impl AutomationDiagnostic {
+    fn error(message: impl Into<String>) -> Self {
+        Self {
+            level: "error",
+            message: message.into(),
+        }
+    }
+
+    fn info(message: impl Into<String>) -> Self {
+        Self {
+            level: "info",
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -143,7 +166,7 @@ impl LuaAutomation {
                 state: "error",
                 config_path: None,
                 error: Some(error.clone()),
-                diagnostics: vec![error],
+                diagnostics: vec![AutomationDiagnostic::error(error)],
             },
         }));
         let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
@@ -823,14 +846,14 @@ fn worker_loop(
                     if layout_acknowledged(layouts.current().as_deref(), &action.requested) {
                         push_shared_diagnostic(
                             &shared,
-                            format!(
+                            AutomationDiagnostic::info(format!(
                                 "Lua action {} ({}) on tab {} generation {} observed layout {}",
                                 action.script,
                                 action.event,
                                 action.tab_id,
                                 action.generation,
                                 action.requested
-                            ),
+                            )),
                         );
                         if runtime.wants_input_language_events()
                             && last_layout.as_deref() != Some(action.requested.as_str())
@@ -853,10 +876,10 @@ fn worker_loop(
                     } else if Instant::now() >= action.deadline {
                         push_shared_diagnostic(
                             &shared,
-                            format!(
+                            AutomationDiagnostic::error(format!(
                                 "Keyboard layout change to {} was not observed before timeout",
                                 action.requested
-                            ),
+                            )),
                         );
                     } else {
                         pending = Some(action);
@@ -1020,7 +1043,10 @@ fn apply_results(
 ) {
     for (tab_id, result) in results {
         for diagnostic in result.diagnostics {
-            push_shared_diagnostic(shared, format_diagnostic(diagnostic));
+            push_shared_diagnostic(
+                shared,
+                AutomationDiagnostic::error(format_diagnostic(diagnostic)),
+            );
         }
         for intent in result.actions {
             match intent.action {
@@ -1049,10 +1075,10 @@ fn apply_results(
                             drop(current);
                             push_shared_diagnostic(
                                 shared,
-                                format!(
+                                AutomationDiagnostic::info(format!(
                                     "Lua action {} ({}) on tab {} generation {} requested layout {}",
                                     intent.script, intent.event, tab_id, generation, requested
-                                ),
+                                )),
                             );
                             *pending = Some(PendingLayout {
                                 frontend_id: frontend_id.into(),
@@ -1070,10 +1096,10 @@ fn apply_results(
                             drop(current);
                             push_shared_diagnostic(
                                 shared,
-                                format!(
+                                AutomationDiagnostic::error(format!(
                                     "Lua action {} ({}) on tab {}: {error}",
                                     intent.script, intent.event, tab_id
-                                ),
+                                )),
                             );
                         }
                     }
@@ -1132,7 +1158,7 @@ fn set_status(
     state: &'static str,
     config_path: Option<String>,
     error: Option<String>,
-    diagnostics: Vec<String>,
+    diagnostics: Vec<AutomationDiagnostic>,
 ) {
     if let Ok(mut shared) = shared.lock() {
         shared.status = AutomationStatus {
@@ -1144,7 +1170,7 @@ fn set_status(
     }
 }
 
-fn push_shared_diagnostic(shared: &Arc<Mutex<Shared>>, diagnostic: String) {
+fn push_shared_diagnostic(shared: &Arc<Mutex<Shared>>, diagnostic: AutomationDiagnostic) {
     if let Ok(mut shared) = shared.lock() {
         push_diagnostic(&mut shared.status.diagnostics, diagnostic);
     }
@@ -1158,27 +1184,46 @@ fn fail_closed(shared: &mut Shared, error: String) {
     }
     shared.status.state = "error";
     shared.status.error = Some(error.clone());
-    push_diagnostic(&mut shared.status.diagnostics, error);
+    push_diagnostic(&mut shared.status.diagnostics, AutomationDiagnostic::error(error));
 }
 
-fn push_diagnostic(diagnostics: &mut Vec<String>, diagnostic: String) {
-    let diagnostic: String = diagnostic.chars().take(MAX_DIAGNOSTIC_CHARS).collect();
+fn push_diagnostic(
+    diagnostics: &mut Vec<AutomationDiagnostic>,
+    mut diagnostic: AutomationDiagnostic,
+) {
+    diagnostic.message = diagnostic
+        .message
+        .chars()
+        .take(MAX_DIAGNOSTIC_CHARS)
+        .collect();
     if diagnostics.len() == MAX_DIAGNOSTICS {
         diagnostics.remove(0);
     }
     diagnostics.push(diagnostic);
 }
 
-fn bounded_diagnostics(diagnostics: Vec<String>) -> Vec<String> {
+fn bounded_diagnostics(diagnostics: Vec<AutomationDiagnostic>) -> Vec<AutomationDiagnostic> {
     diagnostics
         .into_iter()
         .take(MAX_DIAGNOSTICS)
-        .map(|text| text.chars().take(MAX_DIAGNOSTIC_CHARS).collect())
+        .map(|mut diagnostic| {
+            diagnostic.message = diagnostic
+                .message
+                .chars()
+                .take(MAX_DIAGNOSTIC_CHARS)
+                .collect();
+            diagnostic
+        })
         .collect()
 }
 
-fn render_diagnostics(diagnostics: Vec<Diagnostic>) -> Vec<String> {
-    bounded_diagnostics(diagnostics.into_iter().map(format_diagnostic).collect())
+fn render_diagnostics(diagnostics: Vec<Diagnostic>) -> Vec<AutomationDiagnostic> {
+    bounded_diagnostics(
+        diagnostics
+            .into_iter()
+            .map(|diagnostic| AutomationDiagnostic::error(format_diagnostic(diagnostic)))
+            .collect(),
+    )
 }
 
 fn format_diagnostic(diagnostic: Diagnostic) -> String {
@@ -1480,15 +1525,26 @@ mod tests {
             std::process::id(),
             NEXT_FRONTEND_TOKEN.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir_all(root.join("scripts")).unwrap();
+        fs::create_dir_all(root.join("editors")).unwrap();
+        fs::create_dir_all(root.join("modules")).unwrap();
         fs::write(
             root.join("config.lua"),
             include_str!("../../examples/lua/sterm.lua"),
         )
         .unwrap();
         fs::write(
-            root.join("scripts/modal-layout.lua"),
-            include_str!("../../examples/lua/scripts/modal-layout.lua"),
+            root.join("editors/nvim.lua"),
+            include_str!("../../examples/lua/editors/nvim.lua"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("editors/hx.lua"),
+            include_str!("../../examples/lua/editors/hx.lua"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("modules/modal_editor.lua"),
+            include_str!("../../examples/lua/modules/modal_editor.lua"),
         )
         .unwrap();
         let snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
@@ -1519,7 +1575,7 @@ mod tests {
             stale.actions,
             vec![ActionIntent {
                 action: Action::SetLayout("en-US".into()),
-                script: "scripts/modal-layout.lua".into(),
+                script: "editors/hx.lua".into(),
                 event: "context-updated".into(),
             }]
         );
@@ -1540,7 +1596,7 @@ mod tests {
             fresh.actions,
             vec![ActionIntent {
                 action: Action::SetLayout("en-US".into()),
-                script: "scripts/modal-layout.lua".into(),
+                script: "editors/hx.lua".into(),
                 event: "context-updated".into(),
             }]
         );
@@ -1674,5 +1730,23 @@ mod tests {
         assert!(layout_acknowledged(Some("0x00000419"), "0x00000419"));
         assert!(!layout_acknowledged(Some("en-US"), "0x00000409"));
         assert!(!layout_acknowledged(None, "0x00000409"));
+    }
+
+    #[test]
+    fn status_diagnostics_serialize_their_explicit_severity() {
+        let status = AutomationStatus {
+            state: "ready",
+            config_path: None,
+            error: None,
+            diagnostics: vec![
+                AutomationDiagnostic::info("layout requested"),
+                AutomationDiagnostic::error("callback failed"),
+            ],
+        };
+        let value = serde_json::to_value(status).unwrap();
+        assert_eq!(value["diagnostics"][0]["level"], "info");
+        assert_eq!(value["diagnostics"][0]["message"], "layout requested");
+        assert_eq!(value["diagnostics"][1]["level"], "error");
+        assert_eq!(value["diagnostics"][1]["message"], "callback failed");
     }
 }

@@ -228,7 +228,7 @@ Debug-build-only Windows experiment enabled with `SCANLINE_TERM_AUTOMATION_PROBE
 
 #### Lua terminal automation
 
-[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, and Windows layout request/readback. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, per-tab VMs, lifecycle handlers, and action intents. The React bridge publishes terminal snapshots and receives status/diagnostics; it does not forward per-key events to Lua. The repository Vim/Neovim example entry and reusable cursor-layout module are under [`examples/lua`](../examples/lua); installers do not currently include them. See the [Lua automation guide](lua-automation.md) before changing the supported API or sandbox.
+[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, and Windows layout request/readback. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, tab-local VMs, manifest-limited `require`, lifecycle handlers, and action intents. The React bridge publishes terminal snapshots and receives status/diagnostics; it does not forward per-key events to Lua. The repository entry config, editor bindings, and shared cursor-layout module are under [`examples/lua`](../examples/lua); installers do not currently include them. See the [Lua automation guide](lua-automation.md) before changing the supported API or sandbox.
 
 ---
 

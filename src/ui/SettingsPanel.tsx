@@ -11,6 +11,7 @@ import {
 import 'scanline-virtual-screen/react/styles.css';
 import { BROWSER_FORM_FACTORS, RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import type { ShellInfo } from '../terminal/useTerminal';
+import type { LuaAutomationStatus } from '../terminal/lua-automation';
 import { LuaAutomationPanel } from './LuaAutomationPanel';
 
 export function SettingsPanel({
@@ -35,6 +36,10 @@ export function SettingsPanel({
   getSmoothScrollDiagnostics = () => '',
   geometryDiagnosticsEnabled = false,
   getGeometryDiagnostics = () => '',
+  luaAutomationStatus = { state: 'loading', configPath: null, error: null, diagnostics: [] },
+  reloadLuaConfig = async () => undefined,
+  luaAutomationAvailable = false,
+  onError = () => undefined,
 }: {
   stored: StoredSettings;
   setStored: Dispatch<SetStateAction<StoredSettings>>;
@@ -57,6 +62,10 @@ export function SettingsPanel({
   getSmoothScrollDiagnostics?: () => string;
   geometryDiagnosticsEnabled?: boolean;
   getGeometryDiagnostics?: () => string;
+  luaAutomationStatus?: LuaAutomationStatus;
+  reloadLuaConfig?: () => Promise<void>;
+  luaAutomationAvailable?: boolean;
+  onError?: (message: string) => void;
 }) {
   const wheelBlockedKnobs = useRef(new Map<HTMLElement, { x: number; y: number }>()).current;
   const panelRef = useRef<HTMLElement>(null);
@@ -218,7 +227,7 @@ export function SettingsPanel({
 
       <fieldset>
         <legend>System</legend>
-        <LuaAutomationPanel />
+        <LuaAutomationPanel status={luaAutomationStatus} reload={reloadLuaConfig} onError={onError} available={luaAutomationAvailable} />
         <label className="host-select-control">
           Default shell
           <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>

@@ -899,6 +899,16 @@ legend {
   overflow-wrap: anywhere;
 }
 
+.lua-automation-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.lua-automation-actions button {
+  flex: 1;
+  min-width: 0;
+}
+
 .host-setting-block .host-setting-label {
   display: block;
   color: #b9d7c1;

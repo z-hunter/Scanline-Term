@@ -17,6 +17,13 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://**" }]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$EXE/sterm.lua" },
+        { "path": "$APPCONFIG/config.lua" }
+      ]
     }
   ]
 }
