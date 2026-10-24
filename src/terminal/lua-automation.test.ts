@@ -3,7 +3,7 @@ import { LuaAutomationCoordinator, type LuaAutomationSnapshot } from './lua-auto
 
 const snapshot: LuaAutomationSnapshot = {
   activeTabId: 'tab-1', focused: true,
-  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', cursor: { shape: 'bar', blink: true } }],
+  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', cursor: { shape: 'bar', blink: true, visible: true } }],
 };
 
 describe('LuaAutomationCoordinator', () => {

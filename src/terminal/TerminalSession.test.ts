@@ -211,28 +211,29 @@ describe('TerminalSession', () => {
     expect(session.cursorStyleOverridden).toBe(true);
     expect(onCursorStyleOverrideChange).toHaveBeenLastCalledWith(true);
     expect(onCursorStyleChange).toHaveBeenLastCalledWith('bar');
-    expect(session.applicationCursorState).toEqual({ shape: 'bar', blink: true });
+    expect(session.applicationCursorState).toEqual({ shape: 'bar', blink: true, visible: true });
     expect(session.terminal!.options.cursorStyle).toBe('bar');
     expect(session.terminal!.options.cursorBlink).toBe(true);
     await write('\x1b[6 q');
     expect(session.terminal!.options.cursorBlink).toBe(false);
-    expect(session.applicationCursorState).toEqual({ shape: 'bar', blink: false });
+    expect(session.applicationCursorState).toEqual({ shape: 'bar', blink: false, visible: true });
     await write('\x1b[9 q');
-    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null });
+    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null, visible: true });
     expect(session.terminal!.options.cursorStyle).toBe('bar');
-    await write('\x1b[5 q\x1bc');
+    await write('\x1b[?25l\x1b[5 q\x1bc');
     expect(session.cursorStyleOverridden).toBe(false);
     expect(onCursorStyleOverrideChange).toHaveBeenLastCalledWith(false);
     expect(onCursorStyleChange).toHaveBeenLastCalledWith(null);
     expect(session.terminal!.options.cursorStyle).toBe('underline');
     expect(session.terminal!.options.cursorBlink).toBe(false);
+    expect(session.applicationCursorState).toEqual({ shape: null, blink: null, visible: true });
     await write('\x1b[5 q');
     await write('\x1b[0 q');
     expect(session.cursorStyleOverridden).toBe(false);
     expect(session.terminal!.options.cursorStyle).toBe('underline');
     expect(session.terminal!.options.cursorBlink).toBe(false);
     expect(onCursorStyleChange).toHaveBeenLastCalledWith(null);
-    expect(session.applicationCursorState).toEqual({ shape: null, blink: null });
+    expect(session.applicationCursorState).toEqual({ shape: null, blink: null, visible: true });
     expect(onAutomationStateChange).toHaveBeenCalled();
     session.dispose();
   });
@@ -243,7 +244,7 @@ describe('TerminalSession', () => {
     const write = (data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
 
     await write('\x1b[9 q');
-    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null });
+    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null, visible: true });
     expect(session.cursorStyleOverridden).toBe(false);
     session.setCursorAppearance('underline', false);
     expect(session.terminal!.options.cursorStyle).toBe('underline');
@@ -253,11 +254,42 @@ describe('TerminalSession', () => {
     expect(session.cursorStyleOverridden).toBe(true);
     expect(session.terminal!.options.cursorStyle).toBe('bar');
     await write('\x1b[9 q');
-    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null });
+    expect(session.applicationCursorState).toEqual({ shape: 'unknown', blink: null, visible: true });
     expect(session.cursorStyleOverridden).toBe(true);
     session.setCursorAppearance('underline', true);
     expect(session.terminal!.options.cursorStyle).toBe('bar');
     expect(session.terminal!.options.cursorBlink).toBe(true);
+    session.dispose();
+  });
+
+  it('tracks DEC cursor visibility without consuming private-mode sequences', async () => {
+    const onAutomationStateChange = vi.fn();
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onAutomationStateChange);
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    session.setCursorAppearance('underline', false);
+    const write = (data: string) => new Promise<void>((resolve) => session.terminal!.write(data, resolve));
+    expect(session.applicationCursorState).toEqual({ shape: null, blink: null, visible: true });
+
+    await write('\x1b[?1;25l');
+    expect(session.applicationCursorState.visible).toBe(false);
+    expect(session.sgrMouseMode).toBe(false);
+    const afterHide = onAutomationStateChange.mock.calls.length;
+    await write('\x1b[?25l');
+    expect(onAutomationStateChange).toHaveBeenCalledTimes(afterHide);
+
+    await write('\x1b[?1006h');
+    expect(session.applicationCursorState.visible).toBe(false);
+    expect(session.sgrMouseMode).toBe(true);
+    await write('\x1b[?25;1006h');
+    expect(session.applicationCursorState.visible).toBe(true);
+    expect(session.sgrMouseMode).toBe(true);
+    await write('\x1b[6 q\x1b[!p');
+    expect(session.applicationCursorState).toEqual({ shape: null, blink: null, visible: true });
+    expect(session.terminal!.options.cursorStyle).toBe('underline');
+    expect(session.terminal!.options.cursorBlink).toBe(false);
+    await write('\x1b[?1006l');
+    expect(session.applicationCursorState.visible).toBe(true);
+    expect(session.sgrMouseMode).toBe(false);
     session.dispose();
   });
 

@@ -34,6 +34,7 @@ const MAX_VALUE_ITEMS: usize = 1_024;
 pub struct CursorStyle {
     pub shape: CursorShape,
     pub blink: Option<bool>,
+    pub visible: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1326,6 +1327,7 @@ fn cursor_to_json(cursor: &CursorStyle) -> JsonValue {
         "blink".into(),
         cursor.blink.map_or(JsonValue::Null, JsonValue::Bool),
     );
+    object.insert("visible".into(), cursor.visible.into());
     JsonValue::Object(object)
 }
 
@@ -1381,6 +1383,7 @@ mod tests {
             cursor_style: CursorStyle {
                 shape: CursorShape::Block,
                 blink: Some(true),
+                visible: true,
             },
             active,
             focused,
@@ -1874,6 +1877,103 @@ end)
                 .actions
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn hidden_cursor_policy_is_opt_in_and_preserves_the_exact_insert_layout() {
+        let dir = TempDir::new();
+        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        dir.write(
+            "scripts/modal-layout.lua",
+            include_str!("../../examples/lua/scripts/modal-layout.lua"),
+        );
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let mut runtime = LuaRuntime::new(snapshot);
+        let input = InputState {
+            current_layout: Some("0xF0080419".into()),
+        };
+
+        let mut helix_insert = tab("hx", Some("hx.exe"), true, true);
+        helix_insert.cursor_style.shape = CursorShape::Bar;
+        assert!(runtime
+            .attach_tab(helix_insert.clone(), input.clone())
+            .actions
+            .is_empty());
+
+        let mut helix_normal = helix_insert.clone();
+        helix_normal.cursor_style.visible = false;
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_normal,
+                    &input,
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent("scripts/modal-layout.lua", "context-updated", "en-US")]
+        );
+
+        let unexpected_layout = InputState {
+            current_layout: Some("0x04190419".into()),
+        };
+        assert!(runtime
+            .dispatch(
+                &helix_normal,
+                &unexpected_layout,
+                RuntimeEvent::InputLanguageChanged {
+                    layout: "0x04190419".into(),
+                },
+            )
+            .actions
+            .is_empty());
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_normal,
+                    &unexpected_layout,
+                    RuntimeEvent::ContextUpdated
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "en-US"
+            )]
+        );
+
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &helix_insert,
+                    &InputState {
+                        current_layout: Some("en-US".into()),
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions,
+            vec![intent(
+                "scripts/modal-layout.lua",
+                "context-updated",
+                "0xF0080419"
+            )]
+        );
+
+        let mut nvim_insert = tab("nvim", Some("nvim.exe"), true, true);
+        nvim_insert.cursor_style.shape = CursorShape::Bar;
+        assert!(runtime
+            .attach_tab(nvim_insert.clone(), input.clone())
+            .actions
+            .is_empty());
+        let mut nvim_hidden_bar = nvim_insert.clone();
+        nvim_hidden_bar.cursor_style.visible = false;
+        assert!(runtime
+            .dispatch(
+                &nvim_hidden_bar,
+                &input,
+                RuntimeEvent::ContextUpdated,
+            )
+            .actions
+            .is_empty());
     }
 
     #[test]

@@ -59,6 +59,12 @@ struct FrontendTab {
 struct FrontendCursor {
     shape: Option<String>,
     blink: Option<bool>,
+    #[serde(default = "cursor_visible_default")]
+    visible: bool,
+}
+
+fn cursor_visible_default() -> bool {
+    true
 }
 
 #[derive(Clone, Serialize)]
@@ -343,6 +349,7 @@ impl LuaAutomation {
                         cursor_style: CursorStyle {
                             shape: cursor_shape(tab.cursor.shape.as_deref()),
                             blink: tab.cursor.blink,
+                            visible: tab.cursor.visible,
                         },
                         active: has_active && active == Some(id.as_str()),
                         focused: focused && has_active && active == Some(id.as_str()),
@@ -1414,6 +1421,7 @@ mod tests {
             cursor: FrontendCursor {
                 shape: Some("block".into()),
                 blink: Some(true),
+                visible: true,
             },
         }
     }
@@ -1452,6 +1460,20 @@ mod tests {
     }
 
     #[test]
+    fn frontend_cursor_visibility_defaults_true_and_preserves_explicit_hidden_state() {
+        let snapshot: FrontendSnapshot = serde_json::from_str(
+            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","cursor":{"shape":"bar","blink":false}}]}"#,
+        )
+        .unwrap();
+        assert!(snapshot.tabs[0].cursor.visible);
+        let hidden: FrontendSnapshot = serde_json::from_str(
+            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","cursor":{"shape":"bar","blink":false,"visible":false}}]}"#,
+        )
+        .unwrap();
+        assert!(!hidden.tabs[0].cursor.visible);
+    }
+
+    #[test]
     fn stale_generation_intent_is_rejected_and_fresh_context_update_reissues_it() {
         let root = std::env::temp_dir().join(format!(
             "scanline-lua-context-test-{}-{}",
@@ -1478,6 +1500,7 @@ mod tests {
             cursor_style: CursorStyle {
                 shape: CursorShape::Underline,
                 blink: Some(false),
+                visible: true,
             },
             active: true,
             focused: true,

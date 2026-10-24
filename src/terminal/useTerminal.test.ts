@@ -255,11 +255,13 @@ describe('terminal launch event', () => {
 
     await act(async () => { hookResult.selectSession(nvimId!, false, false); hookResult.canvasProps.onFocus(); });
     await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[5 q', resolve)); });
-    expect(latestSnapshot()).toMatchObject({ activeTabId: nvimId, focused: true, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: true } })]) });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: nvimId, focused: true, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: true, visible: true } })]) });
+    await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[?25l', resolve)); });
+    expect(latestSnapshot()).toMatchObject({ tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: true, visible: false } })]) });
 
     await act(async () => { hookResult.openBrowser(); });
     await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[6 q', resolve)); });
-    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: false } })]) });
+    expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: false, visible: false } })]) });
 
     await act(async () => { root.unmount(); });
     expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: [] });

@@ -65,7 +65,7 @@ type PendingOutput = { data: Uint8Array; acknowledge: () => void };
 type PendingInput = { input: string; resolve?: () => void; reject?: (reason: unknown) => void };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 export type ApplicationCursorShape = CursorStyle | 'unknown' | null;
-export type ApplicationCursorState = { shape: ApplicationCursorShape; blink: boolean | null };
+export type ApplicationCursorState = { shape: ApplicationCursorShape; blink: boolean | null; visible: boolean };
 
 const OUTPUT_CHUNK_BYTES = 16 * 1024;
 
@@ -190,6 +190,7 @@ export class TerminalSession {
   private applicationCursorStyle = false;
   private applicationCursorShape: ApplicationCursorShape = null;
   private applicationCursorBlink: boolean | null = null;
+  private applicationCursorVisible = true;
   private processPollPending = false;
   private terminalFocused = false;
 
@@ -229,6 +230,7 @@ export class TerminalSession {
       terminal.parser.registerCsiHandler(
         { prefix: "?", final: "h" },
         (params) => {
+          if (params.includes(25)) this.setApplicationCursorState(this.applicationCursorShape, this.applicationCursorBlink, true);
           if (params.includes(1006)) this.sgrMouseMode = true;
           if (params.includes(1004)) queueMicrotask(() => this.sendFocusReport());
           if (params.length !== 1 || params[0] !== 9001) return false;
@@ -239,6 +241,7 @@ export class TerminalSession {
       terminal.parser.registerCsiHandler(
         { prefix: "?", final: "l" },
         (params) => {
+          if (params.includes(25)) this.setApplicationCursorState(this.applicationCursorShape, this.applicationCursorBlink, false);
           if (params.includes(1006)) this.sgrMouseMode = false;
           if (params.length !== 1 || params[0] !== 9001) return false;
           this.win32InputMode = false;
@@ -267,10 +270,19 @@ export class TerminalSession {
           return true;
         },
       ),
+      terminal.parser.registerCsiHandler(
+        { intermediates: '!', final: 'p' },
+        () => {
+          this.setApplicationCursorState(null, null, true);
+          terminal.options.cursorStyle = this.cursorStyle;
+          terminal.options.cursorBlink = this.cursorBlink;
+          return false;
+        },
+      ),
       terminal.parser.registerEscHandler(
         { final: 'c' },
         () => {
-          this.setApplicationCursorState(null, null);
+          this.setApplicationCursorState(null, null, true);
           terminal.options.cursorStyle = this.cursorStyle;
           terminal.options.cursorBlink = this.cursorBlink;
           return false;
@@ -381,21 +393,22 @@ export class TerminalSession {
   }
 
   get applicationCursorState(): ApplicationCursorState {
-    return { shape: this.applicationCursorShape, blink: this.applicationCursorBlink };
+    return { shape: this.applicationCursorShape, blink: this.applicationCursorBlink, visible: this.applicationCursorVisible };
   }
 
   get localProcessName(): string | null {
     return this.processName;
   }
 
-  private setApplicationCursorState(shape: ApplicationCursorShape, blink: boolean | null): void {
+  private setApplicationCursorState(shape: ApplicationCursorShape, blink: boolean | null, visible = this.applicationCursorVisible): void {
     const overridden = shape === 'unknown' ? this.applicationCursorStyle : shape !== null;
     const overrideChanged = this.applicationCursorStyle !== overridden;
-    if (this.applicationCursorShape === shape && this.applicationCursorBlink === blink && !overrideChanged) return;
+    if (this.applicationCursorShape === shape && this.applicationCursorBlink === blink && this.applicationCursorVisible === visible && !overrideChanged) return;
     const shapeChanged = this.applicationCursorShape !== shape;
     this.applicationCursorStyle = overridden;
     this.applicationCursorShape = shape;
     this.applicationCursorBlink = blink;
+    this.applicationCursorVisible = visible;
     if (overrideChanged) this.onCursorStyleOverrideChange(overridden);
     if (shapeChanged || overrideChanged) this.onCursorStyleChange(shape === 'unknown' ? null : shape);
     this.onAutomationStateChange();
@@ -758,6 +771,7 @@ export class TerminalSession {
     this.applicationCursorStyle = false;
     this.applicationCursorShape = null;
     this.applicationCursorBlink = null;
+    this.applicationCursorVisible = true;
     this.processPollPending = false;
     this.terminalFocused = false;
     this.size = { cols: 0, rows: 0 };

@@ -7,5 +7,9 @@ sterm.use('scripts/modal-layout.lua', {
 
 sterm.use('scripts/modal-layout.lua', {
   when = { process = { 'hx.exe' } },
-  options = { normal_layout = 'en-US', normal_cursor_shapes = { 'block', 'underline' } },
+  options = {
+    normal_layout = 'en-US',
+    normal_cursor_shapes = { 'block', 'underline' },
+    normal_when_cursor_hidden = true,
+  },
 })

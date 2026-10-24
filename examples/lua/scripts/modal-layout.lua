@@ -6,7 +6,11 @@ local capture_insert_layout = false
 local restore_pending = false
 local normal_cursor_shapes = options.normal_cursor_shapes or { 'block' }
 
-local function cursor_mode(shape)
+local function cursor_mode(cursor)
+  if options.normal_when_cursor_hidden == true and cursor.visible == false then
+    return 'normal'
+  end
+  local shape = cursor.shape
   if shape == 'bar' then return 'insert' end
   for _, normal_shape in ipairs(normal_cursor_shapes) do
     if shape == normal_shape then return 'normal' end
@@ -18,7 +22,8 @@ local function apply_cursor_mode(ctx)
     return
   end
 
-  local mode = cursor_mode(ctx.tab:cursor_style().shape)
+  local cursor = ctx.tab:cursor_style()
+  local mode = cursor_mode(cursor)
   local current_layout = ctx.input:current_layout()
   if mode == 'normal' then
     if last_mode ~= 'normal' then capture_insert_layout = true end
@@ -55,7 +60,7 @@ sterm.on('context-updated', apply_cursor_mode)
 
 sterm.on('input-language-changed', function(ctx, event)
   if ctx.tab:is_active() and ctx.tab:is_focused()
-      and ctx.tab:cursor_style().shape == 'bar' then
+      and cursor_mode(ctx.tab:cursor_style()) == 'insert' then
     if restore_pending then
       if event.language == insert_layout then restore_pending = false end
     else
