@@ -894,6 +894,11 @@ legend {
   margin: 10px 0;
 }
 
+.lua-automation-status > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .host-setting-block .host-setting-label {
   display: block;
   color: #b9d7c1;
