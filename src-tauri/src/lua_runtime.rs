@@ -8,7 +8,7 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -156,7 +156,19 @@ struct ScriptInstance {
     deactivate_handlers: Vec<Function>,
     active: bool,
     disabled: bool,
+    smart_caps: bool,
     epoch: Arc<AtomicU64>,
+}
+
+struct SmartCapsDeclaration {
+    enabled: Arc<AtomicBool>,
+    initializing: Arc<AtomicBool>,
+}
+
+impl SmartCapsDeclaration {
+    fn finish(&self) {
+        self.initializing.store(false, Ordering::SeqCst);
+    }
 }
 
 struct TabRuntime {
@@ -345,14 +357,17 @@ impl RuntimeSnapshot {
                     }
                 };
                 let (lua, options) = options_value;
-                if let Err(error) = install_script_api(&lua, &modules) {
-                    diagnostics.push(diagnostic(
-                        Some(source_name.clone()),
-                        None,
-                        error.to_string(),
-                    ));
-                    continue;
-                }
+                let smart_caps = match install_script_api(&lua, &modules) {
+                    Ok(smart_caps) => smart_caps,
+                    Err(error) => {
+                        diagnostics.push(diagnostic(
+                            Some(source_name.clone()),
+                            None,
+                            error.to_string(),
+                        ));
+                        continue;
+                    }
+                };
                 if let Err(error) = execute_limited_with_args(&lua, &source, &source_name, options)
                 {
                     diagnostics.push(diagnostic(
@@ -362,6 +377,7 @@ impl RuntimeSnapshot {
                     ));
                     continue;
                 }
+                smart_caps.finish();
                 let events = lua
                     .globals()
                     .get::<Table>("__sterm_handlers")
@@ -466,14 +482,17 @@ impl LuaRuntime {
                 tab.local_process_name.as_deref(),
             ) && tab.active
                 && tab.focused;
-            if let Err(error) = install_script_api(&lua, &self.snapshot.modules) {
-                result.diagnostics.push(diagnostic(
-                    Some(attachment.source_name.clone()),
-                    None,
-                    error.to_string(),
-                ));
-                continue;
-            }
+            let smart_caps = match install_script_api(&lua, &self.snapshot.modules) {
+                Ok(smart_caps) => smart_caps,
+                Err(error) => {
+                    result.diagnostics.push(diagnostic(
+                        Some(attachment.source_name.clone()),
+                        None,
+                        error.to_string(),
+                    ));
+                    continue;
+                }
+            };
             let options = match json_to_lua(&lua, &attachment.options) {
                 Ok(value) => value,
                 Err(error) => {
@@ -498,6 +517,7 @@ impl LuaRuntime {
                 ));
                 continue;
             }
+            smart_caps.finish();
             let handlers = match lua.globals().get::<Table>("__sterm_handlers") {
                 Ok(table) => collect_handlers(&table),
                 Err(error) => {
@@ -529,6 +549,7 @@ impl LuaRuntime {
                 deactivate_handlers,
                 active,
                 disabled: false,
+                smart_caps: smart_caps.enabled.load(Ordering::SeqCst),
                 epoch,
             };
             if active {
@@ -607,6 +628,15 @@ impl LuaRuntime {
 
     pub fn close_tab(&mut self, tab_id: &str) {
         self.tabs.remove(tab_id);
+    }
+
+    pub fn smart_caps_enabled(&self, tab_id: &str) -> bool {
+        self.tabs.get(tab_id).is_some_and(|runtime| {
+            runtime
+                .scripts
+                .iter()
+                .any(|script| script.active && !script.disabled && script.smart_caps)
+        })
     }
 
     fn run_handlers(
@@ -924,11 +954,32 @@ fn install_registration_api(
     )
 }
 
-fn install_script_api(lua: &Lua, modules: &HashMap<String, LuaModule>) -> mlua::Result<()> {
+fn install_script_api(
+    lua: &Lua,
+    modules: &HashMap<String, LuaModule>,
+) -> mlua::Result<SmartCapsDeclaration> {
     let handlers = lua.create_table()?;
     lua.globals().set("__sterm_handlers", handlers.clone())?;
     let handler_count = Arc::new(AtomicUsize::new(0));
     let module = lua.create_table()?;
+    let smart_caps = Arc::new(AtomicBool::new(false));
+    let initializing = Arc::new(AtomicBool::new(true));
+    let input = lua.create_table()?;
+    input.set("smart_caps", {
+        let smart_caps = smart_caps.clone();
+        let initializing = initializing.clone();
+        lua.create_function(move |_, ()| {
+            if !initializing.load(Ordering::SeqCst) {
+                return Err(mlua::Error::RuntimeError(
+                    "sterm.input.smart_caps() is only available during script initialization"
+                        .into(),
+                ));
+            }
+            smart_caps.store(true, Ordering::SeqCst);
+            Ok(())
+        })?
+    })?;
+    module.set("input", input)?;
     module.set("on", {
         let handlers = handlers.clone();
         let handler_count = handler_count.clone();
@@ -1024,7 +1075,10 @@ fn install_script_api(lua: &Lua, modules: &HashMap<String, LuaModule>) -> mlua::
             Ok(value)
         })?,
     )?;
-    Ok(())
+    Ok(SmartCapsDeclaration {
+        enabled: smart_caps,
+        initializing,
+    })
 }
 
 fn valid_module_name(name: &str) -> bool {
@@ -1563,6 +1617,60 @@ mod tests {
                 "en-US"
             )]
         );
+    }
+
+    #[test]
+    fn smart_caps_declaration_is_static_and_active_tab_scoped() {
+        let (_dir, mut runtime) = setup("local sterm=require 'sterm'; sterm.input.smart_caps()");
+        let active = tab("a", Some("nvim.exe"), true, true);
+        let background = tab("b", Some("nvim.exe"), false, true);
+        let process_mismatch = tab("c", Some("cmd.exe"), true, true);
+        runtime.attach_tab(active.clone(), InputState::default());
+        runtime.attach_tab(background.clone(), InputState::default());
+        runtime.attach_tab(process_mismatch.clone(), InputState::default());
+        assert!(runtime.smart_caps_enabled("a"));
+        assert!(!runtime.smart_caps_enabled("b"));
+        assert!(!runtime.smart_caps_enabled("c"));
+
+        let unfocused = tab("a", Some("nvim.exe"), true, false);
+        runtime.dispatch(
+            &unfocused,
+            &InputState::default(),
+            RuntimeEvent::TabFocusChanged { focused: false },
+        );
+        assert!(!runtime.smart_caps_enabled("a"));
+
+        let deactivated = tab("a", Some("nvim.exe"), false, true);
+        runtime.dispatch(
+            &deactivated,
+            &InputState::default(),
+            RuntimeEvent::TabDeactivated,
+        );
+        let activated = tab("b", Some("nvim.exe"), true, true);
+        runtime.dispatch(
+            &activated,
+            &InputState::default(),
+            RuntimeEvent::TabActivated,
+        );
+        assert!(!runtime.smart_caps_enabled("a"));
+        assert!(runtime.smart_caps_enabled("b"));
+
+        let snapshot = runtime.snapshot.clone();
+        runtime.reload(snapshot, [(activated, InputState::default())]);
+        assert!(runtime.smart_caps_enabled("b"));
+    }
+
+    #[test]
+    fn smart_caps_declaration_from_callback_disables_script() {
+        let (_dir, mut runtime) = setup(
+            "local sterm=require 'sterm'; sterm.input.smart_caps(); sterm.on('context-updated', function() sterm.input.smart_caps() end)",
+        );
+        let state = tab("a", Some("nvim.exe"), true, true);
+        runtime.attach_tab(state.clone(), InputState::default());
+        assert!(runtime.smart_caps_enabled("a"));
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(!runtime.smart_caps_enabled("a"));
     }
 
     #[test]

@@ -7,6 +7,7 @@ local sterm = require 'sterm'
 sterm.module('modal_editor', 'modules/modal_editor.lua')
 
 -- Each attachment gets its own VM, module cache, and state per terminal tab.
+-- Editor wrappers opt into the shared modal module's fixed Smart Caps policy.
 -- Keep Vim compatibility alongside Neovim because both share this policy file.
 sterm.use('editors/nvim.lua', {
   when = { process = { 'vim.exe', 'nvim.exe' } },

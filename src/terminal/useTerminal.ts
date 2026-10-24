@@ -11,8 +11,9 @@ import { terminalKey } from './terminal-input';
 import { terminalMouse, type MouseTrackingMode } from './terminal-mouse';
 import { win32InputKey } from '../win32-input';
 import { TerminalAutomationProbe } from './automation-probe';
-import { LuaAutomationCoordinator, type LuaAutomationSnapshot } from './lua-automation';
-import { emptyTapHoldState, forwardedKeyIdentity, updateTapHold, type TapHoldState } from './automation-probe-state';
+import { LuaAutomationCoordinator, type CapsPolicyLease, type LuaAutomationSnapshot } from './lua-automation';
+import { CapsFrameDecoder } from './caps-frame';
+import { emptyTapHoldState, forwardedKeyIdentity, updateTapHold, type TapHoldClassification, type TapHoldState } from './automation-probe-state';
 import { findTerminalMatches, nextSearchIndex, type TerminalSearchMatch } from './terminal-search';
 import { showNativeImageMenu, showNativeTerminalMenu } from '../ui/nativeNewTabMenu';
 import { clonePresetSettings, DEFAULT_PRESET_SETTINGS, loadPresetSettings, type PresetSettings, type TabPresetState } from '../crt/settings';
@@ -157,9 +158,14 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const renderer = useRef<TerminalRenderer | null>(null); if (!renderer.current) renderer.current = new TerminalRenderer();
   const automationProbe = useRef<TerminalAutomationProbe | null>(null);
   const luaAutomation = useRef<LuaAutomationCoordinator | null>(null);
+  const capsPolicy = useRef<CapsPolicyLease | null>(null);
+  const capsFrameDecoder = useRef(new CapsFrameDecoder());
+  const capsFrameTimer = useRef<number | null>(null);
+  const capsInputRevision = useRef(0);
   const probeSnapshot = useRef<{ enabled: boolean; status: unknown; context: { tabId: string | null; generation: number; focused: boolean } | null; trace: Record<string, unknown>[] }>({ enabled: false, status: null, context: null, trace: [] });
   const probeSuppressedTokenUp = useRef(false);
   const tapHold = useRef<TapHoldState>(emptyTapHoldState()); const tapHoldTimer = useRef<number | null>(null); const probeForwardedKeys = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>());
+  const tapHoldSession = useRef<TerminalSession | null>(null);
   const geometryDiagnostics = useRef<Record<string, unknown>[]>([]);
   const defaultPresetRef = useRef(initialPreset); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const smoothScrollbackRef = useRef(smoothScrollback); const rmbMenuInTermRef = useRef(rmbMenuInTerm); const channelSwitchEffectRef = useRef(channelSwitchEffect); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const linkClick = useRef<{ url: string; selection: { start: CopyPoint; end: CopyPoint } } | null>(null); const copyMode = useRef(false); const imageDrag = useRef<{ image: TerminalImage; x: number; y: number } | null>(null); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null); const pendingFirstDraw = useRef<string | null>(null); const scrollbackActivity = useRef(0); const scrollbackRef = useRef<ScrollbackScrollbarState | null>(null); const scrollIntentRef = useRef(false);
   const searchRef = useRef(search); searchRef.current = search;
@@ -255,17 +261,21 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     probeSnapshot.current.context = automationProbe.current?.currentContext ?? null;
   }, []);
   const cancelAutomationProbeInput = useCallback((reason: string) => {
-    if (!import.meta.env.DEV) return;
     if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
     tapHoldTimer.current = null;
+    if (capsFrameTimer.current !== null) window.clearTimeout(capsFrameTimer.current);
+    capsFrameTimer.current = null;
+    capsFrameDecoder.current.reset();
+    capsInputRevision.current += 1;
     const wasActive = tapHold.current.downAt !== null || probeForwardedKeys.current.size > 0;
     if (tapHold.current.downAt !== null) probeSuppressedTokenUp.current = true;
     tapHold.current = updateTapHold(tapHold.current, 'cancel', performance.now(), 180).state;
-    if (wasActive) traceAutomationProbe('token-cancel', { reason });
+    tapHoldSession.current = null;
+    if (wasActive && import.meta.env.DEV) traceAutomationProbe('token-cancel', { reason });
     for (const [code, forwarded] of probeForwardedKeys.current) {
       if (forwarded.session.live && forwarded.session.win32InputMode) {
         forwarded.session.sendInput(win32InputKey(forwarded.event, false));
-        traceAutomationProbe('win32-keyup', { code, reason, key: forwarded.event.key });
+        if (import.meta.env.DEV) traceAutomationProbe('win32-keyup', { code, reason, key: forwarded.event.key });
       }
       probeSuppressedKeyUps.current.add(code);
     }
@@ -372,7 +382,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       preset = loaded;
     } catch (reason) { if (signal?.aborted) return null; onError(`Could not load launch preset ${presetName}: ${String(reason)}`); return null; }
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const initialColor = initialProfile(preset.crt.colorProfile); const tab: TerminalTab = { id, ordinal, title: `${ordinal}. Starting`, status: 'starting', background: initialColor.background, foreground: initialColor.foreground };
-    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })), (overridden) => { if (activeRef.current === id) setCursorStyleOverridden(overridden); }, (style) => { if (import.meta.env.DEV) { if (activeRef.current === id) traceAutomationProbe('cursor-style', { style }); automationProbe.current?.setCursorStyle(id, style); } }, () => luaAutomation.current?.update(luaAutomationSnapshot()));
+    const session = new TerminalSession(id, onError, (nextLive, nextSize) => { if (activeRef.current === id) { setLive(nextLive); setSize(nextSize); } }, () => { const record = sessions.current.get(id); if (record) record.tab.status = 'exited'; updateTab(id, (current) => ({ ...(current as TerminalTab), status: 'exited' })); if (activeRef.current === id) { cancelAutomationProbeInput('session-exit'); luaAutomation.current?.update(luaAutomationSnapshot()); } }, (scroll?: TerminalOutputScroll) => { if (activeRef.current === id && scroll?.autoScroll && smoothScrollbackRef.current) renderer.current?.beginBufferScroll(scroll.fromViewportY, scroll.toViewportY); if (activeRef.current === id) { publishScrollback(id, session.terminal, false); if (searchRef.current.open) applySearch(searchRef.current.query, searchRef.current.activeIndex); } refreshTabColor(id); }, (title) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${title}` })), (name) => updateTab(id, (current) => ({ ...(current as TerminalTab), title: `${current.ordinal}. ${name}` })), (overridden) => { if (activeRef.current === id) setCursorStyleOverridden(overridden); }, (style) => { if (import.meta.env.DEV) { if (activeRef.current === id) traceAutomationProbe('cursor-style', { style }); automationProbe.current?.setCursorStyle(id, style); } }, () => luaAutomation.current?.update(luaAutomationSnapshot()));
     sessions.current.set(id, { tab, session, ownerId: ownerId ?? null, inputLocked: false, preset: { name: presetName ?? 'default', draftName: presetName ?? 'default', settings: preset, dirty: false }, images: [] }); setTabs((current) => [...current, tab]); selectSession(id, false);
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6]; if (outputRef.current) { const outputSize = outputRasterSize(outputRef.current); const physicalSize = physicalSourceSize(outputSize, preset.crt); const width = resolution.id.startsWith('physical') ? physicalSize.width : ('width' in resolution ? resolution.width : 1); const height = resolution.id.startsWith('physical') ? physicalSize.height : ('height' in resolution ? resolution.height : 1); renderer.current!.resizeSource(width, height); } const source = renderer.current!.sourceCanvas; const dimensions = terminalDimensions(source.width, source.height, displaySettings(preset.crt, resolution.id).consoleFontSize, preset.crt.consoleFont, preset.crt.cellWidthAdjustment, preset.crt.cellHeightAdjustment, preset.crt.fallbackFont);
     recordGeometry('session-start', { sessionId: id, resolution: preset.resolution, output: outputRef.current ? { width: outputRef.current.width, height: outputRef.current.height, css: elementBounds(outputRef.current) } : null, source: { width: source.width, height: source.height }, terminal: dimensions });
@@ -390,7 +400,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     }
     luaAutomation.current?.update(luaAutomationSnapshot());
     return id;
-  }, [applySearch, luaAutomationSnapshot, onError, publishScrollback, recordGeometry, refreshTabColor, selectSession, traceAutomationProbe, updateTab]);
+  }, [applySearch, cancelAutomationProbeInput, luaAutomationSnapshot, onError, publishScrollback, recordGeometry, refreshTabColor, selectSession, traceAutomationProbe, updateTab]);
   const addImage = useCallback(async () => {
     const id = activeRef.current; const record = id ? sessions.current.get(id) : undefined;
     if (!record || !isTauri()) return;
@@ -431,6 +441,10 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     if (!record || (tab?.status === 'starting' && record.session.live) || closing.current.has(id)) return;
     if (!skipConfirmation && record.preset.dirty && !window.confirm(`Close tab with unsaved preset changes?`)) return;
     closing.current.add(id);
+    if (activeRef.current === id) {
+      cancelAutomationProbeInput('session-close');
+      luaAutomation.current?.update({ ...luaAutomationSnapshot(), activeTabId: null, focused: false });
+    }
     try {
       await record.session.close();
     } catch (reason) {
@@ -478,7 +492,11 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   }, []);
   useEffect(() => {
     if (!isTauri()) return;
-    const coordinator = new LuaAutomationCoordinator((message) => onErrorRef.current(message));
+    const coordinator = new LuaAutomationCoordinator((message) => onErrorRef.current(message), undefined, (lease) => {
+      if (lease && capsPolicy.current?.policyEpoch === lease.policyEpoch) return;
+      cancelAutomationProbeInput('caps-policy-change');
+      capsPolicy.current = lease;
+    });
     luaAutomation.current = coordinator;
     void coordinator.start();
     coordinator.update(luaAutomationSnapshot());
@@ -486,7 +504,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       coordinator.dispose();
       if (luaAutomation.current === coordinator) luaAutomation.current = null;
     };
-  }, [luaAutomationSnapshot]);
+  }, [cancelAutomationProbeInput, luaAutomationSnapshot]);
   useEffect(() => { luaAutomation.current?.update(luaAutomationSnapshot()); }, [tabs, activeTabId, luaAutomationSnapshot]);
   useEffect(() => { if (!isTauri()) return; void invoke<string[]>('list_monospace_fonts').then((items) => setFonts([...new Set(['Consolas', ...items])])).catch((reason) => onError(`Could not list system fonts: ${String(reason)}`)); }, [onError]);
   useEffect(() => { for (const id of sessions.current.keys()) refreshTabColor(id); }, [refreshTabColor, activePresetState?.settings.crt.colorProfile, activePresetState?.settings.crt.colorMode, activePresetState?.settings.crt.backgroundDesaturation]);
@@ -630,6 +648,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   }, [activePresetState?.settings.crt.cursorStyle, activePresetState?.settings.crt.cursorBlink, activePresetState?.settings.crt.breathing]);
   useEffect(() => {
     const reopenAddress = (event: KeyboardEvent) => {
+      if (event.keyCode === 252) return;
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');
       if (!addressTabId && tab && !browsers.current.has(tab.id)) {
         if (event.key === 'F6') {
@@ -662,7 +681,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       ? undefined
       : (activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined);
   useEffect(() => {
-    const down = (event: KeyboardEvent) => { if (presetPickerOpenRef.current) return; if (menu.current && event.code === 'KeyI') { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) void addImage(); } };
+    const down = (event: KeyboardEvent) => { if (event.keyCode === 252 || presetPickerOpenRef.current) return; if (menu.current && event.code === 'KeyI') { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) void addImage(); } };
     window.addEventListener('keydown', down, true);
     return () => window.removeEventListener('keydown', down, true);
   }, [addImage]);
@@ -711,6 +730,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       forwardedAlt.clear();
     };
     const down = async (event: KeyboardEvent) => {
+      if (event.keyCode === 252) return;
       if (isAlt(event)) {
         alt.current = true;
         const session = getKeyboardSession();
@@ -751,6 +771,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       }
     };
     const up = (event: KeyboardEvent) => {
+      if (event.keyCode === 252) return;
       if (isAlt(event)) {
         alt.current = false;
         if (suppressAlt.current) { suppressAlt.current = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
@@ -787,6 +808,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   }, [luaAutomationSnapshot, onError]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      if (event.keyCode === 252) return;
       if (galleryOpenRef.current || presetPickerOpenRef.current || !menu.current || !event.shiftKey || event.repeat) return;
       if (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight' && event.code !== 'KeyH' && event.code !== 'KeyL') return;
       const id = activeRef.current;
@@ -810,6 +832,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       scrollIntentRef.current = true;
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.keyCode === 252) return;
       if (presetPickerOpenRef.current) return;
       if (!menu.current || event.target instanceof Element && event.target.closest('.settings-panel, .terminal-tabs, .new-tab-button, .browser-address')) return;
       if (event.code !== 'PageUp' && event.code !== 'PageDown' && event.code !== 'KeyJ' && event.code !== 'KeyK') return;
@@ -823,27 +846,36 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
   const activeSession = () => activeRef.current ? sessions.current.get(activeRef.current)?.session : undefined;
   const keyboardSession = useCallback(() => document.activeElement instanceof Element && document.activeElement.closest('.ai-panel') ? undefined : activeSession(), []);
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const probe = automationProbe.current;
-    if (!probe) return;
-    void probe.start();
-    refreshAutomationProbeContext();
-    const blur = () => { cancelAutomationProbeInput('window-blur'); probe.setContext(activeRef.current && sessions.current.has(activeRef.current) ? activeRef.current : null, false); };
-    const focus = () => refreshAutomationProbeContext();
+    const probe = import.meta.env.DEV ? automationProbe.current : null;
+    if (probe) { void probe.start(); refreshAutomationProbeContext(); }
+    const blur = () => {
+      cancelAutomationProbeInput('window-blur');
+      probe?.setContext(activeRef.current && sessions.current.has(activeRef.current) ? activeRef.current : null, false);
+      luaAutomation.current?.update({ ...luaAutomationSnapshot(), activeTabId: null, focused: false });
+    };
+    const focus = () => { refreshAutomationProbeContext(); luaAutomation.current?.update(luaAutomationSnapshot()); };
     window.addEventListener('blur', blur);
     window.addEventListener('focus', focus);
-    return () => { window.removeEventListener('blur', blur); window.removeEventListener('focus', focus); cancelAutomationProbeInput('probe-cleanup'); probe.dispose(); };
-  }, [cancelAutomationProbeInput, refreshAutomationProbeContext]);
+    return () => { window.removeEventListener('blur', blur); window.removeEventListener('focus', focus); cancelAutomationProbeInput('probe-cleanup'); probe?.dispose(); };
+  }, [cancelAutomationProbeInput, luaAutomationSnapshot, refreshAutomationProbeContext]);
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     const thresholdMs = 180;
     const focusedSession = () => {
-      if (!automationProbe.current?.enabled || !document.hasFocus() || !outputRef.current || document.activeElement !== outputRef.current) return undefined;
+      if (!document.hasFocus() || !outputRef.current || document.activeElement !== outputRef.current) return undefined;
       const session = activeSession();
-      return session?.live && session.terminal ? session : undefined;
+      if (!session?.live || !session.terminal) return undefined;
+      const policy = capsPolicy.current;
+      const smartCaps = policy?.enabled && policy.tabId === session.id && policy.processName === session.localProcessName;
+      return smartCaps || (import.meta.env.DEV && automationProbe.current?.enabled) ? session : undefined;
     };
     const consume = (event: KeyboardEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
-    const matchingToken = (event: KeyboardEvent) => event.key === 'Unidentified' && event.code === '' && event.keyCode === 252;
+    const matchingToken = (event: KeyboardEvent) => event.keyCode === 252;
+    const legacyProbeEnabled = () => import.meta.env.DEV && Boolean(automationProbe.current?.enabled);
+    const clearFrameTimeout = () => {
+      if (capsFrameTimer.current !== null) window.clearTimeout(capsFrameTimer.current);
+      capsFrameTimer.current = null;
+    };
+    const resetFrame = () => { clearFrameTimeout(); capsFrameDecoder.current.reset(); };
     const sendEncoded = (session: TerminalSession, event: KeyboardEvent, keyDown: boolean) => {
       if (!session.live || !session.terminal) return;
       const input = session.win32InputMode ? win32InputKey(event, keyDown) : keyDown ? terminalKey(event, session.terminal.modes) : null;
@@ -866,31 +898,76 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       getModifierState: (key: string) => typeof event.getModifierState === 'function' && event.getModifierState(key),
       } as KeyboardEvent;
     };
-    const tokenDown = (event: KeyboardEvent) => {
+    const tokenDown = (event: KeyboardEvent, startedAt = performance.now()) => {
       const session = focusedSession();
       if (!session) return false;
       consume(event);
-      const now = performance.now();
       const repeated = tapHold.current.downAt !== null;
-      tapHold.current = updateTapHold(tapHold.current, repeated ? 'repeat' : 'down', now, thresholdMs).state;
+      tapHold.current = updateTapHold(tapHold.current, repeated ? 'repeat' : 'down', startedAt, thresholdMs).state;
+      if (!repeated) tapHoldSession.current = session;
       traceAutomationProbe(repeated ? 'token-repeat' : 'token-down', { encoder: session.win32InputMode ? 'win32' : 'vt', downAt: tapHold.current.downAt });
       if (!repeated) {
+        const delay = Math.max(0, thresholdMs - (performance.now() - startedAt));
         tapHoldTimer.current = window.setTimeout(() => {
           tapHoldTimer.current = null;
           const before = tapHold.current.control;
           tapHold.current = updateTapHold(tapHold.current, 'timeout', performance.now(), thresholdMs).state;
           if (!before && tapHold.current.control) traceAutomationProbe('token-control-armed', { reason: 'hold-threshold' });
-        }, thresholdMs);
+        }, delay);
       }
       return true;
     };
+    const tokenUp = (event: KeyboardEvent, clearLegacySuppression = false, classification?: TapHoldClassification) => {
+      if (tapHold.current.downAt === null) {
+        if (clearLegacySuppression) probeSuppressedTokenUp.current = false;
+        return;
+      }
+      if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
+      tapHoldTimer.current = null;
+      const result = updateTapHold(tapHold.current, 'up', performance.now(), thresholdMs, classification);
+      tapHold.current = result.state;
+      const origin = tapHoldSession.current;
+      tapHoldSession.current = null;
+      traceAutomationProbe('token-up', { action: result.escape ? 'escape' : 'control-or-held', classification: classification ?? 'frontend-timing' });
+      if (result.escape && origin && origin === focusedSession()) {
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' });
+        sendEncoded(origin, escape, true);
+        if (origin.win32InputMode) sendEncoded(origin, new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false);
+      }
+    };
+    const onRawMarker = (event: KeyboardEvent, phase: 'keydown' | 'keyup') => {
+      consume(event);
+      if (event.code === '' && legacyProbeEnabled()) {
+        if (phase === 'keydown') {
+          if (!probeSuppressedTokenUp.current) tokenDown(event);
+        } else tokenUp(event, true);
+        return;
+      }
+      const lease = capsPolicy.current;
+      const markerToken = lease?.enabled ? lease.markerToken : null;
+      const frame = capsFrameDecoder.current.feed(
+        { code: event.code, keyCode: event.keyCode, phase },
+        markerToken,
+        capsInputRevision.current,
+        performance.now(),
+      );
+      if (capsFrameDecoder.current.pending) {
+        clearFrameTimeout();
+        capsFrameTimer.current = window.setTimeout(resetFrame, 250);
+      } else clearFrameTimeout();
+      if (frame && lease?.enabled && lease.markerToken === frame.markerToken && capsInputRevision.current === frame.contextRevision) {
+        if (frame.edge === 'down') tokenDown(event, frame.startedAt);
+        else tokenUp(event, false, frame.tapHold ?? undefined);
+      }
+    };
     const down = (event: KeyboardEvent) => {
       if (matchingToken(event)) {
-        if (probeSuppressedTokenUp.current) { consume(event); return; }
-        tokenDown(event); return;
+        onRawMarker(event, 'keydown'); return;
       }
+      if (capsFrameDecoder.current.pending) resetFrame();
       const session = focusedSession();
-      if (!session || tapHold.current.downAt === null) return;
+      if (tapHold.current.downAt === null) return;
+      if (!session || tapHoldSession.current !== session) { cancelAutomationProbeInput('context-mismatch'); return; }
       consume(event);
       const result = updateTapHold(tapHold.current, 'other-key', performance.now(), thresholdMs);
       tapHold.current = result.state;
@@ -906,26 +983,9 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
     };
     const up = (event: KeyboardEvent) => {
       if (matchingToken(event)) {
-        consume(event);
-        if (tapHold.current.downAt === null) {
-          probeSuppressedTokenUp.current = false;
-          return;
-        }
-        if (tapHoldTimer.current !== null) window.clearTimeout(tapHoldTimer.current);
-        tapHoldTimer.current = null;
-        const result = updateTapHold(tapHold.current, 'up', performance.now(), thresholdMs);
-        tapHold.current = result.state;
-        traceAutomationProbe('token-up', { action: result.escape ? 'escape' : 'control-or-held' });
-        if (result.escape) {
-          const session = focusedSession();
-          if (session) {
-            const escape = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' });
-            sendEncoded(session, escape, true);
-            if (session.win32InputMode) sendEncoded(session, new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false);
-          }
-        }
-        return;
+        onRawMarker(event, 'keyup'); return;
       }
+      if (capsFrameDecoder.current.pending) resetFrame();
       const identity = forwardedKeyIdentity(event);
       const forwarded = probeForwardedKeys.current.get(identity);
       if (forwarded) {

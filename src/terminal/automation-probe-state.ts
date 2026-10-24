@@ -1,5 +1,6 @@
 export type TapHoldState = { downAt: number | null; control: boolean; used: boolean };
 export type TapHoldEvent = 'down' | 'up' | 'repeat' | 'other-key' | 'cancel' | 'timeout';
+export type TapHoldClassification = 'tap' | 'held';
 export type TapHoldResult = { state: TapHoldState; escape: boolean };
 
 export function forwardedKeyIdentity(event: Pick<KeyboardEvent, 'code' | 'location'> & Partial<Pick<KeyboardEvent, 'keyCode' | 'which'>>): string {
@@ -14,6 +15,7 @@ export function updateTapHold(
   event: TapHoldEvent,
   now: number,
   thresholdMs: number,
+  classification?: TapHoldClassification,
 ): TapHoldResult {
   if (event === 'cancel') return { state: emptyTapHoldState(), escape: false };
   if (event === 'down') {
@@ -24,7 +26,12 @@ export function updateTapHold(
     const control = state.control || event === 'other-key' || now - state.downAt >= thresholdMs;
     return { state: { ...state, control, used: state.used || event === 'other-key' }, escape: false };
   }
-  return { state: emptyTapHoldState(), escape: !state.control && !state.used && now - state.downAt < thresholdMs };
+  const escape = classification === 'tap'
+    ? !state.used
+    : classification === 'held'
+      ? false
+      : !state.control && !state.used && now - state.downAt < thresholdMs;
+  return { state: emptyTapHoldState(), escape };
 }
 
 export type ProbeCursorStyle = 'block' | 'bar' | 'underline' | null;

@@ -1,9 +1,9 @@
 use std::{
     mem::size_of,
-    ptr::{null, null_mut},
+    ptr::null_mut,
     sync::{
+        Mutex,
         atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering},
-        mpsc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -12,31 +12,22 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, WAIT_FAILED, WPARAM},
-    System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
+    Foundation::HWND,
     UI::{
         Input::KeyboardAndMouse::{
-            GetKeyboardLayout, GetKeyboardLayoutList, GetKeyboardLayoutNameW, SendInput, HKL,
-            INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CAPITAL, VK_NONAME,
+            GetKeyboardLayout, GetKeyboardLayoutList, GetKeyboardLayoutNameW, HKL,
         },
         WindowsAndMessaging::{
-            CallNextHookEx, DispatchMessageW, GetAncestor, GetClassNameW, GetForegroundWindow,
-            GetGUIThreadInfo, GetWindowThreadProcessId, IsChild, MsgWaitForMultipleObjects,
-            PeekMessageW, PostMessageW, PostThreadMessageW, SetWindowsHookExW, TranslateMessage,
-            UnhookWindowsHookEx, GA_ROOT, GUITHREADINFO, HC_ACTION, KBDLLHOOKSTRUCT,
-            LLKHF_INJECTED, MSG, PM_NOREMOVE, PM_REMOVE, QS_ALLINPUT, WH_KEYBOARD_LL,
-            WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+            GUITHREADINFO, GetClassNameW, GetGUIThreadInfo, GetWindowThreadProcessId, IsChild,
+            PostMessageW, WM_INPUTLANGCHANGEREQUEST,
         },
     },
 };
 
 const ENABLE_ENV: &str = "SCANLINE_TERM_AUTOMATION_PROBE";
-const TOKEN_MARKER: usize = 0x5354_4552_4D4E_4F4E_u64 as usize;
 const TRACE_CAPACITY: usize = 128;
 const TRACE_TICK_SHIFT: u32 = 13;
 const LAYOUT_POLL_INTERVAL_MS: u32 = 20;
-const VK_H: u32 = 0x48;
-const WM_RELEASE_PENDING_TOKEN: u32 = 0x8001;
 
 static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
 static TARGET_WEBVIEW_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -45,17 +36,6 @@ static STATUS_REQUESTED: AtomicBool = AtomicBool::new(false);
 static TARGET_PID: AtomicU32 = AtomicU32::new(0);
 static CONTEXT_FOCUSED: AtomicBool = AtomicBool::new(false);
 static CONTEXT_GENERATION: AtomicU64 = AtomicU64::new(0);
-// Keep the physical-down latch until the matching up or hook teardown, even
-// after the logical frontend context has been canceled.
-static CAPS_SUPPRESSED_DOWN: AtomicBool = AtomicBool::new(false);
-static CAPS_LOGICAL_DOWN: AtomicBool = AtomicBool::new(false);
-// A token up remains owed until it is delivered to this app while it owns focus.
-static TOKEN_UP_PENDING: AtomicBool = AtomicBool::new(false);
-static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
-static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
-static HOOK_STARTED_TICK: AtomicU64 = AtomicU64::new(0);
-static HOOK_LOOP_HEARTBEAT_TICK: AtomicU64 = AtomicU64::new(0);
-static HOOK_CALLBACK_COUNT: AtomicU64 = AtomicU64::new(0);
 static LAYOUT_POLL_STOP: AtomicBool = AtomicBool::new(false);
 static TRACE_CURSOR: AtomicU64 = AtomicU64::new(0);
 static TRACE: [AtomicU64; TRACE_CAPACITY] = [const { AtomicU64::new(0) }; TRACE_CAPACITY];
@@ -186,7 +166,6 @@ pub struct Probe {
     enabled: bool,
     reason: Mutex<Option<String>>,
     context: Mutex<ProbeContext>,
-    thread: Mutex<Option<JoinHandle<()>>>,
     layout_thread: Mutex<Option<JoinHandle<()>>>,
     pending_layout: Mutex<Option<PendingLayout>>,
     last_layout: Mutex<Option<(String, String, u64, String)>>,
@@ -202,22 +181,14 @@ impl Probe {
         } else {
             Some(format!("set {ENABLE_ENV}=1 to enable the debug probe"))
         };
-        let thread = if requested {
-            match start_hook_thread() {
-                Ok(thread) => Some(thread),
-                Err(error) => {
-                    reason = Some(error);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let hook_ready = crate::caps_hook::hook_is_active();
+        if requested && !hook_ready {
+            reason = Some("shared Caps hook is unavailable".into());
+        }
         Self {
-            enabled: requested && thread.is_some(),
+            enabled: requested && hook_ready,
             reason: Mutex::new(reason),
             context: Mutex::new(ProbeContext::default()),
-            thread: Mutex::new(thread),
             layout_thread: Mutex::new(None),
             pending_layout: Mutex::new(None),
             last_layout: Mutex::new(None),
@@ -240,7 +211,7 @@ impl Probe {
 
     fn status(&self) -> ProbeStatus {
         let host = TARGET_WEBVIEW_HWND.load(Ordering::Acquire);
-        let enabled = self.enabled && HOOK_ACTIVE.load(Ordering::Acquire) && host != 0;
+        let enabled = self.enabled && crate::caps_hook::hook_is_active() && host != 0;
         let reason = self
             .reason
             .lock()
@@ -268,11 +239,11 @@ impl Probe {
                 .as_ref()
                 .map(|context| context.frontend_id.clone())
                 .unwrap_or_default(),
-            hook_installed: HOOK_ACTIVE.load(Ordering::Acquire),
-            callback_observed: HOOK_CALLBACK_COUNT.load(Ordering::Acquire) != 0,
-            hook_callback_count: HOOK_CALLBACK_COUNT.load(Ordering::Acquire),
-            hook_started_tick_ms: HOOK_STARTED_TICK.load(Ordering::Acquire),
-            hook_loop_heartbeat_tick_ms: HOOK_LOOP_HEARTBEAT_TICK.load(Ordering::Acquire),
+            hook_installed: crate::caps_hook::hook_is_active(),
+            callback_observed: crate::caps_hook::hook_callback_count() != 0,
+            hook_callback_count: crate::caps_hook::hook_callback_count(),
+            hook_started_tick_ms: crate::caps_hook::hook_started_tick(),
+            hook_loop_heartbeat_tick_ms: crate::caps_hook::hook_heartbeat_tick(),
             snapshot_tick_ms: tick_ms(),
             target_pid: TARGET_PID.load(Ordering::Acquire),
             target_hwnd: format!("0x{:X}", TARGET_HWND.load(Ordering::Acquire)),
@@ -296,7 +267,7 @@ impl Probe {
         *current = next;
         CONTEXT_FOCUSED.store(false, Ordering::Release);
         CONTEXT_GENERATION.store(0, Ordering::Release);
-        CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
+        crate::caps_hook::set_debug_armed(false);
         if let Ok(mut pending) = self.pending_layout.lock() {
             *pending = None;
         }
@@ -328,7 +299,7 @@ impl Probe {
             || context.tab_id != current.tab_id
         {
             CONTEXT_FOCUSED.store(false, Ordering::Release);
-            CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
+            crate::caps_hook::set_debug_armed(false);
         }
         current.frontend_id = context.frontend_id;
         current.tab_id = context.tab_id;
@@ -336,6 +307,7 @@ impl Probe {
         current.focused = context.focused && native_terminal_focus_is_valid();
         CONTEXT_GENERATION.store(current.generation, Ordering::Release);
         CONTEXT_FOCUSED.store(current.focused && self.enabled, Ordering::Release);
+        crate::caps_hook::set_debug_armed(current.focused && self.enabled);
         if let Ok(mut pending) = self.pending_layout.lock() {
             *pending = None;
         }
@@ -469,13 +441,14 @@ impl Probe {
         }
         let failed = entries
             .iter()
-            .any(|entry| entry.send_input_result == Some(false));
+            .any(|entry| entry.send_input_result == Some(false))
+            || crate::caps_hook::frame_failure_count() != 0;
         ProbeTrace {
-            hook_installed: HOOK_ACTIVE.load(Ordering::Acquire),
-            callback_observed: HOOK_CALLBACK_COUNT.load(Ordering::Acquire) != 0,
-            hook_callback_count: HOOK_CALLBACK_COUNT.load(Ordering::Acquire),
-            hook_started_tick_ms: HOOK_STARTED_TICK.load(Ordering::Acquire),
-            hook_loop_heartbeat_tick_ms: HOOK_LOOP_HEARTBEAT_TICK.load(Ordering::Acquire),
+            hook_installed: crate::caps_hook::hook_is_active(),
+            callback_observed: crate::caps_hook::hook_callback_count() != 0,
+            hook_callback_count: crate::caps_hook::hook_callback_count(),
+            hook_started_tick_ms: crate::caps_hook::hook_started_tick(),
+            hook_loop_heartbeat_tick_ms: crate::caps_hook::hook_heartbeat_tick(),
             snapshot_tick_ms: tick_ms(),
             armed: CONTEXT_FOCUSED.load(Ordering::Acquire),
             failed,
@@ -495,20 +468,7 @@ impl Probe {
     pub fn shutdown(&self) {
         LAYOUT_POLL_STOP.store(true, Ordering::Release);
         CONTEXT_FOCUSED.store(false, Ordering::Release);
-        CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
-        CAPS_SUPPRESSED_DOWN.store(false, Ordering::Release);
-        HOOK_ACTIVE.store(false, Ordering::Release);
-        let id = HOOK_THREAD_ID.load(Ordering::Acquire);
-        if id != 0 {
-            unsafe {
-                PostThreadMessageW(id, WM_QUIT, 0, 0);
-            }
-        }
-        if let Ok(mut thread) = self.thread.lock() {
-            if let Some(thread) = thread.take() {
-                let _ = thread.join();
-            }
-        }
+        crate::caps_hook::set_debug_armed(false);
         if let Ok(mut thread) = self.layout_thread.lock() {
             if let Some(thread) = thread.take() {
                 let _ = thread.join();
@@ -616,251 +576,6 @@ pub fn setup(app: &AppHandle, window: &tauri::WebviewWindow) {
     }
 }
 
-fn start_hook_thread() -> Result<JoinHandle<()>, String> {
-    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-    let thread = thread::Builder::new()
-        .name("scanline-automation-probe-hook".into())
-        .spawn(move || hook_thread(ready_tx))
-        .map_err(|error| error.to_string())?;
-    match ready_rx.recv_timeout(Duration::from_secs(2)) {
-        Ok(Ok(())) => Ok(thread),
-        Ok(Err(error)) => {
-            let _ = thread.join();
-            Err(error)
-        }
-        Err(error) => {
-            let id = HOOK_THREAD_ID.load(Ordering::Acquire);
-            if id != 0 {
-                unsafe {
-                    PostThreadMessageW(id, WM_QUIT, 0, 0);
-                }
-            }
-            let _ = thread.join();
-            Err(format!("keyboard hook did not start: {error}"))
-        }
-    }
-}
-
-fn hook_thread(ready: mpsc::SyncSender<Result<(), String>>) {
-    unsafe {
-        let thread_id = GetCurrentThreadId();
-        HOOK_THREAD_ID.store(thread_id, Ordering::Release);
-        let mut message = std::mem::zeroed::<MSG>();
-        PeekMessageW(&mut message, null_mut(), 0, 0, PM_NOREMOVE);
-        let module = GetModuleHandleW(null_mut());
-        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), module, 0);
-        if hook.is_null() {
-            let _ = ready.send(Err(std::io::Error::last_os_error().to_string()));
-            HOOK_THREAD_ID.store(0, Ordering::Release);
-            return;
-        }
-        HOOK_ACTIVE.store(true, Ordering::Release);
-        HOOK_STARTED_TICK.store(tick_ms(), Ordering::Release);
-        HOOK_LOOP_HEARTBEAT_TICK.store(tick_ms(), Ordering::Release);
-        let _ = ready.send(Ok(()));
-        loop {
-            let result = MsgWaitForMultipleObjects(0, null(), 0, 100, QS_ALLINPUT);
-            HOOK_LOOP_HEARTBEAT_TICK.store(tick_ms(), Ordering::Release);
-            if result == WAIT_FAILED {
-                break;
-            }
-            let mut quit = false;
-            while PeekMessageW(&mut message, null_mut(), 0, 0, PM_REMOVE) != 0 {
-                if message.message == WM_QUIT {
-                    quit = true;
-                    break;
-                }
-                if message.message == WM_RELEASE_PENDING_TOKEN {
-                    release_pending_token_up();
-                    continue;
-                }
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-            if quit {
-                break;
-            }
-        }
-        // shortcut: shutdown outside owned focus cannot flush a pending token up; revisit before production use.
-        release_pending_token_up();
-        HOOK_ACTIVE.store(false, Ordering::Release);
-        UnhookWindowsHookEx(hook);
-        HOOK_THREAD_ID.store(0, Ordering::Release);
-    }
-}
-
-unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    HOOK_CALLBACK_COUNT.fetch_add(1, Ordering::Relaxed);
-    if code != HC_ACTION as i32 {
-        return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
-    }
-    let key = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
-    let message = wparam as u32;
-    let down = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN);
-    let up = matches!(message, WM_KEYUP | WM_SYSKEYUP);
-    let injected = key.flags & LLKHF_INJECTED != 0;
-    let own_token = key.vkCode == VK_NONAME as u32 && injected && key.dwExtraInfo == TOKEN_MARKER;
-    let vk = key.vkCode;
-
-    if !own_token && vk != VK_CAPITAL as u32 && vk != VK_NONAME as u32 && vk != VK_H {
-        return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
-    }
-    let target_foreground = target_is_foreground();
-
-    if own_token {
-        // Keep marked injections visible even if focus changed between the
-        // SendInput call and callback delivery; ordinary keys stay target-only.
-        record(vk, down, injected, true, 0);
-        return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
-    }
-
-    let slot = if target_foreground {
-        Some(record(vk, down, injected, false, 0))
-    } else {
-        None
-    };
-    if vk == VK_NONAME as u32 && target_foreground && CONTEXT_FOCUSED.load(Ordering::Acquire) {
-        return 1;
-    }
-    if vk == VK_CAPITAL as u32 && down && CAPS_SUPPRESSED_DOWN.load(Ordering::Acquire) {
-        return 1;
-    }
-    if vk == VK_CAPITAL as u32
-        && down
-        && target_foreground
-        && CONTEXT_FOCUSED.load(Ordering::Acquire)
-    {
-        if TOKEN_UP_PENDING.load(Ordering::Acquire) {
-            release_pending_token_up();
-            if TOKEN_UP_PENDING.load(Ordering::Acquire) {
-                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
-            }
-        }
-        if CAPS_SUPPRESSED_DOWN
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return 1;
-        }
-        let generation = CONTEXT_GENERATION.load(Ordering::Acquire);
-        CAPS_LOGICAL_DOWN.store(true, Ordering::Release);
-        let result = send_token(true);
-        if let Some(slot) = slot {
-            set_send_result(slot, if result == 1 { 1 } else { 2 });
-        }
-        if result == 1 {
-            TOKEN_UP_PENDING.store(true, Ordering::Release);
-            if generation != CONTEXT_GENERATION.load(Ordering::Acquire)
-                || !CONTEXT_FOCUSED.load(Ordering::Acquire)
-            {
-                CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
-            }
-            release_pending_token_up();
-            return 1;
-        }
-        CAPS_SUPPRESSED_DOWN.store(false, Ordering::Release);
-        CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
-    }
-    if vk == VK_CAPITAL as u32 && up && CAPS_SUPPRESSED_DOWN.swap(false, Ordering::AcqRel) {
-        CAPS_LOGICAL_DOWN.store(false, Ordering::Release);
-        if let (Some(slot), Some(result)) = (slot, release_pending_token_up()) {
-            set_send_result(slot, if result == 1 { 1 } else { 2 });
-        }
-        return 1;
-    }
-    unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) }
-}
-
-fn release_pending_token_up() -> Option<u32> {
-    if !token_up_ready(
-        TOKEN_UP_PENDING.load(Ordering::Acquire),
-        CAPS_LOGICAL_DOWN.load(Ordering::Acquire),
-        CAPS_SUPPRESSED_DOWN.load(Ordering::Acquire),
-        target_is_foreground(),
-    )
-    {
-        return None;
-    }
-    let result = send_token(false);
-    if result == 1 {
-        TOKEN_UP_PENDING.store(false, Ordering::Release);
-    }
-    Some(result)
-}
-
-fn post_pending_token_up() {
-    if !token_up_ready(
-        TOKEN_UP_PENDING.load(Ordering::Acquire),
-        CAPS_LOGICAL_DOWN.load(Ordering::Acquire),
-        CAPS_SUPPRESSED_DOWN.load(Ordering::Acquire),
-        target_is_foreground(),
-    )
-    {
-        return;
-    }
-    let thread_id = HOOK_THREAD_ID.load(Ordering::Acquire);
-    if thread_id != 0 {
-        unsafe { PostThreadMessageW(thread_id, WM_RELEASE_PENDING_TOKEN, 0, 0) };
-    }
-}
-
-fn token_up_ready(
-    pending: bool,
-    logical_down: bool,
-    physical_down: bool,
-    target_foreground: bool,
-) -> bool {
-    pending && target_foreground && (!logical_down || !physical_down)
-}
-
-fn tick_ms() -> u64 {
-    unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() }
-}
-
-fn send_token(down: bool) -> u32 {
-    let mut input = INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: VK_NONAME,
-                wScan: 0,
-                dwFlags: if down { 0 } else { KEYEVENTF_KEYUP },
-                time: 0,
-                dwExtraInfo: TOKEN_MARKER,
-            },
-        },
-    };
-    unsafe { SendInput(1, &mut input, size_of::<INPUT>() as i32) }
-}
-
-fn target_is_foreground() -> bool {
-    let root = TARGET_HWND.load(Ordering::Acquire) as HWND;
-    let target = TARGET_WEBVIEW_HWND.load(Ordering::Acquire) as HWND;
-    if root.is_null() || target.is_null() {
-        return false;
-    }
-    let foreground = unsafe { GetForegroundWindow() };
-    if foreground.is_null()
-        || unsafe { GetAncestor(foreground, GA_ROOT) } != root
-        || unsafe { IsChild(root, target) } == 0
-    {
-        return false;
-    }
-    let mut pid = 0;
-    let thread_id = unsafe { GetWindowThreadProcessId(target, &mut pid) };
-    if pid != TARGET_PID.load(Ordering::Acquire) || thread_id == 0 {
-        return false;
-    }
-    let mut info = GUITHREADINFO {
-        cbSize: size_of::<GUITHREADINFO>() as u32,
-        ..Default::default()
-    };
-    if unsafe { GetGUIThreadInfo(thread_id, &mut info) } == 0 {
-        return false;
-    }
-    info.hwndFocus == target || unsafe { IsChild(target, info.hwndFocus) } != 0
-}
-
 fn installed_layouts() -> Vec<HKL> {
     unsafe {
         let count = GetKeyboardLayoutList(0, null_mut());
@@ -961,7 +676,7 @@ fn target_hkl_env(name: &str, installed: &[HKL]) -> Option<HKL> {
 }
 
 fn current_focus_layout() -> Option<(HWND, u32, HKL)> {
-    if !target_is_foreground() {
+    if !crate::caps_hook::native_focus_is_valid() {
         return None;
     }
     let target = TARGET_WEBVIEW_HWND.load(Ordering::Acquire) as HWND;
@@ -1052,7 +767,6 @@ fn emit_probe_error(
 
 fn layout_poll_loop(app: AppHandle) {
     while !LAYOUT_POLL_STOP.load(Ordering::Acquire) {
-        post_pending_token_up();
         if let Some(probe) = app.try_state::<Probe>() {
             let context = probe.context.lock().ok().map(|context| context.clone());
             if let Some(context) = context
@@ -1134,7 +848,7 @@ fn layout_poll_loop(app: AppHandle) {
 }
 
 fn native_terminal_focus_is_valid() -> bool {
-    target_is_foreground()
+    crate::caps_hook::native_focus_is_valid()
 }
 
 fn reset_context_for_frontend(current: &ProbeContext, frontend_id: &str) -> Option<ProbeContext> {
@@ -1151,7 +865,13 @@ fn context_matches_frontend(current: &ProbeContext, incoming: &ProbeContext) -> 
     !incoming.frontend_id.is_empty() && incoming.frontend_id == current.frontend_id
 }
 
-fn record(vk: u32, down: bool, injected: bool, own_token: bool, send_result: u64) -> usize {
+pub(crate) fn record_shared_hook(
+    vk: u32,
+    down: bool,
+    injected: bool,
+    own_token: bool,
+    send_result: u64,
+) -> usize {
     let sequence = TRACE_CURSOR.fetch_add(1, Ordering::AcqRel);
     let slot = sequence as usize % TRACE_CAPACITY;
     let tick_ms = unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() };
@@ -1184,7 +904,7 @@ fn decode_trace_tick_and_result(packed: u64) -> (u32, u8) {
     )
 }
 
-fn set_send_result(slot: usize, send_result: u64) {
+pub(crate) fn set_shared_send_result(slot: usize, send_result: u64) {
     let current = TRACE[slot].load(Ordering::Acquire);
     TRACE[slot].store(
         (current & !(0x3 << 11)) | ((send_result & 0x3) << 11),
@@ -1192,12 +912,17 @@ fn set_send_result(slot: usize, send_result: u64) {
     );
 }
 
+fn tick_ms() -> u64 {
+    crate::caps_hook::tick_ms()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        context_matches_frontend, decode_trace_tick_and_result, pack_trace_fields, parse_hkl,
-        reset_context_for_frontend, token_up_ready, validate_hkl, ProbeContext,
+        ProbeContext, context_matches_frontend, decode_trace_tick_and_result, pack_trace_fields,
+        parse_hkl, reset_context_for_frontend, validate_hkl,
     };
+    use crate::caps_hook::token_up_ready;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::HKL;
 
     #[test]
@@ -1276,9 +1001,3 @@ mod tests {
         assert!(!token_up_ready(pending, logical_down, physical_down, true));
     }
 }
-
-#[allow(dead_code)]
-const _: () = {
-    assert!(size_of::<INPUT>() == 40);
-    assert!(size_of::<KEYBDINPUT>() == 24);
-};

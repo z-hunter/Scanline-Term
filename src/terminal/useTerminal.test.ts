@@ -2047,6 +2047,98 @@ describe('useTerminal closeSession concurrent closures', () => {
 });
 
 describe('automation probe input routing', () => {
+  it.each(['vt', 'win32'] as const)('translates only matching framed markers after the Lua lease is acknowledged through %s', async (encoder) => {
+    mocked.handlers.clear(); mocked.emit.mockClear(); mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(
+      command === 'start_terminal' ? 'cmd.exe'
+        : command === 'active_terminal_process' ? 'cmd.exe'
+          : command === 'lua_automation_start' ? { frontendId: 'lua-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] }
+            : command === 'caps_policy_ack' ? true : {},
+    ));
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const toggleAi = vi.fn();
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn(), onToggleAi: toggleAi });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { hookResult.resizeSource(output); });
+    let id: string | null = null;
+    await act(async () => { id = await hookResult.openSession(); });
+    const session = terminalSession(id!);
+    const sendInput = vi.spyOn(session!, 'sendInput');
+    if (encoder === 'win32') session!.win32InputMode = true;
+    await vi.waitFor(() => expect(session?.localProcessName).toBe('cmd.exe'));
+    await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const latestUpdate = mocked.invoke.mock.calls.filter(([command]) => command === 'lua_automation_update').at(-1)?.[1] as { snapshot: { frontendId: string; generation: number } };
+    const lease = { frontendId: latestUpdate.snapshot.frontendId, generation: latestUpdate.snapshot.generation, policyEpoch: 1, markerToken: '0123456789abcdef', tabId: id!, processName: 'cmd.exe', enabled: true };
+    await act(async () => { mocked.handlers.get('caps-policy-lease')?.({ payload: lease }); await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledWith('caps_policy_ack', { ack: lease })); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const dispatch = (type: 'keydown' | 'keyup', code = '', repeat = false, key = 'Unidentified') => {
+      const event = new KeyboardEvent(type, { key, code, repeat, bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'keyCode', { value: 252 });
+      window.dispatchEvent(event);
+      return event;
+    };
+    expect(dispatch('keydown').defaultPrevented).toBe(true);
+    expect(dispatch('keyup').defaultPrevented).toBe(true);
+    expect(sendInput).not.toHaveBeenCalled();
+
+    const frame = (edge: 'down' | 'up', frameToken: string, tapHold: 'tap' | 'held' = 'tap') => {
+      const results: KeyboardEvent[] = [];
+      results.push(dispatch('keydown', edge === 'down' ? 'Backquote' : tapHold === 'tap' ? 'Backslash' : 'IntlBackslash'));
+      for (const digit of frameToken) {
+        results.push(dispatch('keydown', digit <= '9' ? `Digit${digit}` : `Key${digit.toUpperCase()}`, true));
+      }
+      results.push(dispatch('keyup', 'Semicolon'));
+      return results;
+    };
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true }));
+    expect(frame('down', 'fedcba9876543210').every((event) => event.defaultPrevented)).toBe(true);
+    expect(frame('up', 'fedcba9876543210').every((event) => event.defaultPrevented)).toBe(true);
+    expect(sendInput).not.toHaveBeenCalled();
+    expect(toggleAi).not.toHaveBeenCalled();
+
+    expect(frame('down', lease.markerToken!).every((event) => event.defaultPrevented)).toBe(true);
+    expect(frame('up', lease.markerToken!).every((event) => event.defaultPrevented)).toBe(true);
+    if (encoder === 'vt') expect(sendInput.mock.calls.map(([input]) => input)).toEqual(['\x1b']);
+    else {
+      expect(sendInput.mock.calls.map(([input]) => input)).toEqual([
+        win32InputKey(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' }), true),
+        win32InputKey(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false),
+      ]);
+    }
+    sendInput.mockClear();
+    await act(async () => {
+      frame('down', lease.markerToken!);
+      await new Promise((resolve) => setTimeout(resolve, 210));
+      frame('up', lease.markerToken!, 'tap');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    if (encoder === 'vt') expect(sendInput.mock.calls.map(([input]) => input)).toEqual(['\x1b']);
+    else expect(sendInput.mock.calls.map(([input]) => input)).toEqual([
+      win32InputKey(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' }), true),
+      win32InputKey(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape' }), false),
+    ]);
+
+    sendInput.mockClear();
+    await act(async () => {
+      frame('down', lease.markerToken!);
+      await new Promise((resolve) => setTimeout(resolve, 210));
+      frame('up', lease.markerToken!, 'held');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(sendInput).not.toHaveBeenCalled();
+
+    session?.dispose();
+    await act(async () => { root.unmount(); });
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
   it('de-arms the probe after closing its active last terminal while preserving the window', async () => {
     mocked.handlers.clear();
     mocked.emit.mockClear();

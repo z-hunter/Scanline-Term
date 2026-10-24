@@ -33,6 +33,7 @@ use conpty_oxide::{
 use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
 mod codex;
 mod browser;
+mod caps_hook;
 mod home;
 mod lua_automation;
 mod lua_runtime;
@@ -1066,6 +1067,7 @@ fn main() {
             window.set_icon(icon)?;
             #[cfg(windows)]
             setup_window_restore_listener(&window);
+            caps_hook::setup(app.handle(), &window);
             #[cfg(all(windows, debug_assertions))]
             automation_probe::setup(app.handle(), &window);
             let lua_automation = lua_automation::LuaAutomation::new(app.handle().clone(), &window)
@@ -1083,19 +1085,23 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
         .build(tauri::generate_context!())
         .expect("error while building Scanline Term")
         .run(|_app_handle, _event| {
             if matches!(_event, tauri::RunEvent::Exit) {
+                if let Some(hook) = _app_handle.try_state::<caps_hook::CapsHook>() {
+                    hook.stop_accepting();
+                }
                 if let Some(automation) = _app_handle.try_state::<lua_automation::LuaAutomation>() {
                     automation.shutdown();
                 }
-            }
-            #[cfg(all(windows, debug_assertions))]
-            if matches!(_event, tauri::RunEvent::Exit) {
+                #[cfg(all(windows, debug_assertions))]
                 if let Some(probe) = _app_handle.try_state::<automation_probe::Probe>() {
                     probe.shutdown();
+                }
+                if let Some(hook) = _app_handle.try_state::<caps_hook::CapsHook>() {
+                    hook.shutdown();
                 }
             }
         });

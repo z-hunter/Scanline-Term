@@ -39,6 +39,8 @@ sterm.on('context-updated', function(ctx)
 end)
 ```
 
+An attachment may declare Smart Caps during initialization with `sterm.input.smart_caps()`. The declaration is static for that attachment and applies only while its process binding matches the active, focused terminal tab. Calling it from an event callback is an error and disables that script instance. The shipped modal-editor examples opt in from the shared module; the fixed behavior maps a Caps tap to Escape and a hold of 180 ms or longer to Control. Native classifies the hold from physical keyboard-hook timestamps, so WebView frame-delivery latency does not set the threshold. Lua declares the policy; key edges stay in the native input path and never call back into Lua. A Windows development smoke with Neovim verified that a Caps tap sends Escape and a held Caps followed by H sends Control+H. Helix and focus/tab/reload scenarios were not part of that live run; those paths are unit-tested.
+
 `sterm.on(name, callback)` supports `tab-created`, `tab-activated`, `tab-deactivated`, `tab-title-changed`, `local-process-changed`, `cursor-style-changed`, `context-updated`, `tab-focus-changed`, `window-focus-changed`, and `input-language-changed`. `context-updated` runs after regular lifecycle and delta events for each fresh context snapshot while its tab is active and focused; use it to reevaluate the latest state after an earlier event's intent may have gone stale. `sterm.on_activate(callback)` and `sterm.on_deactivate(callback)` register process-match/focus lifecycle callbacks. Each callback receives `ctx`; event callbacks also receive an event table. Context data is read through `ctx.tab:id()`, `title()`, `local_process_name()`, `cursor_style()`, `is_active()`, and `is_focused()`. `cursor_style()` returns `shape`, `blink`, and `visible`; visibility defaults to true for older snapshots and remains independent of shape. `ctx.input:current_layout()` returns the observed Windows layout identifier; `ctx.input:set_layout(name)` queues a host intent. Input-language events expose `event.language`.
 
 `local_process_name()` returns the observed local child process, or the launched executable when no child has been reported; it does not inspect the full process tree.
@@ -47,7 +49,7 @@ The host runs Lua on a dedicated bounded worker and applies only returned intent
 
 Every attachment and tab has a separate Lua VM and script state, so module state is also isolated for every editor attachment and tab. The shared module does not check editor names; process filtering belongs in `sterm.use`, while each editor file passes its own cursor policy to the shared setup function. Unknown or absent cursor shapes do not trigger layout changes unless an enabled visibility policy identifies the cursor as hidden. The module captures the active layout when entering a normal cursor state, then restores that exact identifier on entering Insert. It keeps the configured `normal_layout` applied while normal and stops enforcing the restored layout once Windows reports it, so a manual layout choice in Insert is retained. The script reacts to reported terminal cursor metadata, not editor mode text or visual cell highlighting.
 
-The current Lua API has no per-key callback or key transformation function. Cursor-based layout automation is supported; Caps-to-Esc/Ctrl remapping remains outside this API.
+The Lua API has no per-key callback or general key transformation function. Cursor-based layout automation and the fixed Smart Caps policy are supported.
 
 ## Runtime limits
 

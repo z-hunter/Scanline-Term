@@ -83,6 +83,19 @@ struct AutomationDiagnostic {
     message: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CapsPolicyContext {
+    tab_id: Option<String>,
+    process_name: Option<String>,
+    enabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CachedCapsPolicy {
+    context: CapsPolicyContext,
+    generation: u64,
+}
+
 impl AutomationDiagnostic {
     fn error(message: impl Into<String>) -> Self {
         Self {
@@ -148,6 +161,7 @@ struct PendingLayout {
 }
 
 pub struct LuaAutomation {
+    app: Option<tauri::AppHandle>,
     shared: Arc<Mutex<Shared>>,
     sender: SyncSender<Work>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -172,6 +186,7 @@ impl LuaAutomation {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_CAPACITY);
         drop(receiver);
         Self {
+            app: None,
             shared,
             sender,
             worker: Mutex::new(None),
@@ -221,6 +236,7 @@ impl LuaAutomation {
             })
             .map_err(|error| format!("could not start Lua automation worker: {error}"))?;
         let automation = Self {
+            app: Some(app),
             shared,
             sender,
             worker: Mutex::new(Some(worker)),
@@ -243,20 +259,32 @@ impl LuaAutomation {
         }
     }
 
-    fn record_error(&self, error: String) {
+    pub(crate) fn report_native_error(&self, error: impl Into<String>) {
+        let error = error.into();
         if let Ok(mut shared) = self.shared.lock() {
             fail_closed(&mut shared, error);
         }
+        if let Some(app) = &self.app {
+            crate::caps_hook::revoke(app);
+        }
+    }
+
+    fn record_error(&self, error: String) {
+        self.report_native_error(error);
     }
 
     fn reject_snapshot(&self, snapshot: &FrontendSnapshot, error: &str) {
         if let Ok(mut shared) = self.shared.lock() {
-            fail_closed_if_newer(
+            if fail_closed_if_newer(
                 &mut shared,
                 &snapshot.frontend_id,
                 snapshot.generation,
                 error,
-            );
+            ) {
+                if let Some(app) = &self.app {
+                    crate::caps_hook::revoke(app);
+                }
+            }
         }
     }
 
@@ -314,6 +342,7 @@ impl LuaAutomation {
 
     fn update(
         &self,
+        app: &tauri::AppHandle,
         mut snapshot: FrontendSnapshot,
         terminals: &TerminalState,
     ) -> Result<(), String> {
@@ -379,6 +408,15 @@ impl LuaAutomation {
                     }
                 })
                 .collect::<Vec<_>>();
+            let active_tab = tabs.iter().find(|tab| tab.active);
+            crate::caps_hook::context_changed(
+                app,
+                &snapshot.frontend_id,
+                snapshot.generation,
+                active_tab.map(|tab| tab.id.as_str()),
+                active_tab.and_then(|tab| tab.local_process_name.as_deref()),
+                focused,
+            );
             shared.generation = snapshot.generation;
             shared.active_tab_id = has_active.then(|| active.unwrap().to_owned());
             shared.focused = focused;
@@ -403,7 +441,8 @@ impl LuaAutomation {
         )
     }
 
-    fn reload(&self) -> Result<AutomationStatus, String> {
+    fn reload(&self, app: &tauri::AppHandle) -> Result<AutomationStatus, String> {
+        crate::caps_hook::revoke(app);
         let epoch = {
             let mut shared = self
                 .shared
@@ -445,7 +484,7 @@ pub fn lua_automation_update(
     snapshot: FrontendSnapshot,
 ) -> Result<(), String> {
     require_main(&window)?;
-    automation.update(snapshot, &terminals)
+    automation.update(&window.app_handle(), snapshot, &terminals)
 }
 
 #[tauri::command]
@@ -463,7 +502,7 @@ pub fn lua_automation_reload(
     automation: State<'_, LuaAutomation>,
 ) -> Result<AutomationStatus, String> {
     require_main(&window)?;
-    automation.reload()
+    automation.reload(&window.app_handle())
 }
 
 fn require_main(window: &WebviewWindow) -> Result<(), String> {
@@ -544,6 +583,7 @@ fn worker_loop(
     let mut previous: HashMap<String, TabState> = HashMap::new();
     let mut previous_window_focus = false;
     let mut last_layout = None::<String>;
+    let mut last_caps_policy = None::<CachedCapsPolicy>;
     let mut pending: Option<PendingLayout> = None;
     loop {
         let timeout = if pending.is_some()
@@ -560,6 +600,8 @@ fn worker_loop(
                 if !is_current(&shared, &frontend_id, None, epoch) {
                     continue;
                 }
+                crate::caps_hook::revoke(&app);
+                last_caps_policy = None;
                 for id in previous.keys() {
                     if let Some(runtime) = runtime.as_mut() {
                         runtime.close_tab(id);
@@ -578,11 +620,23 @@ fn worker_loop(
                 window_focused,
                 active_tab_id,
             }) => {
-                if !is_frontend_epoch_ready(&shared, &frontend_id, epoch) {
+                if !is_frontend_epoch_ready(&shared, &frontend_id, epoch)
+                    || !is_current(&shared, &frontend_id, Some(generation), epoch)
+                {
                     continue;
                 }
                 pending = None;
                 let Some(runtime) = runtime.as_mut() else {
+                    let context = caps_policy_context(None, &tabs);
+                    publish_caps_policy_candidate(
+                        &app,
+                        &shared,
+                        &mut last_caps_policy,
+                        context,
+                        &frontend_id,
+                        generation,
+                        epoch,
+                    );
                     continue;
                 };
                 let active_tab_id = active_tab_id.filter(|id| tabs.iter().any(|tab| &tab.id == id));
@@ -725,17 +779,30 @@ fn worker_loop(
                     generation,
                     epoch,
                 );
+                let context = caps_policy_context(Some(runtime), &tabs);
+                publish_caps_policy_candidate(
+                    &app,
+                    &shared,
+                    &mut last_caps_policy,
+                    context,
+                    &frontend_id,
+                    generation,
+                    epoch,
+                );
             }
             Ok(Work::Reload { epoch }) => {
                 if !is_epoch_current(&shared, epoch) {
                     continue;
                 }
+                crate::caps_hook::revoke(&app);
+                last_caps_policy = None;
                 pending = None;
                 match resolve_config_path(exe_dir.as_deref(), app_config_dir.as_deref()) {
                     None => {
                         runtime = None;
                         previous.clear();
                         set_status(&shared, "disabled", None, None, Vec::new());
+                        publish_caps_policy_clear(&app, &shared, &mut last_caps_policy, epoch);
                     }
                     Some(path) => {
                         set_status(
@@ -755,6 +822,12 @@ fn worker_loop(
                                     Some(path.display().to_string()),
                                     Some("Lua configuration failed to load".into()),
                                     render_diagnostics(diagnostics),
+                                );
+                                publish_caps_policy_clear(
+                                    &app,
+                                    &shared,
+                                    &mut last_caps_policy,
+                                    epoch,
                                 );
                             }
                             Ok(snapshot) => {
@@ -812,13 +885,29 @@ fn worker_loop(
                                         generation,
                                         current_epoch,
                                     );
+                                    let current_tabs =
+                                        previous.values().cloned().collect::<Vec<_>>();
+                                    let context =
+                                        caps_policy_context(runtime.as_ref(), &current_tabs);
+                                    publish_caps_policy_candidate(
+                                        &app,
+                                        &shared,
+                                        &mut last_caps_policy,
+                                        context,
+                                        &frontend_id,
+                                        generation,
+                                        current_epoch,
+                                    );
                                 }
                             }
                         }
                     }
                 }
             }
-            Ok(Work::Shutdown) => break,
+            Ok(Work::Shutdown) => {
+                crate::caps_hook::revoke(&app);
+                break;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 let Some(runtime) = runtime.as_mut() else {
                     continue;
@@ -909,6 +998,7 @@ fn worker_loop(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
+    crate::caps_hook::revoke(&app);
 }
 
 fn resolve_config_path(exe_dir: Option<&Path>, app_config_dir: Option<&Path>) -> Option<PathBuf> {
@@ -981,6 +1071,100 @@ fn is_frontend_epoch_ready(shared: &Arc<Mutex<Shared>>, frontend_id: &str, epoch
             && shared.action_epoch == epoch
             && shared.status.state == "ready"
     })
+}
+
+fn caps_policy_context(runtime: Option<&LuaRuntime>, tabs: &[TabState]) -> CapsPolicyContext {
+    let active = tabs.iter().find(|tab| tab.active);
+    CapsPolicyContext {
+        tab_id: active.map(|tab| tab.id.clone()),
+        process_name: active.and_then(|tab| tab.local_process_name.clone()),
+        enabled: active.is_some_and(|tab| {
+            tab.focused && runtime.is_some_and(|runtime| runtime.smart_caps_enabled(&tab.id))
+        }),
+    }
+}
+
+fn publish_caps_policy_clear(
+    app: &tauri::AppHandle,
+    shared: &Arc<Mutex<Shared>>,
+    last: &mut Option<CachedCapsPolicy>,
+    epoch: u64,
+) {
+    let Some((Some(frontend_id), generation, tabs)) = shared.lock().ok().map(|shared| {
+        (
+            shared.frontend_id.clone(),
+            shared.generation,
+            shared.tabs.clone(),
+        )
+    }) else {
+        return;
+    };
+    if !is_epoch_current(shared, epoch) {
+        return;
+    }
+    let mut context = caps_policy_context(None, &tabs);
+    context.enabled = false;
+    publish_caps_policy_candidate(app, shared, last, context, &frontend_id, generation, epoch);
+}
+
+fn publish_caps_policy_candidate(
+    app: &tauri::AppHandle,
+    shared: &Arc<Mutex<Shared>>,
+    last: &mut Option<CachedCapsPolicy>,
+    context: CapsPolicyContext,
+    frontend_id: &str,
+    generation: u64,
+    epoch: u64,
+) {
+    if caps_policy_is_cached(last, &context, generation)
+        || !is_current(shared, frontend_id, Some(generation), epoch)
+    {
+        return;
+    }
+    match crate::caps_hook::publish_candidate(
+        app,
+        frontend_id.to_owned(),
+        generation,
+        context.tab_id.clone(),
+        context.process_name.clone(),
+        context.enabled,
+    ) {
+        Ok(true) => cache_caps_policy_candidate(last, context, generation, true),
+        Ok(false) => return,
+        Err(error) => {
+            push_shared_diagnostic(
+                shared,
+                AutomationDiagnostic::error(format!(
+                    "Could not publish Caps policy candidate: {error}"
+                )),
+            );
+            return;
+        }
+    }
+}
+
+fn caps_policy_is_cached(
+    last: &Option<CachedCapsPolicy>,
+    context: &CapsPolicyContext,
+    generation: u64,
+) -> bool {
+    last.as_ref().is_some_and(|last| {
+        last.context == *context && last.generation >= generation
+    })
+}
+
+fn cache_caps_policy_candidate(
+    last: &mut Option<CachedCapsPolicy>,
+    context: CapsPolicyContext,
+    generation: u64,
+    accepted: bool,
+) {
+    if accepted {
+        *last = Some(CachedCapsPolicy {
+            context,
+            generation,
+        });
+    }
 }
 
 fn current_state(
@@ -1486,6 +1670,31 @@ mod tests {
     }
 
     #[test]
+    fn rejected_stale_caps_candidate_is_retried_for_same_policy() {
+        let context = CapsPolicyContext {
+            tab_id: Some("tab-1".into()),
+            process_name: Some("nvim.exe".into()),
+            enabled: true,
+        };
+        let mut last = None;
+
+        // A generation-10 candidate can be ignored after generation 11 has
+        // already advanced native context. The unchanged semantic policy must
+        // remain eligible for publication from the next accepted snapshot.
+        assert!(!caps_policy_is_cached(&last, &context, 10));
+        cache_caps_policy_candidate(&mut last, context.clone(), 10, false);
+        assert!(!caps_policy_is_cached(&last, &context, 11));
+
+        cache_caps_policy_candidate(&mut last, context.clone(), 11, true);
+        assert!(caps_policy_is_cached(&last, &context, 11));
+
+        // Native may revoke after this successful generation-11 candidate
+        // when a transient context change is accepted. A newer generation
+        // retries the unchanged policy; native dedupes if it remains armed.
+        assert!(!caps_policy_is_cached(&last, &context, 12));
+    }
+
+    #[test]
     fn update_and_action_guards_reject_stale_frontends_and_generations() {
         let state = shared_state();
         assert!(snapshot_is_fresh(&state, "front-1", 6));
@@ -1686,6 +1895,7 @@ mod tests {
         let (sender, receiver) = mpsc::sync_channel(1);
         drop(receiver);
         let controller = LuaAutomation {
+            app: None,
             shared: shared.clone(),
             sender,
             worker: Mutex::new(None),

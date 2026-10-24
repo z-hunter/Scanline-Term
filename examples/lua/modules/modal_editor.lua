@@ -1,8 +1,11 @@
 -- Shared cursor-driven input-layout policy for modal editors. Each attachment
 -- and terminal tab gets a separate VM; all locals below belong to one setup.
+-- smart_caps is a static opt-in; key handling stays in the native input path.
 local sterm = require 'sterm'
 
 return function(options)
+  if options.smart_caps == true then sterm.input.smart_caps() end
+
   -- Preserve the observed HKL exactly; it may not be a locale name.
   local normal_cursor_shapes = options.normal_cursor_shapes or { 'block' }
   local insert_layout

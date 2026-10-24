@@ -35,6 +35,19 @@ describe('tap-hold probe state', () => {
     expect(updateTapHold(state, 'up', 190, 180).escape).toBe(false);
   });
 
+  it('uses native physical duration for framed taps even when WebView delivery crosses the threshold', () => {
+    let state = updateTapHold(emptyTapHoldState(), 'down', 10, 180).state;
+    state = updateTapHold(state, 'timeout', 190, 180).state;
+    expect(updateTapHold(state, 'up', 247, 180, 'tap').escape).toBe(true);
+
+    state = updateTapHold(emptyTapHoldState(), 'down', 10, 180).state;
+    state = updateTapHold(state, 'other-key', 30, 180).state;
+    expect(updateTapHold(state, 'up', 247, 180, 'tap').escape).toBe(false);
+
+    state = updateTapHold(emptyTapHoldState(), 'down', 10, 180).state;
+    expect(updateTapHold(state, 'up', 247, 180, 'held').escape).toBe(false);
+  });
+
   it('cancels without emitting Escape', () => {
     const held = updateTapHold(emptyTapHoldState(), 'down', 10, 180).state;
     const canceled = updateTapHold(held, 'cancel', 20, 180);
