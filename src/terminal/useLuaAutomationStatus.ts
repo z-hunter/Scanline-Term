@@ -62,7 +62,7 @@ export function useLuaAutomationStatus(onError: (message: string) => void) {
       const message = `Lua automation status failed: ${String(reason).slice(0, 500)}`;
       if (!previousErrors.current.has(message)) onErrorRef.current(message);
       previousErrors.current = new Set([message]);
-      setStatus({ state: 'error', configPath: null, error: message, diagnostics: [] });
+      setStatus((current) => ({ ...current, state: 'error', error: message, diagnostics: [] }));
       previousDiagnostics.current = [];
     } finally {
       busy.current = false;
@@ -84,7 +84,7 @@ export function useLuaAutomationStatus(onError: (message: string) => void) {
       const message = `Lua configuration reload failed: ${String(reason).slice(0, 500)}`;
       if (!previousErrors.current.has(message)) onErrorRef.current(message);
       previousErrors.current = new Set([message]);
-      setStatus({ state: 'error', configPath: null, error: message, diagnostics: [] });
+      setStatus((current) => ({ ...current, state: 'error', error: message, diagnostics: [] }));
       previousDiagnostics.current = [];
     } finally {
       busy.current = false;

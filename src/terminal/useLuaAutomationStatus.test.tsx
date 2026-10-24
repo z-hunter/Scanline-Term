@@ -10,8 +10,9 @@ import type { LuaAutomationStatus } from './lua-automation';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function Probe({ onError }: { onError: (message: string) => void }) {
+function Probe({ onError, onStatus }: { onError: (message: string) => void; onStatus?: (status: LuaAutomationStatus) => void }) {
   const { status, reload } = useLuaAutomationStatus(onError);
+  onStatus?.(status);
   return createElement('button', { onClick: () => void reload() }, status.state);
 }
 
@@ -80,6 +81,53 @@ describe('useLuaAutomationStatus', () => {
       expect(onError).not.toHaveBeenCalled();
     } finally {
       container.remove();
+    }
+  });
+
+  it('retains existing configPath when status or reload invoke fails', async () => {
+    const readyStatus: LuaAutomationStatus = { state: 'ready', configPath: 'C:\\test\\sterm.lua', error: null, diagnostics: [] };
+    let currentStatus: LuaAutomationStatus | undefined;
+    const onError = vi.fn();
+    mocked.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lua_automation_status') {
+        if (!currentStatus || currentStatus.configPath === null) {
+          return readyStatus;
+        }
+        throw new Error('connection lost');
+      }
+      if (command === 'lua_automation_reload') {
+        throw new Error('reload crash');
+      }
+      throw new Error(`unknown command ${command}`);
+    });
+
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(createElement(Probe, { onError, onStatus: (s) => { currentStatus = s; } }));
+      });
+      expect(currentStatus?.state).toBe('ready');
+      expect(currentStatus?.configPath).toBe('C:\\test\\sterm.lua');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(currentStatus?.state).toBe('error');
+      expect(currentStatus?.configPath).toBe('C:\\test\\sterm.lua');
+      expect(currentStatus?.error).toContain('Lua automation status failed: Error: connection lost');
+      expect(currentStatus?.diagnostics).toEqual([]);
+
+      const button = container.querySelector('button');
+      await act(async () => { button?.click(); });
+      expect(currentStatus?.state).toBe('error');
+      expect(currentStatus?.configPath).toBe('C:\\test\\sterm.lua');
+      expect(currentStatus?.error).toContain('Lua configuration reload failed: Error: reload crash');
+      expect(currentStatus?.diagnostics).toEqual([]);
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+      vi.useRealTimers();
     }
   });
 });
