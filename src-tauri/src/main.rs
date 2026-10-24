@@ -23,7 +23,7 @@ use std::sync::atomic::AtomicBool;
 use windows_sys::Win32::{
     Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
     System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
-    System::Registry::{RegCloseKey, RegDeleteKeyW, RegDeleteTreeW, RegSetValueExW, HKEY_CURRENT_USER, REG_SZ},
+    System::Registry::{RegCloseKey, RegDeleteTreeW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ},
 };
 
 use conpty_oxide::{
@@ -445,12 +445,27 @@ fn set_registry_string(key: &str, name: Option<&str>, value: &str) -> Result<(),
 
 #[cfg(windows)]
 fn remove_explorer_context_key(key: &str) -> Result<(), String> {
-    use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND};
     let key: Vec<u16> = key.encode_utf16().chain(std::iter::once(0)).collect();
-    let status = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };
-    if status != 0 && status != ERROR_FILE_NOT_FOUND { return Err(format!("could not remove Explorer registry values ({status})")); }
-    let status = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, key.as_ptr()) };
-    if status == 0 || status == ERROR_FILE_NOT_FOUND { Ok(()) } else { Err(format!("could not remove Explorer registry key ({status})")) }
+    let mut handle = std::ptr::null_mut();
+    let status = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, key.as_ptr(), 0, KEY_SET_VALUE, &mut handle) };
+    if status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND { return Ok(()); }
+    if status != 0 { return Err(format!("could not open Explorer registry key ({status})")); }
+    let default_name = [0];
+    let icon_name: Vec<u16> = "Icon".encode_utf16().chain(std::iter::once(0)).collect();
+    for name in [&default_name[..], &icon_name] {
+        let status = unsafe { RegDeleteValueW(handle, name.as_ptr()) };
+        if status != 0 && status != ERROR_FILE_NOT_FOUND {
+            unsafe { RegCloseKey(handle); }
+            return Err(format!("could not remove Explorer registry value ({status})"));
+        }
+    }
+    unsafe { RegCloseKey(handle); }
+    let command_key: Vec<u16> = format!("{}\\command", String::from_utf16_lossy(&key[..key.len() - 1]))
+        .encode_utf16().chain(std::iter::once(0)).collect();
+    let status = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, command_key.as_ptr()) };
+    if status == 0 || status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND { Ok(()) }
+    else { Err(format!("could not remove Explorer command registry key ({status})")) }
 }
 
 #[cfg(windows)]
