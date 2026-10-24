@@ -21,7 +21,7 @@
     {
       "identifier": "opener:allow-open-path",
       "allow": [
-        { "path": "$EXE/sterm.lua" },
+        { "path": "$RESOURCE/sterm.lua" },
         { "path": "$APPCONFIG/config.lua" }
       ]
     }
