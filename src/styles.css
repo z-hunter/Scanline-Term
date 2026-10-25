@@ -834,8 +834,7 @@ fieldset {
   width: 100%;
   min-width: 0;
   min-inline-size: 0;
-  padding: 10px 12px;
-  transform: translateY(-8px);
+  padding: 0;
 }
 
 .preset-picker-row {
@@ -879,8 +878,90 @@ fieldset {
   width: 100%;
   min-width: 0;
   min-inline-size: 0;
+  margin: 0;
   padding: 0;
   border: 0;
+}
+
+.settings-panel > .settings-section,
+.settings-panel > .preset-controls > .settings-section {
+  min-width: 0;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #b9d7c1;
+  background: transparent;
+}
+
+.settings-panel .settings-section > legend {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  color: #9de8b3;
+  background: transparent;
+  font-size: inherit;
+  letter-spacing: normal;
+}
+
+.settings-panel .settings-section-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 10px;
+  border: 1px solid #a9f4ca2b;
+  border-top-color: #a9f4ca55;
+  border-bottom-color: #a9f4ca30;
+  border-radius: 5px;
+  color: #9de8b3;
+  background: #b4ffd50b;
+  font: 600 12px/1.2 ui-monospace, Consolas, monospace;
+  letter-spacing: .12em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-panel .settings-section-toggle::before {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  place-items: center;
+  border: 1px solid #a9f4ca38;
+  border-radius: 3px;
+  color: #9de8b3;
+  background: #b4ffd50b;
+  content: attr(data-section-number);
+  font: 11px/1 ui-monospace, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+.settings-panel .settings-section-title { display: flex; flex: 1; align-items: center; gap: 8px; font: 600 12px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .12em; }
+.settings-panel .settings-section-icon { display: block; width: 18px; height: 18px; flex: 0 0 18px; color: currentColor; }
+.settings-panel .settings-section-icon[data-icon="presets"] { background: currentColor; mask: url('../src-tauri/resources/icons/presets.svg') center / contain no-repeat; }
+.settings-panel .settings-section-icon[data-icon="display"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
+.settings-panel .settings-section-icon[data-icon="terminal"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/terminal.svg') center / contain no-repeat; }
+.settings-panel .settings-section-icon[data-icon="crt"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/crt.svg') center / contain no-repeat; }
+.settings-panel .settings-section-icon[data-icon="browser"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
+.settings-panel svg.settings-section-icon { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.settings-panel .settings-section-toggle:hover { color: #d7f5df; background: #b4ffd514; }
+.settings-panel .settings-section-toggle:focus-visible { outline: 2px solid #9dffb8; outline-offset: 2px; }
+.settings-panel .settings-section-chevron { width: 7px; height: 7px; margin-left: auto; border-right: 1px solid #9ccca9; border-bottom: 1px solid #9ccca9; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
+.settings-panel .settings-section-toggle[aria-expanded="true"] .settings-section-chevron { transform: rotate(225deg) translate(-1px, -1px); }
+.settings-panel .settings-section-toggle[aria-expanded="true"] { border-bottom: 0; border-radius: 5px 5px 0 0; }
+.settings-panel .settings-section-pinned > legend > .settings-section-title { display: flex; min-height: 40px; align-items: center; padding: 3px 10px; border: 1px solid #a9f4ca2b; border-top-color: #a9f4ca55; border-bottom: 0; border-radius: 5px 5px 0 0; color: #9de8b3; background: #b4ffd50b; }
+.settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005); }
+.settings-panel .settings-section-content[hidden] { display: none; }
+.settings-panel .settings-section-content > .svs-settings-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.settings-panel .settings-section[data-section-id="display"] .display-section > legend,
+.settings-panel .settings-section[data-section-id="terminal"] .terminal-section > legend,
+.settings-panel .settings-section[data-section-id="crt"] .crt-section > legend { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-panel .settings-section-chevron { transition: none; }
 }
 
 legend {
@@ -889,21 +970,6 @@ legend {
   font-size: 12px;
   letter-spacing: .08em;
   text-transform: uppercase;
-}
-
-.settings-panel .preset-picker > legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.settings-panel .preset-picker > legend::before {
-  content: '';
-  width: 18px;
-  height: 18px;
-  background: currentColor;
-  mask: url('../src-tauri/resources/icons/presets.svg') center / contain no-repeat;
 }
 
 .host-select-control {
@@ -949,9 +1015,7 @@ legend {
   margin-bottom: 6px;
 }
 
-/* Keep the host panel's original surface and type scale around shared SVS controls. */
-.settings-panel .svs-settings-section { background: transparent; }
-.settings-panel > fieldset:not(.preset-controls) { margin-top: var(--svs-section-gap, 16px); }
+/* Keep the host panel's original type scale around shared SVS controls. */
 .settings-panel .svs-field,
 .settings-panel .svs-slider-control,
 .settings-panel .svs-switch { font-size: 13px; }

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanline Term — Settings accordion concept</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #d7f5df; background: #09100d; font-synthesis: none; --line: #a9f4ca35; --mint: #9de8b3; --muted: #809b87; --green: #83ffa2; }
+    * { box-sizing: border-box; }
+    body { min-width: 320px; min-height: 100vh; margin: 0; padding: 42px 24px; background: radial-gradient(ellipse at 50% -15%, #1a42304d, transparent 58%), #09100d; }
+    .board { display: grid; grid-template-columns: minmax(250px, 1fr) 360px; gap: clamp(28px, 7vw, 90px); align-items: start; width: min(900px, 100%); margin: 0 auto; }
+    .intro { position: sticky; top: 34px; padding-top: 28px; }
+    .eyebrow { color: #83cf9a; font: 11px ui-monospace, Consolas, monospace; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { max-width: 420px; margin: 12px 0; font-size: clamp(30px, 5vw, 44px); line-height: 1.02; letter-spacing: -.045em; }
+    .intro > p { max-width: 420px; color: #91ac99; font-size: 14px; line-height: 1.65; }
+    .notes { display: grid; gap: 10px; margin-top: 30px; }
+    .note { padding: 13px 14px; border-left: 1px solid #a9f4ca60; color: #91ac99; background: linear-gradient(90deg, #b4ffd510, transparent); font-size: 12px; line-height: 1.55; }
+    .note strong { display: block; margin-bottom: 4px; color: #bde8c8; font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+    .settings-panel { height: min(790px, calc(100vh - 48px)); min-height: 590px; overflow: auto; padding: 18px; border: 1px solid #a9f4ca30; border-radius: 8px; background: linear-gradient(145deg, #122019ed, #0b130ff2); box-shadow: inset 0 1px #e4fff018, 0 20px 60px #0008; scrollbar-color: #355840 transparent; scrollbar-width: thin; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 10px; background: linear-gradient(90deg, #a9f4ca55, #a9f4ca18) left bottom / 100% 1px no-repeat; }
+    .panel-name { display: flex; align-items: center; gap: 9px; margin: 0; color: #9de8b3; font: 600 14px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .18em; }
+    .lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px #63fa8b9c; }
+    .help { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid #355840; border-radius: 50%; color: #b9d7c1; background: #163321; font: 700 14px/1 ui-monospace, Consolas, monospace; }
+    .panel-status { display: flex; justify-content: space-between; gap: 8px; margin: 8px 0 13px; color: #809b87; font: 9px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase; }
+    .panel-status .ready { color: #79d897; }
+    .section { margin: 0 0 22px; }
+    .section-toggle { display: flex; width: 100%; min-height: 42px; align-items: center; gap: 10px; margin: 0; padding: 0 11px; border: 1px solid #a9f4ca2b; border-top-color: #a9f4ca55; border-bottom-color: #a9f4ca30; border-radius: 5px; color: #d7f5df; background: #b4ffd50b; text-align: left; cursor: pointer; }
+    .section-toggle:hover:not(:disabled) { background: #b4ffd514; }
+    .section-toggle:focus-visible { outline: 2px solid #9dffb8; outline-offset: -2px; }
+    .section-index { display: grid; width: 21px; height: 21px; flex: 0 0 21px; place-items: center; border: 1px solid #a9f4ca38; border-radius: 4px; color: #9de8b3; background: #b4ffd50b; font: 11px ui-monospace, Consolas, monospace; }
+    .section-title { display: flex; flex: 1; align-items: center; gap: 8px; font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: .13em; }
+    .section-icon { display: block; width: 17px; height: 17px; flex: 0 0 17px; color: #9de8b3; }
+    .section-icon[data-icon="presets"] { background: currentColor; mask: url('../src-tauri/resources/icons/presets.svg') center / contain no-repeat; }
+    .section-icon[data-icon="display"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
+    .section-icon[data-icon="terminal"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/terminal.svg') center / contain no-repeat; }
+    .section-icon[data-icon="crt"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/crt.svg') center / contain no-repeat; }
+    .section-icon[data-icon="ui"], .section-icon[data-icon="system"] { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .chevron { width: 7px; height: 7px; margin-left: 2px; border-right: 1px solid #9ccca9; border-bottom: 1px solid #9ccca9; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
+    .section-toggle[aria-expanded="true"] .chevron { transform: rotate(225deg) translate(-1px, -1px); }
+    .section-toggle[aria-expanded="true"] { border-bottom: 0; border-radius: 5px 5px 0 0; }
+    .pinned .section-toggle { border-bottom: 0; border-radius: 5px 5px 0 0; cursor: default; }
+    .section-content { padding: 10px 11px 12px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005); }
+    .rule { height: 1px; margin: 0 0 10px; background: linear-gradient(90deg, #a9f4ca35, transparent); }
+    .control { display: flex; min-height: 27px; align-items: center; justify-content: space-between; gap: 12px; color: #b9d7c1; font-size: 11px; }
+    .value { color: #8fb89a; font: 10px ui-monospace, Consolas, monospace; }
+    .select { min-width: 118px; padding: 5px 7px; border: 1px solid #355840; border-radius: 3px; color: #d7f5df; background: #09100d; font: 10px ui-monospace, Consolas, monospace; text-align: right; }
+    .switch { width: 25px; height: 14px; flex: 0 0 25px; border: 1px solid #45654d; border-radius: 8px; background: #132219; }
+    .switch::after { display: block; width: 8px; height: 8px; margin: 2px; border-radius: 50%; background: #728d78; content: ""; }
+    .switch.on { border-color: #72c98c; background: #214a2d; }
+    .switch.on::after { margin-left: 13px; background: #8effa9; box-shadow: 0 0 6px #63fa8b70; }
+    .font-row { display: grid; grid-template-columns: 1fr 68px; gap: 8px; }
+    .font-row .control { min-width: 0; }
+    .mini-heading { margin: 8px 0 4px; color: #8eb79a; font: 9px ui-monospace, Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .group-tags { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 6px; }
+    .group-tags span { padding: 4px 6px; border: 1px solid #a9f4ca22; border-radius: 3px; color: #91ac99; font: 9px ui-monospace, Consolas, monospace; }
+    .preset-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+    .preset-row input { min-width: 0; padding: 6px 8px; border: 1px solid #355840; border-radius: 3px; color: #d7f5df; background: #09100d; font: 10px ui-monospace, Consolas, monospace; }
+    .preset-row button { padding: 0 10px; border: 1px solid #a9f4ca45; border-radius: 4px; color: #d7f5df; background: linear-gradient(145deg, #b4ffd51c, #61d9920b 48%, #d2fff00d); font: 10px ui-monospace, Consolas, monospace; }
+    .hint { margin: 14px 0 2px; padding-top: 10px; border-top: 1px solid #a9f4ca24; color: #66816d; font: 9px/1.5 ui-monospace, Consolas, monospace; text-align: center; letter-spacing: .06em; }
+    .hint kbd { padding: 2px 4px; border: 1px solid #a9f4ca30; border-radius: 3px; color: #a9d9b4; background: #b4ffd509; font: inherit; }
+    @media (max-width: 700px) { body { padding: 18px 12px; } .board { grid-template-columns: 1fr; gap: 22px; } .intro { position: static; padding: 0; } h1 { font-size: 32px; } .notes { display: none; } .settings-panel { width: min(360px, 100%); height: 75vh; min-height: 500px; margin: 0 auto; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <section class="intro">
+      <span class="eyebrow">Scanline Term · Settings concept</span>
+      <h1>Accordion navigation</h1>
+      <p>Длинная панель остаётся компактной: нужный раздел открывается по клику или цифровой клавише, а его номер закреплён в заголовке.</p>
+      <div class="notes">
+        <div class="note"><strong>Закреплённый раздел</strong>Presets всегда раскрыт. Номер 0 зарезервирован, но на заголовке не показывается; свернуть раздел нельзя.</div>
+        <div class="note"><strong>Клавиатурный переход</strong>Клавиши 0–5 работают только когда курсор находится над панелью. Клавиша 0 прокручивает к Presets; закрытый раздел раскрывается перед переходом.</div>
+        <div class="note"><strong>Состав разделов</strong>Названия и примеры контролов сверены с SettingsPanel и секциями Scanline Virtual Screen. В режиме Browser терминальные разделы заменяются секцией Browser.</div>
+      </div>
+    </section>
+
+    <aside class="settings-panel" id="settings-panel" aria-label="Settings panel">
+      <header class="panel-header">
+        <h2 class="panel-name"><i class="lamp"></i>SETTINGS</h2>
+        <button class="help" type="button" aria-label="Settings help">?</button>
+      </header>
+      <div class="panel-status"><span>Console buffer: 120 × 40 · FPS: 60</span><span id="hotkey-status">Hover to activate</span></div>
+
+      <section class="section pinned" id="section-presets" data-index="0">
+        <div class="section-toggle" aria-label="Presets">
+          <span class="section-title"><i class="section-icon" data-icon="presets"></i>PRESETS</span>
+        </div>
+        <div class="section-content">
+          <div class="rule"></div>
+          <div class="preset-row"><input aria-label="Preset name" value="IBM 5151 PC -MDA- (1981)"><button type="button">Save</button></div>
+          <div class="control" style="margin-top:7px"><span>Load preset…</span><span class="value">▼</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-display" data-index="1">
+        <button class="section-toggle" type="button" aria-expanded="true" aria-controls="content-display">
+          <span class="section-index">1</span><span class="section-title"><i class="section-icon" data-icon="display"></i>DISPLAY</span><i class="chevron"></i>
+        </button>
+        <div class="section-content" id="content-display"><div class="rule"></div>
+          <div class="control"><span>Virtual resolution</span><span class="select">640 × 480　⌄</span></div>
+          <div class="control"><span>Anti-moiré pixels</span><i class="switch on"></i></div>
+          <div class="control"><span>Pixel smoothing</span><i class="switch"></i></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-terminal" data-index="2">
+        <button class="section-toggle" type="button" aria-expanded="false" aria-controls="content-terminal">
+          <span class="section-index">2</span><span class="section-title"><i class="section-icon" data-icon="terminal"></i>TERMINAL</span><i class="chevron"></i>
+        </button>
+        <div class="section-content" id="content-terminal" hidden><div class="rule"></div>
+          <div class="control"><span>ANSI color profile</span><span class="select">Green phosphor　⌄</span></div>
+          <div class="font-row"><div class="control"><span>Console font</span><span class="select">Consolas　⌄</span></div><div class="control"><span>Size</span><span class="value">16 px</span></div></div>
+          <div class="font-row"><div class="control"><span>Cell width ±px</span><span class="value">0</span></div><div class="control"><span>Cell height ±px</span><span class="value">0</span></div></div>
+          <div class="control"><span>Smooth terminal scrolling</span><i class="switch on"></i></div>
+          <div class="control"><span>Heuristic TUI scrolling</span><i class="switch on"></i></div>
+          <div class="mini-heading">Cursor style</div><div class="control"><span>Block</span><span class="value">Underline　　Bar</span></div>
+          <div class="control"><span>Cursor blink</span><i class="switch on"></i></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-crt" data-index="3">
+        <button class="section-toggle" type="button" aria-expanded="false" aria-controls="content-crt">
+          <span class="section-index">3</span><span class="section-title"><i class="section-icon" data-icon="crt"></i>CRT</span><i class="chevron"></i>
+        </button>
+        <div class="section-content" id="content-crt" hidden><div class="rule"></div>
+          <div class="control"><span>CRT Emulation</span><i class="switch on"></i></div>
+          <div class="mini-heading">Nested control groups</div>
+          <div class="group-tags"><span>Colors</span><span>Final image</span><span>Geometry</span><span>Raster</span><span>Light</span><span>Temporal</span><span>Bezel</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-ui" data-index="4">
+        <button class="section-toggle" type="button" aria-expanded="false" aria-controls="content-ui">
+          <span class="section-index">4</span><span class="section-title"><svg class="section-icon" data-icon="ui" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>UI</span><i class="chevron"></i>
+        </button>
+        <div class="section-content" id="content-ui" hidden><div class="rule"></div>
+          <div class="control"><span>RMB menu in term.</span><i class="switch on"></i></div>
+          <div class="control"><span>Tab switch animation</span><i class="switch on"></i></div>
+          <div class="control"><span>Tab placement</span><span class="value">Left / Above</span></div>
+          <div class="control"><span>Hide tabs bar</span><i class="switch"></i></div>
+          <div class="control"><span>Global hotkey: Win+~</span><i class="switch on"></i></div>
+          <div class="control"><span>Settings scale</span><span class="value">100%</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-system" data-index="5">
+        <button class="section-toggle" type="button" aria-expanded="false" aria-controls="content-system">
+          <span class="section-index">5</span><span class="section-title"><svg class="section-icon" data-icon="system" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1"/><path d="M8 2.5v2.3m4-2.3v2.3m4 3h2.3m-2.3 4h2.3m-2.3 4v2.3m-4-2.3v2.3m-4-2.3v2.3m-4-6.3H2.5m2.3-4H2.5m2.3 8H2.5"/><path d="M8 8h4v4H8z"/></svg>SYSTEM</span><i class="chevron"></i>
+        </button>
+        <div class="section-content" id="content-system" hidden><div class="rule"></div>
+          <div class="control"><span>Lua automation</span><span class="value">READY</span></div>
+          <div class="control"><span>Config actions</span><span class="value">Reload · Edit</span></div>
+          <div class="control"><span>Default shell</span><span class="select">PowerShell　⌄</span></div>
+          <div class="control"><span>Automatic updates</span><i class="switch on"></i></div>
+          <div class="control"><span>Explorer integration</span><i class="switch on"></i></div>
+          <div class="control"><span>Disable AI assistant</span><i class="switch"></i></div>
+          <div class="control"><span>MCP terminal mode</span><i class="switch on"></i></div>
+        </div>
+      </section>
+      <p class="hint"><kbd>0</kbd>–<kbd>5</kbd> JUMP TO SECTION · HOVER THIS PANEL</p>
+    </aside>
+  </main>
+  <script>
+    const panel = document.querySelector('#settings-panel');
+    const hotkeyStatus = document.querySelector('#hotkey-status');
+    let pointerInside = false;
+    console.assert(panel.querySelectorAll('.section:not(.pinned) .section-toggle').length === 5, 'Hotkey navigation should match visible sections 1–5.');
+    console.assert(!panel.querySelector('#section-presets button.section-toggle'), 'Presets must stay expanded without a visible toggle.');
+
+    panel.addEventListener('pointerenter', () => {
+      pointerInside = true;
+      hotkeyStatus.textContent = 'Hotkeys ready';
+      hotkeyStatus.classList.add('ready');
+    });
+    panel.addEventListener('pointerleave', () => {
+      pointerInside = false;
+      hotkeyStatus.textContent = 'Hover to activate';
+      hotkeyStatus.classList.remove('ready');
+    });
+
+    panel.querySelectorAll('.section:not(.pinned) .section-toggle').forEach((button) => {
+      button.addEventListener('click', () => setExpanded(button, button.getAttribute('aria-expanded') !== 'true'));
+    });
+
+    function setExpanded(button, expanded) {
+      button.setAttribute('aria-expanded', String(expanded));
+      panel.querySelector(`#${button.getAttribute('aria-controls')}`).hidden = !expanded;
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (!pointerInside || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))) return;
+      if (!/^[1-5]$/.test(event.key)) return;
+      const id = ({ 0: 'presets', 1: 'display', 2: 'terminal', 3: 'crt', 4: 'ui', 5: 'system' })[event.key];
+      const section = panel.querySelector(`#section-${id}`);
+      const button = section.querySelector('button.section-toggle');
+      if (button && button.getAttribute('aria-expanded') !== 'true') setExpanded(button, true);
+      panel.scrollTo({ top: section.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    });
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { ScreenProfile } from 'scanline-virtual-screen/core';
 import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';
 import {
@@ -71,6 +71,9 @@ export function SettingsPanel({
   const panelRef = useRef<HTMLElement>(null);
   const pointerPosition = useRef({ x: 0, y: 0 });
   const panelScrollTop = useRef<number | null>(null);
+  const pointerOverSettings = useRef(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ display: true, browser: true });
+  const toggleSection = (id: string) => setExpandedSections((current) => ({ ...current, [id]: !current[id] }));
   const releaseKnobsOutsidePointer = (x: number, y: number) => {
     for (const [knob, blockedAt] of wheelBlockedKnobs) {
       const bounds = knob.getBoundingClientRect();
@@ -90,6 +93,26 @@ export function SettingsPanel({
     panel.addEventListener('wheel', preventPanelScrollOverKnobs, { capture: true, passive: false });
     return () => panel.removeEventListener('wheel', preventPanelScrollOverKnobs, true);
   }, [wheelBlockedKnobs]);
+  useEffect(() => {
+    const handleSectionShortcut = (event: KeyboardEvent) => {
+      const panel = panelRef.current;
+      const active = document.activeElement;
+      if (!panel || !pointerOverSettings.current || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (active instanceof HTMLElement && (active.matches('input, textarea, select, [contenteditable="true"]') || active.closest('.custom-select-container'))) return;
+      if (!/^[0-5]$/.test(event.key)) return;
+      const section = panel.querySelector<HTMLElement>(`[data-section-number="${event.key}"]`);
+      if (!section) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const id = section.dataset.sectionId;
+      if (id && id !== 'presets') setExpandedSections((current) => current[id] ? current : { ...current, [id]: true });
+      const panelTop = panel.getBoundingClientRect().top;
+      const sectionTop = section.getBoundingClientRect().top;
+      panel.scrollTo({ top: Math.max(0, panel.scrollTop + sectionTop - panelTop - 8), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    };
+    window.addEventListener('keydown', handleSectionShortcut, true);
+    return () => window.removeEventListener('keydown', handleSectionShortcut, true);
+  }, []);
   const canSavePreset = Boolean(presetState && (presetState.dirty || presetState.draftName !== presetState.name));
   const [scrollDiagnosticsCopied, setScrollDiagnosticsCopied] = useState<boolean | null>(null);
   const [geometryDiagnosticsCopied, setGeometryDiagnosticsCopied] = useState<boolean | null>(null);
@@ -106,6 +129,8 @@ export function SettingsPanel({
     <aside
       ref={panelRef}
       className="settings-panel"
+      onPointerEnter={() => { pointerOverSettings.current = true; }}
+      onPointerLeave={(event) => { pointerOverSettings.current = false; releaseKnobsOutsidePointer(event.clientX, event.clientY); }}
       onWheelCapture={(event) => {
         pointerPosition.current = { x: event.clientX, y: event.clientY };
         const target = event.target;
@@ -131,7 +156,6 @@ export function SettingsPanel({
         pointerPosition.current = { x: event.clientX, y: event.clientY };
         releaseKnobsOutsidePointer(event.clientX, event.clientY);
       }}
-      onPointerLeave={(event) => releaseKnobsOutsidePointer(event.clientX, event.clientY)}
     >
       <header>
         <div className="settings-heading">
@@ -141,53 +165,59 @@ export function SettingsPanel({
         <p className="display-status">{browserTabActive ? 'BROWSER TAB' : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
       </header>
 
-      {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'} disabled={presetDisabled}>
-        <fieldset className="preset-picker">
-          <legend>Presets</legend>
-          <div className="preset-picker-row">
-            <input
-              value={presetState?.draftName ?? ''}
-              placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
-              aria-label="Preset name"
-              onChange={(event) => onPresetNameChange(event.target.value)}
-            />
-            <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
+      {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'}>
+        <SettingsAccordionSection id="presets" number={0} title="Presets" icon="presets" pinned disabled={presetDisabled}>
+          <div className="preset-picker">
+            <div className="preset-picker-row">
+              <input
+                value={presetState?.draftName ?? ''}
+                placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
+                aria-label="Preset name"
+                onChange={(event) => onPresetNameChange(event.target.value)}
+              />
+              <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
+            </div>
+            <label className="preset-load-control">
+              <select
+                aria-label="Load preset"
+                defaultValue=""
+                onChange={(event) => {
+                  const name = event.target.value;
+                  event.currentTarget.value = '';
+                  if (name) onLoadPreset(name);
+                }}
+              >
+                <option value="" disabled>Load preset…</option>
+                {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
           </div>
-          <label className="preset-load-control">
-            <select
-              aria-label="Load preset"
-              defaultValue=""
-              onChange={(event) => {
-                const name = event.target.value;
-                event.currentTarget.value = '';
-                if (name) onLoadPreset(name);
-              }}
-            >
-              <option value="" disabled>Load preset…</option>
-              {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-        </fieldset>
+        </SettingsAccordionSection>
 
-        <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} showChannelSwitch={false} />
-        <TerminalSettingsSection
-          value={screenProfile}
-          fonts={monospaceFonts}
-          onChange={updateProfile}
-          smoothScrolling={{
-            enabled: stored.smoothScrollback,
-            tuiEnabled: stored.smoothTuiScrolling,
-            onEnabledChange: (smoothScrollback) => setStored((current) => ({ ...current, smoothScrollback })),
-            onTuiEnabledChange: (smoothTuiScrolling) => setStored((current) => ({ ...current, smoothTuiScrolling })),
-          }}
-        />
-        {smoothScrollDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Smooth scroll diagnostics</span><button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
-        {geometryDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Terminal geometry diagnostics</span><button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
-        <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+        <SettingsAccordionSection id="display" number={1} title="Display" icon="display" expanded={Boolean(expandedSections.display)} disabled={presetDisabled} onToggle={() => toggleSection('display')}>
+          <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} showChannelSwitch={false} />
+        </SettingsAccordionSection>
+        <SettingsAccordionSection id="terminal" number={2} title="Terminal" icon="terminal" expanded={Boolean(expandedSections.terminal)} disabled={presetDisabled} onToggle={() => toggleSection('terminal')}>
+          <TerminalSettingsSection
+            value={screenProfile}
+            fonts={monospaceFonts}
+            onChange={updateProfile}
+            smoothScrolling={{
+              enabled: stored.smoothScrollback,
+              tuiEnabled: stored.smoothTuiScrolling,
+              onEnabledChange: (smoothScrollback) => setStored((current) => ({ ...current, smoothScrollback })),
+              onTuiEnabledChange: (smoothTuiScrolling) => setStored((current) => ({ ...current, smoothTuiScrolling })),
+            }}
+          />
+          {smoothScrollDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Smooth scroll diagnostics</span><button type="button" onClick={copySmoothScrollDiagnostics} data-testid="copy-smooth-scroll-diagnostics">{scrollDiagnosticsCopied === false ? 'Copy failed' : scrollDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
+          {geometryDiagnosticsEnabled && <div className="host-setting-block"><span className="host-setting-label">Terminal geometry diagnostics</span><button type="button" onClick={copyGeometryDiagnostics} data-testid="copy-geometry-diagnostics">{geometryDiagnosticsCopied === false ? 'Copy failed' : geometryDiagnosticsCopied ? 'Copied' : 'Copy log'}</button></div>}
+        </SettingsAccordionSection>
+        <SettingsAccordionSection id="crt" number={3} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} disabled={presetDisabled} onToggle={() => toggleSection('crt')}>
+          <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+        </SettingsAccordionSection>
       </fieldset>}
 
-      {browserTabActive && <fieldset>
-        <legend>Browser</legend>
+      {browserTabActive && <SettingsAccordionSection id="browser" number={1} title="Browser" icon="browser" expanded={Boolean(expandedSections.browser)} onToggle={() => toggleSection('browser')}>
         <label className="host-select-control">
           Browser form factor
           <select
@@ -199,10 +229,9 @@ export function SettingsPanel({
             {BROWSER_FORM_FACTORS.map((factor) => <option key={factor.id} value={factor.id}>{factor.label}</option>)}
           </select>
         </label>
-      </fieldset>}
+      </SettingsAccordionSection>}
 
-      <fieldset>
-        <legend>UI</legend>
+      <SettingsAccordionSection id="ui" number={browserTabActive ? 2 : 4} title="UI" icon="ui" expanded={Boolean(expandedSections.ui)} onToggle={() => toggleSection('ui')}>
         <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
         <Switch label="Tab switch animation" checked={stored.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, channelSwitchEffect }))} />
         <div className="host-setting-block">
@@ -223,10 +252,9 @@ export function SettingsPanel({
             {[0.75, 0.9, 1, 1.1, 1.25, 1.5].map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}
           </select>
         </label>
-      </fieldset>
+      </SettingsAccordionSection>
 
-      <fieldset>
-        <legend>System</legend>
+      <SettingsAccordionSection id="system" number={browserTabActive ? 3 : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
         <LuaAutomationPanel status={luaAutomationStatus} reload={reloadLuaConfig} onError={onError} available={luaAutomationAvailable} />
         <label className="host-select-control">
           Default shell
@@ -241,9 +269,65 @@ export function SettingsPanel({
         <Switch label="Disable AI assistant" checked={stored.aiAssistantDisabled} onChange={(aiAssistantDisabled) => setStored((current) => ({ ...current, aiAssistantDisabled, ...(aiAssistantDisabled ? { showAiPanel: false } : {}) }))} />
         <Switch label="Enable MCP terminal mode" checked={stored.mcpEnabled} onChange={(mcpEnabled) => setStored((current) => ({ ...current, mcpEnabled }))} />
         {stored.mcpEnabled && <Switch label="Keep MCP tabs open" checked={stored.mcpKeepTabsOpen} onChange={(mcpKeepTabsOpen) => setStored((current) => ({ ...current, mcpKeepTabsOpen }))} />}
-      </fieldset>
+      </SettingsAccordionSection>
 
       <footer>v{appVersion} (c) Michael Voitovich, 2026</footer>
     </aside>
   );
+}
+
+function SettingsAccordionSection({
+  id,
+  number,
+  title,
+  icon,
+  expanded = false,
+  pinned = false,
+  disabled = false,
+  onToggle,
+  children,
+}: {
+  id: string;
+  number: number;
+  title: string;
+  icon: 'presets' | 'display' | 'terminal' | 'crt' | 'browser' | 'ui' | 'system';
+  expanded?: boolean;
+  pinned?: boolean;
+  disabled?: boolean;
+  onToggle?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className={`settings-section${pinned ? ' settings-section-pinned' : ''}`} data-section-number={number} data-section-id={id} aria-keyshortcuts={`${number}`} disabled={disabled}>
+      <legend>
+        {pinned ? <span className="settings-section-title"><SettingsSectionIcon name={icon} />{title}</span> : (
+          <button
+            type="button"
+            className="settings-section-toggle"
+            data-section-number={number}
+            aria-label={`${number} ${title}`}
+            aria-expanded={expanded}
+            aria-controls={`settings-section-content-${id}`}
+            onClick={onToggle}
+          >
+            <span className="settings-section-title"><SettingsSectionIcon name={icon} />{title}</span>
+            <span className="settings-section-chevron" aria-hidden="true" />
+          </button>
+        )}
+      </legend>
+      <div id={`settings-section-content-${id}`} className="settings-section-content" hidden={!pinned && !expanded}>
+        {children}
+      </div>
+    </fieldset>
+  );
+}
+
+function SettingsSectionIcon({ name }: { name: 'presets' | 'display' | 'terminal' | 'crt' | 'browser' | 'ui' | 'system' }) {
+  if (name === 'ui') {
+    return <svg className="settings-section-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="6" rx="1" /><rect x="11" y="3" width="6" height="6" rx="1" /><rect x="3" y="11" width="6" height="6" rx="1" /><rect x="11" y="11" width="6" height="6" rx="1" /></svg>;
+  }
+  if (name === 'system') {
+    return <svg className="settings-section-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1" /><path d="M8 2.5v2.3m4-2.3v2.3m4 3h2.3m-2.3 4h2.3m-2.3 4v2.3m-4-2.3v2.3m-4-2.3v2.3m-4-6.3H2.5m2.3-4H2.5m2.3 8H2.5" /><path d="M8 8h4v4H8z" /></svg>;
+  }
+  return <span className="settings-section-icon" data-icon={name} aria-hidden="true" />;
 }
