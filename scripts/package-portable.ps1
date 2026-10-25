@@ -1,23 +1,46 @@
 param(
   [string]$Version = (Get-Content "$PSScriptRoot\..\src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
 )
+$ErrorActionPreference = "Stop"
 
 $root = Split-Path $PSScriptRoot -Parent
-$stage = Join-Path $root "src-tauri\target\portable\Scanline-Term-$Version-portable-x64"
-$archive = Join-Path $root "src-tauri\target\release\bundle\portable\Scanline-Term-$Version-portable-x64.zip"
-Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path (Join-Path $stage "resources") -Force | Out-Null
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') { throw "Version must be a semantic version: $Version" }
+$portableRoot = [IO.Path]::GetFullPath((Join-Path $root "src-tauri\target\portable"))
+$stage = [IO.Path]::GetFullPath((Join-Path $portableRoot "Scanline-Term-$Version-portable-x64"))
+$archiveRoot = [IO.Path]::GetFullPath((Join-Path $root "src-tauri\target\release\bundle\portable"))
+$archive = [IO.Path]::GetFullPath((Join-Path $archiveRoot "Scanline-Term-$Version-portable-x64.zip"))
+$separator = [IO.Path]::DirectorySeparatorChar
+if (-not $stage.StartsWith($portableRoot.TrimEnd($separator) + $separator, [StringComparison]::OrdinalIgnoreCase)) { throw "Portable stage path escapes its target directory" }
+if (-not $archive.StartsWith($archiveRoot.TrimEnd($separator) + $separator, [StringComparison]::OrdinalIgnoreCase)) { throw "Portable archive path escapes its target directory" }
+if (Test-Path -LiteralPath $stage) {
+  Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
+  if (Test-Path -LiteralPath $stage) { throw "Could not remove previous portable stage: $stage" }
+}
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\target\release\sterm.exe") -Destination $stage
 $mcpBinary = Join-Path $root "src-tauri\target\release\scanline-term-mcp.exe"
 if (-not (Test-Path -LiteralPath $mcpBinary)) { throw "Build the MCP sidecar first: cargo build --release --bin scanline-term-mcp" }
 Copy-Item -LiteralPath $mcpBinary -Destination $stage
-Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\conpty") -Destination (Join-Path $stage "resources") -Recurse
-Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\fonts") -Destination (Join-Path $stage "resources") -Recurse
-Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destination (Join-Path $stage "resources") -Recurse
+Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\conpty") -Destination $stage -Recurse
+Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\fonts") -Destination $stage -Recurse
+Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destination $stage -Recurse
+Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\window-icon.ico") -Destination $stage
+$luaSource = Join-Path $root "examples\lua"
+$luaResource = Join-Path $stage "lua-examples"
+foreach ($directory in @("editors", "modules", "lua-examples", "lua-examples\editors", "lua-examples\modules")) {
+  New-Item -ItemType Directory -Path (Join-Path $stage $directory) -Force | Out-Null
+}
+foreach ($relativePath in @("sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua")) {
+  Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $stage $relativePath)
+  Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $luaResource $relativePath)
+}
+foreach ($requiredPath in @("conpty\x64", "fonts", "presets\default.json", "window-icon.ico", "sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "lua-examples\sterm.lua")) {
+  if (-not (Test-Path -LiteralPath (Join-Path $stage $requiredPath))) { throw "Portable package is missing required path: $requiredPath" }
+}
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $stage
 New-Item -ItemType Directory -Path (Join-Path $stage "docs") -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "docs\13-portable-installation.md") -Destination (Join-Path $stage "docs\PORTABLE-INSTALLATION.md")
 New-Item -ItemType Directory -Path (Split-Path $archive) -Force | Out-Null
-Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force -ErrorAction Stop }
 Compress-Archive -Path $stage -DestinationPath $archive
 Write-Output $archive

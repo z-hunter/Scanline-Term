@@ -1572,7 +1572,13 @@ mod tests {
         (dir, LuaRuntime::new(snapshot))
     }
     fn write_shared_examples(dir: &TempDir) {
-        dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        let config = format!(
+            "{}\n\
+             sterm.use('editors/nvim.lua', {{ when = {{ process = {{ 'vim.exe', 'nvim.exe' }} }} }})\n\
+             sterm.use('editors/hx.lua', {{ when = {{ process = {{ 'hx.exe' }} }} }})\n",
+            include_str!("../../examples/lua/sterm.lua")
+        );
+        dir.write("config.lua", &config);
         dir.write(
             "editors/nvim.lua",
             include_str!("../../examples/lua/editors/nvim.lua"),

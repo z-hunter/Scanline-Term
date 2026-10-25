@@ -1,10 +1,24 @@
 ﻿# Scanline Term — Lua Configuration & Automation Layer
 
-Status: Future-scope backlog specification; an incremental Windows runtime slice is implemented. See the [Lua automation guide](lua-automation.md) for its current API, setup, and limits.
-Target: Remaining specification items are future work and require prioritization. The implemented slice does not claim completion of this backlog.
-Scope: lightweight, sandboxed Lua 5.4 event automation, tab-local scripting, host-side input remapping, and optional configuration-as-code  
+Status: Windows V1 is an intermediate development stage, not a public release. Its automation slice and first-launch profile seeding are implemented and covered by passing Rust tests; the portable packaging script includes the config tree. Frontend tests and build pass. The user reports manually enabled Neovim and Helix bindings work in installed 0.6.0. Earlier development and packaged 0.6.0 Neovim Caps tap/hold smokes passed, as did packaged MCP create/echo/observe/close and cleanup checks. The focused packaged smoke did not establish the full focus/tab/reload/error matrix. The required post-V1 settings scope is listed separately from optional backlog. See the [Lua automation guide](lua-automation.md) for the current API and limits.
+Target: Deliver the Windows V1 automation slice, then complete the required canonical Lua settings/configuration contract before public release.
+Scope: lightweight, sandboxed Lua 5.4 event automation and tab-local scripting in Windows V1; canonical Lua configuration for all GUI settings is required before public release.
 
 ## 1. Purpose
+
+### Accepted and implemented Windows V1 contract
+
+Windows V1 provides bounded Lua event automation plus an explicitly declared Smart Caps policy for a matching active, focused terminal tab. The entry file uses `require 'sterm'`, `sterm.module(name, path)` to declare trusted local modules, and `sterm.use(path, options)` to attach scripts. Lua can load only the built-in `sterm` API and modules captured in that declaration manifest; it receives no runtime filesystem access. During this intermediate stage, GUI settings continue to use the existing JSON persistence and are not yet backed by canonical Lua configuration.
+
+The example entry → editor wrapper → shared modal-editor module pattern supports Neovim and Helix through shared cursor/layout logic. Neovim uses its visible Normal-mode block cursor; Helix additionally treats its hidden physical cursor as Normal mode. Layout changes are guarded by active-tab and window focus checks. Load and runtime failures are surfaced as error toasts, and Edit config opens the current entry file in the operating system's default editor.
+
+The optional editor examples remain inactive by default. The entry registers the shared module but keeps both editor `sterm.use` bindings commented out; users explicitly uncomment the bindings they want. Release packaging includes the examples as inert resources; activation remains a manual edit, with no UI activation/Create action.
+
+Smart Caps is an opt-in Windows policy implemented with one native `WH_KEYBOARD_LL` hook per app instance, shared across its tabs. A policy lease is accepted only for the active, focused, process-matched tab and owning frontend. The hook callback stays minimal: it classifies physical edges and does not call Lua, use IPC, or log each key. A physical Caps tap shorter than 180 ms maps to Escape; a hold of 180 ms or longer maps to Control. Context changes cancel a pending tap and release any owed synthetic key-up/modifier state before ordinary input resumes. Lua declares the policy during script initialization; all key-edge handling remains native.
+
+The user reports manually enabling the Neovim and Helix bindings in installed 0.6.0 and testing that they work. Earlier development and packaged 0.6.0 smokes verified Neovim Caps tap and Caps+H. The packaged 0.6.0 smoke also validated MCP create/echo/observe/close and cleanup; it did not establish the full focus/tab/reload/error matrix.
+
+The rest of this document describes proposed capabilities and acceptance criteria for future phases. They must not be read as claims about Windows V1.
 
 Add an optional Lua layer to Scanline Term that can:
 
@@ -18,7 +32,7 @@ Add an optional Lua layer to Scanline Term that can:
 
 The feature is intended to enable small workflow automations without turning Scanline Term into a general-purpose scripting host. Scanline Term remains GUI-first: common settings such as fonts, display/CRT options, presets, tabs, browser behavior, and ordinary shortcuts remain configurable through the UI. Lua exists for behavior that is conditional, stateful, or inconvenient to express in GUI controls. Every setting that can be changed through the GUI should also be addressable through Lua through the same typed validation/state path; Lua must not gain a parallel or more weakly validated settings implementation.
 
-Unlike WezTerm, Scanline Term does not aim to make Lua the mandatory or primary configuration surface. The product advantage is that ordinary configuration remains accessible through GUI controls while Lua provides an advanced escape hatch for programmable behavior.
+Unlike WezTerm, Scanline Term keeps the GUI as the primary user interface. Windows V1 retains the current JSON-backed GUI settings. For public release after V1, Lua becomes the canonical configuration document behind that GUI: the GUI must read and write the same settings through shared validation and side-effect paths, while users may also edit the file directly. Lua is therefore not an optional parallel escape hatch in the release architecture.
 
 The canonical acceptance scenario is automatic Windows input-language management for Vim, Neovim, or Helix based on terminal state:
 
@@ -70,17 +84,17 @@ A script may be attached to a tab while inactive. Matching terminal/application 
 Scanline Term should not claim to semantically know that a terminal is running Vim, Helix, or another application. Scripts may match a combination of local process evidence, OSC/tab title, and an explicit application marker supplied by the terminal application or plugin.
 
 
-### 2.10 One settings model, two interfaces
+### 2.10 Post-V1 release requirement: one settings model, two interfaces
 
 GUI and Lua are peer interfaces to the same canonical settings model. If the GUI can change a setting (font, font size, CRT enablement, CRT parameters, preset, browser form factor, tab-bar behavior, smooth scrolling, etc.), Lua should be able to query and change the equivalent setting unless a specific capability/safety restriction is documented.
 
-Both paths must use the same schema, normalization, range checks, persistence rules, and side-effect handlers. A Lua call must not bypass the behavior used by the GUI, and GUI code must not maintain hidden settings that Lua cannot represent.
+Both paths must use the same schema, normalization, range checks, persistence rules, and side-effect handlers. A Lua call must not bypass the behavior used by the GUI, and GUI code must not maintain hidden settings that Lua cannot represent. This is a required post-V1 release contract, not a claim about the current Windows V1 implementation.
 
 Runtime Lua changes should normally be tab-local and lifecycle-scoped rather than silently rewriting the user's saved GUI preferences.
 
 ## 3. Runtime architecture
 
-Architecture must be selected by a focused spike rather than fixed in advance. Candidate implementations include:
+The accepted Windows V1 implementation uses a Rust-hosted Lua runtime on a dedicated bounded worker, with native Windows input policy handled separately. The broader design options below remain historical alternatives for future expansion, not open architecture choices for V1. Candidate implementations considered include:
 
 - a Lua 5.4 VM in Rust/Tauri for ordinary event automation;
 - a Lua/WASM runtime near the frontend input path;
@@ -88,14 +102,16 @@ Architecture must be selected by a focused spike rather than fixed in advance. C
 
 If Rust-hosted Lua is selected, `mlua` with Lua 5.4, vendored runtime, execution limits, and explicit host bindings is the preferred candidate.
 
-Regardless of VM placement:
+The implemented boundaries are:
 
 - runtime script state is isolated per tab by default;
 - callbacks are serialized within a tab context;
 - callbacks have a bounded execution budget;
-- host APIs are exposed explicitly through a built-in `sterm` module/capability context;
-- unrestricted native Lua module loading is disabled;
-- per-keystroke input decisions must not require asynchronous Tauri IPC.
+- host APIs are exposed through the built-in `sterm` module;
+- only modules declared in the entry-file source manifest can be required; unrestricted native Lua module loading is disabled;
+- Smart Caps edge classification stays in the native hook path and does not require Lua or per-key Tauri IPC.
+
+Broader module and API expansion remains subject to the sandbox constraints later in this document.
 
 Conceptual flow:
 
@@ -119,15 +135,15 @@ Host-side keyboard remapping is a separate latency-sensitive path. Scripts that 
 
 ## 4. Configuration file
 
-Recommended names and lookup order on Windows:
+Windows V1 resolves its Lua entry using the portable/AppData lookup. Startup and config reload seed a missing profile config from the bundled inert template. The portable packaging script places the config tree beside the executable. Focused seed tests and packaged 0.6.0 Neovim Caps/MCP smokes pass; the user reports manually enabled Neovim and Helix bindings work in installed 0.6.0. The focused smoke did not establish the full focus/tab/reload/error matrix. The required behavior is:
 
 ```text
 1. <sterm executable directory>\sterm.lua, if present
 2. %APPDATA%\com.zhunter.scanlineterm\config.lua, otherwise
-3. no Lua file → current built-in/saved settings behavior
+3. Windows V1 only: no Lua file → current built-in settings and JSON-backed GUI persistence
 ```
 
-These are alternative locations for the same canonical entrypoint, not separate files to load. The executable-directory file takes precedence in both portable and installed builds; the AppData path is the fallback when it is absent.
+These are alternative locations for the same canonical entrypoint, not separate files to load. The executable-directory file takes precedence; the profile path is the installed-build fallback. First-launch seeding creates the profile config only when absent and preserves existing user files. The portable packaging script includes root `sterm.lua` plus its `editors/` and `modules/` dependencies beside the executable. If seeding fails, status reports an error; **Reload config** retries the operation. If no Lua config can be found during V1, the existing GUI settings behavior remains in effect.
 
 A future CLI override may be added:
 
@@ -150,6 +166,10 @@ Lua startup configuration
       ↓
 CLI / explicit per-launch options
 ```
+
+This describes the required post-V1 release model. Windows V1 continues to use its existing JSON-backed GUI settings; canonical Lua configuration, GUI file-backed reads/writes, and synchronization of all GUI settings are not implemented yet. For release, Lua replaces the current JSON settings record as the persisted source of truth; the GUI reads and writes that Lua-backed model rather than maintaining JSON as a separate authority.
+
+When the user saves GUI settings and the profile Lua file is absent, the application must create the configuration file automatically. It must preserve existing user files; portable configuration keeps precedence over the profile copy. First-launch seeding and save-time creation are distinct required behaviors.
 
 This precedence applies to constructing the initial/base state for a new tab or application session. Runtime automation is intentionally different: scripts should not repeatedly rewrite saved GUI preferences.
 
@@ -183,7 +203,7 @@ Scripts should use a built-in module:
 local sterm = require 'sterm'
 ```
 
-In V1, `require` should resolve only built-in Scanline Term modules. Arbitrary filesystem-backed Lua modules are outside the initial scope.
+In Windows V1, `require` resolves the built-in `sterm` API and local modules explicitly declared by the entry file with `sterm.module(name, path)`. The loader captures declared files into a bounded snapshot; Lua has no runtime filesystem access. Undeclared modules, arbitrary paths, and native modules remain unavailable.
 
 Potential future extension:
 
@@ -208,7 +228,7 @@ config.default_preset = 'DEC VT-220 (1983)'
 return config
 ```
 
-Candidate V1 fields:
+Required post-V1 release configuration fields:
 
 - `default_prog`
 - `default_cwd`
@@ -222,7 +242,7 @@ Candidate V1 fields:
 - `smooth_tui_scrolling`
 - `browser_form_factor`
 
-These fields should map onto existing Scanline Term configuration structures rather than creating parallel state. The long-term contract is broader: all settings represented in the GUI should be representable in Lua using the same canonical field names/types or an explicitly documented Lua mapping.
+These fields must map onto the same canonical settings structures used by the GUI rather than creating parallel state. The release contract includes every setting represented in the GUI, with canonical field names/types or an explicitly documented Lua mapping. This work is beyond the current intermediate V1.
 
 ## 8. Launch profiles / launch menu
 
@@ -624,45 +644,17 @@ The script intentionally treats cursor shape as a user-defined heuristic. Scanli
 
 ## 16. Host-side input interception and remapping
 
-Lua automation may optionally define terminal-session keyboard behavior before input is encoded and sent to ConPTY. This is intended for context-sensitive host remapping such as Vim/Helix ergonomics, not global OS-wide keyboard replacement.
+### Accepted Windows V1: Smart Caps policy
 
-Canonical scenario:
+An attachment may opt in during initialization with `sterm.input.smart_caps()`. The policy applies only under a native lease for the owning frontend's active, focused tab with a matching local process. Each app instance uses one Windows `WH_KEYBOARD_LL` hook shared across its tabs. The callback only classifies physical Caps edges and performs the required native input handling; it never calls Lua, performs IPC, or logs every key. Lua does not receive per-key callbacks.
 
-- while the active tab matches Vim, Neovim, Helix, or another configured application;
-- tapping Caps Lock by itself sends `Esc` to the terminal application;
-- holding Caps Lock and pressing another key treats Caps Lock as `Ctrl`;
-- the physical Caps Lock function is suppressed for that terminal context;
-- leaving the matching application or tab restores normal Caps Lock behavior.
+The fixed policy maps a physical Caps tap shorter than 180 ms to Escape and a hold of 180 ms or longer to Control. Context changes revoke the lease, cancel a pending tap, and release any owed synthetic key-up/modifier state before ordinary input resumes. Lease acknowledgement is tied to the exact frontend, tab, process, and current context generation. These constraints are part of the accepted V1 contract. Automated tests pass. An earlier development smoke and the packaged 0.6.0 smoke verified Neovim Caps tap and Caps+H; the user reports manually enabled Neovim and Helix bindings work in installed 0.6.0. The focused smoke did not establish the full focus/tab/reload/error matrix.
 
-Example user-facing script shape:
+### Future work: general input transforms
 
-```lua
-local vim_keys = require 'vim-keys'
+V1 does not expose arbitrary per-key Lua remapping, reusable key-policy modules, configurable tap-hold rules, or a user-defined timeout. Any later expansion must preserve the constraints below: physical edges are consumed before ordinary terminal encoding, only the matching active/focused context may transform input, and deactivation cancels pending state and releases synthetic modifiers. Remote application identity remains heuristic unless explicitly supplied by the user.
 
-sterm.when({
-  process = { 'vim.exe', 'nvim.exe', 'hx.exe' },
-  title_matches = { 'VIM', 'Helix' },
-}, function(ctx)
-  ctx.keys:use(vim_keys)
-end)
-```
-
-A reusable remap module could declare:
-
-```lua
-return {
-  tap_hold = {
-    key = 'CAPSLOCK',
-    tap = 'ESC',
-    hold_modifier = 'CTRL',
-    timeout_ms = 180,
-  },
-}
-```
-
-Exact API names are provisional; the important contract is that scripts can define reusable input-policy modules and activate them conditionally per tab/application.
-
-### 16.1 Input event model
+### Future design: input event model
 
 The host input layer must distinguish at least:
 
@@ -675,7 +667,7 @@ The host input layer must distinguish at least:
 
 The remapper runs before the normal xterm/terminal key encoding path. A consumed physical event must not also reach ConPTY in its original form.
 
-### 16.2 Tap-hold semantics
+### Future design: configurable tap-hold semantics
 
 Tap-hold behavior cannot be implemented as a simple `key-pressed` callback. The host must maintain a tiny state machine for the candidate key.
 
@@ -694,7 +686,7 @@ Releasing Caps after the timeout without pressing another key is consumed, so a 
 
 The implementation should avoid perceptible latency for ordinary keys. Only the ambiguous tap-hold key may require short deferred resolution.
 
-### 16.3 Context activation
+### Future design: context activation
 
 Input remaps exist inside the owning tab's automation context and are effective only when:
 
@@ -713,54 +705,15 @@ Remote applications over SSH cannot be identified reliably from the local proces
 
 Deactivation is atomic from the input system's perspective: pending tap-hold candidates are cancelled and any synthetic modifier state is released before ordinary input resumes.
 
-### 16.4 Reusable script files
+### Future-design guardrails
 
-Unlike the minimal built-in-only `require` proposed for configuration V1, input automation has a strong practical case for user modules. A later phase should allow trusted Lua files from the Sterm config directory, for example:
+- Keep physical key decisions out of asynchronous Tauri IPC and out of Lua callbacks.
+- Preserve the native hook's minimal callback and exact context-lease checks.
+- On focus loss, tab deactivation, reload, or terminal close, cancel pending tap state and release owed synthetic input.
+- Background tabs must never consume or transform foreground input.
+- Add tests for any new transform policy, including rapid taps/holds, auto-repeat, context changes, and ordinary Caps behavior outside the lease.
 
-```text
-config.lua
-lua/vim.lua
-lua/helix.lua
-lua/caps-escape-control.lua
-```
-
-The module search path must remain restricted to the configured trusted directory; native modules and arbitrary system Lua paths remain disabled.
-
-### 16.5 Performance and architecture consequence
-
-This use case strengthens the requirement for an architecture spike before fixing the Lua VM location. Cursor/title/process events can tolerate frontend↔Rust dispatch latency; per-keystroke remapping cannot.
-
-Preferred options to evaluate:
-
-1. Lua VM in/near the frontend input path; or
-2. Lua executes at config/reload time and produces a validated declarative input-rule graph/state machine that runs synchronously in the frontend; or
-3. a split model where general Lua callbacks live in Rust but latency-sensitive key rules are compiled and mirrored to the frontend.
-
-Do not route every physical key event through asynchronous Tauri IPC.
-
-### 16.6 Safety and failure behavior
-
-- If the script/runtime fails, fall back to normal unmodified terminal input.
-- A script must not leave a synthetic modifier logically stuck after tab switch, focus loss, reload, or exception.
-- On focus loss, tab deactivation, script reload, or terminal close, all pending tap-hold state is cancelled and synthetic modifiers are released.
-- Background tabs cannot consume or transform user input.
-- Input remapping is scoped to Scanline Term; V1 does not install a system-wide keyboard hook.
-
-### 16.7 Acceptance tests
-
-Automated:
-
-- tap Caps -> exactly one Esc is sent;
-- Caps+H -> exactly Ctrl+H semantics, with no Caps Lock toggle;
-- rapid repeated tap/hold sequences do not leave Ctrl stuck;
-- auto-repeat is handled deterministically;
-- switching tabs while Caps is held cancels state safely;
-- window focus loss while Caps is held cancels state safely;
-- inactive/non-matching applications receive normal Caps Lock behavior;
-- script exception causes pass-through fallback;
-- no asynchronous event race can reorder key input.
-
-Manual:
+Future manual acceptance examples:
 
 - Vim/Neovim Normal/Insert workflows;
 - Helix Normal/Insert workflows;
@@ -799,9 +752,11 @@ config.keys = {
 
 Candidate actions should wrap existing application operations only.
 
-## 18. Runtime settings API
+## 18. Post-V1 settings API and optional runtime overrides
 
-All GUI-configurable tab settings should be available through a bounded tab-local settings capability. Exact naming is provisional, but the preferred model is a scoped override rather than direct persistence mutation.
+Before public release, Lua must be able to read and update every GUI-configurable setting through the same canonical model, validation, and side-effect path used by the GUI. This persisted settings contract is required and is not part of the current intermediate V1. Exact API naming remains provisional.
+
+Scoped per-tab runtime overrides are an optional extension. If implemented, they should use bounded layers rather than silently mutating saved preferences; removing an override should reveal the latest underlying GUI value.
 
 Example:
 
@@ -844,7 +799,7 @@ Examples of settings that should eventually be scriptable because they are alrea
 - browser form factor;
 - other current/future GUI settings unless explicitly excluded for safety or lifecycle reasons.
 
-Persistence is separate from runtime override. A script must not silently save permanent GUI preferences merely because it changes an effective setting. A future explicit persistence API, if added, should be visibly named and capability-restricted.
+Persistence is separate from runtime override. A script must not silently save permanent GUI preferences merely because it changes an effective setting. Any explicit persistence API should be visibly named and capability-restricted. GUI save actions write the canonical Lua configuration; when no profile file exists, saving must create it automatically without replacing user data.
 
 ## 20. Host actions
 
@@ -980,6 +935,8 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 
 ## 26. Testing
 
+The lists in this section are proposed acceptance coverage for the broader scope. They are not evidence of release-build validation. The live development smoke is summarized in the accepted Windows V1 section above.
+
 ### Unit tests
 
 - config table validation;
@@ -1014,7 +971,7 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 - Lua failure does not interfere with terminal I/O;
 - application activation can apply tab-local font/preset/CRT overrides and deactivation removes them without affecting other tabs.
 
-### Manual acceptance: Vim/Neovim layout scenario
+### Future/release manual acceptance: Vim/Neovim layout scenario
 
 1. Start Neovim in a Scanline Term tab.
 2. Use a configuration where Insert mode produces a bar cursor and Normal mode a block cursor.
@@ -1030,7 +987,7 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 12. Trigger cursor/state changes in the background Vim tab; verify the foreground input language does not change.
 13. Return to Vim and verify layout is reconciled to the current cursor mode.
 
-### Manual acceptance: Caps tap-hold timeout
+### Future/release manual acceptance: Caps tap-hold timeout
 
 1. Configure Caps→Esc/Ctrl with a known `timeout_ms`.
 2. Release Caps alone before the timeout and verify the terminal receives Esc.
@@ -1039,39 +996,43 @@ A future `Menu` action may open a compact Lua diagnostics/log view.
 
 ## 27. Phased scope
 
-### Phase A — event automation core
+Windows V1 is an intermediate development stage, not a public release. First-launch profile seeding and portable config packaging belong to current V1 work as described in Section 4. The following settings/configuration work is required after V1 and before public release; it is not optional backlog.
 
-- sandboxed Lua 5.4/runtime architecture spike;
-- trusted script loading and explicit reload;
-- per-tab script instances and capability context;
-- activation/deactivation rules;
-- application marker + local-process + title evidence;
-- cursor/title/tab/window/input-language events;
-- Windows input-language query/action;
-- diagnostics and execution limits;
-- Vim/Neovim input-language acceptance scenario;
-- canonical shared Settings API foundation used by both GUI and Lua (runtime overrides may ship in a later phase).
+### Required post-V1 release scope — canonical Lua settings and configuration
 
-### Phase B — host-side input automation
+- make Lua the canonical persisted settings/configuration document while keeping the GUI as the primary user interface;
+- route GUI settings reads and writes through the same canonical model, normalization, validation, and side-effect paths as Lua;
+- cover every GUI setting in the canonical Lua schema;
+- automatically create the profile configuration file when a GUI save occurs and the file is absent, preserving existing user files;
+- package editor examples as inert resources, with Neovim/Helix activation remaining an explicit manual uncomment in the main file and no activation/Create buttons;
+- validate save-time creation, upgrade behavior, portable precedence, and preservation of user files before release.
 
-- synchronous input transformer pipeline;
-- key-down/up/repeat model;
-- reusable script modules from the trusted config directory;
-- tap-hold primitive or equivalent validated rule graph;
-- Caps tap -> Esc / chord -> Ctrl acceptance scenario for Vim and Helix;
-- atomic cleanup on script deactivation, tab switch, reload, close, and focus loss.
+### Optional backlog after the required release scope
 
-### Phase C — full settings surface, configuration and launch profiles
+The following capabilities remain future choices beyond the required settings/configuration release work.
 
-- `require 'sterm'`;
+#### Remaining event automation and settings extensions
+
+- broader event and application-identification capabilities beyond the implemented local-process, cursor, focus, and layout slice;
+- broader diagnostics and execution-limit reporting;
+- extended Windows input-language acceptance coverage beyond the current smoke;
+
+#### General host-side input automation
+
+- user-defined synchronous input transformers and key-down/up/repeat model;
+- configurable remapping rules beyond the fixed Smart Caps policy;
+- tests for custom policy cleanup, repeat handling, and ordinary input outside an active lease.
+
+#### Launch profiles and startup options
+
 - `config_builder()`;
 - startup config fields;
 - launch menu;
 - configuration precedence with existing GUI settings;
-- script access to the complete GUI-configurable settings schema;
-- scoped per-tab runtime override layers with source diagnostics.
+- script-selectable launch fields and profile-specific overrides beyond the canonical persisted settings contract;
+- optional scoped per-tab runtime override layers with source diagnostics.
 
-### Phase D — configurable keymap
+#### Configurable keymap
 
 - `config.keys`;
 - predefined `sterm.action.*` values;
@@ -1121,7 +1082,9 @@ local trusted user script → application/terminal events → bounded host actio
 
 Lua must not bypass MCP ownership or expose MCP-controlled sessions in a way that defeats existing isolation rules.
 
-## 29. Definition of V1 success
+## 29. Definition of future full-scope success
+
+The accepted Windows V1 slice is described at the start of this document and in the [Lua automation guide](lua-automation.md). The criteria below describe full-scope product behavior; required post-V1 release scope is listed in Section 27. None of these statements implies that the work is implemented today.
 
 The feature is successful when:
 
@@ -1130,11 +1093,11 @@ The feature is successful when:
 3. A script can activate/deactivate from application marker, local process evidence, or title fallback without gaining cross-tab access.
 4. A script can subscribe to terminal-state events through a tab-scoped capability context.
 5. The Vim/Neovim input-language scenario works reliably on Windows.
-6. Caps tap -> Esc / Caps chord -> Ctrl works in a matching Vim/Helix tab without installing a system-wide keyboard hook.
+6. A future general input-policy API, if prioritized, preserves the accepted Smart Caps behavior and scope without exposing per-key callbacks to Lua.
 7. Background/inactive tabs cannot transform foreground keyboard input or change the active input language.
 8. Deactivation, tab switch, focus loss, reload, close, or script failure cannot leave synthetic modifiers/input state stuck.
 9. A broken or looping script cannot freeze terminal I/O or the UI.
 10. No unrestricted filesystem/process/network/native API is exposed.
-11. Existing GUI configuration remains the primary configuration path and continues to work when Lua is absent.
-12. Optional declarative Lua configuration can be layered later without requiring GUI users to adopt text configuration.
+11. The GUI remains the primary user interface, while its reads and writes use the canonical Lua settings document and shared validation/state path.
+12. Saving GUI settings creates the profile Lua configuration if absent; first launch seeds the bundled inert template only when absent, and the portable ZIP provides the entry and dependencies beside the executable.
 13. The implementation makes no claim of WezTerm Lua compatibility.

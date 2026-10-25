@@ -2,6 +2,8 @@
 
 use std::{
     collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -222,6 +224,19 @@ impl LuaAutomation {
         let worker_app = app.clone();
         let worker_exe_dir = exe_dir.clone();
         let worker_config_dir = app_config_dir.clone();
+        let worker_lua_examples_dir = if cfg!(debug_assertions) {
+            Some(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("examples")
+                    .join("lua"),
+            )
+        } else {
+            app.path()
+                .resource_dir()
+                .ok()
+                .map(|directory| directory.join("lua-examples"))
+        };
         let worker = thread::Builder::new()
             .name("scanline-lua-automation".into())
             .spawn(move || {
@@ -232,6 +247,7 @@ impl LuaAutomation {
                     worker_layouts,
                     worker_exe_dir,
                     worker_config_dir,
+                    worker_lua_examples_dir,
                 )
             })
             .map_err(|error| format!("could not start Lua automation worker: {error}"))?;
@@ -578,6 +594,7 @@ fn worker_loop(
     layouts: NativeLayouts,
     exe_dir: Option<PathBuf>,
     app_config_dir: Option<PathBuf>,
+    lua_examples_dir: Option<PathBuf>,
 ) {
     let mut runtime: Option<LuaRuntime> = None;
     let mut previous: HashMap<String, TabState> = HashMap::new();
@@ -797,6 +814,26 @@ fn worker_loop(
                 crate::caps_hook::revoke(&app);
                 last_caps_policy = None;
                 pending = None;
+                if let Err(error) = seed_lua_config(
+                    exe_dir.as_deref(),
+                    app_config_dir.as_deref(),
+                    lua_examples_dir.as_deref(),
+                ) {
+                    runtime = None;
+                    previous.clear();
+                    let config_path = app_config_dir
+                        .as_deref()
+                        .map(|directory| directory.join("config.lua").display().to_string());
+                    set_status(
+                        &shared,
+                        "error",
+                        config_path,
+                        Some(error.clone()),
+                        vec![AutomationDiagnostic::error(error)],
+                    );
+                    publish_caps_policy_clear(&app, &shared, &mut last_caps_policy, epoch);
+                    continue;
+                }
                 match resolve_config_path(exe_dir.as_deref(), app_config_dir.as_deref()) {
                     None => {
                         runtime = None;
@@ -999,6 +1036,147 @@ fn worker_loop(
         }
     }
     crate::caps_hook::revoke(&app);
+}
+
+const LUA_STARTER_FILES: &[(&str, &str)] = &[
+    ("editors/nvim.lua", "editors/nvim.lua"),
+    ("editors/hx.lua", "editors/hx.lua"),
+    ("modules/modal_editor.lua", "modules/modal_editor.lua"),
+    ("sterm.lua", "config.lua"),
+];
+
+fn seed_lua_config(
+    exe_dir: Option<&Path>,
+    app_config_dir: Option<&Path>,
+    examples_dir: Option<&Path>,
+) -> Result<(), String> {
+    if exe_dir
+        .map(|directory| directory.join("sterm.lua").is_file())
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+    let Some(app_config_dir) = app_config_dir else {
+        return Err("could not locate the user configuration directory".into());
+    };
+    let entry = app_config_dir.join("config.lua");
+    if entry.is_file() {
+        return Ok(());
+    }
+    match fs::symlink_metadata(&entry) {
+        Ok(_) => return Err("Lua config destination exists and is not a regular file".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("could not inspect Lua config destination: {error}")),
+    }
+    let examples_dir = examples_dir.ok_or("bundled Lua examples are unavailable")?;
+    let source_entry = examples_dir.join("sterm.lua");
+    RuntimeSnapshot::load(&source_entry).map_err(|diagnostics| {
+        let detail = diagnostics
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("bundled Lua starter config is invalid: {detail}")
+    })?;
+
+    let mut files = Vec::with_capacity(LUA_STARTER_FILES.len());
+    for (source_relative, destination_relative) in LUA_STARTER_FILES {
+        let source = examples_dir.join(source_relative);
+        let metadata = fs::symlink_metadata(&source).map_err(|error| {
+            format!("could not read bundled Lua file {source_relative}: {error}")
+        })?;
+        if !metadata.file_type().is_file() {
+            return Err(format!(
+                "bundled Lua file {source_relative} is not a regular file"
+            ));
+        }
+        let contents = fs::read(&source).map_err(|error| {
+            format!("could not read bundled Lua file {source_relative}: {error}")
+        })?;
+        files.push((source_relative, destination_relative, contents));
+    }
+
+    fs::create_dir_all(app_config_dir)
+        .map_err(|error| format!("could not create Lua config directory: {error}"))?;
+    let root = fs::canonicalize(app_config_dir)
+        .map_err(|error| format!("could not resolve Lua config directory: {error}"))?;
+    ensure_lua_subdirectory(&root, "editors")?;
+    ensure_lua_subdirectory(&root, "modules")?;
+
+    // Existing regular dependencies belong to the user and are preserved.
+    for (_, destination_relative, _) in &files {
+        let destination = root.join(destination_relative);
+        match fs::symlink_metadata(&destination) {
+            Ok(metadata)
+                if metadata.file_type().is_file() && **destination_relative != "config.lua" => {}
+            Ok(_) => {
+                return Err(format!(
+                    "Lua starter destination already exists: {destination_relative}"
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "could not inspect Lua starter destination {destination_relative}: {error}"
+                ));
+            }
+        }
+    }
+
+    for (_, destination_relative, contents) in &files {
+        let destination = root.join(destination_relative);
+        if fs::symlink_metadata(&destination).is_ok_and(|metadata| metadata.file_type().is_file()) {
+            continue;
+        }
+        write_lua_file_new(&destination, contents).map_err(|error| {
+            format!("could not create Lua starter file {destination_relative}: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+fn ensure_lua_subdirectory(root: &Path, name: &str) -> Result<(), String> {
+    let path = root.join(name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_dir() => {}
+        Ok(_) => return Err(format!("Lua config path {name} is not a regular directory")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match fs::create_dir(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(format!(
+                        "could not create Lua config directory {name}: {error}"
+                    ));
+                }
+            }
+            let metadata = fs::symlink_metadata(&path).map_err(|error| {
+                format!("could not inspect Lua config directory {name}: {error}")
+            })?;
+            if !metadata.file_type().is_dir() {
+                return Err(format!("Lua config path {name} is not a regular directory"));
+            }
+        }
+        Err(error) => {
+            return Err(format!(
+                "could not inspect Lua config directory {name}: {error}"
+            ));
+        }
+    }
+    let resolved = fs::canonicalize(&path)
+        .map_err(|error| format!("could not resolve Lua config directory {name}: {error}"))?;
+    if !resolved.starts_with(root) {
+        return Err(format!("Lua config directory {name} escapes its root"));
+    }
+    Ok(())
+}
+
+fn write_lua_file_new(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?
+        .write_all(contents)
 }
 
 fn resolve_config_path(exe_dir: Option<&Path>, app_config_dir: Option<&Path>) -> Option<PathBuf> {
@@ -1756,6 +1934,53 @@ mod tests {
             include_str!("../../examples/lua/modules/modal_editor.lua"),
         )
         .unwrap();
+        let template_snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
+        assert!(!template_snapshot.wants_input_language_events());
+        let mut template_runtime = LuaRuntime::new(template_snapshot);
+        let template_tab = TabState {
+            id: "template-tab".into(),
+            title: "Helix".into(),
+            local_process_name: Some("hx.exe".into()),
+            cursor_style: CursorStyle {
+                shape: CursorShape::Underline,
+                blink: Some(false),
+                visible: true,
+            },
+            active: true,
+            focused: true,
+        };
+        assert!(
+            template_runtime
+                .attach_tab(
+                    template_tab.clone(),
+                    InputState {
+                        current_layout: Some("ru-RU".into()),
+                    },
+                )
+                .actions
+                .is_empty()
+        );
+        assert!(
+            template_runtime
+                .dispatch(
+                    &template_tab,
+                    &InputState {
+                        current_layout: Some("ru-RU".into()),
+                    },
+                    RuntimeEvent::ContextUpdated,
+                )
+                .actions
+                .is_empty()
+        );
+        assert!(!template_runtime.smart_caps_enabled("template-tab"));
+
+        let mut enabled_config = include_str!("../../examples/lua/sterm.lua").to_owned();
+        enabled_config.push_str(
+            "\nlocal sterm = require 'sterm'\n\
+             sterm.use('editors/nvim.lua', { when = { process = { 'vim.exe', 'nvim.exe' } } })\n\
+             sterm.use('editors/hx.lua', { when = { process = { 'hx.exe' } } })\n",
+        );
+        fs::write(root.join("config.lua"), enabled_config).unwrap();
         let snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
         let mut runtime = LuaRuntime::new(snapshot);
         let mut tab = TabState {
@@ -1773,11 +1998,31 @@ mod tests {
         let input = InputState {
             current_layout: Some("ru-RU".into()),
         };
+        let nvim = runtime.attach_tab(
+            TabState {
+                id: "nvim-tab".into(),
+                title: "Neovim".into(),
+                local_process_name: Some("nvim.exe".into()),
+                cursor_style: CursorStyle {
+                    shape: CursorShape::Block,
+                    blink: Some(false),
+                    visible: true,
+                },
+                active: true,
+                focused: true,
+            },
+            input.clone(),
+        );
+        assert_eq!(nvim.actions[0].action, Action::SetLayout("en-US".into()));
+        assert_eq!(nvim.actions[0].script, "editors/nvim.lua");
+        assert!(runtime.smart_caps_enabled("nvim-tab"));
+
         let attached = runtime.attach_tab(tab.clone(), input.clone());
         assert_eq!(
             attached.actions[0].action,
             Action::SetLayout("en-US".into())
         );
+        assert!(runtime.smart_caps_enabled("tab-1"));
 
         let stale = runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
         assert_eq!(
@@ -1933,6 +2178,126 @@ mod tests {
         );
         assert_eq!(resolve_config_path(None, None), None);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn lua_seed_test_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "scanline-lua-seed-{label}-{}-{}",
+            std::process::id(),
+            NEXT_FRONTEND_TOKEN.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    fn write_lua_seed_sources(directory: &Path) {
+        fs::create_dir_all(directory.join("editors")).unwrap();
+        fs::create_dir_all(directory.join("modules")).unwrap();
+        fs::write(
+            directory.join("sterm.lua"),
+            include_str!("../../examples/lua/sterm.lua"),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("editors/nvim.lua"),
+            include_str!("../../examples/lua/editors/nvim.lua"),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("editors/hx.lua"),
+            include_str!("../../examples/lua/editors/hx.lua"),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("modules/modal_editor.lua"),
+            include_str!("../../examples/lua/modules/modal_editor.lua"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn first_launch_seeds_valid_full_config_tree_without_activating_examples() {
+        let root = lua_seed_test_root("fresh");
+        let source = root.join("source");
+        let config = root.join("profile");
+        write_lua_seed_sources(&source);
+
+        seed_lua_config(None, Some(&config), Some(&source)).unwrap();
+
+        assert_eq!(
+            fs::read(config.join("config.lua")).unwrap(),
+            fs::read(source.join("sterm.lua")).unwrap()
+        );
+        for relative in [
+            "editors/nvim.lua",
+            "editors/hx.lua",
+            "modules/modal_editor.lua",
+        ] {
+            assert_eq!(
+                fs::read(config.join(relative)).unwrap(),
+                fs::read(source.join(relative)).unwrap()
+            );
+        }
+        let snapshot = RuntimeSnapshot::load(&config.join("config.lua")).unwrap();
+        assert!(!snapshot.wants_input_language_events());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_config_or_dependency_is_never_overwritten() {
+        let root = lua_seed_test_root("preserve");
+        let source = root.join("source");
+        let config = root.join("profile");
+        write_lua_seed_sources(&source);
+        fs::create_dir_all(config.join("editors")).unwrap();
+        let custom_dependency = b"-- user's editor script\n";
+        fs::write(config.join("editors/nvim.lua"), custom_dependency).unwrap();
+
+        seed_lua_config(None, Some(&config), Some(&source)).unwrap();
+        assert_eq!(
+            fs::read(config.join("editors/nvim.lua")).unwrap(),
+            custom_dependency
+        );
+        assert!(config.join("config.lua").is_file());
+
+        let entry_before = fs::read(config.join("config.lua")).unwrap();
+        let custom_config = b"-- existing user config\n";
+        fs::write(config.join("config.lua"), custom_config).unwrap();
+        seed_lua_config(None, Some(&config), Some(&source)).unwrap();
+        assert_eq!(fs::read(config.join("config.lua")).unwrap(), custom_config);
+        assert_eq!(entry_before, fs::read(source.join("sterm.lua")).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn invalid_or_conflicting_starter_fails_before_publishing_entry() {
+        let root = lua_seed_test_root("invalid");
+        let source = root.join("source");
+        let config = root.join("profile");
+        write_lua_seed_sources(&source);
+        fs::write(source.join("sterm.lua"), "local = ! invalid").unwrap();
+        assert!(seed_lua_config(None, Some(&config), Some(&source)).is_err());
+        assert!(!config.exists());
+
+        write_lua_seed_sources(&source);
+        fs::create_dir_all(config.join("editors/nvim.lua")).unwrap();
+        assert!(seed_lua_config(None, Some(&config), Some(&source)).is_err());
+        assert!(!config.join("config.lua").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn portable_entry_skips_profile_seeding_and_missing_resources_error_cleanly() {
+        let root = lua_seed_test_root("portable");
+        let exe = root.join("exe");
+        let config = root.join("profile");
+        fs::create_dir_all(&exe).unwrap();
+        fs::write(exe.join("sterm.lua"), "-- portable\n").unwrap();
+        seed_lua_config(Some(&exe), Some(&config), None).unwrap();
+        assert!(!config.exists());
+
+        let no_portable_config = root.join("other-profile");
+        assert!(seed_lua_config(None, Some(&no_portable_config), None).is_err());
+        assert!(!no_portable_config.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

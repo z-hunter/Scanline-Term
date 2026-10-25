@@ -9,6 +9,8 @@
 ```
 ScanlineTerm/
 ├── docs/                         # This documentation
+├── examples/
+│   └── lua/                      # Optional Lua examples; editor bindings are commented out by default
 ├── public/
 │   ├── icon.svg                  # Favicon / window icon
 │   ├── scanline-term-eye.png     # Product artwork
@@ -38,6 +40,7 @@ ScanlineTerm/
 │   ├── terminal/automation-probe-state.ts # Dev-only layout state and shared Caps tap-hold reducer
 │   ├── terminal/caps-frame.ts # Decode marked native Caps edge frames
 │   ├── terminal/lua-automation.ts # Frontend snapshots and Caps policy lease checks
+│   ├── terminal/useLuaAutomationStatus.ts # Lua status polling and reload
 │   ├── ui/LuaAutomationPanel.tsx # Lua status, diagnostics, and reload controls
 │   ├── win32-input.ts             # Win32 Input Mode key encoding
 │   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
@@ -230,7 +233,7 @@ Debug-build-only Windows experiment enabled with `SCANLINE_TERM_AUTOMATION_PROBE
 
 #### Lua terminal automation
 
-[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, Windows layout request/readback, and resolved Smart Caps policy. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, tab-local VMs, manifest-limited `require`, lifecycle handlers, and static `sterm.input.smart_caps()` declaration. [`caps_hook.rs`](../src-tauri/src/caps_hook.rs) owns the Windows keyboard hook, policy leases, and marked key edges. The React bridge publishes terminal snapshots, checks each lease against current tab/process/focus context, and acknowledges matching leases; per-key edges never enter Lua or use per-key IPC. The repository entry config, editor bindings, and shared cursor-layout/Smart Caps module are under [`examples/lua`](../examples/lua); installers do not currently include them. See the [Lua automation guide](lua-automation.md) before changing the supported API or sandbox.
+[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, Windows layout request/readback, first-launch profile seeding, and resolved Smart Caps policy. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, tab-local VMs, manifest-limited `require`, lifecycle handlers, and static `sterm.input.smart_caps()` declaration. [`caps_hook.rs`](../src-tauri/src/caps_hook.rs) owns the Windows keyboard hook, policy leases, and marked key edges. The frontend bridge in [`lua-automation.ts`](../src/terminal/lua-automation.ts) publishes terminal snapshots, checks each lease against current tab/process/focus context, and acknowledges matching leases; per-key edges never enter Lua or use per-key IPC. Optional editor examples are provided under [`examples/lua`](../examples/lua), with activation blocks commented out in the entry file by default. Release packaging includes them as inert resources. Startup/reload seeding preserves existing profile files and is covered by passing Rust tests. The user reports manually enabled Neovim and Helix bindings work in installed 0.6.0; packaged Neovim Caps and MCP smoke results are detailed in the [Lua automation guide](lua-automation.md). See that guide before changing the supported API or sandbox.
 
 ---
 
@@ -348,7 +351,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 | `app.windows[0].width/height` | 1440 × 960 | Default window size |
 | `app.security.csp` | `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Content Security Policy |
 | `bundle.targets` | `["msi"]` | Windows MSI installer |
-| `bundle.resources` | ConPTY, presets, and fonts mapped into the bundle | Runtime and installer resources |
+| `bundle.resources` | ConPTY, presets, fonts, and `../examples/lua/` mapped to `lua-examples/` | Release examples are inert resources; the entry file does not activate editor scripts automatically |
 | `bundle.createUpdaterArtifacts` | `true` | Creates signed updater artifacts and signatures |
 | `plugins.updater` | GitHub Releases `latest.json` | Verifies and installs signed releases |
 | `bundle.windows.wix` | `wix/path.wxs` | Adds the installation directory to the system `PATH`; removed on uninstall |
