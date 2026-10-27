@@ -94,13 +94,12 @@ Runtime Lua changes should normally be tab-local and lifecycle-scoped rather tha
 
 ## 3. Runtime architecture
 
-The accepted Windows V1 implementation uses a Rust-hosted Lua runtime on a dedicated bounded worker, with native Windows input policy handled separately. The broader design options below remain historical alternatives for future expansion, not open architecture choices for V1. Candidate implementations considered include:
+The accepted Windows V1 implementation uses a Rust-hosted Lua runtime on a dedicated bounded worker, with native Windows input policy handled separately. The frontend/WASM and split-runtime approaches below are historical alternatives, not current or planned Rust-runtime alternatives:
 
-- a Lua 5.4 VM in Rust/Tauri for ordinary event automation;
 - a Lua/WASM runtime near the frontend input path;
 - a split runtime where general callbacks execute in Rust while latency-sensitive keyboard rules are compiled/mirrored into a synchronous frontend state machine.
 
-If Rust-hosted Lua is selected, `mlua` with Lua 5.4, vendored runtime, execution limits, and explicit host bindings is the preferred candidate.
+The current implementation uses `mlua` with Lua 5.4, a vendored runtime, execution limits, and explicit host bindings.
 
 The implemented boundaries are:
 
@@ -131,7 +130,7 @@ Terminal / application state change
 
 Lua must never sit on the critical path of terminal output parsing or rendering. Ordinary observation events may be queued after core state has already been updated.
 
-Host-side keyboard remapping is a separate latency-sensitive path. Scripts that define input policy must not require an asynchronous Rust↔frontend round trip for every keystroke. The implementation should either execute the relevant decision logic in the frontend/input path, or compile declarative Lua-defined input rules into a small deterministic frontend keymap state machine.
+The current fixed Smart Caps transformation runs in the native Windows keyboard hook. Any future generic Lua input remapping must stay synchronous with the input path and must not add a per-key worker or IPC round trip; its design remains future work.
 
 ## 4. Configuration file
 
@@ -215,7 +214,7 @@ loaded only from the trusted configuration directory.
 
 ## 7. Declarative configuration API
 
-A minimal configuration object may be created as:
+One proposed future API is an optional `config_builder()` helper that constructs the configuration object illustrated here. It is not part of Windows V1, and required coverage of existing GUI settings does not depend on implementing this helper. The optional `launch_menu` example in Section 8 can be assigned to that proposed object.
 
 ```lua
 local sterm = require 'sterm'
@@ -228,7 +227,7 @@ config.default_preset = 'DEC VT-220 (1983)'
 return config
 ```
 
-Required post-V1 release configuration fields:
+Illustrative fields for a proposed configuration object:
 
 - `default_prog`
 - `default_cwd`
@@ -242,7 +241,7 @@ Required post-V1 release configuration fields:
 - `smooth_tui_scrolling`
 - `browser_form_factor`
 
-These fields must map onto the same canonical settings structures used by the GUI rather than creating parallel state. The release contract includes every setting represented in the GUI, with canonical field names/types or an explicitly documented Lua mapping. This work is beyond the current intermediate V1.
+The list illustrates possible names; it is not a complete release checklist. The required post-V1 contract is that every setting already represented in the GUI maps to the same canonical settings structures, with documented Lua names/types. New startup and launch features that do not correspond to existing GUI settings, including a launch menu, remain optional as described in Section 27. This work is beyond the current intermediate V1.
 
 ## 8. Launch profiles / launch menu
 
@@ -1004,7 +1003,6 @@ Windows V1 is an intermediate development stage, not a public release. First-lau
 - route GUI settings reads and writes through the same canonical model, normalization, validation, and side-effect paths as Lua;
 - cover every GUI setting in the canonical Lua schema;
 - automatically create the profile configuration file when a GUI save occurs and the file is absent, preserving existing user files;
-- package editor examples as inert resources, with Neovim/Helix activation remaining an explicit manual uncomment in the main file and no activation/Create buttons;
 - validate save-time creation, upgrade behavior, portable precedence, and preservation of user files before release.
 
 ### Optional backlog after the required release scope
@@ -1026,9 +1024,8 @@ The following capabilities remain future choices beyond the required settings/co
 #### Launch profiles and startup options
 
 - `config_builder()`;
-- startup config fields;
-- launch menu;
-- configuration precedence with existing GUI settings;
+- startup-only fields that add behavior beyond settings already configurable in the GUI, including a launch menu;
+- precedence rules for optional launch/profile-specific overrides beyond the required canonical GUI settings;
 - script-selectable launch fields and profile-specific overrides beyond the canonical persisted settings contract;
 - optional scoped per-tab runtime override layers with source diagnostics.
 
