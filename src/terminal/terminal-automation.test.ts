@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dispatchTerminalTool, normalizeTerminalInput, normalizeTerminalMouse } from './terminal-automation';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('terminal automation dispatcher', () => {
   it('normalizes the existing flexible keyboard contract', () => {
@@ -25,5 +27,15 @@ describe('terminal automation dispatcher', () => {
     expect(session.snapshot).toHaveBeenCalledWith(true);
     expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'dir', submit: true });
     expect(session.sendAutomationMouse).toHaveBeenCalledWith(expect.objectContaining({ action: 'click', button: 'primary' }));
+  });
+
+  it('pastes clipboard text into only the routed session without returning it', async () => {
+    vi.stubGlobal('navigator', { clipboard: { readText: vi.fn(async () => 'clipboard sentinel') } });
+    const session = { sendAutomationInput: vi.fn(async () => undefined) };
+
+    const result = await dispatchTerminalTool(session as never, 'paste_terminal_clipboard', {});
+
+    expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'clipboard sentinel' });
+    expect(result).toBe('Clipboard text pasted.');
   });
 });

@@ -74,6 +74,11 @@ export async function dispatchTerminalTool(session: TerminalSession, tool: strin
     await session.sendAutomationInput(inputAction(action));
     return 'Input encoded and queued.';
   }
+  if (tool === 'paste_terminal_clipboard') {
+    const text = await navigator.clipboard.readText();
+    await session.sendAutomationInput({ kind: 'text', text });
+    return text ? 'Clipboard text pasted.' : 'Clipboard was empty; nothing pasted.';
+  }
   if (tool === 'send_terminal_mouse') {
     await session.sendAutomationMouse(mouseAction(args.action ?? args));
     return 'Mouse input encoded and queued.';

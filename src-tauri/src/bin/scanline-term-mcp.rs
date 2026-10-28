@@ -224,6 +224,14 @@ fn tool_definitions() -> Vec<Value> {
             }),
         ),
         tool(
+            "paste_terminal_clipboard",
+            "Paste the current system clipboard text into an owned terminal tab. Clipboard contents are sent to the tab and are not returned.",
+            json!({
+                "type": "object", "properties": { "handle": { "type": "string" } },
+                "required": ["handle"], "additionalProperties": false
+            }),
+        ),
+        tool(
             "send_terminal_mouse",
             "Send primary/secondary TUI mouse input or wheel; middle click is reserved by Scanline Term.",
             json!({
@@ -323,6 +331,7 @@ mod tests {
         assert!(names.contains(&"observe_terminal"));
         assert!(names.contains(&"apply_terminal_preset"));
         assert!(names.contains(&"send_terminal_mouse"));
+        assert!(names.contains(&"paste_terminal_clipboard"));
     }
 
     #[test]

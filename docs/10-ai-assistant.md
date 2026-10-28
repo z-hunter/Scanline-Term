@@ -100,7 +100,7 @@ Agent-message deltas are accumulated only while they belong to the same app-serv
 
 ## Dynamic terminal tools
 
-The current app-server version accepts a flat `dynamicTools` array. The model-facing names are `observe_terminal`, `send_terminal_input` and `send_terminal_mouse`; the assistant policy refers to them as the Scanline terminal tools. Calls that use an unexpected namespace or name are rejected.
+The current app-server version accepts a flat `dynamicTools` array. The model-facing names include `observe_terminal`, `send_terminal_input`, `paste_terminal_clipboard` and `send_terminal_mouse`; the assistant policy refers to them as the Scanline terminal tools. Calls that use an unexpected namespace or name are rejected.
 
 ### `observe_terminal`
 
@@ -126,6 +126,10 @@ Accepted action forms:
 
 Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write. A named key uses canonical DOM names: `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause`, or `F1` through `F24`; a one-character key is also accepted for modified shortcuts. Common model aliases such as `ESC`, `UP`, and `ARROW_UP` are normalized. `repeat` is an integer from 1 to 100 and queues that many complete keypresses in one write; use it for TUI navigation, then observe the result. An unsupported named key or invalid repeat fails the tool call rather than reporting a queued input. A valid key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
 
+### `paste_terminal_clipboard`
+
+Takes an empty object and pastes the current system clipboard text into the terminal session attached to this AI thread. Use only when the user asks to paste their clipboard. The text is sent to the terminal and is not returned to the assistant.
+
 ### `send_terminal_mouse`
 
 Accepts `primary` and `secondary` buttons, `click`/`press`/`release`, `move`, and `wheel` actions with 1-based cell coordinates. The primary/secondary mapping follows the user's Windows left-handed mouse setting; the middle button remains Scanline Term's text-selection gesture. Input is delivered only when the TUI has enabled application mouse tracking.
@@ -134,7 +138,7 @@ Accepts `primary` and `secondary` buttons, `click`/`press`/`release`, `move`, an
 
 Enabling **MCP terminal mode** in Settings starts a per-user Windows named-pipe listener in the Tauri process. The standalone `scanline-term-mcp` binary speaks MCP JSON-RPC over stdin/stdout and forwards tool calls through that pipe. Each pipe connection receives an opaque owner ID; it can list and control only sessions it created, and disconnecting closes those sessions. Handles never expose internal xterm/session IDs. MCP sessions use a blue screen-frame glow and the Codex panel is unavailable; ordinary Codex automation uses a green glow while active.
 
-The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_terminal_input`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
+The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_terminal_input`, `paste_terminal_clipboard`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
 
 For the agent-facing setup, tool contracts, snapshot schema, observation loop, TUI mouse semantics and safety guidance, see the dedicated [MCP Agent Guide](./14-mcp-agent-guide.md).
 

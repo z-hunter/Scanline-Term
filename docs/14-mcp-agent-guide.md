@@ -14,6 +14,7 @@ The interface can:
 - read the current screen and, when requested, the complete active text buffer;
 - preserve screen colors and text attributes separately from readable text;
 - send text, named keys, modifiers and repeated key presses;
+- paste the current system clipboard text into an owned terminal tab when the user requests it; the text is not returned to the agent;
 - send semantic primary/secondary mouse input and wheel input to a TUI;
 - apply a saved preset to an owned terminal tab;
 - resize and close owned sessions.
@@ -206,6 +207,14 @@ Send either text or a key action:
 Text is limited to 64 KiB. `submit: true` appends Enter in the same queued write; use it for ordinary shell commands instead of typing and pressing Enter in separate calls. Named keys include `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause` and `F1`–`F24`. One-character keys are accepted too. `ctrl`, `alt` and `shift` are supported. `repeat` must be an integer from 1 to 100.
 
 Use separate key calls for TUI navigation, prompts and line editing. After a key sequence, observe the screen before continuing.
+
+### `paste_terminal_clipboard`
+
+Pastes the current system clipboard text into the owned tab identified by `handle`. Use only when the user asks to paste their clipboard into the terminal. The text is sent to the terminal and is never included in the tool result.
+
+```json
+{ "handle": "terminal-0" }
+```
 
 ### `send_terminal_mouse`
 
