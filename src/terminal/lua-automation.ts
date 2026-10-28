@@ -46,6 +46,8 @@ export class LuaAutomationCoordinator {
   private disposed = false;
   private started = false;
   private lastPublished = '';
+  private pendingUpdate: { frontendId: string; snapshot: LuaAutomationSnapshot } | null = null;
+  private publishing = false;
   private startPromise: Promise<LuaAutomationStatus> | null = null;
   private unlistenCapsPolicy: UnlistenFn | null = null;
   private contextKey = '';
@@ -119,10 +121,26 @@ export class LuaAutomationCoordinator {
     const key = JSON.stringify(this.latest);
     if (!force && key === this.lastPublished) return;
     this.lastPublished = key;
-    const snapshot = { ...this.latest, frontendId: this.frontendId, generation: ++this.generation };
-    void this.call('lua_automation_update', { snapshot }).catch((reason) => {
-      if (!this.disposed) this.onError(`Lua automation update failed: ${String(reason)}`);
-    });
+    this.pendingUpdate = { frontendId: this.frontendId, snapshot: { ...this.latest, tabs: [...this.latest.tabs] } };
+    if (!this.publishing) void this.publishPendingUpdates();
+  }
+
+  private async publishPendingUpdates(): Promise<void> {
+    this.publishing = true;
+    try {
+      while (this.pendingUpdate) {
+        const { frontendId, snapshot } = this.pendingUpdate;
+        this.pendingUpdate = null;
+        try {
+          await this.call('lua_automation_update', { snapshot: { ...snapshot, frontendId, generation: ++this.generation } });
+        } catch (reason) {
+          if (!this.disposed) this.onError(`Lua automation update failed: ${String(reason)}`);
+        }
+      }
+    } finally {
+      this.publishing = false;
+      if (this.pendingUpdate) void this.publishPendingUpdates();
+    }
   }
 
   private receiveCapsPolicy(lease: CapsPolicyLease): void {

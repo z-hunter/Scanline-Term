@@ -41,10 +41,34 @@ describe('LuaAutomationCoordinator', () => {
     coordinator.update({ ...snapshot, focused: false });
     coordinator.update(snapshot);
     coordinator.update(snapshot);
-    expect(call).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(3));
     expect(call).toHaveBeenLastCalledWith('lua_automation_update', {
       snapshot: { ...snapshot, frontendId: 'native-frontend', generation: 2 },
     });
+  });
+
+  it('serializes updates and coalesces pending snapshots to the newest state', async () => {
+    let finishFirstUpdate!: () => void;
+    const call = vi.fn(<T>(command: string): Promise<T> => {
+      if (command === 'lua_automation_start') return Promise.resolve({ frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] } as T);
+      if (command === 'lua_automation_update' && call.mock.calls.filter(([name]) => name === command).length === 1) {
+        return new Promise<T>((resolve) => { finishFirstUpdate = () => resolve(undefined as T); });
+      }
+      return Promise.resolve(undefined as T);
+    });
+    const coordinator = new LuaAutomationCoordinator(vi.fn(), call);
+    await coordinator.start();
+
+    coordinator.update(snapshot);
+    coordinator.update({ ...snapshot, focused: false });
+    expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(1);
+
+    finishFirstUpdate();
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(2));
+    expect(call).toHaveBeenLastCalledWith('lua_automation_update', {
+      snapshot: { ...snapshot, focused: false, frontendId: 'native-frontend', generation: 2 },
+    });
+    coordinator.dispose();
   });
 
   it('invalidates native state on disposal and ignores later updates', async () => {
@@ -57,10 +81,10 @@ describe('LuaAutomationCoordinator', () => {
     coordinator.dispose();
     coordinator.update(snapshot);
 
-    expect(call).toHaveBeenCalledTimes(4);
-    expect(call).toHaveBeenLastCalledWith('lua_automation_update', {
-      snapshot: { activeTabId: null, focused: false, tabs: [], frontendId: 'native-frontend', generation: 3 },
-    });
+    await vi.waitFor(() => expect(call.mock.calls.at(-1)).toEqual(['lua_automation_update', {
+      snapshot: expect.objectContaining({ activeTabId: null, focused: false, tabs: [], frontendId: 'native-frontend' }),
+    }]));
+    expect((call.mock.calls.at(-1)?.[1] as { snapshot: { generation: number } }).snapshot.generation).toBeGreaterThan(1);
   });
 
   it('reports a bounded startup error and never sends state without a native token', async () => {
