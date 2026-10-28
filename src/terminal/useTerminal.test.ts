@@ -826,7 +826,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
-  it('marks tab as exited and preserves session buffer when terminal-exit fires', async () => {
+  it('closes the tab when its terminal session exits', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     mocked.mockCloseWindow.mockReset();
     mocked.handlers.clear();
@@ -868,15 +868,9 @@ describe('useTerminal closeSession concurrent closures', () => {
       await new Promise((r) => setTimeout(r, 10));
     });
 
-    expect(hookResult.tabs.length).toBe(1);
-    expect(hookResult.tabs[0].status).toBe('exited');
-    expect(closeSpy).not.toHaveBeenCalled();
+    expect(hookResult.tabs).toHaveLength(0);
+    expect(closeSpy).toHaveBeenCalledOnce();
     expect(hookResult.live).toBe(false);
-
-    await act(async () => {
-      await hookResult.closeSession(sessionId);
-    });
-    expect(closeSpy).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       root.unmount();
