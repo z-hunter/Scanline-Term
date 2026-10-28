@@ -22,8 +22,8 @@ export function LuaAutomationPanel({ status, reload, onError, available }: {
   return <div className="host-setting-block lua-automation-status" aria-live="polite">
     <span className="host-setting-label">Lua automation: {available ? status.state : 'unavailable outside the Windows app'}</span>
     <div className="lua-automation-actions">
-      <button type="button" onClick={() => void reload()} disabled={!available || status.state === 'loading'}>Reload config</button>
-      <button type="button" onClick={() => void openConfig()}>Edit config</button>
+      <span className="glass-button-recess"><button type="button" onClick={() => void reload()} disabled={!available || status.state === 'loading'}>Reload config</button></span>
+      <span className="glass-button-recess"><button type="button" onClick={() => void openConfig()}>Edit config</button></span>
     </div>
   </div>;
 }

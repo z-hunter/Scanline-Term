@@ -175,7 +175,7 @@ export function SettingsPanel({
                 aria-label="Preset name"
                 onChange={(event) => onPresetNameChange(event.target.value)}
               />
-              <button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button>
+              <span className="glass-button-recess"><button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button></span>
             </div>
             <label className="preset-load-control">
               <select

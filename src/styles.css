@@ -84,8 +84,16 @@ select {
 .ai-typing span:nth-child(3) { animation-delay: .3s; }
 @keyframes ai-typing { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 .ai-composer { position: relative; display: grid; grid-template-columns: 1fr auto; gap: 6px; }
-.ai-composer textarea { min-height: 56px; resize: vertical; color: #d7f5df; background: linear-gradient(145deg, #07100dcc, #0b130edb); border: 1px solid #a9f4ca38; border-radius: 5px; padding: 8px; font: inherit; }
-.ai-composer textarea:focus-visible { border-color: #8effa9a0; outline: 2px solid #8effa955; outline-offset: 2px; }
+.ai-composer textarea { min-height: 56px; resize: vertical; color: #d7f5df; background: #0b130e; border: 1px solid #355840; border-radius: 5px; padding: 8px; font: inherit; }
+.ai-composer textarea:focus,
+.settings-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.settings-panel select:focus,
+.settings-panel textarea:focus {
+  border-color: #79d897;
+  outline: 2px solid #79d89766;
+  outline-offset: 1px;
+  box-shadow: 0 0 8px #79d89738;
+}
 .ai-panel > button, .ai-composer > button, .ai-picker-tabs button { min-height: 34px; padding: 0 12px; border: 1px solid #a9f4ca38; border-radius: 5px; color: #d7f5df; background: linear-gradient(145deg, #b4ffd51c, #61d9920b 48%, #d2fff00d); box-shadow: inset 0 1px #e4fff022, 0 5px 14px #0003; cursor: pointer; }
 .ai-panel > button:hover:not(:disabled), .ai-composer > button:hover:not(:disabled), .ai-picker-tabs button:hover:not(:disabled), .ai-picker-tabs button.active { border-color: #a6ffc77a; background: linear-gradient(145deg, #b4ffd52b, #61d99216 48%, #d2fff016); }
 .ai-panel button:focus-visible { outline: 2px solid #9dffb8; outline-offset: 2px; }
@@ -905,6 +913,12 @@ fieldset {
   letter-spacing: normal;
 }
 
+.settings-panel .settings-section[data-section-id="display"] { --section-header-bg: #608eae18; --section-header-hover: #608eae22; }
+.settings-panel .settings-section[data-section-id="terminal"] { --section-header-bg: #55a39b18; --section-header-hover: #55a39b22; }
+.settings-panel .settings-section[data-section-id="crt"] { --section-header-bg: #bd9c5b18; --section-header-hover: #bd9c5b22; }
+.settings-panel .settings-section[data-section-id="ui"] { --section-header-bg: #9482ad18; --section-header-hover: #9482ad22; }
+.settings-panel .settings-section[data-section-id="browser"] { --section-header-bg: #6e81ad18; --section-header-hover: #6e81ad22; }
+
 .settings-panel .settings-section-toggle {
   display: flex;
   width: 100%;
@@ -917,7 +931,7 @@ fieldset {
   border-bottom-color: #a9f4ca30;
   border-radius: 5px;
   color: #9de8b3;
-  background: #b4ffd50b;
+  background: var(--section-header-bg, #b4ffd50b);
   font: 600 12px/1.2 ui-monospace, Consolas, monospace;
   letter-spacing: .12em;
   text-align: left;
@@ -947,7 +961,7 @@ fieldset {
 .settings-panel .settings-section-icon[data-icon="crt"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/crt.svg') center / contain no-repeat; }
 .settings-panel .settings-section-icon[data-icon="browser"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
 .settings-panel svg.settings-section-icon { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.settings-panel .settings-section-toggle:hover { color: #d7f5df; background: #b4ffd514; }
+.settings-panel .settings-section-toggle:hover { color: #d7f5df; background: var(--section-header-hover, #b4ffd514); }
 .settings-panel .settings-section-toggle:focus-visible { outline: 2px solid #9dffb8; outline-offset: 2px; }
 .settings-panel .settings-section-chevron { width: 7px; height: 7px; margin-left: auto; border-right: 1px solid #9ccca9; border-bottom: 1px solid #9ccca9; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
 .settings-panel .settings-section-toggle[aria-expanded="true"] .settings-section-chevron { transform: rotate(225deg) translate(-1px, -1px); }
@@ -1003,9 +1017,17 @@ legend {
   gap: 8px;
 }
 
-.lua-automation-actions button {
-  flex: 1;
+.glass-button-recess {
+  display: flex;
   min-width: 0;
+  border-radius: 6px;
+}
+
+.lua-automation-actions .glass-button-recess { flex: 1; }
+
+.lua-automation-actions button {
+  min-width: 0;
+  width: 100%;
 }
 
 .host-setting-block .host-setting-label {
@@ -1080,8 +1102,8 @@ footer {
 }
 
 /* The glass treatment is limited to preset save and Lua config actions. */
-.preset-picker-row [data-testid="preset-save"],
-.lua-automation-actions button {
+.preset-picker-row .glass-button-recess > [data-testid="preset-save"],
+.lua-automation-actions .glass-button-recess > button {
   min-height: 34px;
   border: 1px solid #a9f4ca38;
   border-radius: 5px;
@@ -1094,23 +1116,35 @@ footer {
   -webkit-backdrop-filter: blur(12px) saturate(125%);
 }
 
-.preset-picker-row [data-testid="preset-save"]:not(:disabled):hover,
-.lua-automation-actions button:not(:disabled):hover {
+.preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):hover,
+.lua-automation-actions .glass-button-recess > button:not(:disabled):hover {
   border-color: #a6ffc77a;
   background: linear-gradient(145deg, #b4ffd52b, #61d99216 48%, #d2fff016);
   box-shadow: inset 0 1px #e4fff044, 0 0 18px #62f38d20, 0 7px 18px #0006;
 }
 
-.preset-picker-row [data-testid="preset-save"]:disabled,
-.lua-automation-actions button:disabled {
+.glass-button-recess:has(> button:not(:disabled):active) {
+  background: #07110b;
+}
+
+.preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):active,
+.lua-automation-actions .glass-button-recess > button:not(:disabled):active {
+  border-color: #a9ffc7;
+  transform: translateY(2px) scale(.97, .94);
+  background: linear-gradient(145deg, #b4ffd536, #61d99224 48%, #b4ffd51c);
+  box-shadow: inset 0 1px 5px #e4fff04a, inset 0 0 10px #63fa8b48, 0 0 10px #63fa8b30;
+}
+
+.preset-picker-row .glass-button-recess > [data-testid="preset-save"]:disabled,
+.lua-automation-actions .glass-button-recess > button:disabled {
   cursor: default;
   opacity: .45;
   filter: saturate(.45);
   box-shadow: inset 0 1px #e4fff012;
 }
 
-.preset-picker-row [data-testid="preset-save"]:focus-visible,
-.lua-automation-actions button:focus-visible {
+.preset-picker-row .glass-button-recess > [data-testid="preset-save"]:focus-visible,
+.lua-automation-actions .glass-button-recess > button:focus-visible {
   outline: 2px solid #9dffb8;
   outline-offset: 3px;
 }
