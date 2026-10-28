@@ -76,7 +76,7 @@ export async function dispatchTerminalTool(session: TerminalSession, tool: strin
   }
   if (tool === 'paste_terminal_clipboard') {
     const text = await navigator.clipboard.readText();
-    session.sendInput(text);
+    await session.sendAutomationInput({ kind: 'text', text });
     return text ? 'Clipboard text pasted.' : 'Clipboard was empty; nothing pasted.';
   }
   if (tool === 'send_terminal_mouse') {

@@ -826,7 +826,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
-  it('keeps an exited tab open when its preset has unsaved changes', async () => {
+  it('keeps an exited tab open until its unsaved preset is saved', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     mocked.mockCloseWindow.mockReset();
     mocked.handlers.clear();
@@ -874,6 +874,14 @@ describe('useTerminal closeSession concurrent closures', () => {
     expect(hookResult.tabs).toHaveLength(1);
     expect(hookResult.tabs[0].status).toBe('exited');
     expect(closeSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      hookResult.markActivePresetSaved('default');
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(closeSpy).toHaveBeenCalledOnce();
+    expect(hookResult.tabs).toHaveLength(0);
 
     await act(async () => {
       root.unmount();
