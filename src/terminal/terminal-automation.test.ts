@@ -30,12 +30,12 @@ describe('terminal automation dispatcher', () => {
   });
 
   it('pastes clipboard text into only the routed session without returning it', async () => {
-    vi.stubGlobal('navigator', { clipboard: { readText: vi.fn(async () => 'clipboard sentinel') } });
-    const session = { sendAutomationInput: vi.fn(async () => undefined) };
+    vi.stubGlobal('navigator', { clipboard: { readText: vi.fn(async () => 'first line\r\nsecond line\n') } });
+    const session = { sendInput: vi.fn() };
 
     const result = await dispatchTerminalTool(session as never, 'paste_terminal_clipboard', {});
 
-    expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'clipboard sentinel' });
+    expect(session.sendInput).toHaveBeenCalledWith('first line\r\nsecond line\n');
     expect(result).toBe('Clipboard text pasted.');
   });
 });

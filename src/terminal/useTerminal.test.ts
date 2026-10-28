@@ -826,7 +826,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     vi.restoreAllMocks();
   });
 
-  it('closes the tab when its terminal session exits', async () => {
+  it('keeps an exited tab open when its preset has unsaved changes', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     mocked.mockCloseWindow.mockReset();
     mocked.handlers.clear();
@@ -862,15 +862,18 @@ describe('useTerminal closeSession concurrent closures', () => {
     expect(hookResult.tabs.length).toBe(1);
     const sessionId = hookResult.tabs[0].id;
     const closeSpy = vi.spyOn(TerminalSession.prototype, 'close');
+    await act(async () => {
+      hookResult.updateActivePreset((current) => ({ ...current, dirty: true }));
+    });
 
     await act(async () => {
       mocked.handlers.get('terminal-exit')!({ payload: { sessionId } });
       await new Promise((r) => setTimeout(r, 10));
     });
 
-    expect(hookResult.tabs).toHaveLength(0);
-    expect(closeSpy).toHaveBeenCalledOnce();
-    expect(hookResult.live).toBe(false);
+    expect(hookResult.tabs).toHaveLength(1);
+    expect(hookResult.tabs[0].status).toBe('exited');
+    expect(closeSpy).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

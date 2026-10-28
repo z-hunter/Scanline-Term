@@ -225,7 +225,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "paste_terminal_clipboard",
-            "Paste the current system clipboard text into an owned terminal tab. Clipboard contents are sent to the tab and are not returned.",
+            "In response to a user request, paste the current system clipboard text into an owned terminal tab. Clipboard contents are sent to the tab and are not returned.",
             json!({
                 "type": "object", "properties": { "handle": { "type": "string" } },
                 "required": ["handle"], "additionalProperties": false
@@ -332,6 +332,15 @@ mod tests {
         assert!(names.contains(&"apply_terminal_preset"));
         assert!(names.contains(&"send_terminal_mouse"));
         assert!(names.contains(&"paste_terminal_clipboard"));
+        let paste = response["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "paste_terminal_clipboard")
+            .unwrap();
+        let description = paste["description"].as_str().unwrap();
+        assert!(description.contains("In response to a user request"));
+        assert!(description.contains("not returned"));
     }
 
     #[test]

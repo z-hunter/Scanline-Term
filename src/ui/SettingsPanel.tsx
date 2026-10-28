@@ -91,11 +91,11 @@ const settingHelp: Record<string, string> = {
 
 function settingLabelText(label: HTMLElement) {
   const copy = label.cloneNode(true) as HTMLElement;
-  const ariaLabel = copy.querySelector<HTMLElement>('[aria-label]')?.getAttribute('aria-label');
-  const slider = copy.querySelector<HTMLElement>('[role="slider"]');
+  const ariaLabel = label.getAttribute('aria-label') ?? label.querySelector<HTMLElement>('[aria-label]')?.getAttribute('aria-label');
+  const slider = label.matches('[role="slider"]') ? label : label.querySelector<HTMLElement>('[role="slider"]');
   copy.querySelectorAll('select, input, button, [role="slider"], output, .switch-toggle').forEach((control) => control.remove());
   const text = copy.textContent?.replace(/\s+/g, ' ').trim();
-  return ((slider?.getAttribute('aria-label') ?? text) || ariaLabel || '').replace(/\s+/g, ' ').trim();
+  return (text || slider?.getAttribute('aria-label') || ariaLabel || '').replace(/\s+/g, ' ').trim();
 }
 
 export function SettingsPanel({
@@ -226,7 +226,7 @@ export function SettingsPanel({
       onPointerOverCapture={(event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const label = target.closest<HTMLElement>('label, .setting-label, .host-setting-label, [aria-label]');
+        const label = target.closest<HTMLElement>('label, .setting-label, .host-setting-label') ?? target.closest<HTMLElement>('[aria-label]');
         if (!label) { cancelSettingHelp(); return; }
         const name = settingLabelText(label);
         const text = settingHelp[name] ?? (name.startsWith('Lua automation:') ? 'Lua scripts can extend terminal functionality. This shows Lua automation status and configuration.' : undefined);
@@ -242,7 +242,7 @@ export function SettingsPanel({
       onPointerOutCapture={(event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const label = target.closest('label, .setting-label, .host-setting-label, [aria-label]');
+        const label = target.closest('label, .setting-label, .host-setting-label') ?? target.closest('[aria-label]');
         const related = event.relatedTarget;
         if (label && related instanceof Element && label.contains(related)) return;
         cancelSettingHelp();

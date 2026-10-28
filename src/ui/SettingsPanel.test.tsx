@@ -77,6 +77,22 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('shows help for a control using its own ARIA label when it has no visible setting label', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, defaultProps)); });
+    const name = container.querySelector<HTMLInputElement>('[aria-label="Preset name"]')!;
+    vi.useFakeTimers();
+    await act(async () => {
+      name.dispatchEvent(new Event('pointerover', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(document.body.querySelector('.settings-help-tooltip')?.textContent).toContain('Name the current terminal display');
+    vi.useRealTimers();
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('keeps a panel scroll from changing a knob until the pointer leaves and returns', async () => {
     const setStored = vi.fn();
     const container = document.createElement('div'); document.body.appendChild(container);

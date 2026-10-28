@@ -128,7 +128,7 @@ Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write.
 
 ### `paste_terminal_clipboard`
 
-Takes an empty object and pastes the current system clipboard text into the terminal session attached to this AI thread. Use only when the user asks to paste their clipboard. The text is sent to the terminal and is not returned to the assistant.
+Takes an empty object and pastes the current system clipboard text into the terminal session attached to this AI thread. Use only when the user asks to paste their clipboard. The tool result excludes clipboard text, though subsequent `observe_terminal` calls may reveal text echoed by the terminal.
 
 ### `send_terminal_mouse`
 

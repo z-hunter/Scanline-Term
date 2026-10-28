@@ -476,7 +476,7 @@ export function useTerminal({ defaultPreset, ready = true, settings, resolution,
       if (targetId) selectSession(targetId);
     }
   }, [cancelAutomationProbeInput, luaAutomationSnapshot, onError, refreshAutomationProbeContext, selectSession, updateTab]);
-  useEffect(() => { for (const tab of tabs) if (tab.kind !== 'browser' && tab.status === 'exited') void closeSession(tab.id, true); }, [tabs, closeSession]);
+  useEffect(() => { for (const tab of tabs) if (tab.kind !== 'browser' && tab.status === 'exited' && !sessions.current.get(tab.id)?.preset.dirty) void closeSession(tab.id, true); }, [tabs, closeSession]);
   const sessionOwner = useCallback((id: string) => sessions.current.get(id)?.ownerId ?? null, []);
   const ownedSessionInfo = useCallback((ownerId: string): OwnedTerminalInfo[] => [...sessions.current.values()]
     .filter((record) => record.ownerId === ownerId)

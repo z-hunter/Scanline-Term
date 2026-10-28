@@ -91,7 +91,7 @@ Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.
 
 Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. For an ordinary shell command, send the complete command with submit: true in one send_terminal_input call; do not type the command and press Enter in separate calls. Use separate key calls only when interacting with a TUI, an interactive prompt, or terminal line editing. For repeated identical navigation keys, use one key action with repeat (1 through 100), then observe; do not issue a linear series of identical calls.
-The current live screen is always returned as readable plain text; request includeScrollback: true only when the full active text buffer is needed. Use send_terminal_mouse for TUI primary/secondary buttons or wheel; coordinates are 1-based cells and middle-click remains Scanline Term's text-selection gesture. Use paste_terminal_clipboard only when the user asks you to paste the current system clipboard into this terminal; the clipboard text is sent to the terminal and is not returned to you.
+The current live screen is always returned as readable plain text; request includeScrollback: true only when the full active text buffer is needed. Use send_terminal_mouse for TUI primary/secondary buttons or wheel; coordinates are 1-based cells and middle-click remains Scanline Term's text-selection gesture. Use paste_terminal_clipboard only when the user asks you to paste the current system clipboard into this terminal. Its result excludes clipboard text, though later observe_terminal calls may reveal text echoed by the terminal.
 
 Work carefully and communicate clearly:
 - Briefly explain significant actions as you take them.
@@ -1252,7 +1252,7 @@ export default function App() {
             },
             {
               name: "paste_terminal_clipboard",
-              description: "Paste the current system clipboard text into this terminal. Use only when the user asks to paste it; clipboard contents are not returned to you.",
+              description: "In response to a user request, paste the current system clipboard text into this terminal. The result excludes clipboard text, though later observe_terminal calls may reveal text echoed by the terminal.",
               inputSchema: { type: "object", properties: {}, additionalProperties: false },
             },
             {
