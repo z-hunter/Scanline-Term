@@ -47,7 +47,7 @@ const settingHelp: Record<string, string> = {
   'Vignette': 'Darken the image toward the edges.',
   'Scanline count': 'Set the number of horizontal scanlines.',
   'Scanline intensity': 'Set how visible the horizontal scanlines are.',
-  'Beam modulation': 'Vary brightness across each scanline to simulate the electron beam.',
+  'Beam modulation': 'Simulates changes in electron-beam intensity as it scans the phosphor screen; scanlines become thicker in brighter areas.',
   'Bloom': 'Adds a soft halo around bright image details, simulating how strongly excited phosphor spots could excite nearby phosphors.',
   'Soft': 'Use a soft, diffuse bloom shape.',
   'Spiral': 'Use a spiral sampling pattern for bloom.',
