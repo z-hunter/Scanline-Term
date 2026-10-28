@@ -1179,3 +1179,5 @@ footer {
   .tabs-settings-button,
   .new-tab-button { transition: none; }
 }
+
+.settings-help-tooltip { position: fixed; z-index: 1000; max-width: 300px; padding: 9px 11px; border-radius: 6px; background: #292929f5; color: #f2f2f2; box-shadow: 0 4px 14px #0006; font-size: 12px; line-height: 1.45; pointer-events: none; }
