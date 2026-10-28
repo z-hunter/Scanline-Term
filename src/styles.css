@@ -1101,9 +1101,12 @@ footer {
   }
 }
 
-/* The glass treatment is limited to preset save and Lua config actions. */
+/* Reuse the Settings glass treatment for tab-bar action buttons. */
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"],
-.lua-automation-actions .glass-button-recess > button {
+.lua-automation-actions .glass-button-recess > button,
+.tabs-ai-button,
+.tabs-settings-button,
+.new-tab-button {
   min-height: 34px;
   border: 1px solid #a9f4ca38;
   border-radius: 5px;
@@ -1116,11 +1119,25 @@ footer {
   -webkit-backdrop-filter: blur(12px) saturate(125%);
 }
 
+.tabs-ai-button,
+.tabs-settings-button,
+.new-tab-button { min-height: 28px; }
+
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):hover,
-.lua-automation-actions .glass-button-recess > button:not(:disabled):hover {
+.lua-automation-actions .glass-button-recess > button:not(:disabled):hover,
+.tabs-ai-button:hover,
+.tabs-settings-button:hover,
+.new-tab-button:hover {
   border-color: #a6ffc77a;
   background: linear-gradient(145deg, #b4ffd52b, #61d99216 48%, #d2fff016);
   box-shadow: inset 0 1px #e4fff044, 0 0 18px #62f38d20, 0 7px 18px #0006;
+}
+
+.tabs-ai-button.active,
+.tabs-settings-button.active {
+  color: #7dffae;
+  border-color: #a6ffc77a;
+  background: linear-gradient(145deg, #b4ffd52b, #61d99216 48%, #d2fff016);
 }
 
 .glass-button-recess:has(> button:not(:disabled):active) {
@@ -1128,7 +1145,10 @@ footer {
 }
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):active,
-.lua-automation-actions .glass-button-recess > button:not(:disabled):active {
+.lua-automation-actions .glass-button-recess > button:not(:disabled):active,
+.tabs-ai-button:active,
+.tabs-settings-button:active,
+.new-tab-button:active {
   border-color: #a9ffc7;
   transform: translateY(2px) scale(.97, .94);
   background: linear-gradient(145deg, #b4ffd536, #61d99224 48%, #b4ffd51c);
@@ -1144,12 +1164,18 @@ footer {
 }
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:focus-visible,
-.lua-automation-actions .glass-button-recess > button:focus-visible {
+.lua-automation-actions .glass-button-recess > button:focus-visible,
+.tabs-ai-button:focus-visible,
+.tabs-settings-button:focus-visible,
+.new-tab-button:focus-visible {
   outline: 2px solid #9dffb8;
   outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .preset-picker-row [data-testid="preset-save"],
-  .lua-automation-actions button { transition: none; }
+  .lua-automation-actions button,
+  .tabs-ai-button,
+  .tabs-settings-button,
+  .new-tab-button { transition: none; }
 }
