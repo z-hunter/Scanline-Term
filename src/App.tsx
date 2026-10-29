@@ -16,6 +16,8 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import packageInfo from "../package.json";
 import {
   clonePresetSettings,
+  appGlobalsFromStored,
+  mergeAppGlobals,
   BROWSER_FORM_FACTORS,
   DEFAULT_PRESET_SETTINGS,
   loadPresetSettings,
@@ -131,18 +133,19 @@ function terminalAssistantBaseInstructions(): string {
 export default function App() {
   const mcpStateQueue = useRef<Promise<unknown>>(Promise.resolve());
   const explorerIntegrationQueue = useRef(Promise.resolve());
+  const explorerIntegrationApplied = useRef<boolean | null>(null);
   const setMcpEnabled = useCallback((enabled: boolean) => {
     const update = mcpStateQueue.current.then(() => invoke("mcp_set_enabled", { enabled }));
     mcpStateQueue.current = update.catch(() => undefined);
     return update;
   }, []);
-  const [stored, setStored] = useState(() =>
+  const [stored, setStoredState] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const storedRef = useRef(stored);
+  const legacyGlobals = useRef(appGlobalsFromStored(stored)).current;
   const [luaPanelVisibility, setLuaPanelVisibility] = useState<Partial<Record<"settings" | "assistant" | "tabs", boolean>>>({});
-  const legacySmoothScrollback = useRef(stored.smoothScrollback).current;
   const mcpKeepTabsOpenRef = useRef(stored.mcpKeepTabsOpen);
-  mcpKeepTabsOpenRef.current = stored.mcpKeepTabsOpen;
   const [defaultPreset, setDefaultPreset] = useState<PresetSettings>(() => clonePresetSettings(DEFAULT_PRESET_SETTINGS));
   const [defaultPresetName, setDefaultPresetName] = useState("default");
   const defaultPresetChangeRequest = useRef(new LatestSettingsRequest()).current;
@@ -151,7 +154,9 @@ export default function App() {
   const [, setPaletteCatalogRevision] = useState(0);
   const [managedReloading, setManagedReloading] = useState(false);
   const [appVersion, setAppVersion] = useState(packageInfo.version);
-  const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [systemShells, setSystemShells] = useState<ShellInfo[]>([]);
+  const [luaShells, setLuaShells] = useState<ShellInfo[]>([]);
+  const shells = [...systemShells, ...luaShells];
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
@@ -184,8 +189,6 @@ export default function App() {
   const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
   const lastUndisturbedWidth = useRef(0);
   const canFitWithoutShiftRef = useRef(false);
-  const settingsVisible = luaPanelVisibility.settings ?? stored.showSettingsPanel;
-  const aiEnabled = !stored.aiAssistantDisabled;
   const client = useRef<CodexClient | null>(null);
   const [aiStatus, setAiStatus] = useState<
     "idle" | "running" | "disconnected" | "error"
@@ -213,23 +216,55 @@ export default function App() {
       return [...current, { id: nextToastId.current++, message, resetKey: 0 }];
     });
   }, []);
-  const managedSettings = useManagedSettings(legacySmoothScrollback, reportError);
+  const managedSettings = useManagedSettings(legacyGlobals, reportError);
   const { values: managedValues, ready: managedReady, authoritative: managedAuthoritative, saving: managedSaving, writesEnabled: managedWritesEnabled, load: loadManagedSettings, save: saveManagedSettings, disableWrites: disableManagedWrites, settle: settleManagedSettings } = managedSettings;
+  const canonicalGlobals = isTauri() && managedAuthoritative ? managedValues : stored;
+  mcpKeepTabsOpenRef.current = canonicalGlobals.mcpKeepTabsOpen;
+  const settingsVisible = luaPanelVisibility.settings ?? stored.showSettingsPanel;
+  const aiEnabled = !canonicalGlobals.aiAssistantDisabled;
+  const managedWriterRef = useRef({ managedReady, managedAuthoritative, managedReloading, managedWritesEnabled, saveManagedSettings, reportError });
+  managedWriterRef.current = { managedReady, managedAuthoritative, managedReloading, managedWritesEnabled, saveManagedSettings, reportError };
+  const setStored = useCallback((action: React.SetStateAction<typeof stored>) => {
+    const writer = managedWriterRef.current;
+    const current = storedRef.current;
+    const next = typeof action === 'function' ? action(current) : action;
+    if (next === current) return;
+    const changed = Object.keys(next).filter((key) => JSON.stringify(next[key as keyof typeof next]) !== JSON.stringify(current[key as keyof typeof current]));
+    const canPersist = writer.managedWritesEnabled && writer.managedReady && writer.managedAuthoritative && !writer.managedReloading;
+    if (isTauri() && !canPersist && changed.some((key) => !['showSettingsPanel', 'showAiPanel', 'resolution', 'crt'].includes(key))) {
+      writer.reportError("Settings could not be saved because managed settings are unavailable.");
+      return;
+    }
+    storedRef.current = next;
+    setStoredState(next);
+    if (isTauri() && canPersist) {
+      const previousGlobals = appGlobalsFromStored(current);
+      const nextGlobals = appGlobalsFromStored(next);
+      const patch = Object.fromEntries(Object.entries(nextGlobals).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(previousGlobals[key as keyof typeof previousGlobals])));
+      if (Object.keys(patch).length) void writer.saveManagedSettings(patch as Parameters<typeof writer.saveManagedSettings>[0]);
+    }
+  }, []);
   const luaAutomation = useLuaAutomationStatus(reportError);
   const windowRestoreStarted = useRef(false);
   useEffect(() => {
-    if (!isTauri() || !managedReady || windowRestoreStarted.current) return;
+    if (!isTauri() || !managedReady || !managedAuthoritative || windowRestoreStarted.current) return;
     windowRestoreStarted.current = true;
     void invoke('restore_window_state', { restore: managedValues.restoreWindow }).catch((reason) => reportError(`Could not initialize window geometry: ${String(reason)}`));
-  }, [managedReady, managedValues.restoreWindow, reportError]);
+  }, [managedAuthoritative, managedReady, managedValues.restoreWindow, reportError]);
   const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
     if (!isTauri()) {
       reportError("Windows Explorer integration is available in the desktop app only.");
       return Promise.resolve();
     }
+    const writer = managedWriterRef.current;
+    if (!writer.managedWritesEnabled || !writer.managedAuthoritative || writer.managedReloading) {
+      reportError("Settings could not be saved because managed settings are unavailable.");
+      return Promise.resolve();
+    }
     const update = explorerIntegrationQueue.current.then(async () => {
       try {
         await invoke("set_explorer_integration", { enabled });
+        explorerIntegrationApplied.current = enabled;
         setStored((current) => ({ ...current, explorerIntegrationEnabled: enabled }));
       } catch (reason) {
         if (enabled) setStored((current) => ({ ...current, explorerIntegrationEnabled: false }));
@@ -238,7 +273,7 @@ export default function App() {
     });
     explorerIntegrationQueue.current = update;
     return update;
-  }, [reportError]);
+  }, [reportError, setStored]);
   const dismissError = useCallback((id: number) => setErrorToasts((current) => current.filter((toast) => toast.id !== id)), []);
   const toggleSettings = useCallback(
     () =>
@@ -246,18 +281,18 @@ export default function App() {
         ...current,
         showSettingsPanel: !current.showSettingsPanel,
       })),
-    [],
+    [setStored],
   );
   const toggleAi = useCallback(
     () => setStored((current) => current.aiAssistantDisabled ? current : ({
       ...current,
       showAiPanel: !current.showAiPanel,
     })),
-    [],
+    [setStored],
   );
   const toggleGallery = useCallback(() => galleryToggleRef.current(), []);
   const togglePresetPicker = useCallback(() => openPresetPickerRef.current(), []);
-  const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), []);
+  const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), [setStored]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -426,15 +461,26 @@ export default function App() {
     startupPresetLoad.current = true;
     let active = true;
     void (async () => {
-      const loaded = await loadManagedSettings(legacySmoothScrollback);
+      const loaded = await loadManagedSettings(legacyGlobals);
       if (!active) return;
+      let requestedDefaultPreset = loaded.values.defaultPreset;
       if (loaded.response) {
+        setLuaShells(loaded.response.shells);
         if (replaceLuaPaletteSnapshot(loaded.response.palettes, reportError)) setPaletteCatalogRevision((revision) => revision + 1);
       } else markLuaColorProfilesReady();
+      if (loaded.needsMigration && loaded.response) {
+        const migrated = await saveManagedSettings({
+          ...loaded.values,
+          showSettingsPanel: storedRef.current.showSettingsPanel,
+          showAiPanel: storedRef.current.showAiPanel,
+        });
+        if (!migrated) requestedDefaultPreset = 'default';
+      }
+      if (!active) return;
       refreshTerminalColorProfiles();
       const names = await refreshPresets();
       if (!active) return;
-      const result = await loadDefaultPreset(loaded.values.defaultPreset, names);
+      const result = await loadDefaultPreset(requestedDefaultPreset, names);
       if (!active) return;
       if (result) {
         setDefaultPresetName(result.name);
@@ -443,7 +489,7 @@ export default function App() {
       setPresetsReady(true);
     })();
     return () => { active = false; startupPresetLoad.current = false; };
-  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, refreshPresets, reportError, refreshTerminalColorProfiles]);
+  }, [legacyGlobals, loadDefaultPreset, loadManagedSettings, refreshPresets, reportError, refreshTerminalColorProfiles, saveManagedSettings]);
   useEffect(() => {
     if (isTauri() && managedReady && startupPresetLoad.current && settingsVisible) void refreshPresets();
   }, [managedReady, refreshPresets, settingsVisible]);
@@ -480,7 +526,7 @@ export default function App() {
           setDefaultPreset(loaded);
           return;
         }
-        const current = await loadManagedSettings(legacySmoothScrollback);
+        const current = await loadManagedSettings(legacyGlobals);
         if (!defaultPresetChangeRequest.isCurrent(request) || !current.response) return;
         const names = await refreshPresets();
         if (!defaultPresetChangeRequest.isCurrent(request)) return;
@@ -494,7 +540,7 @@ export default function App() {
     } catch (reason) {
       if (defaultPresetChangeRequest.isCurrent(request)) reportError(`Could not set default preset ${selected}: ${String(reason)}`);
     }
-  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, managedReloading, managedSaving, managedWritesEnabled, presets, refreshPresets, reportError, saveManagedSettings]);
+  }, [defaultPresetChangeRequest, legacyGlobals, loadDefaultPreset, loadManagedSettings, managedReloading, managedSaving, managedWritesEnabled, presets, refreshPresets, reportError, saveManagedSettings]);
   const changeSmoothScrollback = useCallback((smoothScrollback: boolean) => {
     if (!isTauri()) setStored((current) => ({ ...current, smoothScrollback }));
     else if (managedWritesEnabled && !managedSaving && !managedReloading) void saveManagedSettings({ smoothScrollback });
@@ -543,7 +589,8 @@ export default function App() {
         refreshTerminalColorProfiles();
       }
       if (prepared.candidateStatus === 'error') return;
-      const loaded = await loadManagedSettings(legacySmoothScrollback);
+      if (prepared.shells) setLuaShells(prepared.shells);
+      const loaded = await loadManagedSettings(legacyGlobals);
       if (!loaded.response) return;
       const names = await refreshPresets();
       const result = await loadDefaultPreset(loaded.values.defaultPreset, names);
@@ -557,7 +604,7 @@ export default function App() {
       if (reloadToken !== null) terminal.resumeLuaAutomationAfterReload(reloadToken);
       setManagedReloading(false);
     }
-  }, [defaultPresetChangeRequest, legacySmoothScrollback, loadDefaultPreset, luaAutomation.abortReload, luaAutomation.commitReload, luaAutomation.prepareReload, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal.isLuaAutomationReloadCurrent, terminal.isLuaReloadTargetLive, terminal.luaAutomationFrontendId, terminal.pauseLuaAutomationForReload, terminal.presetStateForSession, terminal.replaceActivePreset, refreshTerminalColorProfiles, terminal.resumeLuaAutomationAfterReload]);
+  }, [defaultPresetChangeRequest, legacyGlobals, loadDefaultPreset, luaAutomation, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal, refreshTerminalColorProfiles]);
   const previewPreset = useCallback(async (name: string, openingTabId: string | null) => {
     if (!openingTabId || activeTabIdRef.current !== openingTabId) return false;
     const request = ++presetPickerRequest.current;
@@ -629,7 +676,7 @@ export default function App() {
       }));
     }
     setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
-  }, [activePreset, stored, terminal]);
+  }, [activePreset, setStored, stored, terminal]);
   const crt = useCRT({
     settingsRef: terminal.settingsRef,
     resolution,
@@ -652,8 +699,8 @@ export default function App() {
   }, [activeBrowser, browserFormFactor, physicalWindow, screenRatio]);
   const aiVisible = aiEnabled && (luaPanelVisibility.assistant ?? stored.showAiPanel) && !terminal.isMcpSession(terminal.activeSessionId ?? "");
   useEffect(() => {
-    if (!isTauri()) return;
-    if (!stored.mcpEnabled) {
+    if (!isTauri() || !managedAuthoritative) return;
+    if (!canonicalGlobals.mcpEnabled) {
       void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
       return;
     }
@@ -760,7 +807,7 @@ export default function App() {
       void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be stopped: ${String(reason)}`));
       cleanupListeners();
     };
-  }, [reportError, setMcpEnabled, stored.mcpEnabled]);
+  }, [canonicalGlobals.mcpEnabled, managedAuthoritative, reportError, setMcpEnabled]);
   const { clearPersistence, outputRef, fps, captureFrame, startChannelSwitch, joinChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
   joinChannelSwitchRef.current = joinChannelSwitch;
@@ -890,6 +937,7 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
+    if (isTauri()) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: stored.version,
       tabPlacement: stored.tabPlacement,
@@ -909,17 +957,27 @@ export default function App() {
       mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
       defaultShell: stored.defaultShell,
       explorerIntegrationEnabled: stored.explorerIntegrationEnabled,
-      ...(!isTauri() || !managedAuthoritative ? { smoothScrollback: stored.smoothScrollback } : {}),
+      smoothScrollback: stored.smoothScrollback,
       smoothTuiScrolling: stored.smoothTuiScrolling,
       browserFormFactor: stored.browserFormFactor,
     }));
-  }, [managedAuthoritative, stored]);
+  }, [stored]);
   useEffect(() => {
-    if (isTauri() && managedReady) setStored((current) => current.smoothScrollback === managedValues.smoothScrollback ? current : ({ ...current, smoothScrollback: managedValues.smoothScrollback }));
-  }, [managedReady, managedValues.smoothScrollback]);
+    if (!isTauri() || !managedReady || !managedAuthoritative) return;
+    const current = storedRef.current;
+    const next = mergeAppGlobals(current, appGlobalsFromStored({ ...current, ...managedValues }));
+    if (!managedWritesEnabled) {
+      next.showSettingsPanel = current.showSettingsPanel;
+      next.showAiPanel = current.showAiPanel;
+    }
+    storedRef.current = next;
+    setStoredState(next);
+  }, [managedAuthoritative, managedReady, managedValues, managedWritesEnabled]);
   useEffect(() => {
-    if (isTauri() && stored.explorerIntegrationEnabled) void setExplorerIntegrationEnabled(true);
-  }, [setExplorerIntegrationEnabled, stored.explorerIntegrationEnabled]);
+    if (!isTauri() || !managedAuthoritative || explorerIntegrationApplied.current === canonicalGlobals.explorerIntegrationEnabled) return;
+    explorerIntegrationApplied.current = canonicalGlobals.explorerIntegrationEnabled;
+    void invoke("set_explorer_integration", { enabled: canonicalGlobals.explorerIntegrationEnabled }).catch((reason) => reportError(`Windows Explorer integration could not be synchronized: ${String(reason)}`));
+  }, [canonicalGlobals.explorerIntegrationEnabled, managedAuthoritative, reportError]);
   useEffect(() => {
     const onResize = () =>
       setWindowSize({
@@ -930,12 +988,12 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   useEffect(() => {
-    if (!isTauri()) return;
-    void invoke("set_global_hotkey_enabled", { enabled: stored.globalHotkeyEnabled, slideFromTop: stored.slideFromTop }).catch((reason) => {
-      reportError(`Global Win+~ hotkey ${stored.globalHotkeyEnabled ? "registration" : "removal"} failed: ${String(reason)}`);
-      setStored((current) => ({ ...current, globalHotkeyEnabled: !stored.globalHotkeyEnabled }));
+    if (!isTauri() || !managedAuthoritative) return;
+    void invoke("set_global_hotkey_enabled", { enabled: canonicalGlobals.globalHotkeyEnabled, slideFromTop: canonicalGlobals.slideFromTop }).catch((reason) => {
+      reportError(`Global Win+~ hotkey ${canonicalGlobals.globalHotkeyEnabled ? "registration" : "removal"} failed: ${String(reason)}`);
+      setStored((current) => ({ ...current, globalHotkeyEnabled: !canonicalGlobals.globalHotkeyEnabled }));
     });
-  }, [reportError, stored.globalHotkeyEnabled, stored.slideFromTop]);
+  }, [canonicalGlobals.globalHotkeyEnabled, canonicalGlobals.slideFromTop, managedAuthoritative, reportError, setStored]);
   useEffect(() => {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
@@ -944,7 +1002,7 @@ export default function App() {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
   useEffect(() => {
-    if (!isTauri() || import.meta.env.DEV || !stored.autoUpdateEnabled) {
+    if (!isTauri() || !managedAuthoritative || import.meta.env.DEV || !canonicalGlobals.autoUpdateEnabled) {
       setAvailableUpdate((current) => {
         if (current) void current.close();
         return null;
@@ -967,7 +1025,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [stored.autoUpdateEnabled]);
+  }, [canonicalGlobals.autoUpdateEnabled, managedAuthoritative]);
   const installUpdate = useCallback(async () => {
     if (!availableUpdate || updateInstalling) return;
     setUpdateInstalling(true);
@@ -986,9 +1044,10 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (isTauri())
-      void invoke<ShellInfo[]>("list_available_shells").then(setShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
+      void invoke<ShellInfo[]>("list_available_shells").then(setSystemShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
   }, [reportError]);
   useEffect(() => {
+    if (isTauri() && !managedAuthoritative) return;
     if (!aiEnabled) {
       const codex = client.current;
       client.current = null;
@@ -1028,7 +1087,7 @@ export default function App() {
       if (client.current === codex) client.current = null;
       void codex.stop();
     };
-  }, [aiEnabled, loadModels, reportError]);
+  }, [aiEnabled, loadModels, managedAuthoritative, reportError]);
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
@@ -1637,7 +1696,7 @@ export default function App() {
               onClose={terminal.closeSession}
               onNew={() => terminal.openSession()}
               onNewBrowser={() => terminal.openBrowser()}
-              onNewShell={(command) => terminal.openSession({ command })}
+              onNewShell={(shell) => terminal.openSession({ command: shell.command, args: shell.args })}
               shells={shells}
               onToggleSettings={toggleSettings}
               onToggleAi={aiEnabled ? toggleAi : undefined}

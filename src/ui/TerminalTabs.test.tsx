@@ -243,6 +243,7 @@ describe('TerminalTabs', () => {
     const onNew = vi.fn();
     const onNewBrowser = vi.fn();
     const onNewShell = vi.fn();
+    const customShell = { id: 'lua:work', name: 'PowerShell', command: 'pwsh.exe', args: ['-NoProfile'] };
     const onToggleSettings = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -251,7 +252,7 @@ describe('TerminalTabs', () => {
     await act(async () => {
       root.render(createElement(TerminalTabs, {
         tabs: testTabs, activeId: 'tab-1', placement: 'top', onSelect: vi.fn(), onClose: vi.fn(), onNew,
-        onNewBrowser, onNewShell, shells: [{ name: 'PowerShell', command: 'pwsh.exe' }], onToggleSettings,
+        onNewBrowser, onNewShell, shells: [customShell], onToggleSettings,
       }));
     });
 
@@ -269,7 +270,7 @@ describe('TerminalTabs', () => {
     await act(async () => { newBtn.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
     const shellItem = container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[2];
     await act(async () => { shellItem.click(); });
-    expect(onNewShell).toHaveBeenCalledWith('pwsh.exe');
+    expect(onNewShell).toHaveBeenCalledWith(customShell);
 
     await act(async () => { root.unmount(); });
     container.remove();

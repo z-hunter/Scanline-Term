@@ -12,6 +12,7 @@ import {
 import 'scanline-virtual-screen/react/styles.css';
 import { BROWSER_FORM_FACTORS, RESOLUTIONS, type ResolutionId, type StoredSettings, type TabPlacement, type TabPresetState } from '../crt/settings';
 import type { ShellInfo } from '../terminal/useTerminal';
+import { shellIdentity, splitShellCatalog } from '../terminal/shells';
 import type { LuaAutomationStatus } from '../terminal/lua-automation';
 import { LuaAutomationPanel } from './LuaAutomationPanel';
 
@@ -395,8 +396,9 @@ export function SettingsPanel({
           Default shell
           <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>
             <option value="">Windows default (%ComSpec%)</option>
-            {stored.defaultShell && !shells.some((shell) => shell.command === stored.defaultShell) && <option value={stored.defaultShell}>{stored.defaultShell} (unavailable)</option>}
-            {shells.map((shell) => <option key={shell.command} value={shell.command}>{shell.name}</option>)}
+            {stored.defaultShell && !shells.some((shell) => shellIdentity(shell) === stored.defaultShell) && <option value={stored.defaultShell}>{stored.defaultShell} (unavailable)</option>}
+            <optgroup label="Detected shells">{splitShellCatalog(shells).automatic.map((shell) => <option key={shellIdentity(shell)} value={shellIdentity(shell)}>{shell.name}</option>)}</optgroup>
+            {splitShellCatalog(shells).user.length > 0 && <optgroup label="Custom shells">{splitShellCatalog(shells).user.map((shell) => <option key={shellIdentity(shell)} value={shellIdentity(shell)}>{shell.name}</option>)}</optgroup>}
           </select>
         </label>
         <Switch label="Check for updates automatically" checked={stored.autoUpdateEnabled} onChange={(autoUpdateEnabled) => setStored((current) => ({ ...current, autoUpdateEnabled }))} />

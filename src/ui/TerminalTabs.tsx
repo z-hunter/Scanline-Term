@@ -4,6 +4,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import type { TabPlacement } from '../crt/settings';
 import type { ShellInfo, WorkspaceTab } from '../terminal/useTerminal';
 import { showNativeTabMenu } from './nativeNewTabMenu';
+import { shellIdentity, splitShellCatalog } from '../terminal/shells';
 
 export function TerminalTabs({
   tabs,
@@ -31,7 +32,7 @@ export function TerminalTabs({
   onClose: (id: string) => void;
   onNew: () => void;
   onNewBrowser?: () => void;
-  onNewShell?: (command: string) => void;
+  onNewShell?: (shell: ShellInfo) => void;
   shells?: ShellInfo[];
   onToggleSettings: () => void;
   onToggleAi?: () => void;
@@ -51,6 +52,7 @@ export function TerminalTabs({
   const [drag, setDrag] = useState<{ id: string; source: number; target: number; pointerId: number; start: number; delta: number; gaps: Record<string, number> } | null>(null);
   const axis = placement === 'top' ? 'x' : 'y';
   const orderKey = tabs.map((tab) => tab.id).join('|');
+  const shellGroups = splitShellCatalog(shells);
   useLayoutEffect(() => { tabsRef.current = tabs; }, [tabs]);
   const animateLayout = () => {
     const currentTabs = tabsRef.current;
@@ -200,7 +202,9 @@ export function TerminalTabs({
         <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab [menu-B]</button>
         {shells.length > 0 && <>
           <div className="new-tab-menu-label">Shells</div>
-          {shells.map((shell) => <button key={shell.command} type="button" role="menuitem" onClick={() => { onNewShell(shell.command); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
+          {shellGroups.automatic.map((shell) => <button key={shellIdentity(shell)} type="button" role="menuitem" onClick={() => { onNewShell(shell); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
+          {shellGroups.automatic.length > 0 && shellGroups.user.length > 0 && <hr />}
+          {shellGroups.user.map((shell) => <button key={shellIdentity(shell)} type="button" role="menuitem" onClick={() => { onNewShell(shell); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
         </>}
       </div>}
     </div>

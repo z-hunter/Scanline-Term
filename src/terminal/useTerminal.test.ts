@@ -177,6 +177,51 @@ describe('linkAt', () => {
 });
 
 describe('terminal launch event', () => {
+  it('forwards default profile arguments, keeps explicit launch arguments, and rejects a missing profile before adding a tab', async () => {
+    mocked.handlers.clear(); mocked.invoke.mockClear();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'pwsh.exe' : {}));
+    let defaultShell = 'lua:clean';
+    const onError = vi.fn();
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({
+        defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } },
+        ready: false,
+        defaultShell,
+        shells: [{ id: 'lua:clean', name: 'Clean', command: 'pwsh.exe', args: ['-NoProfile'] }],
+        onError,
+        onToggleSettings: vi.fn(),
+      });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const output = document.createElement('canvas'); output.tabIndex = 0; document.body.appendChild(output);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { hookResult.resizeSource(output); });
+    let defaultId: string | null = null; let explicitId: string | null = null;
+    await act(async () => { defaultId = await hookResult.openSession(); });
+    const startCalls = () => mocked.invoke.mock.calls.filter(([command]) => command === 'start_terminal');
+    expect(startCalls()[0][1]).toMatchObject({ launch: { command: 'pwsh.exe', args: ['-NoProfile'] } });
+    await act(async () => { explicitId = await hookResult.openSession({ command: 'cmd.exe', args: ['/Q'] }); });
+    expect(startCalls()[1][1]).toMatchObject({ launch: { command: 'cmd.exe', args: ['/Q'] } });
+
+    const previousTabCount = hookResult.tabs.length;
+    defaultShell = 'lua:missing';
+    await act(async () => { root.render(createElement(TestComponent)); });
+    let missingId: string | null = 'unexpected';
+    await act(async () => { missingId = await hookResult.openSession(); });
+    expect(missingId).toBeNull();
+    expect(hookResult.tabs).toHaveLength(previousTabCount);
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Default shell is unavailable: lua:missing'));
+    expect(startCalls()).toHaveLength(2);
+
+    await act(async () => { root.unmount(); });
+    terminalSession(defaultId!)?.dispose(); terminalSession(explicitId!)?.dispose();
+    container.remove(); output.remove(); vi.restoreAllMocks();
+  });
+
   it('publishes only native-ready sessions and excludes a failed startup from snapshots', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockClear();

@@ -1,6 +1,6 @@
 # Lua automation (Windows V1 and release direction)
 
-Scanline Term runs bounded Lua event scripts for terminal tabs. The Windows pilot adds a narrow managed-settings block for the saved default preset and smooth scrollback; other GUI settings remain on their existing persistence paths pending the broader release migration. The managed values are evaluated by the existing bounded Lua runtime, and GUI saves replace only the marked block while preserving user-authored bytes. This is an intermediate pilot, not the complete Lua settings migration or automation specification. Startup/reload seeds an absent profile config from a bundled inert template without overwriting existing user files. The portable packaging script places root `sterm.lua` and its `editors/`, `modules/`, `scripts/`, and `palettes/` support files beside the executable.
+Scanline Term runs bounded Lua event scripts for terminal tabs. The current managed-settings schema contains all 22 global user settings and uses shared normalization and validation for GUI and Lua values. GUI saves replace only the marked block while preserving user-authored bytes. CRT/display parameters and font choice remain in named saved presets. This implementation does not establish installed-build upgrade or full release validation. Startup/reload seeds an absent profile config from a bundled inert template without overwriting existing user files. The portable packaging script places root `sterm.lua` and its `editors/`, `modules/`, `scripts/`, and `palettes/` support files beside the executable.
 
 The engine is process-agnostic; the repository examples support Vim, Neovim, and Helix (`hx.exe`) through one shared cursor-layout module. Vim and Neovim share a binding, while Helix supplies its own cursor policy; the shared module handles reported cursor shape, layout capture, and restoration. This is an incremental implementation, not the complete Lua automation specification.
 
@@ -33,27 +33,66 @@ For Helix, click inside the terminal canvas first so the editor receives focus. 
 
 Sources are read into a bounded snapshot at load; filesystem edits take effect on reload.
 
-## Managed settings pilot
+## Managed settings
 
-The entry file may declare the two pilot settings once, at top level:
+The entry file may declare GUI-managed settings once, at top level. All fields are optional and omitted fields use application defaults; unknown fields are rejected.
 
 ```lua
 require('sterm').settings({
   default_preset = 'DEC VT-100 (1978)',
+  default_shell = 'lua:pwsh-clean',
   smooth_scrollback = true,
   restore_window = true,
+  browser_form_factor = 'physical',
 })
 ```
 
+The current persisted schema has these 22 user-facing fields. `settings_version` is an internal schema marker and is not a user setting. CRT/display parameters and fonts remain part of named saved presets, not these global fields.
+
+| Lua field | Type / accepted values |
+|---|---|
+| `default_preset` | string, saved preset name |
+| `default_shell` | string up to 1024 characters; empty means system default, a legacy executable path remains valid, or use `lua:<id>` |
+| `smooth_scrollback` | boolean |
+| `restore_window` | boolean |
+| `browser_form_factor` | `physical`, `4:3`, or `8:5` |
+| `tab_placement` | `top` or `left` |
+| `hide_tabs_bar` | boolean |
+| `hide_tabs_bar_only_if_single_tab` | boolean |
+| `global_hotkey_enabled` | boolean |
+| `slide_from_top` | boolean |
+| `auto_update_enabled` | boolean |
+| `settings_scale` | number from 0.75 to 1.5 |
+| `show_settings_panel` | boolean |
+| `show_ai_panel` | boolean |
+| `ai_assistant_disabled` | boolean |
+| `last_ai_selection` | optional table containing exactly `model` (1–128 characters) and `effort` (1–64 characters) |
+| `mcp_enabled` | boolean |
+| `mcp_keep_tabs_open` | boolean |
+| `explorer_integration_enabled` | boolean |
+| `smooth_tui_scrolling` | boolean |
+| `rmb_menu_in_term` | boolean |
+| `channel_switch_effect` | boolean |
+
+Custom shell profiles are declared separately in user-authored Lua and stay outside the GUI-managed block:
+
+```lua
+require('sterm').shells({
+  { id = 'pwsh-clean', name = 'Clean PowerShell', command = 'pwsh.exe', args = { '-NoProfile' } },
+})
+```
+
+IDs are unique ASCII letters, digits, `_`, or `-` (1–64 bytes); the app exposes each as `lua:<id>`. Up to 64 profiles are accepted. Names must be nonempty and at most 128 characters; commands nonempty and at most 1024 characters; `args` is a dense string array of at most 64 items, each at most 4096 characters. NULs and unknown fields are rejected. Loading this catalog validates data only: it does not probe or launch commands. The default shell stores the stable `lua:<id>` reference, so renaming a profile preserves selection. New terminal tabs resolve that ID to its command and arguments; a missing custom ID reports a startup error. Catalog changes affect future tabs only. An explicit launch command takes precedence, and older saved executable-path defaults remain supported. Two profiles may use the same executable with different arguments.
+
 The bundled entry contains a GUI-owned block between `scanline-term:managed-settings:begin` and `scanline-term:managed-settings:end`. Settings saves splice that block into the full Lua source and evaluate the resulting file in the existing bounded registration VM; Scanline Term does not parse Lua syntax itself. `hasSettings` is true only when an actual `sterm.settings(...)` call ran, so the inert template and commented-out examples do not count as a declaration. Portable `sterm.lua` still takes precedence over the profile config. Saves check the loaded source revision, reject malformed or duplicate markers, and atomically replace the file; bytes outside the block, including a BOM, line endings, and a shebang, are retained.
 
-`load_managed_settings` and `save_managed_settings` return `{ settings: { defaultPreset, smoothScrollback }, hasSettings, revision, path, palettes }`. The palette list is independently evaluated from the bounded Lua config, even when `hasSettings` is false. GUI saves still write only the managed settings block. Reload prepares palettes from the frozen candidate config and publishes them only after that reload commits; a failed candidate retains the previous catalog. If no settings declaration has run, the app keeps the existing JSON smooth-scrollback value for migration; after the first declaration, omitted pilot values use app defaults. The GUI selects a saved preset by name as the default for future implicit tabs. An explicit launch preset takes precedence. Lua has no font field or arbitrary font override; choose a saved preset to select its saved font and display settings.
+`load_managed_settings` and `save_managed_settings` return the settings object, `hasSettings`, `revision`, `path`, and the independently evaluated `palettes` and `shells` arrays (the save result returns the catalogs too). GUI saves write only the marked settings block; palette and shell declarations remain user-authored Lua. Reload prepares both catalogs from the frozen candidate config and publishes them only after that reload commits; a failed candidate retains the previous catalogs. The GUI selects a saved preset and shell ID as defaults for future implicit tabs. Explicit launch options take precedence. Lua has no font field or arbitrary font override; choose a saved preset to select its saved font and display settings.
 
 An event script may request a saved preset for its active tab with `ctx.tab:apply_preset(name)`. In `context-updated`, a process-matched attachment can request a preset while its tab is active even when the terminal canvas is not focused; other callbacks still require the active, focused context. The host checks that the tab remains live and active and the action generation is current. It rejects a dirty preset state so unsaved edits are not lost, checking again after the preset file loads. Reload and context changes invalidate queued requests. This action selects an existing saved preset; it does not persist edits or expose individual font properties.
 
 The optional [FAR Manager example](../examples/lua/scripts/far_preset.lua) switches to a configured saved preset while `far.exe` is the tab's observed local process, then restores the committed saved preset name captured on entry. `ctx.tab:preset_name()` returns that committed name, including the actual saved default selected for an implicit tab; unsaved edits do not change it. Uncomment the example's `sterm.use` block in the shipped `sterm.lua` template to enable it, and confirm the configured FAR preset exists first. It stores the original preset and last requested FAR preset in per-tab `ctx.state`, so a valid reload can apply a changed FAR target while keeping the original baseline. Ordinary local phase tracking resets with each VM. On exit or removal it requests restoration only if the committed preset still matches the remembered FAR target; dirty or missing-preset requests can be rejected, and the script has no success acknowledgement or retry. It clears its state after exit/removal cleanup. An unavailable process name is ignored. Select the desired saved preset manually if a request is rejected.
 
-The managed values include `restore_window`, which defaults to true. Window geometry is stored by the app in `window-state.json`; Lua can disable startup restoration with `restore_window = false`, but does not set or persist the saved geometry. This is not the broader GUI-backed settings migration described in the specification below; remaining GUI settings still use their existing storage and interfaces.
+`restore_window` defaults to true. Window geometry is stored by the app in `window-state.json`; Lua can disable startup restoration with `restore_window = false`, but does not set or persist the saved geometry. Installed-build upgrade preservation and the full release acceptance matrix remain to be validated; see [the phased scope](scanline-term-lua-automation-spec-v4.md#27-phased-scope).
 
 ### Live dev validation
 

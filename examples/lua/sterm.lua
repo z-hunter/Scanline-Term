@@ -9,6 +9,15 @@ local sterm = require 'sterm'
 -- Register this user-authored ANSI palette without changing the active preset.
 sterm.include('palettes/users.lua')
 
+-- Declare launch profiles for the app's shared new-tab menus. IDs stay stable
+-- across renames; the GUI-managed default_shell setting references `lua:<id>`.
+-- This catalog does not launch or probe commands while the config is loaded.
+--[[
+sterm.shells({
+  { id = 'pwsh-clean', name = 'Clean PowerShell', command = 'pwsh.exe', args = { '-NoProfile' } },
+})
+]]
+
 -- Register trusted source explicitly: require() can load these aliases and the
 -- built-in 'sterm' API, never files from the runtime filesystem.
 sterm.module('modal_editor', 'modules/modal_editor.lua')

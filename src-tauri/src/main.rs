@@ -948,7 +948,6 @@ fn start_terminal(app: tauri::AppHandle, state: State<TerminalState>, session_id
     let requested_shell = launch.command.map(OsString::from);
     let (conpty_session, shell) = match spawn_terminal(&app, requested_shell.as_deref().unwrap_or(&fallback_shell), &launch.args, launch.cwd.as_deref(), size) {
         Ok(session) => (session, requested_shell.unwrap_or(fallback_shell)),
-        Err(_) if requested_shell.is_some() => (spawn_terminal(&app, &fallback_shell, &[], launch.cwd.as_deref(), size)?, fallback_shell),
         Err(error) => return Err(error),
     };
     let shell_name = Path::new(&shell).file_name().and_then(|name| name.to_str()).unwrap_or("cmd.exe").to_owned();

@@ -1,23 +1,32 @@
 import { Menu, PredefinedMenuItem, Submenu } from '@tauri-apps/api/menu';
-import type { ShellInfo } from '../terminal/useTerminal';
+import { splitShellCatalog, type ShellInfo } from '../terminal/shells';
 
 type NewTabMenuActions = {
   onNew: () => void;
   onNewBrowser: (url?: string) => void;
-  onNewShell: (command: string) => void;
+  onNewShell: (shell: ShellInfo) => void;
   shells: ShellInfo[];
 };
 
 async function newTabItems({ onNew, onNewBrowser, onNewShell, shells }: NewTabMenuActions) {
-  const shellMenu = shells.length > 0 ? await Submenu.new({
+  const { automatic, user } = splitShellCatalog(shells);
+  const shellMenu = automatic.length > 0 ? await Submenu.new({
     id: 'scanline-new-tab-shells',
     text: 'Shells',
-    items: shells.map((shell, index) => ({ id: `scanline-shell-${index}`, text: shell.name, action: () => onNewShell(shell.command) })),
+    items: automatic.map((shell, index) => ({ id: `scanline-shell-${index}`, text: shell.name, action: () => onNewShell(shell) })),
   }) : null;
+  const userShellMenu = user.length > 0 ? await Submenu.new({
+    id: 'scanline-new-tab-user-shells',
+    text: 'Custom shells',
+    items: user.map((shell, index) => ({ id: `scanline-user-shell-${index}`, text: shell.name, action: () => onNewShell(shell) })),
+  }) : null;
+  const separator = automatic.length && user.length ? await PredefinedMenuItem.new({ item: 'Separator' }) : null;
   return [
     { id: 'scanline-new-terminal-tab', text: 'New Terminal tab [menu-N]', action: () => onNew() },
     { id: 'scanline-new-browser-tab', text: 'New Browser tab [menu-B]', action: () => onNewBrowser() },
     ...(shellMenu ? [shellMenu] : []),
+    ...(separator ? [separator] : []),
+    ...(userShellMenu ? [userShellMenu] : []),
   ];
 }
 

@@ -22,7 +22,7 @@ use crate::{
     TerminalState,
     lua_runtime::{
         Action, AnsiPalette, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState,
-        LuaRuntime, MAX_CONFIG_BYTES, ManagedSettings, RuntimeEvent, RuntimeSnapshot,
+        CustomShell, LastAiSelection, LuaRuntime, MAX_CONFIG_BYTES, ManagedSettings, RuntimeEvent, RuntimeSnapshot,
         ScenarioStateStore, TabState,
     },
 };
@@ -151,6 +151,7 @@ pub(crate) struct ReloadPreparation {
     generation: u64,
     cleanup: Vec<ReloadCleanupRequest>,
     palettes: Option<Vec<AnsiPalette>>,
+    shells: Option<Vec<CustomShell>>,
     candidate_status: &'static str,
     error: Option<String>,
 }
@@ -848,12 +849,32 @@ pub async fn lua_automation_abort_reload(
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ManagedSettingsPayload {
     pub default_preset: Option<String>,
     pub smooth_scrollback: Option<bool>,
     pub restore_window: Option<bool>,
+    pub browser_form_factor: Option<String>,
+    pub tab_placement: Option<String>,
+    pub hide_tabs_bar: Option<bool>,
+    pub hide_tabs_bar_only_if_single_tab: Option<bool>,
+    pub global_hotkey_enabled: Option<bool>,
+    pub slide_from_top: Option<bool>,
+    pub auto_update_enabled: Option<bool>,
+    pub settings_scale: Option<f64>,
+    pub show_settings_panel: Option<bool>,
+    pub show_ai_panel: Option<bool>,
+    pub ai_assistant_disabled: Option<bool>,
+    pub last_ai_selection: Option<LastAiSelection>,
+    pub mcp_enabled: Option<bool>,
+    pub mcp_keep_tabs_open: Option<bool>,
+    pub default_shell: Option<String>,
+    pub explorer_integration_enabled: Option<bool>,
+    pub smooth_tui_scrolling: Option<bool>,
+    pub rmb_menu_in_term: Option<bool>,
+    pub channel_switch_effect: Option<bool>,
+    pub settings_version: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -864,6 +885,7 @@ pub struct ManagedSettingsResult {
     pub path: String,
     pub has_settings: bool,
     pub palettes: Vec<AnsiPalette>,
+    pub shells: Vec<CustomShell>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -899,6 +921,7 @@ pub fn load_managed_settings(
         &source,
         snapshot.settings(),
         snapshot.ansi_palettes(),
+        snapshot.custom_shells(),
     ))
 }
 
@@ -916,6 +939,7 @@ pub fn save_managed_settings(
     if let Some(name) = &settings.default_preset {
         crate::presets::validate_name(name)?;
     }
+    validate_managed_settings(&settings)?;
     let path = ensure_managed_config(&app)?;
     ensure_regular_managed_config(&path)?;
     let original = read_managed_config(&path)?;
@@ -937,6 +961,16 @@ pub fn save_managed_settings(
     if actual_settings.default_preset != settings.default_preset
         || actual_settings.smooth_scrollback != settings.smooth_scrollback
         || actual_settings.restore_window != settings.restore_window
+        || actual_settings.browser_form_factor != settings.browser_form_factor || actual_settings.tab_placement != settings.tab_placement
+        || actual_settings.hide_tabs_bar != settings.hide_tabs_bar || actual_settings.hide_tabs_bar_only_if_single_tab != settings.hide_tabs_bar_only_if_single_tab
+        || actual_settings.global_hotkey_enabled != settings.global_hotkey_enabled || actual_settings.slide_from_top != settings.slide_from_top
+        || actual_settings.auto_update_enabled != settings.auto_update_enabled || actual_settings.settings_scale != settings.settings_scale
+        || actual_settings.show_settings_panel != settings.show_settings_panel || actual_settings.show_ai_panel != settings.show_ai_panel
+        || actual_settings.ai_assistant_disabled != settings.ai_assistant_disabled || actual_settings.last_ai_selection != settings.last_ai_selection
+        || actual_settings.mcp_enabled != settings.mcp_enabled || actual_settings.mcp_keep_tabs_open != settings.mcp_keep_tabs_open
+        || actual_settings.default_shell != settings.default_shell || actual_settings.explorer_integration_enabled != settings.explorer_integration_enabled
+        || actual_settings.smooth_tui_scrolling != settings.smooth_tui_scrolling || actual_settings.rmb_menu_in_term != settings.rmb_menu_in_term
+        || actual_settings.channel_switch_effect != settings.channel_switch_effect || actual_settings.settings_version != settings.settings_version
     {
         return Err("managed settings were changed by Lua code outside the managed block".into());
     }
@@ -947,6 +981,7 @@ pub fn save_managed_settings(
         &candidate,
         snapshot.settings(),
         snapshot.ansi_palettes(),
+        snapshot.custom_shells(),
     ))
 }
 
@@ -1404,6 +1439,7 @@ fn worker_loop(
                     palettes: candidate
                         .as_ref()
                         .map(|snapshot| snapshot.ansi_palettes().to_vec()),
+                    shells: candidate.as_ref().map(|snapshot| snapshot.custom_shells().to_vec()),
                     candidate_status,
                     error,
                 };
@@ -2044,17 +2080,29 @@ fn managed_settings_result(
     source: &[u8],
     settings: Option<&ManagedSettings>,
     palettes: &[AnsiPalette],
+    shells: &[CustomShell],
 ) -> ManagedSettingsResult {
     ManagedSettingsResult {
         settings: ManagedSettingsPayload {
             default_preset: settings.and_then(|settings| settings.default_preset.clone()),
             smooth_scrollback: settings.and_then(|settings| settings.smooth_scrollback),
             restore_window: settings.and_then(|settings| settings.restore_window),
+            browser_form_factor: settings.and_then(|s| s.browser_form_factor.clone()), tab_placement: settings.and_then(|s| s.tab_placement.clone()),
+            hide_tabs_bar: settings.and_then(|s| s.hide_tabs_bar), hide_tabs_bar_only_if_single_tab: settings.and_then(|s| s.hide_tabs_bar_only_if_single_tab),
+            global_hotkey_enabled: settings.and_then(|s| s.global_hotkey_enabled), slide_from_top: settings.and_then(|s| s.slide_from_top),
+            auto_update_enabled: settings.and_then(|s| s.auto_update_enabled), settings_scale: settings.and_then(|s| s.settings_scale),
+            show_settings_panel: settings.and_then(|s| s.show_settings_panel), show_ai_panel: settings.and_then(|s| s.show_ai_panel),
+            ai_assistant_disabled: settings.and_then(|s| s.ai_assistant_disabled), last_ai_selection: settings.and_then(|s| s.last_ai_selection.clone()),
+            mcp_enabled: settings.and_then(|s| s.mcp_enabled), mcp_keep_tabs_open: settings.and_then(|s| s.mcp_keep_tabs_open),
+            default_shell: settings.and_then(|s| s.default_shell.clone()), explorer_integration_enabled: settings.and_then(|s| s.explorer_integration_enabled),
+            smooth_tui_scrolling: settings.and_then(|s| s.smooth_tui_scrolling), rmb_menu_in_term: settings.and_then(|s| s.rmb_menu_in_term),
+            channel_switch_effect: settings.and_then(|s| s.channel_switch_effect), settings_version: settings.and_then(|s| s.settings_version),
         },
         revision: revision_token(path, source),
         path: path.display().to_string(),
         has_settings: settings.is_some(),
         palettes: palettes.to_vec(),
+        shells: shells.to_vec(),
     }
 }
 
@@ -2209,7 +2257,19 @@ fn managed_settings_block(
     if let Some(enabled) = settings.restore_window {
         fields.push(format!("restore_window = {enabled}"));
     }
-    let call = format!("require('sterm').settings({{ {} }})", fields.join(", "));
+    macro_rules! push_bool { ($field:ident) => { if let Some(value) = settings.$field { fields.push(format!("{} = {value}", stringify!($field))); } }; }
+    for (key, value) in [("browser_form_factor", settings.browser_form_factor.as_ref()), ("tab_placement", settings.tab_placement.as_ref()), ("default_shell", settings.default_shell.as_ref())] {
+        if let Some(value) = value { fields.push(format!("{key} = {}", lua_string_literal(value))); }
+    }
+    push_bool!(hide_tabs_bar); push_bool!(hide_tabs_bar_only_if_single_tab); push_bool!(global_hotkey_enabled);
+    push_bool!(slide_from_top); push_bool!(auto_update_enabled); push_bool!(show_settings_panel); push_bool!(show_ai_panel);
+    push_bool!(ai_assistant_disabled); push_bool!(mcp_enabled); push_bool!(mcp_keep_tabs_open);
+    push_bool!(explorer_integration_enabled); push_bool!(smooth_tui_scrolling); push_bool!(rmb_menu_in_term); push_bool!(channel_switch_effect);
+    if let Some(value) = settings.settings_scale { fields.push(format!("settings_scale = {value}")); }
+    if let Some(value) = settings.settings_version { fields.push(format!("settings_version = {value}")); }
+    if let Some(value) = &settings.last_ai_selection { fields.push(format!("last_ai_selection = {{ model = {}, effort = {} }}", lua_string_literal(&value.model), lua_string_literal(&value.effort))); }
+    let separator = format!(",{newline}    ");
+    let call = format!("require('sterm').settings({{{newline}    {}{newline}}})", fields.join(&separator));
     let mut block = format!(
         "{begin}{newline}{call}{newline}{end}",
         begin = String::from_utf8_lossy(MANAGED_BEGIN),
@@ -2247,6 +2307,7 @@ fn splice_managed_settings(
     if let Some(name) = &settings.default_preset {
         crate::presets::validate_name(name)?;
     }
+    validate_managed_settings(settings)?;
     let newline = newline_style(source);
     match find_managed_block(source)? {
         Some(range) => {
@@ -2271,6 +2332,16 @@ fn splice_managed_settings(
             Ok(output)
         }
     }
+}
+
+fn validate_managed_settings(settings: &ManagedSettingsPayload) -> Result<(), String> {
+    if settings.browser_form_factor.as_deref().is_some_and(|v| !matches!(v, "physical" | "4:3" | "8:5")) { return Err("browserFormFactor is invalid".into()); }
+    if settings.tab_placement.as_deref().is_some_and(|v| !matches!(v, "top" | "left")) { return Err("tabPlacement is invalid".into()); }
+    if settings.settings_scale.is_some_and(|v| !v.is_finite() || !(0.75..=1.5).contains(&v)) { return Err("settingsScale must be between 0.75 and 1.5".into()); }
+    if settings.settings_version.is_some_and(|v| v != 1) { return Err("settingsVersion is unsupported".into()); }
+    if settings.default_shell.as_ref().is_some_and(|v| v.encode_utf16().count() > 1024 || v.contains('\0')) { return Err("defaultShell is invalid or too long".into()); }
+    if settings.last_ai_selection.as_ref().is_some_and(|v| v.model.is_empty() || v.model.encode_utf16().count() > 128 || v.effort.is_empty() || v.effort.encode_utf16().count() > 64) { return Err("lastAiSelection is invalid".into()); }
+    Ok(())
 }
 
 fn atomic_replace_managed_config(path: &Path, contents: &[u8]) -> Result<(), String> {
@@ -3524,6 +3595,7 @@ mod tests {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(false),
                 restore_window: Some(false),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -3539,6 +3611,7 @@ mod tests {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(false),
                 restore_window: Some(false),
+                ..Default::default()
             })
         );
         assert_eq!(snapshot.ansi_palettes()[0].label, "User's");
@@ -3552,6 +3625,7 @@ mod tests {
             original.as_bytes(),
             original_snapshot.settings(),
             original_snapshot.ansi_palettes(),
+            original_snapshot.custom_shells(),
         );
         assert!(!result.has_settings);
         assert_eq!(result.palettes[0].id, "lua:users");
@@ -3568,6 +3642,7 @@ mod tests {
                 default_preset: None,
                 smooth_scrollback: Some(true),
                 restore_window: None,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -3575,6 +3650,52 @@ mod tests {
         let text = std::str::from_utf8(&candidate).unwrap();
         assert!(text.contains("-- scanline-term:managed-settings:begin\r\n"));
         assert!(text.ends_with("local sterm=require 'sterm'\r\nreturn true\r\n"));
+    }
+
+    #[test]
+    fn managed_settings_writer_round_trips_every_field() {
+        let root = lua_seed_test_root("settings-round-trip");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.lua");
+        fs::write(&path, "return true\n").unwrap();
+        let settings = ManagedSettingsPayload {
+            default_preset: Some("DEC VT-100".into()), smooth_scrollback: Some(false), restore_window: Some(false),
+            browser_form_factor: Some("4:3".into()), tab_placement: Some("left".into()),
+            hide_tabs_bar: Some(true), hide_tabs_bar_only_if_single_tab: Some(false), global_hotkey_enabled: Some(false),
+            slide_from_top: Some(false), auto_update_enabled: Some(false), settings_scale: Some(1.0),
+            show_settings_panel: Some(true), show_ai_panel: Some(true), ai_assistant_disabled: Some(true),
+            last_ai_selection: Some(LastAiSelection { model: "gpt-\"x\"".into(), effort: "high".into() }),
+            mcp_enabled: Some(true), mcp_keep_tabs_open: Some(true), default_shell: Some("pwsh.exe --title \"Dev\" \\safe".into()),
+            explorer_integration_enabled: Some(true), smooth_tui_scrolling: Some(false), rmb_menu_in_term: Some(false),
+            channel_switch_effect: Some(false), settings_version: Some(1),
+        };
+        let source = splice_managed_settings(b"return true\n", &settings).unwrap();
+        let source = std::str::from_utf8(&source).unwrap();
+        let snapshot = RuntimeSnapshot::load_source(&path, source).unwrap();
+        let actual = snapshot.settings().unwrap();
+        assert_eq!(actual.default_preset, settings.default_preset);
+        assert_eq!(actual.smooth_scrollback, settings.smooth_scrollback);
+        assert_eq!(actual.restore_window, settings.restore_window);
+        assert_eq!(actual.browser_form_factor, settings.browser_form_factor);
+        assert_eq!(actual.tab_placement, settings.tab_placement);
+        assert_eq!(actual.hide_tabs_bar, settings.hide_tabs_bar);
+        assert_eq!(actual.hide_tabs_bar_only_if_single_tab, settings.hide_tabs_bar_only_if_single_tab);
+        assert_eq!(actual.global_hotkey_enabled, settings.global_hotkey_enabled);
+        assert_eq!(actual.slide_from_top, settings.slide_from_top);
+        assert_eq!(actual.auto_update_enabled, settings.auto_update_enabled);
+        assert_eq!(actual.settings_scale, settings.settings_scale);
+        assert_eq!(actual.show_settings_panel, settings.show_settings_panel);
+        assert_eq!(actual.show_ai_panel, settings.show_ai_panel);
+        assert_eq!(actual.ai_assistant_disabled, settings.ai_assistant_disabled);
+        assert_eq!(actual.last_ai_selection, settings.last_ai_selection);
+        assert_eq!(actual.mcp_enabled, settings.mcp_enabled);
+        assert_eq!(actual.mcp_keep_tabs_open, settings.mcp_keep_tabs_open);
+        assert_eq!(actual.default_shell, settings.default_shell);
+        assert_eq!(actual.explorer_integration_enabled, settings.explorer_integration_enabled);
+        assert_eq!(actual.smooth_tui_scrolling, settings.smooth_tui_scrolling);
+        assert_eq!(actual.rmb_menu_in_term, settings.rmb_menu_in_term);
+        assert_eq!(actual.channel_switch_effect, settings.channel_switch_effect);
+        assert_eq!(actual.settings_version, settings.settings_version);
     }
 
     #[test]
@@ -3818,6 +3939,7 @@ mod tests {
             generation: 7,
             cleanup: Vec::new(),
             palettes: Some(Vec::new()),
+            shells: Some(Vec::new()),
             candidate_status: "ready",
             error: None,
         };

@@ -1,62 +1,47 @@
 import { describe, expect, it, vi } from 'vitest';
 import { effectiveManagedSettings, LatestSettingsRequest, loadAndCommitLatest, normalizeManagedSettings } from './managed-settings';
+import { loadStoredSettings } from './settings';
 
-const response = (hasSettings: boolean, settings: { defaultPreset?: unknown; smoothScrollback?: unknown; restoreWindow?: unknown }) => normalizeManagedSettings({
-  settings,
-  revision: 'r1',
-  path: 'sterm.lua',
-  hasSettings,
-  palettes: [],
+const legacy = loadStoredSettings(null);
+const wire = (overrides: Record<string, unknown> = {}) => ({
+  version: null, browserFormFactor: null, tabPlacement: null, hideTabsBar: null, hideTabsBarOnlyIfSingleTab: null,
+  globalHotkeyEnabled: null, slideFromTop: null, autoUpdateEnabled: null, settingsScale: null, showSettingsPanel: null,
+  showAiPanel: null, aiAssistantDisabled: null, lastAiSelection: null, mcpEnabled: null, mcpKeepTabsOpen: null,
+  defaultShell: null, explorerIntegrationEnabled: null, smoothScrollback: null, smoothTuiScrolling: null,
+  rmbMenuInTerm: null, channelSwitchEffect: null, defaultPreset: null, restoreWindow: null, settingsVersion: null,
+  ...overrides,
 });
+const response = (settings: Record<string, unknown>) => normalizeManagedSettings({ settings, revision: 'r1', path: 'sterm.lua', hasSettings: true, palettes: [], shells: [] });
 
 describe('managed settings migration', () => {
-  it('keeps the legacy smooth-scroll value until the first settings declaration', () => {
-    expect(effectiveManagedSettings(response(false, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: false, restoreWindow: true });
+  it('merges evaluated Lua fields over the captured legacy settings until migration', () => {
+    const old = { ...legacy, browserFormFactor: '4:3' as const, smoothScrollback: false, defaultShell: 'legacy-shell' };
+    expect(effectiveManagedSettings(response(wire({ tabPlacement: 'left', smoothScrollback: true })), old)).toMatchObject({ browserFormFactor: '4:3', tabPlacement: 'left', smoothScrollback: true, defaultShell: 'legacy-shell' });
   });
 
-  it('uses app defaults when an explicit declaration omits pilot keys', () => {
-    expect(effectiveManagedSettings(response(true, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: true, restoreWindow: true });
+  it('does not resurrect legacy values for omitted fields after marker version 1', () => {
+    const old = { ...legacy, browserFormFactor: '4:3' as const, smoothScrollback: false, defaultShell: 'legacy-shell' };
+    expect(effectiveManagedSettings(response(wire({ settingsVersion: 1 })), old)).toMatchObject({ browserFormFactor: 'physical', smoothScrollback: true, defaultShell: '', defaultPreset: 'default', restoreWindow: true });
   });
 
-  it('uses app defaults after the legacy value was migrated and the declaration is removed', () => {
-    expect(effectiveManagedSettings(response(false, {}), false, false)).toEqual({ defaultPreset: 'default', smoothScrollback: true, restoreWindow: true });
-  });
-
-  it('normalizes managed values and ignores malformed field types', () => {
-    const loaded = response(true, { defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: 'false' });
-    expect(effectiveManagedSettings(loaded, false)).toEqual({ defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: true, restoreWindow: true });
-    expect(effectiveManagedSettings(response(true, { restoreWindow: false }), false).restoreWindow).toBe(false);
-  });
-
-  it('preserves the complete palette snapshot supplied by native settings load', () => {
-    const palettes = [{ id: 'lua:users', label: "User's", foreground: '#FFFFFF', background: '#000000', colors: Array(16).fill('#123456') }];
-    expect(normalizeManagedSettings({ settings: {}, revision: 'r1', path: 'sterm.lua', hasSettings: false, palettes }).palettes).toEqual(palettes);
-  });
-
-  it('rejects malformed native responses', () => {
-    expect(() => normalizeManagedSettings({ settings: {}, revision: 3, path: '', hasSettings: false })).toThrow('invalid managed settings response');
-    expect(() => normalizeManagedSettings({ settings: {}, revision: 'r1', path: '', hasSettings: false })).toThrow('invalid managed settings response');
+  it('validates native response envelopes and preserves palette and shell snapshots', () => {
+    const palettes = [{ id: 'lua:users', label: 'Users', foreground: '#FFFFFF', background: '#000000', colors: Array(16).fill('#123456') }];
+    const shells = [{ id: 'lua:pwsh', name: 'pwsh', command: 'pwsh.exe', args: ['-NoLogo'] }];
+    expect(normalizeManagedSettings({ settings: wire(), revision: 'r1', path: 'sterm.lua', hasSettings: false, palettes, shells })).toMatchObject({ palettes, shells });
+    expect(() => normalizeManagedSettings({ settings: {}, revision: 3, path: '', hasSettings: false, palettes: [], shells: [] })).toThrow('invalid managed settings response');
   });
 });
 
 describe('managed setting request invalidation', () => {
-  it('does not save a default choice whose preset load completes after reload starts', async () => {
+  it('does not commit a value whose load completes after reload starts', async () => {
     const guard = new LatestSettingsRequest();
     const request = guard.begin();
     let finishLoad!: (value: string) => void;
-    const save = vi.fn();
-    let committed = '';
-    const completion = loadAndCommitLatest(
-      guard,
-      request,
-      () => new Promise<string>((resolve) => { finishLoad = resolve; }),
-      async (value) => { save(); committed = value; },
-    );
-
+    const commit = vi.fn();
+    const completion = loadAndCommitLatest(guard, request, () => new Promise<string>((resolve) => { finishLoad = resolve; }), commit);
     guard.invalidate();
-    finishLoad('loaded preset');
+    finishLoad('stale');
     expect(await completion).toBe(false);
-    expect(save).not.toHaveBeenCalled();
-    expect(committed).toBe('');
+    expect(commit).not.toHaveBeenCalled();
   });
 });

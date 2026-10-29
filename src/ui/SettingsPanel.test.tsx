@@ -170,6 +170,24 @@ describe('SettingsPanel font-size editing flow', () => {
     root.unmount(); container.remove();
   });
 
+  it('groups custom shells after detected shells and stores their stable ID', async () => {
+    let currentStored = defaultProps.stored;
+    const setStored = vi.fn((updater) => { currentStored = typeof updater === 'function' ? updater(currentStored) : updater; });
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    const shells = [
+      { name: 'Detected PowerShell', command: 'pwsh.exe' },
+      { id: 'lua:work', name: 'Work profile', command: 'pwsh.exe', args: ['-NoProfile'] },
+    ];
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, setStored, shells })); });
+    const select = Array.from(container.querySelectorAll('select')).find((item) => item.parentElement?.textContent?.includes('Default shell'))!;
+    expect(Array.from(select.querySelectorAll('optgroup')).map((group) => group.label)).toEqual(['Detected shells', 'Custom shells']);
+    await act(async () => { select.value = 'lua:work'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(currentStored.defaultShell).toBe('lua:work');
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('retains local string value while editing and persists clamped value on blur', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

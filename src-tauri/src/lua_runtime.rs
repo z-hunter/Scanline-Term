@@ -22,6 +22,7 @@ const MAX_ATTACHMENTS: usize = 64;
 const MAX_MODULES: usize = 64;
 const MAX_CONFIG_INCLUDES: usize = 64;
 const MAX_ANSI_PALETTES: usize = 64;
+const MAX_CUSTOM_SHELLS: usize = 64;
 const MAX_CONFIG_INCLUDE_DEPTH: usize = 16;
 const MAX_TOTAL_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_INSTANCES: usize = 64;
@@ -203,6 +204,8 @@ struct ConfigRegistrations {
     attachments: Vec<(String, Option<Vec<String>>, JsonValue)>,
     modules: HashMap<String, String>,
     ansi_palettes: Vec<AnsiPalette>,
+    custom_shells: Vec<CustomShell>,
+    custom_shells_declared: bool,
     settings: Option<ManagedSettings>,
 }
 
@@ -233,12 +236,40 @@ impl Default for LuaExecutionBudget {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ManagedSettings {
     pub default_preset: Option<String>,
     pub smooth_scrollback: Option<bool>,
     pub restore_window: Option<bool>,
+    pub browser_form_factor: Option<String>,
+    pub tab_placement: Option<String>,
+    pub hide_tabs_bar: Option<bool>,
+    pub hide_tabs_bar_only_if_single_tab: Option<bool>,
+    pub global_hotkey_enabled: Option<bool>,
+    pub slide_from_top: Option<bool>,
+    pub auto_update_enabled: Option<bool>,
+    pub settings_scale: Option<f64>,
+    pub show_settings_panel: Option<bool>,
+    pub show_ai_panel: Option<bool>,
+    pub ai_assistant_disabled: Option<bool>,
+    pub last_ai_selection: Option<LastAiSelection>,
+    pub mcp_enabled: Option<bool>,
+    pub mcp_keep_tabs_open: Option<bool>,
+    pub default_shell: Option<String>,
+    pub explorer_integration_enabled: Option<bool>,
+    pub smooth_tui_scrolling: Option<bool>,
+    pub rmb_menu_in_term: Option<bool>,
+    pub channel_switch_effect: Option<bool>,
+    pub settings_version: Option<u32>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LastAiSelection { pub model: String, pub effort: String }
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomShell { pub id: String, pub name: String, pub command: String, pub args: Vec<String> }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -260,6 +291,7 @@ pub struct RuntimeSnapshot {
     attachments: Vec<Attachment>,
     modules: HashMap<String, LuaModule>,
     ansi_palettes: Vec<AnsiPalette>,
+    custom_shells: Vec<CustomShell>,
     settings: Option<ManagedSettings>,
     wants_input_language_events: bool,
 }
@@ -556,6 +588,7 @@ impl RuntimeSnapshot {
             attachments,
             modules,
             ansi_palettes: registrations.ansi_palettes,
+            custom_shells: registrations.custom_shells,
             settings: registrations.settings,
             wants_input_language_events,
         })
@@ -568,6 +601,8 @@ impl RuntimeSnapshot {
     pub fn ansi_palettes(&self) -> &[AnsiPalette] {
         &self.ansi_palettes
     }
+
+    pub fn custom_shells(&self) -> &[CustomShell] { &self.custom_shells }
 
     pub fn config_path(&self) -> &Path {
         &self.config_path
@@ -1255,6 +1290,7 @@ fn install_registration_api(
             let mut default_preset = None;
             let mut smooth_scrollback = None;
             let mut restore_window = None;
+            macro_rules! bool_field { ($key:literal, $var:ident) => { let $var = match settings.get::<Value>($key)? { Value::Nil => None, Value::Boolean(value) => Some(value), _ => return Err(mlua::Error::RuntimeError(concat!($key, " must be a boolean or nil").into())) }; }; }
             for pair in settings.clone().pairs::<Value, Value>() {
                 let (key, _) = pair?;
                 let Value::String(key) = key else {
@@ -1263,7 +1299,7 @@ fn install_registration_api(
                     ));
                 };
                 let key = key.to_str()?.to_owned();
-                if key != "default_preset" && key != "smooth_scrollback" && key != "restore_window" {
+                if !matches!(key.as_str(), "default_preset" | "smooth_scrollback" | "restore_window" | "browser_form_factor" | "tab_placement" | "hide_tabs_bar" | "hide_tabs_bar_only_if_single_tab" | "global_hotkey_enabled" | "slide_from_top" | "auto_update_enabled" | "settings_scale" | "show_settings_panel" | "show_ai_panel" | "ai_assistant_disabled" | "last_ai_selection" | "mcp_enabled" | "mcp_keep_tabs_open" | "default_shell" | "explorer_integration_enabled" | "smooth_tui_scrolling" | "rmb_menu_in_term" | "channel_switch_effect" | "settings_version") {
                     return Err(mlua::Error::RuntimeError(format!(
                         "unknown sterm.settings field '{key}'"
                     )));
@@ -1296,6 +1332,34 @@ fn install_registration_api(
                 Value::Boolean(value) => restore_window = Some(value),
                 _ => return Err(mlua::Error::RuntimeError("restore_window must be a boolean or nil".into())),
             }
+            let browser_form_factor = optional_enum(&settings, "browser_form_factor", &["physical", "4:3", "8:5"])?;
+            let tab_placement = optional_enum(&settings, "tab_placement", &["top", "left"])?;
+            bool_field!("hide_tabs_bar", hide_tabs_bar); bool_field!("hide_tabs_bar_only_if_single_tab", hide_tabs_bar_only_if_single_tab);
+            bool_field!("global_hotkey_enabled", global_hotkey_enabled); bool_field!("slide_from_top", slide_from_top);
+            bool_field!("auto_update_enabled", auto_update_enabled); bool_field!("show_settings_panel", show_settings_panel);
+            bool_field!("show_ai_panel", show_ai_panel); bool_field!("ai_assistant_disabled", ai_assistant_disabled);
+            bool_field!("mcp_enabled", mcp_enabled); bool_field!("mcp_keep_tabs_open", mcp_keep_tabs_open);
+            bool_field!("explorer_integration_enabled", explorer_integration_enabled); bool_field!("smooth_tui_scrolling", smooth_tui_scrolling);
+            bool_field!("rmb_menu_in_term", rmb_menu_in_term); bool_field!("channel_switch_effect", channel_switch_effect);
+            let settings_scale = match settings.get::<Value>("settings_scale")? {
+                Value::Nil => None,
+                Value::Integer(value) if (0.75..=1.5).contains(&(value as f64)) => Some(value as f64),
+                Value::Number(value) if value.is_finite() && (0.75..=1.5).contains(&value) => Some(value),
+                _ => return Err(mlua::Error::RuntimeError("settings_scale must be a finite number from 0.75 to 1.5 or nil".into())),
+            };
+            let default_shell = match settings.get::<Value>("default_shell")? { Value::Nil => None, Value::String(value) => { let value = value.to_str()?.to_owned(); if value.encode_utf16().count() > 1024 || value.contains('\0') { return Err(mlua::Error::RuntimeError("default_shell is invalid or too long".into())); } Some(value) }, _ => return Err(mlua::Error::RuntimeError("default_shell must be a string or nil".into())) };
+            let last_ai_selection = match settings.get::<Value>("last_ai_selection")? {
+                Value::Nil => None,
+                Value::Table(value) => {
+                    for pair in value.clone().pairs::<Value, Value>() { let (key, _) = pair?; if !matches!(key, Value::String(ref key) if matches!(key.to_str()?.as_ref(), "model" | "effort")) { return Err(mlua::Error::RuntimeError("last_ai_selection has an unknown field".into())); } }
+                    let model = strict_lua_string(&value, "model", "last_ai_selection.model")?;
+                    let effort = strict_lua_string(&value, "effort", "last_ai_selection.effort")?;
+                    if model.is_empty() || model.encode_utf16().count() > 128 || effort.is_empty() || effort.encode_utf16().count() > 64 { return Err(mlua::Error::RuntimeError("last_ai_selection is invalid".into())); }
+                    Some(LastAiSelection { model, effort })
+                },
+                _ => return Err(mlua::Error::RuntimeError("last_ai_selection must be a table or nil".into()))
+            };
+            let settings_version = match settings.get::<Value>("settings_version")? { Value::Nil => None, Value::Integer(value) if value == 1 => Some(1), _ => return Err(mlua::Error::RuntimeError("settings_version must be 1 or nil".into())) };
             let mut registrations = registrations.lock().map_err(|_| {
                 mlua::Error::RuntimeError("Lua registration state is unavailable".into())
             })?;
@@ -1308,7 +1372,47 @@ fn install_registration_api(
                 default_preset,
                 smooth_scrollback,
                 restore_window,
+                browser_form_factor, tab_placement, hide_tabs_bar, hide_tabs_bar_only_if_single_tab,
+                global_hotkey_enabled, slide_from_top, auto_update_enabled, settings_scale,
+                show_settings_panel, show_ai_panel, ai_assistant_disabled, last_ai_selection,
+                mcp_enabled, mcp_keep_tabs_open, default_shell, explorer_integration_enabled,
+                smooth_tui_scrolling, rmb_menu_in_term, channel_switch_effect, settings_version,
             });
+            Ok(())
+        })?
+    })?;
+    module.set("shells", {
+        let registrations = registrations.clone();
+        lua.create_function(move |_, shells: Table| {
+            let count = shells.clone().pairs::<Value, Value>().count();
+            if count > MAX_CUSTOM_SHELLS { return Err(mlua::Error::RuntimeError("too many custom shells".into())); }
+            let mut parsed = Vec::with_capacity(count);
+            let mut ids = HashSet::new();
+            let mut total = 0usize;
+            for index in 1..=count {
+                let shell: Table = shells.get(index).map_err(|_| mlua::Error::RuntimeError("shells must be a dense array of shell tables".into()))?;
+                let mut values = HashMap::new();
+                for pair in shell.clone().pairs::<Value, Value>() { let (key, value) = pair?; let Value::String(key) = key else { return Err(mlua::Error::RuntimeError("shell fields must be named".into())); }; values.insert(key.to_str()?.to_owned(), value); }
+                if values.keys().any(|key| !matches!(key.as_str(), "id" | "name" | "command" | "args")) { return Err(mlua::Error::RuntimeError("unknown custom shell field".into())); }
+                let id = strict_lua_string(&shell, "id", "shell id")?;
+                if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') || !ids.insert(id.clone()) { return Err(mlua::Error::RuntimeError("shell id is invalid or duplicated".into())); }
+                let name = strict_lua_string(&shell, "name", "shell name")?;
+                let command = strict_lua_string(&shell, "command", "shell command")?;
+                if name.is_empty() || name.chars().count() > 128 || command.is_empty() || command.chars().count() > 1024 || name.contains('\0') || command.contains('\0') { return Err(mlua::Error::RuntimeError("custom shell name or command is invalid".into())); }
+                let mut args = Vec::new();
+                match shell.get::<Value>("args")? {
+                    Value::Nil => (),
+                    Value::Table(table) => { let n = table.clone().pairs::<Value, Value>().count(); if n > 64 { return Err(mlua::Error::RuntimeError("too many custom shell arguments".into())); } for i in 1..=n { let arg = strict_lua_array_string(&table, i)?; if arg.chars().count() > 4096 || arg.contains('\0') { return Err(mlua::Error::RuntimeError("shell argument is invalid or too long".into())); } args.push(arg); } },
+                    _ => return Err(mlua::Error::RuntimeError("shell args must be a string array".into())),
+                }
+                total += id.len() + name.len() + command.len() + args.iter().map(String::len).sum::<usize>();
+                if total > 256 * 1024 { return Err(mlua::Error::RuntimeError("custom shell declarations are too large".into())); }
+                parsed.push(CustomShell { id: format!("lua:{id}"), name, command, args });
+            }
+            let mut registrations = registrations.lock().map_err(|_| mlua::Error::RuntimeError("Lua registration state is unavailable".into()))?;
+            if registrations.custom_shells_declared { return Err(mlua::Error::RuntimeError("sterm.shells may only be declared once".into())); }
+            registrations.custom_shells_declared = true;
+            registrations.custom_shells = parsed;
             Ok(())
         })?
     })?;
@@ -1591,6 +1695,32 @@ fn install_script_api(
         enabled: smart_caps,
         initializing,
     })
+}
+
+fn strict_lua_string(table: &Table, key: &str, label: &str) -> mlua::Result<String> {
+    match table.get::<Value>(key)? {
+        Value::String(value) => Ok(value.to_str()?.to_owned()),
+        _ => Err(mlua::Error::RuntimeError(format!("{label} must be a string"))),
+    }
+}
+
+fn optional_enum(table: &Table, key: &str, allowed: &[&str]) -> mlua::Result<Option<String>> {
+    match table.get::<Value>(key)? {
+        Value::Nil => Ok(None),
+        Value::String(value) => {
+            let value = value.to_str()?.to_owned();
+            if allowed.contains(&value.as_str()) { Ok(Some(value)) }
+            else { Err(mlua::Error::RuntimeError(format!("{key} has an unsupported value"))) }
+        }
+        _ => Err(mlua::Error::RuntimeError(format!("{key} must be a supported string or nil"))),
+    }
+}
+
+fn strict_lua_array_string(table: &Table, index: usize) -> mlua::Result<String> {
+    match table.get::<Value>(index)? {
+        Value::String(value) => Ok(value.to_str()?.to_owned()),
+        _ => Err(mlua::Error::RuntimeError("shell args must be a dense string array".into())),
+    }
 }
 
 fn valid_module_name(name: &str) -> bool {
@@ -2605,8 +2735,30 @@ mod tests {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(true),
                 restore_window: Some(false),
+                ..Default::default()
             })
         );
+    }
+
+    #[test]
+    fn expanded_settings_and_custom_shells_validate_and_round_trip() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "");
+        let source = r#"local sterm=require 'sterm'; sterm.settings({settings_scale=1, last_ai_selection={model='gpt-x', effort='high'}, settings_version=1}); sterm.shells({{id='clean', name='Clean', command='pwsh.exe', args={'-NoProfile', 'say "hi" \\done'}}})"#;
+        let snapshot = RuntimeSnapshot::load_source(&dir.entry(), source).unwrap();
+        assert_eq!(snapshot.settings().unwrap().settings_scale, Some(1.0));
+        assert_eq!(snapshot.settings().unwrap().settings_version, Some(1));
+        assert_eq!(snapshot.custom_shells(), &[CustomShell { id: "lua:clean".into(), name: "Clean".into(), command: "pwsh.exe".into(), args: vec!["-NoProfile".into(), "say \"hi\" \\done".into()] }]);
+        for invalid in [
+            "require('sterm').settings({settings_scale=1.6})",
+            "require('sterm').settings({last_ai_selection={model=7, effort='high'}})",
+            "require('sterm').shells({{id=7, name='Clean', command='pwsh.exe', args={}}})",
+            "require('sterm').shells({{id='clean', name='Clean', command='pwsh.exe', args='bad'}})",
+            "require('sterm').shells({{id='clean', name='Clean', command='pwsh.exe', args={true}}})",
+            "require('sterm').shells({}); require('sterm').shells({})",
+        ] {
+            assert!(RuntimeSnapshot::load_source(&dir.entry(), invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

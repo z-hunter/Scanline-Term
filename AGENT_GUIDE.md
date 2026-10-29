@@ -151,7 +151,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Add a global hotkey** | `main.rs`, `App.tsx`, `settings.ts`, `SettingsPanel.tsx` | Rust registration + persisted UI setting | `cargo test`, `npm test`, `tauri:dev`: enable, hide, restore, conflict |
 | **Add a Tauri command** | `main.rs`, `App.tsx` | Both | `cargo test`, `tauri:dev` |
 | **Change font handling** | `App.tsx` (fontCellSize, terminalDimensions), `main.rs` (list_monospace_fonts) | Varies | `tauri:dev`, resize test |
-| **Change console shell** | `main.rs` (start_terminal, %ComSpec%) | `main.rs` | `tauri:dev`, `cargo test` |
+| **Change console shell catalog/default** | `lua_runtime.rs` (`sterm.shells` validation), `lua_automation.rs` (load/reload catalog), `main.rs` (`start_terminal`, `%ComSpec%`), `terminal/shells.ts`, `terminal/useTerminal.ts`, `ui/SettingsPanel.tsx`, `ui/TerminalTabs.tsx`, `ui/nativeNewTabMenu.ts` | Same native/frontend paths plus focused shell catalog, menu, and default-launch tests | `cargo test`, focused `npm test`, `npm run build`, `tauri:dev`: auto/custom ordering, stable ID after rename, duplicate executable profiles with different args, missing custom profile error, explicit command precedence, legacy executable default |
 | **Add text attributes (bold/underline)** | `App.tsx` (drawTerminal), xterm buffer API | `App.tsx` | Visual in `tauri:dev` |
 | **Fix mouse coordinates** | `App.tsx` (terminalMouseCell, copyPoint) | `App.tsx` | `tauri:dev` with TUI app |
 | **Add a new resolution** | `settings.ts` (RESOLUTIONS) | `settings.ts` | `npm test`, visual in dev |

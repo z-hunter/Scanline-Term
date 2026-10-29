@@ -79,6 +79,23 @@ export type StoredSettings = AppSettings & {
   crt: CRTSettings;
 };
 
+export function appGlobalsFromStored(stored: StoredSettings): Omit<AppSettings, 'version'> {
+  return {
+    browserFormFactor: stored.browserFormFactor, tabPlacement: stored.tabPlacement, hideTabsBar: stored.hideTabsBar,
+    hideTabsBarOnlyIfSingleTab: stored.hideTabsBarOnlyIfSingleTab, globalHotkeyEnabled: stored.globalHotkeyEnabled,
+    slideFromTop: stored.slideFromTop, autoUpdateEnabled: stored.autoUpdateEnabled, settingsScale: stored.settingsScale,
+    showSettingsPanel: stored.showSettingsPanel, showAiPanel: stored.showAiPanel, aiAssistantDisabled: stored.aiAssistantDisabled,
+    lastAiSelection: stored.lastAiSelection, mcpEnabled: stored.mcpEnabled, mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
+    defaultShell: stored.defaultShell, explorerIntegrationEnabled: stored.explorerIntegrationEnabled,
+    smoothScrollback: stored.smoothScrollback, smoothTuiScrolling: stored.smoothTuiScrolling,
+    rmbMenuInTerm: stored.rmbMenuInTerm, channelSwitchEffect: stored.channelSwitchEffect,
+  };
+}
+
+export function mergeAppGlobals(stored: StoredSettings, globals: Omit<AppSettings, 'version'>): StoredSettings {
+  return { ...stored, ...globals };
+}
+
 export type PresetSettings = {
   version: 1;
   resolution: ResolutionId;

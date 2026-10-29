@@ -1,5 +1,13 @@
 # Backlog
 
+## Investigate faster native window restoration
+
+Measure whether applying saved window position/size before the frontend starts
+reduces startup time while preserving the existing `restore_window` setting.
+Validate placement across monitor changes and DPI scaling; do not let Lua window
+overrides become persisted geometry. Do not implement until these checks are
+covered.
+
 ## Remove Circadia migration
 
 After old saved settings and presets no longer need compatibility, remove the

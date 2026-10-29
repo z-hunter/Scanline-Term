@@ -1,52 +1,56 @@
 import { useCallback, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { effectiveManagedSettings, normalizeManagedSettings, type ManagedSettings, type ManagedSettingsResponse } from '../crt/managed-settings';
+import { effectiveManagedSettings, normalizeManagedSettings, type EffectiveManagedSettings, type ManagedSettings, type ManagedSettingsResponse } from '../crt/managed-settings';
+import { appGlobalsFromStored, loadStoredSettings, type AppSettings } from '../crt/settings';
 
-type Values = { defaultPreset: string; smoothScrollback: boolean; restoreWindow: boolean };
-
-export function useManagedSettings(legacySmoothScrollback: boolean, onError: (message: string) => void) {
-  const [values, setValues] = useState<Values>({ defaultPreset: 'default', smoothScrollback: legacySmoothScrollback, restoreWindow: true });
+export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError: (message: string) => void) {
+  const [values, setValues] = useState<EffectiveManagedSettings>({ ...legacy, defaultPreset: 'default', restoreWindow: true });
   const [ready, setReady] = useState(!isTauri());
   const [authoritative, setAuthoritative] = useState(false);
   const [writesEnabled, setWritesEnabled] = useState(false);
+  const writesEnabledRef = useRef(false);
   const [saving, setSaving] = useState(false);
-  const current = useRef({ values, revision: '', hasSettings: false });
+  const current = useRef({ values, revision: '' });
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const sequence = useRef(0);
   const failureGeneration = useRef(0);
-  const legacyValueAvailable = useRef(true);
+  const migrated = useRef(false);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   current.current.values = values;
 
-  const load = useCallback(async (legacy = legacySmoothScrollback): Promise<{ values: Values; response: ManagedSettingsResponse | null }> => {
+  const load = useCallback(async (fallback: Omit<AppSettings, 'version'> = legacy): Promise<{ values: EffectiveManagedSettings; response: ManagedSettingsResponse | null; needsMigration: boolean }> => {
     const request = ++sequence.current;
     try {
       const response = normalizeManagedSettings(await invoke<unknown>('load_managed_settings'));
-      const next = effectiveManagedSettings(response, legacy, legacyValueAvailable.current);
-      if (response.hasSettings) legacyValueAvailable.current = false;
-      current.current = { values: next, revision: response.revision, hasSettings: response.hasSettings };
+      const base = migrated.current ? appGlobalsFromStored(loadStoredSettings(null)) : fallback;
+      const next = effectiveManagedSettings(response, base);
+      const needsMigration = response.settings.settingsVersion !== 1 && !migrated.current;
       if (request === sequence.current) {
+        current.current = { values: next, revision: response.revision };
+        if (response.settings.settingsVersion === 1) migrated.current = true;
         setValues(next);
         setReady(true);
-        setAuthoritative(!legacyValueAvailable.current);
+        setAuthoritative(!needsMigration);
         setWritesEnabled(true);
+        writesEnabledRef.current = true;
         setSaving(false);
       }
-      return { values: next, response };
+      return { values: next, response, needsMigration };
     } catch (reason) {
       if (request === sequence.current) {
         setReady(true);
         setWritesEnabled(false);
+        writesEnabledRef.current = false;
         setSaving(false);
         onErrorRef.current(`Could not load managed settings: ${String(reason)}`);
       }
-      return { values: current.current.values, response: null };
+      return { values: current.current.values, response: null, needsMigration: false };
     }
-  }, [legacySmoothScrollback]);
+  }, [legacy]);
 
-  const save = useCallback((patch: Partial<Values>): Promise<boolean> => {
-    if (!writesEnabled) return Promise.resolve(false);
+  const save = useCallback((patch: Partial<EffectiveManagedSettings>): Promise<boolean> => {
+    if (!writesEnabledRef.current) return Promise.resolve(false);
     const next = { ...current.current.values, ...patch };
     current.current.values = next;
     setValues(next);
@@ -54,20 +58,14 @@ export function useManagedSettings(legacySmoothScrollback: boolean, onError: (me
     const failureAtEnqueue = failureGeneration.current;
     setSaving(true);
     const update = queue.current.catch(() => undefined).then(async (): Promise<boolean> => {
-      if (failureAtEnqueue !== failureGeneration.current) {
-        if (request === sequence.current) setSaving(false);
-        return false;
-      }
+      if (failureAtEnqueue !== failureGeneration.current || request !== sequence.current) return false;
       const snapshot = current.current.values;
-      const settings: ManagedSettings = snapshot;
+      const settings: ManagedSettings = { ...snapshot, lastAiSelection: snapshot.lastAiSelection ?? null, settingsVersion: 1 };
       try {
-        const response = normalizeManagedSettings(await invoke<unknown>('save_managed_settings', {
-          settings,
-          revision: current.current.revision,
-        }));
-        if (!response.hasSettings) throw new Error('managed settings were not persisted');
-        legacyValueAvailable.current = false;
-        current.current = { ...current.current, revision: response.revision, hasSettings: response.hasSettings };
+        const response = normalizeManagedSettings(await invoke<unknown>('save_managed_settings', { settings, revision: current.current.revision }));
+        if (!response.hasSettings || response.settings.settingsVersion !== 1) throw new Error('managed settings were not persisted');
+        migrated.current = true;
+        current.current = { values: current.current.values, revision: response.revision };
         setAuthoritative(true);
         return true;
       } catch (reason) {
@@ -75,15 +73,12 @@ export function useManagedSettings(legacySmoothScrollback: boolean, onError: (me
         let restored = current.current.values;
         try {
           const response = normalizeManagedSettings(await invoke<unknown>('load_managed_settings'));
-          restored = effectiveManagedSettings(response, legacySmoothScrollback, legacyValueAvailable.current);
-          if (response.hasSettings) legacyValueAvailable.current = false;
-          current.current = { values: restored, revision: response.revision, hasSettings: response.hasSettings };
-          setAuthoritative(!legacyValueAvailable.current);
+          restored = effectiveManagedSettings(response, migrated.current ? appGlobalsFromStored(loadStoredSettings(null)) : legacy);
+          current.current = { values: restored, revision: response.revision };
+          setAuthoritative(response.settings.settingsVersion === 1 || migrated.current);
           setWritesEnabled(false);
-        } catch {
-          current.current = { ...current.current, values: restored };
-          setWritesEnabled(false);
-        }
+          writesEnabledRef.current = false;
+        } catch { setWritesEnabled(false); writesEnabledRef.current = false; }
         current.current.values = restored;
         setValues(restored);
         setReady(true);
@@ -95,10 +90,9 @@ export function useManagedSettings(legacySmoothScrollback: boolean, onError: (me
     });
     queue.current = update;
     return update;
-  }, [legacySmoothScrollback, writesEnabled]);
+  }, [legacy]);
 
-  const disableWrites = useCallback(() => setWritesEnabled(false), []);
+  const disableWrites = useCallback(() => { writesEnabledRef.current = false; setWritesEnabled(false); }, []);
   const settle = useCallback(() => queue.current.then(() => undefined), []);
-
   return { values, ready, authoritative, saving, writesEnabled, load, save, disableWrites, settle };
 }
