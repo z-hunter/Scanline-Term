@@ -36,7 +36,7 @@ These files are complex, tightly coupled, and easy to break:
 | **`src-tauri/src/mcp.rs` / `src-tauri/src/bin/scanline-term-mcp.rs`** | 🟠 High | MCP named-pipe ownership, opaque handle isolation and stdio protocol; mistakes can expose or leak terminal sessions. |
 | **`src/win32-input.ts`** | 🟠 High | Virtual key code and scan code lookup tables. Errors cause incorrect key delivery to console apps. Hard to test without specific Windows apps. |
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
-| **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every host. The dependency is pinned to a package tag; package changes must be released separately. |
+| **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every host. The dependency is pinned to an immutable commit; package changes must be released separately. |
 | **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
 | **`src/terminal/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
 
@@ -75,8 +75,8 @@ A change is "architecturally significant" if it does any of the following:
 ### Scanline Virtual Screen dependency
 
 - The SVS technical source of truth is the public [Scanline Virtual Screen repository](https://github.com/z-hunter/Scanline-Virtual-Screen), not a duplicate in this repository.
-- Read [`docs/12-scanline-virtual-screen.md`](./docs/12-scanline-virtual-screen.md) before changing its dependency tag, host adapter, profile persistence, overlays, or renderer lifecycle.
-- Do not edit `node_modules/scanline-virtual-screen`. Make package changes in its repository, validate and tag them, then update this repository's immutable dependency tag and lockfile.
+- Read [`docs/12-scanline-virtual-screen.md`](./docs/12-scanline-virtual-screen.md) before changing its dependency commit, host adapter, profile persistence, overlays, or renderer lifecycle.
+- Do not edit `node_modules/scanline-virtual-screen`. Make package changes in its repository, validate and publish the verified commit, then update this repository's immutable dependency commit and lockfile.
 
 ### When Frontend-Only Validation Is Sufficient
 

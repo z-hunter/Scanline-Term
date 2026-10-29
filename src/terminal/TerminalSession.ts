@@ -71,7 +71,28 @@ const OUTPUT_CHUNK_BYTES = 16 * 1024;
 
 function xtermTheme(profile: TerminalColorProfile) {
   const [black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite] = profile.colors;
-  return { foreground: profile.foreground, background: profile.background, cursor: profile.cursor, black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite };
+  return {
+    foreground: profile.foreground,
+    background: profile.background,
+    cursor: profile.cursor,
+    black,
+    red,
+    green,
+    yellow,
+    blue,
+    magenta,
+    cyan,
+    white,
+    brightBlack,
+    brightRed,
+    brightGreen,
+    brightYellow,
+    brightBlue,
+    brightMagenta,
+    brightCyan,
+    brightWhite,
+    ...(profile.colors.length === 256 ? { extendedAnsi: profile.colors.slice(16) } : {}),
+  };
 }
 
 const sessions = new Map<string, TerminalSession>();

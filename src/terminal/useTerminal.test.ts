@@ -536,6 +536,12 @@ describe('terminal launch event', () => {
     const secondPreset = { version: 1 as const, resolution: '1024x768' as const, crt: { ...DEFAULT_CRT_SETTINGS, colorProfile: 'lua:users' as const } };
     await act(async () => { hookResult.selectSession(second!, false, false); hookResult.replaceActivePreset(replacement, 'Trinitron touch', first!); });
     await act(async () => { hookResult.replaceActivePreset(secondPreset, 'Second preset', second!); });
+    expect(terminalSession(first!)!.terminal!.options.theme?.background).toBe('#000000');
+    expect(terminalSession(second!)!.terminal!.options.theme?.background).toBe('#000000');
+    await act(async () => { hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, colorProfile: 'windows-campbell' } } })); });
+    expect(terminalSession(second!)!.terminal!.options.theme?.background).toBe('#0c0c0c');
+    await act(async () => { hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, colorProfile: 'lua:users' } } })); });
+    expect(terminalSession(second!)!.terminal!.options.theme?.background).toBe('#000000');
     replaceLuaColorProfiles([palette('#010101')]);
     const activeBeforePaletteRefresh = hookResult.activeTabId;
     const firstStateBeforePaletteRefresh = hookResult.presetStateForSession(first!);

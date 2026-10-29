@@ -49,7 +49,7 @@ npm run tauri:dev
 
 Starts Vite dev server + compiles Rust backend + opens Tauri window with live ConPTY tabs. Hot-reloads frontend changes; Rust changes require restart.
 
-The development build uses `com.zhunter.scanlineterm.dev`, so it can run alongside the MSI release and keeps its app-local data separate. It also skips production update checks. When the adjacent `../Scanline-Virtual-Screen` checkout exists, Vite uses its built `dist/` files, so SVS changes are available after rebuilding SVS and restarting `npm run tauri:dev`.
+The development build uses `com.zhunter.scanlineterm.dev`, so it can run alongside the MSI release and keeps its app-local data separate. It also skips production update checks. Vite resolves the installed SVS package in both development and production; it does not automatically use an adjacent checkout. For temporary local SVS integration, follow the explicit install steps in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md). Dependency scanning is limited to `index.html` so Vite does not discover Tauri internals as browser entry points.
 
 ### Run Tests
 

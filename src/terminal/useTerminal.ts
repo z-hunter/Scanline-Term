@@ -360,8 +360,12 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   const updateActivePreset = useCallback((update: (current: TabPresetState) => TabPresetState) => {
     const record = activeRef.current ? sessions.current.get(activeRef.current) : undefined;
     if (!record) return;
+    const previousProfile = record.preset.settings.crt.colorProfile;
     const next = update(record.preset);
     record.preset = next;
+    if (previousProfile !== next.settings.crt.colorProfile) {
+      record.session.setColorProfile(initialProfile(next.settings.crt.colorProfile));
+    }
     luaAutomation.current?.update(luaAutomationSnapshot());
     setActivePresetState(next);
     settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
@@ -370,8 +374,12 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   const replaceActivePreset = useCallback((settings: PresetSettings, name: string, sessionId = activeRef.current) => {
     const record = sessionId ? sessions.current.get(sessionId) : undefined;
     if (!record) return;
+    const previousProfile = record.preset.settings.crt.colorProfile;
     const next = { name, draftName: name, settings: clonePresetSettings(settings), dirty: false };
     record.preset = next;
+    if (previousProfile !== next.settings.crt.colorProfile) {
+      record.session.setColorProfile(initialProfile(next.settings.crt.colorProfile));
+    }
     luaAutomation.current?.update(luaAutomationSnapshot());
     if (activeRef.current === sessionId) {
       setActivePresetState(next);

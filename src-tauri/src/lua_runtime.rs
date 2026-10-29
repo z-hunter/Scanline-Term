@@ -1151,7 +1151,8 @@ fn install_registration_api(
     module.set("ansi_palette", {
         let registrations = registrations.clone();
         lua.create_function(move |_, (name, options): (String, Table)| {
-            if !valid_module_name(&name) || name == "sterm" {
+            let id = format!("lua:{name}");
+            if !valid_module_name(&name) || name == "sterm" || !valid_palette_registration_id(&id) {
                 return Err(mlua::Error::RuntimeError(
                     "palette name must be a simple identifier other than 'sterm'".into(),
                 ));
@@ -1219,7 +1220,6 @@ fn install_registration_api(
             let mut registrations = registrations.lock().map_err(|_| {
                 mlua::Error::RuntimeError("Lua registration state is unavailable".into())
             })?;
-            let id = format!("lua:{name}");
             if registrations
                 .ansi_palettes
                 .iter()
@@ -1587,6 +1587,15 @@ fn valid_module_name(name: &str) -> bool {
     matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
         && name.len() <= 64
+}
+
+fn valid_palette_registration_id(id: &str) -> bool {
+    let Some(suffix) = id.strip_prefix("lua:") else {
+        return false;
+    };
+    let mut chars = suffix.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphanumeric())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
 fn get_or_create_list(lua: &Lua, handlers: &Table, key: &str) -> mlua::Result<Table> {
@@ -2603,6 +2612,9 @@ mod tests {
             format!(
                 "require 'sterm'.ansi_palette('users', {{ label='User', foreground='#000000', background='#FFFFFF', colors={{ {valid_colors} }} }}); require 'sterm'.ansi_palette('users', {{ label='Again', foreground='#000000', background='#FFFFFF', colors={{ {valid_colors} }} }})"
             ),
+            format!(
+                "require 'sterm'.ansi_palette('_users', {{ label='User', foreground='#000000', background='#FFFFFF', colors={{ {valid_colors} }} }})"
+            ),
         ] {
             dir.write("palette.lua", &source);
             assert!(RuntimeSnapshot::load(&dir.entry()).is_err(), "{source}");
@@ -2621,6 +2633,11 @@ mod tests {
         too_many.push_str("}; for index=1,65 do sterm.ansi_palette('p'..index, {label='Palette', foreground='#000000', background='#FFFFFF', colors=colors}) end");
         dir.write("palette.lua", &too_many);
         assert!(RuntimeSnapshot::load(&dir.entry()).is_err());
+        assert!(valid_palette_registration_id("lua:users"));
+        assert!(valid_palette_registration_id("lua:custom_1"));
+        assert!(!valid_palette_registration_id("lua:_users"));
+        assert!(!valid_palette_registration_id("users"));
+        assert!(!valid_palette_registration_id("lua:"));
     }
 
     #[test]

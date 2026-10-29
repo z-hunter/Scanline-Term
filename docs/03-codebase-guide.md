@@ -73,7 +73,7 @@ ScanlineTerm/
 │   └── THIRD_PARTY_NOTICES.md    # Third-party license notices
 ├── index.html                    # HTML entry point with splash screen
 ├── package.json                  # npm scripts and dependencies
-├── vite.config.ts                # Vite + React plugin config
+├── vite.config.ts                # Vite + React; index.html-only dependency scanning
 ├── vitest.config.ts              # Vitest config (happy-dom environment)
 ├── eslint.config.js              # ESLint flat config
 ├── tsconfig.json                 # TypeScript project references root

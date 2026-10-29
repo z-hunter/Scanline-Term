@@ -25,6 +25,10 @@ describe('TerminalSession', () => {
     expect(session.terminal!.options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 17763 });
     session.setColorProfile({ id: 'lua:users', label: "User's", foreground: '#ffffff', background: '#000000', colors: ['#000000', '#aa0000', '#00aa00', '#aa5500', '#0000aa', '#aa00aa', '#00aaaa', '#aaaaaa', '#555555', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff'] });
     expect(session.terminal!.options.theme).toMatchObject({ foreground: '#ffffff', background: '#000000', black: '#000000', brightWhite: '#ffffff' });
+    expect(session.terminal!.options.theme?.extendedAnsi).toBeUndefined();
+    const extendedColors = Array.from({ length: 240 }, (_, i) => `#${i.toString(16).padStart(6, '0')}`);
+    session.setColorProfile({ id: 'lua:colors256', label: '256 Colors', foreground: '#ffffff', background: '#000000', colors: [...Array(16).fill('#123456'), ...extendedColors] });
+    expect(session.terminal!.options.theme?.extendedAnsi).toEqual(extendedColors);
     const write = vi.spyOn(session.terminal!, 'write');
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: 'other', data: [65] } });
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: [66] } });
