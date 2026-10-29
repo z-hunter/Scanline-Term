@@ -249,6 +249,7 @@ export default function App() {
     [],
   );
   const toggleGallery = useCallback(() => galleryToggleRef.current(), []);
+  const togglePresetPicker = useCallback(() => openPresetPickerRef.current(), []);
   const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), []);
   const terminal = useTerminal({
     defaultPreset,
@@ -266,7 +267,7 @@ export default function App() {
     onToggleSettings: toggleSettings,
     onToggleAi: aiEnabled ? toggleAi : undefined,
     onToggleGallery: toggleGallery,
-    onTogglePresetPicker: () => openPresetPickerRef.current(),
+    onTogglePresetPicker: togglePresetPicker,
     onToggleTabsBar: toggleTabsBar,
     onBeforeTabChange: (id) => beforeTabChangeRef.current(id),
     onTerminalTabTransition: (incoming) => {
