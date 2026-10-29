@@ -853,6 +853,7 @@ pub async fn lua_automation_abort_reload(
 pub struct ManagedSettingsPayload {
     pub default_preset: Option<String>,
     pub smooth_scrollback: Option<bool>,
+    pub restore_window: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -872,6 +873,13 @@ struct LuaPresetRequest {
     generation: u64,
     tab_id: String,
     name: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LuaPanelVisibility {
+    panel: String,
+    visible: bool,
 }
 
 #[tauri::command]
@@ -928,6 +936,7 @@ pub fn save_managed_settings(
         .ok_or("generated managed settings declaration was not evaluated")?;
     if actual_settings.default_preset != settings.default_preset
         || actual_settings.smooth_scrollback != settings.smooth_scrollback
+        || actual_settings.restore_window != settings.restore_window
     {
         return Err("managed settings were changed by Lua code outside the managed block".into());
     }
@@ -2040,6 +2049,7 @@ fn managed_settings_result(
         settings: ManagedSettingsPayload {
             default_preset: settings.and_then(|settings| settings.default_preset.clone()),
             smooth_scrollback: settings.and_then(|settings| settings.smooth_scrollback),
+            restore_window: settings.and_then(|settings| settings.restore_window),
         },
         revision: revision_token(path, source),
         path: path.display().to_string(),
@@ -2195,6 +2205,9 @@ fn managed_settings_block(
     }
     if let Some(enabled) = settings.smooth_scrollback {
         fields.push(format!("smooth_scrollback = {enabled}"));
+    }
+    if let Some(enabled) = settings.restore_window {
+        fields.push(format!("restore_window = {enabled}"));
     }
     let call = format!("require('sterm').settings({{ {} }})", fields.join(", "));
     let mut block = format!(
@@ -2660,6 +2673,38 @@ fn apply_results(
                                 intent.script, intent.event
                             )),
                         );
+                    }
+                }
+                Action::SetWindowPosition(x, y) => {
+                    if x.abs_diff(0) > 100_000 || y.abs_diff(0) > 100_000 { continue; }
+                    let Ok(current) = shared.lock() else { continue; };
+                    if !action_context_is_current(&current, frontend_id, generation, epoch, &tab_id) { continue; }
+                    drop(current);
+                    let Some(window) = app.get_webview_window("main") else { continue; };
+                    if let Some(state) = app.try_state::<std::sync::Arc<crate::window_state::WindowState>>() {
+                        if let Err(error) = state.set_position(&window, x, y) {
+                            push_shared_diagnostic(shared, AutomationDiagnostic::error(format!("Lua window position failed: {error}")));
+                        }
+                    }
+                }
+                Action::SetWindowSize(width, height) => {
+                    if !(320..=8192).contains(&width) || !(320..=8192).contains(&height) { continue; }
+                    let Ok(current) = shared.lock() else { continue; };
+                    if !action_context_is_current(&current, frontend_id, generation, epoch, &tab_id) { continue; }
+                    drop(current);
+                    let Some(window) = app.get_webview_window("main") else { continue; };
+                    if let Some(state) = app.try_state::<std::sync::Arc<crate::window_state::WindowState>>() {
+                        if let Err(error) = state.set_size(&window, width, height) {
+                            push_shared_diagnostic(shared, AutomationDiagnostic::error(format!("Lua window size failed: {error}")));
+                        }
+                    }
+                }
+                Action::SetPanelVisibility(panel, visible) => {
+                    let Ok(current) = shared.lock() else { continue; };
+                    if !action_context_is_current(&current, frontend_id, generation, epoch, &tab_id) { continue; }
+                    drop(current);
+                    if let Err(error) = app.emit("lua-panel-visibility", LuaPanelVisibility { panel, visible }) {
+                        push_shared_diagnostic(shared, AutomationDiagnostic::error(format!("Lua panel action failed: {error}")));
                     }
                 }
                 Action::RestorePreset { .. } => {
@@ -3478,6 +3523,7 @@ mod tests {
             &ManagedSettingsPayload {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(false),
+                restore_window: Some(false),
             },
         )
         .unwrap();
@@ -3492,6 +3538,7 @@ mod tests {
             Some(&ManagedSettings {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(false),
+                restore_window: Some(false),
             })
         );
         assert_eq!(snapshot.ansi_palettes()[0].label, "User's");
@@ -3520,6 +3567,7 @@ mod tests {
             &ManagedSettingsPayload {
                 default_preset: None,
                 smooth_scrollback: Some(true),
+                restore_window: None,
             },
         )
         .unwrap();

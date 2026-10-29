@@ -3,6 +3,7 @@ import type { TerminalColorProfile } from 'scanline-virtual-screen/core';
 export type ManagedSettings = {
   defaultPreset: string | null;
   smoothScrollback: boolean | null;
+  restoreWindow: boolean | null;
 };
 
 export type ManagedSettingsResponse = {
@@ -44,6 +45,7 @@ export function normalizeManagedSettings(value: unknown): ManagedSettingsRespons
     settings: {
       defaultPreset: typeof settings.defaultPreset === 'string' && settings.defaultPreset.length > 0 ? settings.defaultPreset : null,
       smoothScrollback: typeof settings.smoothScrollback === 'boolean' ? settings.smoothScrollback : null,
+      restoreWindow: typeof settings.restoreWindow === 'boolean' ? settings.restoreWindow : null,
     },
     revision: response.revision,
     path: response.path,
@@ -56,5 +58,6 @@ export function effectiveManagedSettings(response: ManagedSettingsResponse, lega
   return {
     defaultPreset: response.hasSettings ? response.settings.defaultPreset ?? 'default' : 'default',
     smoothScrollback: response.hasSettings ? response.settings.smoothScrollback ?? true : legacyValueAvailable ? legacySmoothScrollback : true,
+    restoreWindow: response.settings.restoreWindow ?? true,
   };
 }

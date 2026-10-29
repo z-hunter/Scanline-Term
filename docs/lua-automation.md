@@ -41,6 +41,7 @@ The entry file may declare the two pilot settings once, at top level:
 require('sterm').settings({
   default_preset = 'DEC VT-100 (1978)',
   smooth_scrollback = true,
+  restore_window = true,
 })
 ```
 
@@ -52,7 +53,7 @@ An event script may request a saved preset for its active tab with `ctx.tab:appl
 
 The optional [FAR Manager example](../examples/lua/scripts/far_preset.lua) switches to a configured saved preset while `far.exe` is the tab's observed local process, then restores the committed saved preset name captured on entry. `ctx.tab:preset_name()` returns that committed name, including the actual saved default selected for an implicit tab; unsaved edits do not change it. Uncomment the example's `sterm.use` block in the shipped `sterm.lua` template to enable it, and confirm the configured FAR preset exists first. It stores the original preset and last requested FAR preset in per-tab `ctx.state`, so a valid reload can apply a changed FAR target while keeping the original baseline. Ordinary local phase tracking resets with each VM. On exit or removal it requests restoration only if the committed preset still matches the remembered FAR target; dirty or missing-preset requests can be rejected, and the script has no success acknowledgement or retry. It clears its state after exit/removal cleanup. An unavailable process name is ignored. Select the desired saved preset manually if a request is rejected.
 
-The pilot makes only these managed values canonical in Lua. It does not complete the broader future GUI-backed migration described in the specification below; remaining GUI settings still use their existing storage and interfaces.
+The managed values include `restore_window`, which defaults to true. Window geometry is stored by the app in `window-state.json`; Lua can disable startup restoration with `restore_window = false`, but does not set or persist the saved geometry. This is not the broader GUI-backed settings migration described in the specification below; remaining GUI settings still use their existing storage and interfaces.
 
 ### Live dev validation
 
@@ -79,6 +80,8 @@ An attachment may declare Smart Caps during initialization with `sterm.input.sma
 `sterm.on(name, callback)` supports `tab-created`, `tab-activated`, `tab-deactivated`, `tab-title-changed`, `local-process-changed`, `cursor-style-changed`, `context-updated`, `tab-focus-changed`, `window-focus-changed`, and `input-language-changed`. `context-updated` runs after regular lifecycle and delta events for each fresh context snapshot on the active tab. A process-matched attachment receives it even when the terminal canvas is unfocused; use it to reevaluate the latest state after an earlier event's intent may have gone stale. Only saved-preset requests from that context can proceed without input focus; layout actions still require active terminal focus. `sterm.on_activate(callback)` and `sterm.on_deactivate(callback)` register process-match/focus lifecycle callbacks. `sterm.on_unload(callback)` registers one removal callback; it also runs when a failed configuration load unloads all scripts, but not for an attachment retained by reload. Each callback receives `ctx`; event callbacks also receive an event table. Context data is read through `ctx.tab:id()`, `title()`, `local_process_name()`, `cursor_style()`, `is_active()`, and `is_focused()`. `cursor_style()` returns `shape`, `blink`, and `visible`; visibility defaults to true for older snapshots and remains independent of shape. `ctx.input:current_layout()` returns the observed Windows layout identifier; `ctx.input:set_layout(name)` queues a host intent. Input-language events expose `event.language`.
 
 `local_process_name()` returns the observed local child process, or the launched executable when no child has been reported; it does not inspect the full process tree.
+
+Focused event callbacks may make temporary host changes with `ctx.window:set_position(x, y)`, `ctx.window:set_size(width, height)`, and `ctx.ui:set_panel(name, visible)`. Coordinates and dimensions are logical pixels; sizes must be 320–8192 pixels. Panel names are `settings`, `assistant`, and `tabs`. These actions are in-memory only. While a Lua window override is active, automatic geometry saves are suspended; a user drag or resize ends that override and resumes saving. `on_unload` cannot change window or panel state.
 
 The host runs Lua on a dedicated bounded worker and applies only returned intents. Before requesting a Windows keyboard layout, it rechecks frontend instance, tab generation, active/focused state, and live terminal ownership. Preset requests recheck frontend instance, tab generation, active tab, and live terminal ownership without requiring terminal input focus. Layout names can be locale names such as `en-US` or an installed HKL identifier. A request is reported as observed only after the focused thread's layout matches it. Diagnostics identify the script and event, and layout traces include tab and generation.
 

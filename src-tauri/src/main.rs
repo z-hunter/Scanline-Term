@@ -39,6 +39,7 @@ mod lua_automation;
 mod lua_runtime;
 mod mcp;
 mod presets;
+mod window_state;
 #[cfg(all(windows, debug_assertions))]
 mod automation_probe;
 
@@ -827,7 +828,7 @@ unsafe extern "system" fn window_subclass_proc(
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallWindowProcW, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED,
+        CallWindowProcW, WM_ENTERSIZEMOVE, WM_HOTKEY, WM_SIZE, SIZE_MINIMIZED, SIZE_RESTORED,
         SIZE_MAXIMIZED, WM_SYSCOMMAND, SC_MINIMIZE,
     };
 
@@ -838,6 +839,14 @@ unsafe extern "system" fn window_subclass_proc(
             toggle_summon_window(window);
         }
         return 0;
+    }
+
+    if msg == WM_ENTERSIZEMOVE {
+        if let Some(window) = MAIN_WINDOW.get() {
+            if let Some(state) = window.app_handle().try_state::<std::sync::Arc<window_state::WindowState>>() {
+                state.user_move_started();
+            }
+        }
     }
 
     if !SUMMON_HIDING.load(std::sync::atomic::Ordering::SeqCst)
@@ -1082,6 +1091,7 @@ fn main() {
             window.set_icon(icon)?;
             #[cfg(windows)]
             setup_window_restore_listener(&window);
+            window_state::WindowState::setup(app.handle())?;
             caps_hook::setup(app.handle(), &window);
             #[cfg(all(windows, debug_assertions))]
             automation_probe::setup(app.handle(), &window);
@@ -1100,11 +1110,14 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
         .build(tauri::generate_context!())
         .expect("error while building Scanline Term")
         .run(|_app_handle, _event| {
             if matches!(_event, tauri::RunEvent::Exit) {
+                if let (Some(state), Some(window)) = (_app_handle.try_state::<std::sync::Arc<window_state::WindowState>>(), _app_handle.get_webview_window("main")) {
+                    state.save_current(&window);
+                }
                 if let Some(hook) = _app_handle.try_state::<caps_hook::CapsHook>() {
                     hook.stop_accepting();
                 }

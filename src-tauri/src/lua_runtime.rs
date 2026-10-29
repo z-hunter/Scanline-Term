@@ -104,6 +104,9 @@ pub enum RuntimeEvent {
 pub enum Action {
     SetLayout(String),
     ApplyPreset(String),
+    SetWindowPosition(i32, i32),
+    SetWindowSize(u32, u32),
+    SetPanelVisibility(String, bool),
     RestorePreset {
         name: String,
         expected_current: String,
@@ -234,6 +237,7 @@ impl Default for LuaExecutionBudget {
 pub struct ManagedSettings {
     pub default_preset: Option<String>,
     pub smooth_scrollback: Option<bool>,
+    pub restore_window: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -1250,6 +1254,7 @@ fn install_registration_api(
         lua.create_function(move |_, settings: Table| {
             let mut default_preset = None;
             let mut smooth_scrollback = None;
+            let mut restore_window = None;
             for pair in settings.clone().pairs::<Value, Value>() {
                 let (key, _) = pair?;
                 let Value::String(key) = key else {
@@ -1258,7 +1263,7 @@ fn install_registration_api(
                     ));
                 };
                 let key = key.to_str()?.to_owned();
-                if key != "default_preset" && key != "smooth_scrollback" {
+                if key != "default_preset" && key != "smooth_scrollback" && key != "restore_window" {
                     return Err(mlua::Error::RuntimeError(format!(
                         "unknown sterm.settings field '{key}'"
                     )));
@@ -1286,6 +1291,11 @@ fn install_registration_api(
                     ));
                 }
             }
+            match settings.get::<Value>("restore_window")? {
+                Value::Nil => {}
+                Value::Boolean(value) => restore_window = Some(value),
+                _ => return Err(mlua::Error::RuntimeError("restore_window must be a boolean or nil".into())),
+            }
             let mut registrations = registrations.lock().map_err(|_| {
                 mlua::Error::RuntimeError("Lua registration state is unavailable".into())
             })?;
@@ -1297,6 +1307,7 @@ fn install_registration_api(
             registrations.settings = Some(ManagedSettings {
                 default_preset,
                 smooth_scrollback,
+                restore_window,
             });
             Ok(())
         })?
@@ -1760,6 +1771,35 @@ fn install_context_api(
         })?,
     )?;
     ctx.set("tab", tab_api)?;
+    let window_api = lua.create_table()?;
+    let epoch_for_position = epoch.clone();
+    let actions_for_position = actions.clone();
+    let eligible = active && tab.active && tab.focused;
+    window_api.set("set_position", lua.create_function(move |_, (_, x, y): (Value, i32, i32)| {
+        if x.abs_diff(0) > 100_000 || y.abs_diff(0) > 100_000 {
+            return Err(mlua::Error::RuntimeError("window coordinates must be within ±100000 logical pixels".into()));
+        }
+        queue_window_action(&epoch_for_position, expected_epoch, unloading, eligible, &actions_for_position, Action::SetWindowPosition(x, y))
+    })?)?;
+    let epoch_for_size = epoch.clone();
+    let actions_for_size = actions.clone();
+    window_api.set("set_size", lua.create_function(move |_, (_, width, height): (Value, u32, u32)| {
+        if !(320..=8192).contains(&width) || !(320..=8192).contains(&height) {
+            return Err(mlua::Error::RuntimeError("window dimensions must be between 320 and 8192 logical pixels".into()));
+        }
+        queue_window_action(&epoch_for_size, expected_epoch, unloading, eligible, &actions_for_size, Action::SetWindowSize(width, height))
+    })?)?;
+    ctx.set("window", window_api)?;
+    let ui_api = lua.create_table()?;
+    let epoch_for_panel = epoch.clone();
+    let actions_for_panel = actions.clone();
+    ui_api.set("set_panel", lua.create_function(move |_, (_, name, visible): (Value, String, bool)| {
+        if !["settings", "assistant", "tabs"].contains(&name.as_str()) {
+            return Err(mlua::Error::RuntimeError("panel must be 'settings', 'assistant', or 'tabs'".into()));
+        }
+        queue_window_action(&epoch_for_panel, expected_epoch, unloading, eligible, &actions_for_panel, Action::SetPanelVisibility(name, visible))
+    })?)?;
+    ctx.set("ui", ui_api)?;
     let state_api = lua.create_table()?;
     let store_for_get = state.clone();
     let scope_for_get = scope.clone();
@@ -1871,6 +1911,19 @@ fn install_context_api(
     )?;
     ctx.set("input", input_api)?;
     lua.globals().set("__sterm_ctx", ctx)
+}
+
+fn queue_window_action(epoch: &AtomicU64, expected_epoch: u64, unloading: bool, eligible: bool, actions: &Mutex<Vec<Action>>, action: Action) -> mlua::Result<bool> {
+    if epoch.load(Ordering::SeqCst) != expected_epoch { return Err(mlua::Error::RuntimeError("callback context has expired".into())); }
+    if unloading { return Err(mlua::Error::RuntimeError("on_unload cannot change window or panel state".into())); }
+    if !eligible { return Ok(false); }
+    let mut actions = actions.lock().map_err(|_| mlua::Error::RuntimeError("action queue is unavailable".into()))?;
+    if actions.contains(&action) { return Ok(true); }
+    if actions.len() >= MAX_ACTIONS_PER_CALLBACK {
+        return Err(mlua::Error::RuntimeError(format!("callback exceeds {MAX_ACTIONS_PER_CALLBACK} host actions")));
+    }
+    actions.push(action);
+    Ok(true)
 }
 
 fn check_state_key(key: &str) -> mlua::Result<()> {
@@ -2543,7 +2596,7 @@ mod tests {
         dir.write("config.lua", "");
         let snapshot = RuntimeSnapshot::load_source(
             &dir.entry(),
-            "local sterm=require 'sterm'; local function choose() return 'DEC VT-100', (1 == 1) end; local preset, enabled=choose(); sterm.settings({default_preset=preset, smooth_scrollback=enabled})",
+            "local sterm=require 'sterm'; local function choose() return 'DEC VT-100', (1 == 1) end; local preset, enabled=choose(); sterm.settings({default_preset=preset, smooth_scrollback=enabled, restore_window=false})",
         )
         .unwrap();
         assert_eq!(
@@ -2551,8 +2604,28 @@ mod tests {
             Some(&ManagedSettings {
                 default_preset: Some("DEC VT-100".into()),
                 smooth_scrollback: Some(true),
+                restore_window: Some(false),
             })
         );
+    }
+
+    #[test]
+    fn window_and_panel_actions_are_temporary_host_intents_for_focused_tabs() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "local sterm=require 'sterm'; sterm.use('window.lua')");
+        dir.write("window.lua", "sterm.on('context-updated', function(ctx) ctx.window:set_position(40, 50); ctx.window:set_size(1200, 800); ctx.ui:set_panel('assistant', false) end)");
+        let mut runtime = LuaRuntime::new(RuntimeSnapshot::load(&dir.entry()).unwrap());
+        let focused = tab("focused", None, true, true);
+        runtime.attach_tab(focused.clone(), InputState::default());
+        let actions = runtime.dispatch(&focused, &InputState::default(), RuntimeEvent::ContextUpdated).actions;
+        assert_eq!(actions.iter().map(|intent| intent.action.clone()).collect::<Vec<_>>(), vec![
+            Action::SetWindowPosition(40, 50),
+            Action::SetWindowSize(1200, 800),
+            Action::SetPanelVisibility("assistant".into(), false),
+        ]);
+        let background = tab("background", None, false, false);
+        runtime.attach_tab(background.clone(), InputState::default());
+        assert!(runtime.dispatch(&background, &InputState::default(), RuntimeEvent::ContextUpdated).actions.is_empty());
     }
 
     #[test]
@@ -2563,6 +2636,7 @@ mod tests {
             "require('sterm').settings({ unknown=true })",
             "require('sterm').settings({ smooth_scrollback='yes' })",
             "require('sterm').settings({ default_preset='../escape' })",
+            "require('sterm').settings({ restore_window=1 })",
             "require('sterm').settings({}); require('sterm').settings({})",
         ] {
             assert!(

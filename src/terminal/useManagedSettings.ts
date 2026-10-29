@@ -2,10 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { effectiveManagedSettings, normalizeManagedSettings, type ManagedSettings, type ManagedSettingsResponse } from '../crt/managed-settings';
 
-type Values = { defaultPreset: string; smoothScrollback: boolean };
+type Values = { defaultPreset: string; smoothScrollback: boolean; restoreWindow: boolean };
 
 export function useManagedSettings(legacySmoothScrollback: boolean, onError: (message: string) => void) {
-  const [values, setValues] = useState<Values>({ defaultPreset: 'default', smoothScrollback: legacySmoothScrollback });
+  const [values, setValues] = useState<Values>({ defaultPreset: 'default', smoothScrollback: legacySmoothScrollback, restoreWindow: true });
   const [ready, setReady] = useState(!isTauri());
   const [authoritative, setAuthoritative] = useState(false);
   const [writesEnabled, setWritesEnabled] = useState(false);

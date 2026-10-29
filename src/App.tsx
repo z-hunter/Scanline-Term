@@ -139,6 +139,7 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const [luaPanelVisibility, setLuaPanelVisibility] = useState<Partial<Record<"settings" | "assistant" | "tabs", boolean>>>({});
   const legacySmoothScrollback = useRef(stored.smoothScrollback).current;
   const mcpKeepTabsOpenRef = useRef(stored.mcpKeepTabsOpen);
   mcpKeepTabsOpenRef.current = stored.mcpKeepTabsOpen;
@@ -183,7 +184,7 @@ export default function App() {
   const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
   const lastUndisturbedWidth = useRef(0);
   const canFitWithoutShiftRef = useRef(false);
-  const settingsVisible = stored.showSettingsPanel;
+  const settingsVisible = luaPanelVisibility.settings ?? stored.showSettingsPanel;
   const aiEnabled = !stored.aiAssistantDisabled;
   const client = useRef<CodexClient | null>(null);
   const [aiStatus, setAiStatus] = useState<
@@ -215,6 +216,12 @@ export default function App() {
   const managedSettings = useManagedSettings(legacySmoothScrollback, reportError);
   const { values: managedValues, ready: managedReady, authoritative: managedAuthoritative, saving: managedSaving, writesEnabled: managedWritesEnabled, load: loadManagedSettings, save: saveManagedSettings, disableWrites: disableManagedWrites, settle: settleManagedSettings } = managedSettings;
   const luaAutomation = useLuaAutomationStatus(reportError);
+  const windowRestoreStarted = useRef(false);
+  useEffect(() => {
+    if (!isTauri() || !managedReady || windowRestoreStarted.current) return;
+    windowRestoreStarted.current = true;
+    void invoke('restore_window_state', { restore: managedValues.restoreWindow }).catch((reason) => reportError(`Could not initialize window geometry: ${String(reason)}`));
+  }, [managedReady, managedValues.restoreWindow, reportError]);
   const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
     if (!isTauri()) {
       reportError("Windows Explorer integration is available in the desktop app only.");
@@ -251,6 +258,15 @@ export default function App() {
   const toggleGallery = useCallback(() => galleryToggleRef.current(), []);
   const togglePresetPicker = useCallback(() => openPresetPickerRef.current(), []);
   const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), []);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen<{ panel: "settings" | "assistant" | "tabs"; visible: boolean }>("lua-panel-visibility", ({ payload }) => {
+      if (!["settings", "assistant", "tabs"].includes(payload.panel) || typeof payload.visible !== "boolean") return;
+      setLuaPanelVisibility((current) => ({ ...current, [payload.panel]: payload.visible }));
+    }).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten?.();
+  }, []);
   const terminal = useTerminal({
     defaultPreset,
     defaultPresetName,
@@ -634,7 +650,7 @@ export default function App() {
       frame.style.setProperty("aspect-ratio", `${"width" in browserFormFactor ? browserFormFactor.width : 1} / ${"height" in browserFormFactor ? browserFormFactor.height : 1}`);
     }
   }, [activeBrowser, browserFormFactor, physicalWindow, screenRatio]);
-  const aiVisible = aiEnabled && stored.showAiPanel && !terminal.isMcpSession(terminal.activeSessionId ?? "");
+  const aiVisible = aiEnabled && (luaPanelVisibility.assistant ?? stored.showAiPanel) && !terminal.isMcpSession(terminal.activeSessionId ?? "");
   useEffect(() => {
     if (!isTauri()) return;
     if (!stored.mcpEnabled) {
@@ -789,7 +805,9 @@ export default function App() {
       });
     return () => unlisten?.();
   }, []);
-  const tabsHidden = shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length);
+  const tabsHidden = luaPanelVisibility.tabs === undefined
+    ? shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length)
+    : !luaPanelVisibility.tabs;
   useEffect(() => {
     if (!isTauri()) return;
     const update = () => {

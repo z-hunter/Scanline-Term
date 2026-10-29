@@ -15,8 +15,8 @@ describe('useManagedSettings', () => {
 
   it('loads the legacy value and saves the full effective pair with the current revision', async () => {
     mocked.invoke.mockImplementation(async (command: string) => command === 'load_managed_settings'
-      ? loaded({ defaultPreset: null, smoothScrollback: null })
-      : loaded({ defaultPreset: 'default', smoothScrollback: false }, 'r2', true));
+      ? loaded({ defaultPreset: null, smoothScrollback: null, restoreWindow: false })
+      : loaded({ defaultPreset: 'default', smoothScrollback: false, restoreWindow: false }, 'r2', true));
     const onError = vi.fn();
     let hook!: ReturnType<typeof useManagedSettings>;
     function Probe() { hook = useManagedSettings(false, onError); return null; }
@@ -26,12 +26,12 @@ describe('useManagedSettings', () => {
       await act(async () => { root.render(createElement(Probe)); });
       let result!: Awaited<ReturnType<typeof hook.load>>;
       await act(async () => { result = await hook.load(false); });
-      expect(result.values).toEqual({ defaultPreset: 'default', smoothScrollback: false });
+      expect(result.values).toEqual({ defaultPreset: 'default', smoothScrollback: false, restoreWindow: false });
       let saved!: boolean;
       await act(async () => { saved = await hook.save({ smoothScrollback: true }); });
       expect(saved).toBe(true);
       expect(mocked.invoke).toHaveBeenLastCalledWith('save_managed_settings', {
-        settings: { defaultPreset: 'default', smoothScrollback: true },
+        settings: { defaultPreset: 'default', smoothScrollback: true, restoreWindow: false },
         revision: 'r1',
       });
       expect(hook.authoritative).toBe(true);
@@ -65,7 +65,7 @@ describe('useManagedSettings', () => {
       });
       await act(async () => { failSave(new Error('stale revision')); await Promise.all([first, second]); });
       expect(mocked.invoke.mock.calls.filter(([name]) => name === 'save_managed_settings')).toHaveLength(1);
-      expect(hook.values).toEqual({ defaultPreset: 'remote', smoothScrollback: true });
+      expect(hook.values).toEqual({ defaultPreset: 'remote', smoothScrollback: true, restoreWindow: true });
       expect(hook.writesEnabled).toBe(false);
       expect(onError).toHaveBeenCalledWith('Could not save managed settings: Error: stale revision');
     } finally {

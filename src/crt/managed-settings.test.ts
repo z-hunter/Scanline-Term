@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { effectiveManagedSettings, LatestSettingsRequest, loadAndCommitLatest, normalizeManagedSettings } from './managed-settings';
 
-const response = (hasSettings: boolean, settings: { defaultPreset?: unknown; smoothScrollback?: unknown }) => normalizeManagedSettings({
+const response = (hasSettings: boolean, settings: { defaultPreset?: unknown; smoothScrollback?: unknown; restoreWindow?: unknown }) => normalizeManagedSettings({
   settings,
   revision: 'r1',
   path: 'sterm.lua',
@@ -11,20 +11,21 @@ const response = (hasSettings: boolean, settings: { defaultPreset?: unknown; smo
 
 describe('managed settings migration', () => {
   it('keeps the legacy smooth-scroll value until the first settings declaration', () => {
-    expect(effectiveManagedSettings(response(false, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: false });
+    expect(effectiveManagedSettings(response(false, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: false, restoreWindow: true });
   });
 
   it('uses app defaults when an explicit declaration omits pilot keys', () => {
-    expect(effectiveManagedSettings(response(true, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: true });
+    expect(effectiveManagedSettings(response(true, {}), false)).toEqual({ defaultPreset: 'default', smoothScrollback: true, restoreWindow: true });
   });
 
   it('uses app defaults after the legacy value was migrated and the declaration is removed', () => {
-    expect(effectiveManagedSettings(response(false, {}), false, false)).toEqual({ defaultPreset: 'default', smoothScrollback: true });
+    expect(effectiveManagedSettings(response(false, {}), false, false)).toEqual({ defaultPreset: 'default', smoothScrollback: true, restoreWindow: true });
   });
 
   it('normalizes managed values and ignores malformed field types', () => {
     const loaded = response(true, { defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: 'false' });
-    expect(effectiveManagedSettings(loaded, false)).toEqual({ defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: true });
+    expect(effectiveManagedSettings(loaded, false)).toEqual({ defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: true, restoreWindow: true });
+    expect(effectiveManagedSettings(response(true, { restoreWindow: false }), false).restoreWindow).toBe(false);
   });
 
   it('preserves the complete palette snapshot supplied by native settings load', () => {
