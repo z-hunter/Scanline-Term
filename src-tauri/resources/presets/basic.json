@@ -5,7 +5,7 @@
     "ambientGlassLight": 0.05,
     "antiAliasedPixels": false,
     "backgroundDesaturation": 0.5,
-    "beamModulation": 0.65,
+    "beamModulation": 0.75,
     "bezelGlow": true,
     "bezelGlowMode": "spill",
     "bezelHighlight": 0,
@@ -21,7 +21,7 @@
     "glowRadius": 6.25,
     "humBar": 0,
     "imageBrightness": 0.9,
-    "imageContrast": 1.2000000000000002,
+    "imageContrast": 1.15,
     "imperfectSignal": 0,
     "maskStrength": 0.1,
     "maskType": "off",
@@ -31,7 +31,7 @@
     "phosphor": 1,
     "pixelSmoothing": true,
     "reflexBar": 0.15000000000000002,
-    "reflexBarEnabled": true,
+    "reflexBarEnabled": false,
     "reflexBarHeight": 0.53,
     "reflexBarPosY": 0.08,
     "reflexBarWidth": 1,
@@ -44,12 +44,12 @@
   "terminal": {
     "cellHeightAdjustment": 0,
     "cellWidthAdjustment": -1,
-    "colorProfile": "dos-vga",
+    "colorProfile": "lua:users",
     "cursorBlink": true,
-    "cursorBrightness": 0.15000000000000002,
+    "cursorBrightness": 0,
     "cursorStyle": "block",
     "fontFamily": "IBM Plex Mono",
-    "fontSize": 20
+    "fontSize": 19
   },
   "virtualScreen": {
     "modeId": "physical-8x5"
