@@ -218,6 +218,7 @@ export default function App() {
   }, []);
   const managedSettings = useManagedSettings(legacyGlobals, reportError);
   const { values: managedValues, ready: managedReady, authoritative: managedAuthoritative, saving: managedSaving, writesEnabled: managedWritesEnabled, load: loadManagedSettings, save: saveManagedSettings, disableWrites: disableManagedWrites, settle: settleManagedSettings } = managedSettings;
+  const managedSettled = managedAuthoritative || (managedReady && !managedWritesEnabled);
   const canonicalGlobals = isTauri() && managedAuthoritative ? managedValues : stored;
   mcpKeepTabsOpenRef.current = canonicalGlobals.mcpKeepTabsOpen;
   const settingsVisible = luaPanelVisibility.settings ?? stored.showSettingsPanel;
@@ -247,10 +248,10 @@ export default function App() {
   const luaAutomation = useLuaAutomationStatus(reportError);
   const windowRestoreStarted = useRef(false);
   useEffect(() => {
-    if (!isTauri() || !managedReady || !managedAuthoritative || windowRestoreStarted.current) return;
+    if (!isTauri() || !managedSettled || windowRestoreStarted.current) return;
     windowRestoreStarted.current = true;
     void invoke('restore_window_state', { restore: managedValues.restoreWindow }).catch((reason) => reportError(`Could not initialize window geometry: ${String(reason)}`));
-  }, [managedAuthoritative, managedReady, managedValues.restoreWindow, reportError]);
+  }, [managedSettled, managedValues.restoreWindow, reportError]);
   const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
     if (!isTauri()) {
       reportError("Windows Explorer integration is available in the desktop app only.");
@@ -699,7 +700,7 @@ export default function App() {
   }, [activeBrowser, browserFormFactor, physicalWindow, screenRatio]);
   const aiVisible = aiEnabled && (luaPanelVisibility.assistant ?? stored.showAiPanel) && !terminal.isMcpSession(terminal.activeSessionId ?? "");
   useEffect(() => {
-    if (!isTauri() || !managedAuthoritative) return;
+    if (!isTauri() || !managedSettled) return;
     if (!canonicalGlobals.mcpEnabled) {
       void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be configured: ${String(reason)}`));
       return;
@@ -807,7 +808,7 @@ export default function App() {
       void setMcpEnabled(false).catch((reason) => reportError(`MCP mode could not be stopped: ${String(reason)}`));
       cleanupListeners();
     };
-  }, [canonicalGlobals.mcpEnabled, managedAuthoritative, reportError, setMcpEnabled]);
+  }, [canonicalGlobals.mcpEnabled, managedSettled, reportError, setMcpEnabled]);
   const { clearPersistence, outputRef, fps, captureFrame, startChannelSwitch, joinChannelSwitch } = crt;
   startChannelSwitchRef.current = startChannelSwitch;
   joinChannelSwitchRef.current = joinChannelSwitch;
@@ -988,12 +989,12 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
   useEffect(() => {
-    if (!isTauri() || !managedAuthoritative) return;
+    if (!isTauri() || !managedSettled) return;
     void invoke("set_global_hotkey_enabled", { enabled: canonicalGlobals.globalHotkeyEnabled, slideFromTop: canonicalGlobals.slideFromTop }).catch((reason) => {
       reportError(`Global Win+~ hotkey ${canonicalGlobals.globalHotkeyEnabled ? "registration" : "removal"} failed: ${String(reason)}`);
       setStored((current) => ({ ...current, globalHotkeyEnabled: !canonicalGlobals.globalHotkeyEnabled }));
     });
-  }, [canonicalGlobals.globalHotkeyEnabled, canonicalGlobals.slideFromTop, managedAuthoritative, reportError, setStored]);
+  }, [canonicalGlobals.globalHotkeyEnabled, canonicalGlobals.slideFromTop, managedSettled, reportError, setStored]);
   useEffect(() => {
     if (isTauri())
       void invoke<string>("operating_system").then(setOperatingSystem);
@@ -1002,7 +1003,7 @@ export default function App() {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
   useEffect(() => {
-    if (!isTauri() || !managedAuthoritative || import.meta.env.DEV || !canonicalGlobals.autoUpdateEnabled) {
+    if (!isTauri() || !managedSettled || import.meta.env.DEV || !canonicalGlobals.autoUpdateEnabled) {
       setAvailableUpdate((current) => {
         if (current) void current.close();
         return null;
@@ -1025,7 +1026,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [canonicalGlobals.autoUpdateEnabled, managedAuthoritative]);
+  }, [canonicalGlobals.autoUpdateEnabled, managedSettled]);
   const installUpdate = useCallback(async () => {
     if (!availableUpdate || updateInstalling) return;
     setUpdateInstalling(true);
@@ -1047,7 +1048,7 @@ export default function App() {
       void invoke<ShellInfo[]>("list_available_shells").then(setSystemShells).catch((reason) => reportError(`Could not list system shells: ${String(reason)}`));
   }, [reportError]);
   useEffect(() => {
-    if (isTauri() && !managedAuthoritative) return;
+    if (isTauri() && !managedSettled) return;
     if (!aiEnabled) {
       const codex = client.current;
       client.current = null;
@@ -1087,7 +1088,7 @@ export default function App() {
       if (client.current === codex) client.current = null;
       void codex.stop();
     };
-  }, [aiEnabled, loadModels, managedAuthoritative, reportError]);
+  }, [aiEnabled, loadModels, managedSettled, reportError]);
   useEffect(() => {
     const codex = client.current;
     if (!codex) return;
