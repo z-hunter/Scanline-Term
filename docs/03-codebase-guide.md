@@ -273,7 +273,7 @@ Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_
 
 #### [`src-tauri/src/window_state.rs`](../src-tauri/src/window_state.rs)
 
-Stores the main window's normal physical geometry in `window-state.json`, restores it only when Lua settings allow, and suspends periodic saves during Lua geometry overrides. A user initiated drag/resize clears the temporary override.
+Stores the main window's outer position and physical client-area size in `window-state.json`, restores it only when Lua settings allow, and suspends periodic saves during Lua geometry overrides. Older saved outer sizes are converted once to client-area sizes. A user initiated drag/resize clears the temporary override.
 
 #### [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs) and [`src-tauri/src/bin/scanline-term-mcp.rs`](../src-tauri/src/bin/scanline-term-mcp.rs)
 

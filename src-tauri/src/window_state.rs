@@ -21,6 +21,8 @@ struct Geometry {
     y: i32,
     width: u32,
     height: u32,
+    #[serde(default)]
+    inner_size: bool,
 }
 
 pub struct WindowState {
@@ -74,13 +76,21 @@ impl WindowState {
     }
 
     pub fn restore(&self, window: &WebviewWindow) -> Result<bool, String> {
-        let Some(mut geometry) = *self
+        let Some(geometry) = *self
             .saved
             .lock()
             .map_err(|_| "window state is unavailable")?
         else {
             return Ok(false);
         };
+        let mut geometry = geometry;
+        if !geometry.inner_size {
+            normalize_legacy_size(
+                &mut geometry,
+                window.outer_size().map_err(|error| error.to_string())?,
+                window.inner_size().map_err(|error| error.to_string())?,
+            );
+        }
         let monitors = window
             .available_monitors()
             .map_err(|error| error.to_string())?;
@@ -167,7 +177,7 @@ impl WindowState {
         let Ok(position) = window.outer_position() else {
             return;
         };
-        let Ok(size) = window.outer_size() else {
+        let Ok(size) = window.inner_size() else {
             return;
         };
         let geometry = Geometry {
@@ -175,6 +185,7 @@ impl WindowState {
             y: position.y,
             width: size.width,
             height: size.height,
+            inner_size: true,
         };
         if !valid_geometry(&geometry) {
             return;
@@ -200,6 +211,25 @@ impl WindowState {
             let _ = fs::remove_file(temporary);
         }
     }
+}
+
+fn normalize_legacy_size(
+    geometry: &mut Geometry,
+    outer: PhysicalSize<u32>,
+    inner: PhysicalSize<u32>,
+) {
+    if geometry.inner_size {
+        return;
+    }
+    geometry.width = geometry
+        .width
+        .saturating_sub(outer.width.saturating_sub(inner.width))
+        .max(MIN_SIZE);
+    geometry.height = geometry
+        .height
+        .saturating_sub(outer.height.saturating_sub(inner.height))
+        .max(MIN_SIZE);
+    geometry.inner_size = true;
 }
 
 fn replace_state_file(
@@ -279,13 +309,15 @@ mod tests {
             x: 0,
             y: 0,
             width: 100,
-            height: 600
+            height: 600,
+            inner_size: true,
         }));
         let geometry = Geometry {
             x: -1000,
             y: 100,
             width: 900,
             height: 700,
+            inner_size: true,
         };
         assert!(valid_geometry(&geometry));
         assert!(intersects(
@@ -298,6 +330,29 @@ mod tests {
             PhysicalPosition::new(1920, 0),
             PhysicalSize::new(1920, 1080)
         ));
+    }
+
+    #[test]
+    fn converts_legacy_outer_sizes_to_inner_sizes_once() {
+        let mut geometry: Geometry =
+            serde_json::from_str(r#"{"x":0,"y":0,"width":1200,"height":900}"#).unwrap();
+        assert!(!geometry.inner_size);
+        normalize_legacy_size(
+            &mut geometry,
+            PhysicalSize::new(1200, 900),
+            PhysicalSize::new(1184, 861),
+        );
+        assert_eq!(geometry.width, 1184);
+        assert_eq!(geometry.height, 861);
+        assert!(geometry.inner_size);
+
+        normalize_legacy_size(
+            &mut geometry,
+            PhysicalSize::new(1200, 900),
+            PhysicalSize::new(1184, 861),
+        );
+        assert_eq!(geometry.width, 1184);
+        assert_eq!(geometry.height, 861);
     }
 
     #[test]
