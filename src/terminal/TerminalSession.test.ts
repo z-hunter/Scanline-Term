@@ -23,6 +23,8 @@ describe('TerminalSession', () => {
     const state = vi.fn(); const exited = vi.fn(); const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), state, exited, vi.fn(), vi.fn(), vi.fn());
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
     expect(session.terminal!.options.windowsPty).toEqual({ backend: 'conpty', buildNumber: 17763 });
+    session.setColorProfile({ id: 'lua:users', label: "User's", foreground: '#ffffff', background: '#000000', colors: ['#000000', '#aa0000', '#00aa00', '#aa5500', '#0000aa', '#aa00aa', '#00aaaa', '#aaaaaa', '#555555', '#ff5555', '#55ff55', '#ffff55', '#5555ff', '#ff55ff', '#55ffff', '#ffffff'] });
+    expect(session.terminal!.options.theme).toMatchObject({ foreground: '#ffffff', background: '#000000', black: '#000000', brightWhite: '#ffffff' });
     const write = vi.spyOn(session.terminal!, 'write');
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: 'other', data: [65] } });
     mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: [66] } });

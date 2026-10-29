@@ -21,9 +21,9 @@ use tauri::{Emitter, Manager, State, WebviewWindow};
 use crate::{
     TerminalState,
     lua_runtime::{
-        Action, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState, LuaRuntime,
-        ManagedSettings, RuntimeEvent, RuntimeSnapshot, ScenarioStateStore,
-        TabState, MAX_CONFIG_BYTES,
+        Action, AnsiPalette, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState,
+        LuaRuntime, MAX_CONFIG_BYTES, ManagedSettings, RuntimeEvent, RuntimeSnapshot,
+        ScenarioStateStore, TabState,
     },
 };
 
@@ -150,6 +150,7 @@ pub(crate) struct ReloadPreparation {
     frontend_id: String,
     generation: u64,
     cleanup: Vec<ReloadCleanupRequest>,
+    palettes: Option<Vec<AnsiPalette>>,
     candidate_status: &'static str,
     error: Option<String>,
 }
@@ -543,12 +544,7 @@ impl Drop for LuaAutomation {
 }
 
 impl ReloadClient {
-    fn fail_reload_request(
-        &self,
-        app: &tauri::AppHandle,
-        frontend_id: &str,
-        error: String,
-    ) {
+    fn fail_reload_request(&self, app: &tauri::AppHandle, frontend_id: &str, error: String) {
         crate::caps_hook::revoke(app);
         let epoch = if let Ok(mut shared) = self.shared.lock() {
             if shared.frontend_id.as_deref() != Some(frontend_id) {
@@ -576,7 +572,10 @@ impl ReloadClient {
         }
         crate::caps_hook::revoke(app);
         let (generation, epoch) = {
-            let mut shared = self.shared.lock().map_err(|_| "Lua automation state is unavailable")?;
+            let mut shared = self
+                .shared
+                .lock()
+                .map_err(|_| "Lua automation state is unavailable")?;
             if shared.frontend_id.as_deref() != Some(frontend_id.as_str()) {
                 return Err("Lua automation frontend instance is stale".into());
             }
@@ -628,11 +627,20 @@ impl ReloadClient {
             || frontend_id.is_empty()
             || frontend_id.len() > 128
             || handled_cleanup_ids.len() > MAX_RELOAD_CLEANUP_IDS
-            || handled_cleanup_ids.iter().any(|id| id.is_empty() || id.len() > 128)
+            || handled_cleanup_ids
+                .iter()
+                .any(|id| id.is_empty() || id.len() > 128)
         {
             return Err("Lua reload acknowledgement is invalid".into());
         }
-        if self.shared.lock().map_err(|_| "Lua automation state is unavailable")?.frontend_id.as_deref() != Some(frontend_id.as_str()) {
+        if self
+            .shared
+            .lock()
+            .map_err(|_| "Lua automation state is unavailable")?
+            .frontend_id
+            .as_deref()
+            != Some(frontend_id.as_str())
+        {
             return Err("Lua automation frontend instance is stale".into());
         }
         let (reply, response) = mpsc::channel();
@@ -666,10 +674,21 @@ impl ReloadClient {
         frontend_id: String,
         token: String,
     ) -> Result<AutomationStatus, String> {
-        if frontend_id.is_empty() || frontend_id.len() > 128 || token.is_empty() || token.len() > 128 {
+        if frontend_id.is_empty()
+            || frontend_id.len() > 128
+            || token.is_empty()
+            || token.len() > 128
+        {
             return Err("Lua reload token or frontend ID is invalid".into());
         }
-        if self.shared.lock().map_err(|_| "Lua automation state is unavailable")?.frontend_id.as_deref() != Some(frontend_id.as_str()) {
+        if self
+            .shared
+            .lock()
+            .map_err(|_| "Lua automation state is unavailable")?
+            .frontend_id
+            .as_deref()
+            != Some(frontend_id.as_str())
+        {
             return Err("Lua automation frontend instance is stale".into());
         }
         let (reply, response) = mpsc::channel();
@@ -738,7 +757,9 @@ pub async fn lua_automation_reload(
     let on_failure = client.clone();
     let failure_app = app.clone();
     let failure_frontend_id = frontend_id.clone();
-    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id)).await {
+    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id))
+        .await
+    {
         Ok(result) => result,
         Err(_) => {
             let error = "Lua reload task failed".to_owned();
@@ -760,7 +781,9 @@ pub async fn lua_automation_prepare_reload(
     let on_failure = client.clone();
     let failure_app = app.clone();
     let failure_frontend_id = frontend_id.clone();
-    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id)).await {
+    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id))
+        .await
+    {
         Ok(result) => result,
         Err(_) => {
             let error = "Lua reload task failed".to_owned();
@@ -811,8 +834,10 @@ pub async fn lua_automation_abort_reload(
     let on_failure = client.clone();
     let failure_app = app.clone();
     let failure_frontend_id = frontend_id.clone();
-    match tauri::async_runtime::spawn_blocking(move || client.abort_reload(&app, frontend_id, token))
-        .await
+    match tauri::async_runtime::spawn_blocking(move || {
+        client.abort_reload(&app, frontend_id, token)
+    })
+    .await
     {
         Ok(result) => result,
         Err(_) => {
@@ -837,6 +862,7 @@ pub struct ManagedSettingsResult {
     pub revision: String,
     pub path: String,
     pub has_settings: bool,
+    pub palettes: Vec<AnsiPalette>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -858,8 +884,14 @@ pub fn load_managed_settings(
     let source = read_managed_config(&path)?;
     let source_text = std::str::from_utf8(&source)
         .map_err(|error| format!("Lua configuration is not valid UTF-8: {error}"))?;
-    let snapshot = RuntimeSnapshot::load_source(&path, source_text).map_err(format_snapshot_error)?;
-    Ok(managed_settings_result(&path, &source, snapshot.settings()))
+    let snapshot =
+        RuntimeSnapshot::load_source(&path, source_text).map_err(format_snapshot_error)?;
+    Ok(managed_settings_result(
+        &path,
+        &source,
+        snapshot.settings(),
+        snapshot.ansi_palettes(),
+    ))
 }
 
 #[tauri::command]
@@ -880,15 +912,17 @@ pub fn save_managed_settings(
     ensure_regular_managed_config(&path)?;
     let original = read_managed_config(&path)?;
     if revision_token(&path, &original) != revision {
-        return Err("Lua configuration changed since it was loaded; reload settings before saving".into());
+        return Err(
+            "Lua configuration changed since it was loaded; reload settings before saving".into(),
+        );
     }
     let source = std::str::from_utf8(&original)
         .map_err(|error| format!("Lua configuration is not valid UTF-8: {error}"))?;
     let candidate = splice_managed_settings(source.as_bytes(), &settings)?;
     let candidate_source = std::str::from_utf8(&candidate)
         .map_err(|error| format!("generated Lua configuration is invalid UTF-8: {error}"))?;
-    let snapshot = RuntimeSnapshot::load_source(&path, candidate_source)
-        .map_err(format_snapshot_error)?;
+    let snapshot =
+        RuntimeSnapshot::load_source(&path, candidate_source).map_err(format_snapshot_error)?;
     let actual_settings = snapshot
         .settings()
         .ok_or("generated managed settings declaration was not evaluated")?;
@@ -899,7 +933,12 @@ pub fn save_managed_settings(
     }
 
     commit_managed_config(&path, &original, &candidate)?;
-    Ok(managed_settings_result(&path, &candidate, snapshot.settings()))
+    Ok(managed_settings_result(
+        &path,
+        &candidate,
+        snapshot.settings(),
+        snapshot.ansi_palettes(),
+    ))
 }
 
 fn require_main(window: &WebviewWindow) -> Result<(), String> {
@@ -1030,7 +1069,10 @@ fn worker_loop(
                 active_tab_id,
             }) => {
                 if prepared_reload.is_some()
-                    || shared.lock().ok().is_some_and(|state| state.status.state == "loading")
+                    || shared
+                        .lock()
+                        .ok()
+                        .is_some_and(|state| state.status.state == "loading")
                 {
                     continue;
                 }
@@ -1242,7 +1284,10 @@ fn worker_loop(
                 crate::caps_hook::revoke(&app);
                 last_caps_policy = None;
                 pending = None;
-                let tabs = shared.lock().map(|state| state.tabs.clone()).unwrap_or_default();
+                let tabs = shared
+                    .lock()
+                    .map(|state| state.tabs.clone())
+                    .unwrap_or_default();
                 let language = layouts.current();
                 let contexts = tabs
                     .iter()
@@ -1268,35 +1313,35 @@ fn worker_loop(
                     ) {
                         Err(error) => (
                             None,
-                            app_config_dir
-                                .as_deref()
-                                .map(|directory| directory.join("config.lua").display().to_string()),
+                            app_config_dir.as_deref().map(|directory| {
+                                directory.join("config.lua").display().to_string()
+                            }),
                             "error",
                             Some(error.clone()),
                             vec![AutomationDiagnostic::error(error)],
                         ),
-                        Ok(()) => match resolve_config_path(
-                            exe_dir.as_deref(),
-                            app_config_dir.as_deref(),
-                        ) {
-                            None => (None, None, "disabled", None, Vec::new()),
-                            Some(path) => match RuntimeSnapshot::load(&path) {
-                                Ok(snapshot) => (
-                                    Some(snapshot),
-                                    Some(path.display().to_string()),
-                                    "ready",
-                                    None,
-                                    Vec::new(),
-                                ),
-                                Err(items) => (
-                                    None,
-                                    Some(path.display().to_string()),
-                                    "error",
-                                    Some("Lua configuration failed to load".into()),
-                                    render_diagnostics(items),
-                                ),
-                            },
-                        },
+                        Ok(()) => {
+                            match resolve_config_path(exe_dir.as_deref(), app_config_dir.as_deref())
+                            {
+                                None => (None, None, "disabled", None, Vec::new()),
+                                Some(path) => match RuntimeSnapshot::load(&path) {
+                                    Ok(snapshot) => (
+                                        Some(snapshot),
+                                        Some(path.display().to_string()),
+                                        "ready",
+                                        None,
+                                        Vec::new(),
+                                    ),
+                                    Err(items) => (
+                                        None,
+                                        Some(path.display().to_string()),
+                                        "error",
+                                        Some("Lua configuration failed to load".into()),
+                                        render_diagnostics(items),
+                                    ),
+                                },
+                            }
+                        }
                     };
                 let retained = candidate
                     .as_ref()
@@ -1315,9 +1360,12 @@ fn worker_loop(
                     .unwrap_or_default();
                 if let Some(runtime) = runtime.as_mut() {
                     let removed = runtime.prepare_removed_attachments(&retained, &contexts);
-                    diagnostics.extend(removed.diagnostics.into_iter().map(|item| {
-                        AutomationDiagnostic::error(format_diagnostic(item))
-                    }));
+                    diagnostics.extend(
+                        removed
+                            .diagnostics
+                            .into_iter()
+                            .map(|item| AutomationDiagnostic::error(format_diagnostic(item))),
+                    );
                     cleanup_intents.extend(removed.cleanup.into_iter().map(|item| {
                         ReloadCleanupRequest {
                             id: String::new(),
@@ -1344,6 +1392,9 @@ fn worker_loop(
                     frontend_id: frontend_id.clone(),
                     generation,
                     cleanup: cleanup_intents,
+                    palettes: candidate
+                        .as_ref()
+                        .map(|snapshot| snapshot.ansi_palettes().to_vec()),
                     candidate_status,
                     error,
                 };
@@ -1418,7 +1469,10 @@ fn worker_loop(
                     let attachment_keys = candidate.attachment_state_keys();
                     let tab_ids = tabs.into_iter().collect::<std::collections::HashSet<_>>();
                     scenario_state.retain(&tab_ids, &attachment_keys);
-                    runtime = Some(LuaRuntime::with_state_store(candidate, scenario_state.clone()));
+                    runtime = Some(LuaRuntime::with_state_store(
+                        candidate,
+                        scenario_state.clone(),
+                    ));
                     previous.clear();
                     let status = AutomationStatus {
                         state: "ready",
@@ -1451,7 +1505,11 @@ fn worker_loop(
                 pending = None;
                 last_caps_policy = None;
             }
-            Ok(Work::AbortReload { token, frontend_id, reply }) => {
+            Ok(Work::AbortReload {
+                token,
+                frontend_id,
+                reply,
+            }) => {
                 let matches = prepared_reload.as_ref().is_some_and(|prepared| {
                     prepared.plan.token == token && prepared.plan.frontend_id == frontend_id
                 }) && shared.lock().ok().is_some_and(|state| {
@@ -1472,17 +1530,34 @@ fn worker_loop(
                     state.action_epoch = state.action_epoch.wrapping_add(1);
                     active_epoch = state.action_epoch;
                     state.status.state = "error";
-                    state.status.error = Some("Lua reload was aborted; reload config to retry".into());
-                    push_diagnostic(&mut state.status.diagnostics, AutomationDiagnostic::error(
-                        "Lua reload was aborted; reload config to retry",
-                    ));
+                    state.status.error =
+                        Some("Lua reload was aborted; reload config to retry".into());
+                    push_diagnostic(
+                        &mut state.status.diagnostics,
+                        AutomationDiagnostic::error(
+                            "Lua reload was aborted; reload config to retry",
+                        ),
+                    );
                 }
-                let _ = reply.send(Ok(shared.lock().map(|state| state.status.clone()).unwrap_or_else(|_| {
-                    AutomationStatus { state: "error", config_path: None, error: Some("Lua automation state is unavailable".into()), diagnostics: Vec::new() }
-                })));
+                let _ = reply.send(Ok(shared
+                    .lock()
+                    .map(|state| state.status.clone())
+                    .unwrap_or_else(|_| AutomationStatus {
+                        state: "error",
+                        config_path: None,
+                        error: Some("Lua automation state is unavailable".into()),
+                        diagnostics: Vec::new(),
+                    })));
             }
-            Ok(Work::FailClosed { frontend_id, epoch, error }) => {
-                if shared.lock().ok().is_some_and(|state| state.frontend_id.as_deref() == Some(frontend_id.as_str()) && state.action_epoch == epoch) {
+            Ok(Work::FailClosed {
+                frontend_id,
+                epoch,
+                error,
+            }) => {
+                if shared.lock().ok().is_some_and(|state| {
+                    state.frontend_id.as_deref() == Some(frontend_id.as_str())
+                        && state.action_epoch == epoch
+                }) {
                     crate::caps_hook::revoke(&app);
                     runtime = None;
                     previous.clear();
@@ -1490,7 +1565,13 @@ fn worker_loop(
                     scenario_state.clear_all();
                     pending = None;
                     last_caps_policy = None;
-                    set_status(&shared, "error", None, Some(error.clone()), vec![AutomationDiagnostic::error(error)]);
+                    set_status(
+                        &shared,
+                        "error",
+                        None,
+                        Some(error.clone()),
+                        vec![AutomationDiagnostic::error(error)],
+                    );
                     active_epoch = epoch;
                 }
             }
@@ -1591,17 +1672,12 @@ fn worker_loop(
                                 };
                                 let mut results =
                                     tab_ids.into_iter().zip(dispatches).collect::<Vec<_>>();
-                                if let (Some(runtime), Some(tab)) = (
-                                    runtime.as_mut(),
-                                    tabs.iter().find(|tab| tab.active),
-                                ) {
+                                if let (Some(runtime), Some(tab)) =
+                                    (runtime.as_mut(), tabs.iter().find(|tab| tab.active))
+                                {
                                     results.push((
                                         tab.id.clone(),
-                                        runtime.dispatch(
-                                            tab,
-                                            &input,
-                                            RuntimeEvent::ContextUpdated,
-                                        ),
+                                        runtime.dispatch(tab, &input, RuntimeEvent::ContextUpdated),
                                     ));
                                 }
                                 previous =
@@ -1778,6 +1854,7 @@ const LUA_STARTER_FILES: &[(&str, &str)] = &[
     ("editors/hx.lua", "editors/hx.lua"),
     ("modules/modal_editor.lua", "modules/modal_editor.lua"),
     ("scripts/far_preset.lua", "scripts/far_preset.lua"),
+    ("palettes/users.lua", "palettes/users.lua"),
     ("sterm.lua", "config.lua"),
 ];
 
@@ -1839,6 +1916,7 @@ fn seed_lua_config(
     ensure_lua_subdirectory(&root, "editors")?;
     ensure_lua_subdirectory(&root, "modules")?;
     ensure_lua_subdirectory(&root, "scripts")?;
+    ensure_lua_subdirectory(&root, "palettes")?;
 
     // Existing regular dependencies belong to the user and are preserved.
     for (_, destination_relative, _) in &files {
@@ -1956,6 +2034,7 @@ fn managed_settings_result(
     path: &Path,
     source: &[u8],
     settings: Option<&ManagedSettings>,
+    palettes: &[AnsiPalette],
 ) -> ManagedSettingsResult {
     ManagedSettingsResult {
         settings: ManagedSettingsPayload {
@@ -1965,6 +2044,7 @@ fn managed_settings_result(
         revision: revision_token(path, source),
         path: path.display().to_string(),
         has_settings: settings.is_some(),
+        palettes: palettes.to_vec(),
     }
 }
 
@@ -2043,8 +2123,12 @@ fn find_managed_block(source: &[u8]) -> Result<Option<Range<usize>>, String> {
             if end.replace(line_start).is_some() {
                 return Err("Lua managed settings markers are duplicated".into());
             }
-        } else if content.windows(MANAGED_BEGIN.len()).any(|part| part == MANAGED_BEGIN)
-            || content.windows(MANAGED_END.len()).any(|part| part == MANAGED_END)
+        } else if content
+            .windows(MANAGED_BEGIN.len())
+            .any(|part| part == MANAGED_BEGIN)
+            || content
+                .windows(MANAGED_END.len())
+                .any(|part| part == MANAGED_END)
         {
             return Err("Lua managed settings marker must occupy its own line".into());
         }
@@ -2100,7 +2184,11 @@ fn lua_string_literal(value: &str) -> String {
     literal
 }
 
-fn managed_settings_block(settings: &ManagedSettingsPayload, newline: &str, trailing_newline: bool) -> Vec<u8> {
+fn managed_settings_block(
+    settings: &ManagedSettingsPayload,
+    newline: &str,
+    trailing_newline: bool,
+) -> Vec<u8> {
     let mut fields = Vec::new();
     if let Some(name) = &settings.default_preset {
         fields.push(format!("default_preset = {}", lua_string_literal(name)));
@@ -2151,7 +2239,8 @@ fn splice_managed_settings(
         Some(range) => {
             let trailing_newline = source.get(range.end.saturating_sub(1)) == Some(&b'\n');
             let block = managed_settings_block(settings, newline, trailing_newline);
-            let mut output = Vec::with_capacity(source.len() - (range.end - range.start) + block.len());
+            let mut output =
+                Vec::with_capacity(source.len() - (range.end - range.start) + block.len());
             output.extend_from_slice(&source[..range.start]);
             output.extend_from_slice(&block);
             output.extend_from_slice(&source[range.end..]);
@@ -2183,7 +2272,10 @@ fn atomic_replace_managed_config(path: &Path, contents: &[u8]) -> Result<(), Str
     ));
     let mut created = false;
     let result = (|| -> io::Result<()> {
-        let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
         created = true;
         file.write_all(contents)?;
         file.sync_all()?;
@@ -2201,7 +2293,11 @@ fn atomic_replace_managed_config(path: &Path, contents: &[u8]) -> Result<(), Str
 fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
     use std::{os::windows::ffi::OsStrExt, ptr};
     use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
-    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     let temp: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
     let replaced = unsafe {
         ReplaceFileW(
@@ -2377,9 +2473,8 @@ fn caps_policy_is_cached(
     context: &CapsPolicyContext,
     generation: u64,
 ) -> bool {
-    last.as_ref().is_some_and(|last| {
-        last.context == *context && last.generation >= generation
-    })
+    last.as_ref()
+        .is_some_and(|last| last.context == *context && last.generation >= generation)
 }
 
 fn cache_caps_policy_candidate(
@@ -2544,8 +2639,7 @@ fn apply_results(
                         generation,
                         epoch,
                         &tab_id,
-                    )
-                    {
+                    ) {
                         continue;
                     }
                     drop(current);
@@ -2657,7 +2751,10 @@ fn fail_closed(shared: &mut Shared, error: String) {
     }
     shared.status.state = "error";
     shared.status.error = Some(error.clone());
-    push_diagnostic(&mut shared.status.diagnostics, AutomationDiagnostic::error(error));
+    push_diagnostic(
+        &mut shared.status.diagnostics,
+        AutomationDiagnostic::error(error),
+    );
 }
 
 fn transition_context_matches(
@@ -2678,8 +2775,14 @@ fn cleanup_acknowledgement_is_exact(expected: &[&str], received: &[String]) -> b
     if expected.len() != received.len() {
         return false;
     }
-    let expected = expected.iter().copied().collect::<std::collections::HashSet<_>>();
-    let received = received.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
+    let expected = expected
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let received = received
+        .iter()
+        .map(String::as_str)
+        .collect::<std::collections::HashSet<_>>();
     expected.len() == received.len() && expected == received
 }
 
@@ -3020,11 +3123,7 @@ mod tests {
 
         assert!(action_context_is_current(&state, "front-1", 5, 2, "tab-1"));
         assert!(preset_action_context_is_current(
-            &state,
-            "front-1",
-            5,
-            2,
-            "tab-1"
+            &state, "front-1", 5, 2, "tab-1"
         ));
         assert!(!action_context_is_current(
             &state,
@@ -3039,18 +3138,10 @@ mod tests {
         let mut unfocused = shared_state();
         unfocused.focused = false;
         assert!(!action_context_is_current(
-            &unfocused,
-            "front-1",
-            5,
-            2,
-            "tab-1"
+            &unfocused, "front-1", 5, 2, "tab-1"
         ));
         assert!(preset_action_context_is_current(
-            &unfocused,
-            "front-1",
-            5,
-            2,
-            "tab-1"
+            &unfocused, "front-1", 5, 2, "tab-1"
         ));
         assert!(!preset_action_context_is_current(
             &unfocused,
@@ -3060,11 +3151,7 @@ mod tests {
             "tab-1"
         ));
         assert!(!preset_action_context_is_current(
-            &unfocused,
-            "front-1",
-            4,
-            2,
-            "tab-1"
+            &unfocused, "front-1", 4, 2, "tab-1"
         ));
     }
 
@@ -3091,6 +3178,7 @@ mod tests {
         ));
         fs::create_dir_all(root.join("editors")).unwrap();
         fs::create_dir_all(root.join("modules")).unwrap();
+        fs::create_dir_all(root.join("palettes")).unwrap();
         fs::write(
             root.join("config.lua"),
             include_str!("../../examples/lua/sterm.lua"),
@@ -3109,6 +3197,11 @@ mod tests {
         fs::write(
             root.join("modules/modal_editor.lua"),
             include_str!("../../examples/lua/modules/modal_editor.lua"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("palettes/users.lua"),
+            include_str!("../../examples/lua/palettes/users.lua"),
         )
         .unwrap();
         let template_snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
@@ -3364,17 +3457,21 @@ mod tests {
     fn managed_settings_splice_preserves_bom_crlf_and_all_unmanaged_bytes() {
         let root = lua_seed_test_root("managed-bytes");
         fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(root.join("palettes")).unwrap();
+        let palette_source = include_str!("../../examples/lua/palettes/users.lua");
+        fs::write(root.join("palettes/users.lua"), palette_source).unwrap();
         let path = root.join("config.lua");
         let original = concat!(
             "\u{feff}local sterm=require 'sterm'\r\n",
             "local preset = ('DEC ' .. 'VT-100')\r\n",
+            "sterm.include('palettes/users.lua')\r\n",
             "-- scanline-term:managed-settings:begin\r\n",
             "-- old GUI settings\r\n",
             "-- scanline-term:managed-settings:end\r\n",
             "return preset\r\n",
         );
         fs::write(&path, original.as_bytes()).unwrap();
-        let prefix = "\u{feff}local sterm=require 'sterm'\r\nlocal preset = ('DEC ' .. 'VT-100')\r\n";
+        let prefix = "\u{feff}local sterm=require 'sterm'\r\nlocal preset = ('DEC ' .. 'VT-100')\r\nsterm.include('palettes/users.lua')\r\n";
         let suffix = "return preset\r\n";
         let candidate = splice_managed_settings(
             original.as_bytes(),
@@ -3397,12 +3494,27 @@ mod tests {
                 smooth_scrollback: Some(false),
             })
         );
+        assert_eq!(snapshot.ansi_palettes()[0].label, "User's");
+        assert_eq!(
+            fs::read(root.join("palettes/users.lua")).unwrap(),
+            palette_source.as_bytes()
+        );
+        let original_snapshot = RuntimeSnapshot::load_source(&path, original).unwrap();
+        let result = managed_settings_result(
+            &path,
+            original.as_bytes(),
+            original_snapshot.settings(),
+            original_snapshot.ansi_palettes(),
+        );
+        assert!(!result.has_settings);
+        assert_eq!(result.palettes[0].id, "lua:users");
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn managed_settings_missing_block_inserts_after_bom_and_shebang() {
-        let source = b"\xEF\xBB\xBF#!/usr/bin/env lua\r\nlocal sterm=require 'sterm'\r\nreturn true\r\n";
+        let source =
+            b"\xEF\xBB\xBF#!/usr/bin/env lua\r\nlocal sterm=require 'sterm'\r\nreturn true\r\n";
         let candidate = splice_managed_settings(
             source,
             &ManagedSettingsPayload {
@@ -3465,7 +3577,12 @@ mod tests {
         let lua = mlua::Lua::new();
         let value = "a \"quoted\" \\ path";
         let literal = lua_string_literal(value);
-        assert_eq!(lua.load(format!("return {literal}")).eval::<String>().unwrap(), value);
+        assert_eq!(
+            lua.load(format!("return {literal}"))
+                .eval::<String>()
+                .unwrap(),
+            value
+        );
     }
 
     fn lua_seed_test_root(label: &str) -> PathBuf {
@@ -3480,6 +3597,7 @@ mod tests {
         fs::create_dir_all(directory.join("editors")).unwrap();
         fs::create_dir_all(directory.join("modules")).unwrap();
         fs::create_dir_all(directory.join("scripts")).unwrap();
+        fs::create_dir_all(directory.join("palettes")).unwrap();
         fs::write(
             directory.join("sterm.lua"),
             include_str!("../../examples/lua/sterm.lua"),
@@ -3505,6 +3623,11 @@ mod tests {
             include_str!("../../examples/lua/scripts/far_preset.lua"),
         )
         .unwrap();
+        fs::write(
+            directory.join("palettes/users.lua"),
+            include_str!("../../examples/lua/palettes/users.lua"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -3518,6 +3641,7 @@ mod tests {
 
         let snapshot = RuntimeSnapshot::load(&config.join("config.lua")).unwrap();
         assert!(snapshot.settings().is_none());
+        assert_eq!(snapshot.ansi_palettes()[0].label, "User's");
 
         assert_eq!(
             fs::read(config.join("config.lua")).unwrap(),
@@ -3528,6 +3652,7 @@ mod tests {
             "editors/hx.lua",
             "modules/modal_editor.lua",
             "scripts/far_preset.lua",
+            "palettes/users.lua",
         ] {
             assert_eq!(
                 fs::read(config.join(relative)).unwrap(),
@@ -3644,6 +3769,7 @@ mod tests {
             frontend_id: "frontend-1".into(),
             generation: 7,
             cleanup: Vec::new(),
+            palettes: Some(Vec::new()),
             candidate_status: "ready",
             error: None,
         };

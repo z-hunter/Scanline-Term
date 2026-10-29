@@ -20,8 +20,11 @@ import {
   DEFAULT_PRESET_SETTINGS,
   loadPresetSettings,
   loadStoredSettings,
+  markLuaColorProfilesReady,
+  replaceLuaColorProfiles,
   RESOLUTIONS,
   shouldHideTabsBar,
+  warnIfMissingColorProfile,
   type PresetSettings,
   type TabPresetState,
 } from "./crt/settings";
@@ -61,6 +64,17 @@ import "./styles.css";
 type ErrorToast = { id: number; message: string; resetKey: number };
 type McpRequest = { requestId: string; ownerId: string; method: string; params?: unknown };
 type McpOwnerDisconnected = { ownerId: string };
+
+function loadPresetWithWarning(raw: unknown, reportError: (message: string) => void) {
+  const loaded = loadPresetSettings(JSON.stringify(raw));
+  if (loaded) warnIfMissingColorProfile(loaded.crt.colorProfile, reportError);
+  return loaded;
+}
+
+function replaceLuaPaletteSnapshot(profiles: Parameters<typeof replaceLuaColorProfiles>[0], reportError: (message: string) => void): boolean {
+  try { return replaceLuaColorProfiles(profiles); }
+  catch (reason) { markLuaColorProfilesReady(); reportError(`Could not register Lua color palettes: ${String(reason)}`); return false; }
+}
 
 function ErrorToast({ message, resetKey, onDismiss }: { message: string; resetKey: number; onDismiss: () => void }) {
   const onDismissRef = useRef(onDismiss);
@@ -133,6 +147,7 @@ export default function App() {
   const defaultPresetChangeRequest = useRef(new LatestSettingsRequest()).current;
   const [presets, setPresets] = useState<string[]>(["default"]);
   const [presetsReady, setPresetsReady] = useState(!isTauri());
+  const [, setPaletteCatalogRevision] = useState(0);
   const [managedReloading, setManagedReloading] = useState(false);
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [shells, setShells] = useState<ShellInfo[]>([]);
@@ -260,6 +275,7 @@ export default function App() {
       else startChannelSwitchRef.current();
     },
   });
+  const refreshTerminalColorProfiles = terminal.refreshColorProfiles;
   const terminalRef = useRef(terminal);
   terminalRef.current = terminal;
   const luaPresetRequestEpoch = useRef(0);
@@ -272,7 +288,7 @@ export default function App() {
       (tabId) => terminalRef.current.presetStateForSession(tabId),
       async (name) => {
         const raw = await invoke<unknown>("load_preset", { name });
-        const loaded = loadPresetSettings(JSON.stringify(raw));
+        const loaded = loadPresetWithWarning(raw, reportError);
         if (!loaded) throw new Error("invalid preset format");
         return loaded;
       },
@@ -370,7 +386,7 @@ export default function App() {
   }, [disableManagedWrites, reportError]);
   const loadDefaultPreset = useCallback(async (requestedName: string, names: string[]) => {
     const knownName = (name: string) => names.find((candidate) => candidate.toLowerCase() === name.toLowerCase());
-    let name = knownName(requestedName);
+    const name = knownName(requestedName);
     if (!name) {
       reportError(`Could not load default preset ${requestedName}: preset not found`);
       disableManagedWrites();
@@ -378,7 +394,7 @@ export default function App() {
     }
     try {
       const raw = await invoke<unknown>("load_preset", { name });
-      const loaded = loadPresetSettings(JSON.stringify(raw));
+      const loaded = loadPresetWithWarning(raw, reportError);
       if (!loaded) throw new Error("invalid preset format");
       return { name, settings: loaded };
     } catch (reason) {
@@ -395,6 +411,10 @@ export default function App() {
     void (async () => {
       const loaded = await loadManagedSettings(legacySmoothScrollback);
       if (!active) return;
+      if (loaded.response) {
+        if (replaceLuaPaletteSnapshot(loaded.response.palettes, reportError)) setPaletteCatalogRevision((revision) => revision + 1);
+      } else markLuaColorProfilesReady();
+      refreshTerminalColorProfiles();
       const names = await refreshPresets();
       if (!active) return;
       const result = await loadDefaultPreset(loaded.values.defaultPreset, names);
@@ -406,7 +426,7 @@ export default function App() {
       setPresetsReady(true);
     })();
     return () => { active = false; startupPresetLoad.current = false; };
-  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, refreshPresets]);
+  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, refreshPresets, reportError, refreshTerminalColorProfiles]);
   useEffect(() => {
     if (isTauri() && managedReady && startupPresetLoad.current && settingsVisible) void refreshPresets();
   }, [managedReady, refreshPresets, settingsVisible]);
@@ -416,7 +436,7 @@ export default function App() {
     if (state.dirty && !window.confirm("Discard unsaved preset changes and load this preset?")) return;
     try {
       const raw = await invoke<unknown>("load_preset", { name });
-      const loaded = loadPresetSettings(JSON.stringify(raw));
+      const loaded = loadPresetWithWarning(raw, reportError);
       if (!loaded) throw new Error("invalid preset format");
       if (terminal.activePresetState !== state) return;
       terminal.replaceActivePreset(loaded, name);
@@ -432,7 +452,7 @@ export default function App() {
     try {
       await loadAndCommitLatest(defaultPresetChangeRequest, request, async () => {
         const raw = await invoke<unknown>("load_preset", { name: selected });
-        const loaded = loadPresetSettings(JSON.stringify(raw));
+        const loaded = loadPresetWithWarning(raw, reportError);
         if (!loaded) throw new Error("invalid preset format");
         return loaded;
       }, async (loaded) => {
@@ -487,7 +507,7 @@ export default function App() {
           terminal.presetStateForSession,
           async (name) => {
             const raw = await invoke<unknown>("load_preset", { name });
-            const loaded = loadPresetSettings(JSON.stringify(raw));
+            const loaded = loadPresetWithWarning(raw, reportError);
             if (!loaded) throw new Error("invalid preset format");
             return loaded;
           },
@@ -501,6 +521,10 @@ export default function App() {
       const committed = await luaAutomation.commitReload(frontendId, prepared.token, handledCleanupIds);
       if (!committed) return;
       preparedForAbort = null;
+      if (prepared.palettes && replaceLuaPaletteSnapshot(prepared.palettes, reportError)) {
+        setPaletteCatalogRevision((revision) => revision + 1);
+        refreshTerminalColorProfiles();
+      }
       if (prepared.candidateStatus === 'error') return;
       const loaded = await loadManagedSettings(legacySmoothScrollback);
       if (!loaded.response) return;
@@ -516,13 +540,13 @@ export default function App() {
       if (reloadToken !== null) terminal.resumeLuaAutomationAfterReload(reloadToken);
       setManagedReloading(false);
     }
-  }, [defaultPresetChangeRequest, legacySmoothScrollback, loadDefaultPreset, luaAutomation.abortReload, luaAutomation.commitReload, luaAutomation.prepareReload, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal.isLuaAutomationReloadCurrent, terminal.isLuaReloadTargetLive, terminal.luaAutomationFrontendId, terminal.pauseLuaAutomationForReload, terminal.presetStateForSession, terminal.replaceActivePreset, terminal.resumeLuaAutomationAfterReload]);
+  }, [defaultPresetChangeRequest, legacySmoothScrollback, loadDefaultPreset, luaAutomation.abortReload, luaAutomation.commitReload, luaAutomation.prepareReload, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal.isLuaAutomationReloadCurrent, terminal.isLuaReloadTargetLive, terminal.luaAutomationFrontendId, terminal.pauseLuaAutomationForReload, terminal.presetStateForSession, terminal.replaceActivePreset, refreshTerminalColorProfiles, terminal.resumeLuaAutomationAfterReload]);
   const previewPreset = useCallback(async (name: string, openingTabId: string | null) => {
     if (!openingTabId || activeTabIdRef.current !== openingTabId) return false;
     const request = ++presetPickerRequest.current;
     try {
       const raw = await invoke<unknown>("load_preset", { name });
-      const loaded = loadPresetSettings(JSON.stringify(raw));
+      const loaded = loadPresetWithWarning(raw, reportError);
       if (!loaded) throw new Error("invalid preset format");
       if (request !== presetPickerRequest.current || activeTabIdRef.current !== openingTabId) return false;
       terminal.replaceActivePreset(loaded, name);
@@ -659,7 +683,7 @@ export default function App() {
         if (payload.method === "apply_terminal_preset") {
           if (typeof params.name !== "string" || !params.name.trim()) throw new Error("preset name is required");
           const raw = await invoke<unknown>("load_preset", { name: params.name });
-          const loaded = loadPresetSettings(JSON.stringify(raw));
+          const loaded = loadPresetWithWarning(raw, reportError);
           if (!loaded) throw new Error("invalid preset format");
           if (current.sessionOwner(sessionId) !== payload.ownerId) throw new Error("terminal session is unavailable");
           current.selectSession(sessionId, false, false);

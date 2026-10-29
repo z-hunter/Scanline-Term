@@ -8,7 +8,7 @@ import { useManagedSettings } from './useManagedSettings';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const loaded = (settings: unknown, revision = 'r1', hasSettings = false) => ({ settings, revision, path: 'sterm.lua', hasSettings });
+const loaded = (settings: unknown, revision = 'r1', hasSettings = false) => ({ settings, revision, path: 'sterm.lua', hasSettings, palettes: [] });
 
 describe('useManagedSettings', () => {
   beforeEach(() => mocked.invoke.mockReset());

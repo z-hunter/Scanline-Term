@@ -69,6 +69,11 @@ export type ApplicationCursorState = { shape: ApplicationCursorShape; blink: boo
 
 const OUTPUT_CHUNK_BYTES = 16 * 1024;
 
+function xtermTheme(profile: TerminalColorProfile) {
+  const [black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite] = profile.colors;
+  return { foreground: profile.foreground, background: profile.background, cursor: profile.cursor, black, red, green, yellow, blue, magenta, cyan, white, brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite };
+}
+
 const sessions = new Map<string, TerminalSession>();
 export const terminalSession = (id: string) => sessions.get(id);
 
@@ -222,7 +227,7 @@ export class TerminalSession {
       allowProposedApi: true,
       // Keep xterm's scrollback geometry compatible with the minimum supported Windows build.
       windowsPty: { backend: "conpty", buildNumber: 17763 },
-      theme: { foreground: profile.foreground, background: profile.background },
+      theme: xtermTheme(profile),
     });
     this.terminal = terminal;
     this.size = size;
@@ -378,6 +383,10 @@ export class TerminalSession {
       pending.reject?.(reason);
       if (!pending.reject) this.onError(`Terminal input failed: ${String(reason)}`);
     }
+  }
+
+  setColorProfile(profile: TerminalColorProfile): void {
+    if (this.terminal) this.terminal.options.theme = xtermTheme(profile);
   }
 
   setCursorAppearance(style: CursorStyle, blink: boolean): void {

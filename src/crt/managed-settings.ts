@@ -1,3 +1,5 @@
+import type { TerminalColorProfile } from 'scanline-virtual-screen/core';
+
 export type ManagedSettings = {
   defaultPreset: string | null;
   smoothScrollback: boolean | null;
@@ -8,6 +10,7 @@ export type ManagedSettingsResponse = {
   revision: string;
   path: string;
   hasSettings: boolean;
+  palettes: TerminalColorProfile[];
 };
 
 export class LatestSettingsRequest {
@@ -33,7 +36,7 @@ export async function loadAndCommitLatest<T>(
 export function normalizeManagedSettings(value: unknown): ManagedSettingsResponse {
   if (!value || typeof value !== 'object') throw new Error('invalid managed settings response');
   const response = value as Partial<ManagedSettingsResponse>;
-  if (!response.settings || typeof response.settings !== 'object' || typeof response.revision !== 'string' || typeof response.path !== 'string' || typeof response.hasSettings !== 'boolean') {
+  if (!response.settings || typeof response.settings !== 'object' || typeof response.revision !== 'string' || typeof response.path !== 'string' || typeof response.hasSettings !== 'boolean' || !Array.isArray(response.palettes)) {
     throw new Error('invalid managed settings response');
   }
   const settings = response.settings as Partial<ManagedSettings>;
@@ -45,6 +48,7 @@ export function normalizeManagedSettings(value: unknown): ManagedSettingsRespons
     revision: response.revision,
     path: response.path,
     hasSettings: response.hasSettings,
+    palettes: response.palettes as TerminalColorProfile[],
   };
 }
 

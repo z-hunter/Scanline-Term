@@ -17,10 +17,12 @@ The SVS repository is the technical source of truth for its architecture, public
 `package.json` pins SVS to an immutable Git commit. Do not replace it with a branch name or a mutable tag during normal application work.
 
 ```json
-"scanline-virtual-screen": "github:z-hunter/Scanline-Virtual-Screen#ea4ee92dd8ce9baf82ff8c356f9be2a46cc4cc58"
+"scanline-virtual-screen": "https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/145b2cbfcdbcdd68bc3a00d6e5ffd53fd89705c0"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
+
+Both Vite development and production builds resolve this installed package. Development does not implicitly alias an adjacent SVS checkout, which can leave the app importing APIs missing from an older sibling build. For temporary SVS integration work, install the local package explicitly as described below.
 
 ## Scanline Term responsibilities
 
@@ -29,11 +31,14 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - ConPTY, shell processes, tabs, native menus and Tauri commands;
 - terminal image loading, object URLs, drag/scale/delete interaction and tab-local image state;
 - profile storage, preset files, dirty state and confirmation dialogs;
+- loading the validated Lua ANSI palette snapshot from the native runtime and registering it with SVS before presets are normalized; saved presets keep stable `lua:<name>` references, including when a palette is missing;
 - TUI scroll detection and diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; ordinary scroll paths call `beginBufferScroll()`, detected host regions call `beginRegionScroll()`;
 - the branded browser-preview mock and its `/icon.png` splash logo;
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
+
+SVS owns the custom palette registry and groups Lua palettes after built-ins in its controlled settings section. Scanline Term applies the full native snapshot before loading saved presets. A successful Lua reload applies the prepared candidate snapshot only after commit; failed loads retain the last good catalog. Missing `lua:` references remain saved, render with SVS's built-in fallback, and produce a warning. Catalog changes refresh the theme and tab colors of every live session without changing preset names or dirty state.
 
 `src/ui/SettingsPanel.tsx` composes SVS's controlled `DisplaySettingsSection`, `TerminalSettingsSection`, and `AdvancedCRTSettingsSection`, plus `scanline-virtual-screen/react/styles.css`. Scanline Term provides its mode list, installed fonts, current `ScreenProfile`, and the host-owned smooth-scrolling callbacks; preset persistence, diagnostics, UI, and system controls stay local.
 
@@ -47,7 +52,7 @@ Terminal search remains a Scanline Term feature. The host searches its xterm buf
 
 1. Make and validate the change in the SVS repository: `npm test`, `npm run build`, `npm run lint`, then package inspection.
 2. Push the verified SVS commit.
-3. Update the dependency commit with `npm install git+https://github.com/z-hunter/Scanline-Virtual-Screen.git#<commit>`.
+3. Update the immutable dependency URL with `npm install https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/<commit>`.
 4. Commit the resulting `package.json` and `package-lock.json` changes.
 5. Run `npm test`, `npm run build`, `npm run lint`, then the SVS-related `npm run tauri:dev` matrix: profiles/mode fallback, overlays, CRT on/off, resize, tab switching and disposal.
 

@@ -6,6 +6,9 @@ local sterm = require 'sterm'
 -- GUI settings are saved here; this inert template declares no overrides.
 -- scanline-term:managed-settings:end
 
+-- Register this user-authored ANSI palette without changing the active preset.
+sterm.include('palettes/users.lua')
+
 -- Register trusted source explicitly: require() can load these aliases and the
 -- built-in 'sterm' API, never files from the runtime filesystem.
 sterm.module('modal_editor', 'modules/modal_editor.lua')

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_BROWSER_FORM_FACTOR, DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, shouldHideTabsBar } from './settings';
+import { describe, expect, it, vi } from 'vitest';
+import { colorProfile } from 'scanline-virtual-screen/core';
+import { clonePresetSettings, DEFAULT_BROWSER_FORM_FACTOR, DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, replaceLuaColorProfiles, shouldHideTabsBar, warnIfMissingColorProfile } from './settings';
 
 describe('CRT settings', () => {
   it('rejects corrupt values and falls back to VGA', () => {
@@ -268,6 +269,26 @@ describe('CRT settings', () => {
     expect(preset?.crt.consoleFont).toBe('Cascadia Mono');
     expect(preset?.crt.cursorStyle).toBe('bar');
     expect(preset?.crt.curvature).toBe(DEFAULT_CRT_SETTINGS.curvature);
+  });
+
+  it('preserves missing Lua palette references and warns once per catalog version', () => {
+    const palette = { id: 'lua:users' as const, label: "User's", foreground: '#FFFFFF', background: '#000000', colors: Array(16).fill('#123456') };
+    replaceLuaColorProfiles([palette]);
+    const preset = loadPresetSettings(JSON.stringify({ version: 1, resolution: '640x480', crt: { colorProfile: 'lua:users' } }));
+    expect(preset?.crt.colorProfile).toBe('lua:users');
+    expect(JSON.parse(JSON.stringify(clonePresetSettings(preset!))).crt.colorProfile).toBe('lua:users');
+    const warning = vi.fn();
+    warnIfMissingColorProfile('lua:users', warning);
+    expect(warning).not.toHaveBeenCalled();
+    replaceLuaColorProfiles([]);
+    expect(colorProfile('lua:users').id).toBe('windows-legacy');
+    warnIfMissingColorProfile('lua:users', warning);
+    warnIfMissingColorProfile('lua:users', warning);
+    expect(warning).toHaveBeenCalledTimes(1);
+    replaceLuaColorProfiles([palette]);
+    replaceLuaColorProfiles([]);
+    warnIfMissingColorProfile('lua:users', warning);
+    expect(warning).toHaveBeenCalledTimes(2);
   });
 
   it('loads the canonical ScreenProfile preset and adapts it for the terminal runtime', () => {

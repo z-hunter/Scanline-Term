@@ -1,5 +1,5 @@
 import type { BezelGlowMode, BloomAlgorithm, CRTColorMode, CRTMaskType, CRTSettings, CursorStyle } from 'scanline-virtual-screen/core';
-import { isColorProfile } from 'scanline-virtual-screen/core';
+import { getCustomColorProfiles, isColorProfile, replaceCustomColorProfiles, type TerminalColorProfile } from 'scanline-virtual-screen/core';
 export { DEFAULT_CRT_SETTINGS } from 'scanline-virtual-screen/core';
 import { DEFAULT_CRT_SETTINGS, defaultScreenProfile, legacyPresetFromProfile, normalizeProfile } from 'scanline-virtual-screen/core';
 
@@ -26,6 +26,28 @@ export type TabPlacement = 'top' | 'left';
 
 export const DEFAULT_RESOLUTION: ResolutionId = '1024x768';
 export const DEFAULT_BROWSER_FORM_FACTOR: BrowserFormFactorId = 'physical';
+
+let paletteCatalogVersion = 0;
+let paletteCatalogReady = false;
+const warnedMissingPalettes = new Set<string>();
+
+export function replaceLuaColorProfiles(profiles: readonly TerminalColorProfile[]): boolean {
+  paletteCatalogReady = true;
+  if (JSON.stringify(getCustomColorProfiles()) === JSON.stringify(profiles)) return false;
+  replaceCustomColorProfiles(profiles);
+  paletteCatalogVersion += 1;
+  return true;
+}
+
+export function markLuaColorProfilesReady(): void { paletteCatalogReady = true; }
+
+export function warnIfMissingColorProfile(id: string, onWarning: (message: string) => void): void {
+  if (!paletteCatalogReady || !id.startsWith('lua:') || getCustomColorProfiles().some((profile) => profile.id === id)) return;
+  const key = `${paletteCatalogVersion}:${id}`;
+  if (warnedMissingPalettes.has(key)) return;
+  warnedMissingPalettes.add(key);
+  onWarning(`Color palette ${id} is unavailable; using the default palette.`);
+}
 
 export type AppSettings = {
   version: 1;

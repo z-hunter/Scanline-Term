@@ -6,6 +6,7 @@ const response = (hasSettings: boolean, settings: { defaultPreset?: unknown; smo
   revision: 'r1',
   path: 'sterm.lua',
   hasSettings,
+  palettes: [],
 });
 
 describe('managed settings migration', () => {
@@ -26,8 +27,14 @@ describe('managed settings migration', () => {
     expect(effectiveManagedSettings(loaded, false)).toEqual({ defaultPreset: 'DEC VT-100 (1978)', smoothScrollback: true });
   });
 
+  it('preserves the complete palette snapshot supplied by native settings load', () => {
+    const palettes = [{ id: 'lua:users', label: "User's", foreground: '#FFFFFF', background: '#000000', colors: Array(16).fill('#123456') }];
+    expect(normalizeManagedSettings({ settings: {}, revision: 'r1', path: 'sterm.lua', hasSettings: false, palettes }).palettes).toEqual(palettes);
+  });
+
   it('rejects malformed native responses', () => {
     expect(() => normalizeManagedSettings({ settings: {}, revision: 3, path: '', hasSettings: false })).toThrow('invalid managed settings response');
+    expect(() => normalizeManagedSettings({ settings: {}, revision: 'r1', path: '', hasSettings: false })).toThrow('invalid managed settings response');
   });
 });
 

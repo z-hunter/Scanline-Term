@@ -140,7 +140,7 @@ describe('useLuaAutomationStatus', () => {
 
   it('commits the native prepared token and keeps status polling paused between phases', async () => {
     const ready: LuaAutomationStatus = { state: 'ready', configPath: 'C:\\test\\sterm.lua', error: null, diagnostics: [] };
-    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [{ id: '0', tabId: 'tab-1', name: 'default', expectedCurrentPreset: 'far' }], candidateStatus: 'ready', error: null };
+    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [{ id: '0', tabId: 'tab-1', name: 'default', expectedCurrentPreset: 'far' }], candidateStatus: 'ready', error: null, palettes: [] };
     mocked.invoke.mockImplementation(async (command: string) => {
       if (command === 'lua_automation_status') return ready;
       if (command === 'lua_automation_prepare_reload') return prepared;
@@ -168,7 +168,7 @@ describe('useLuaAutomationStatus', () => {
   });
 
   it('aborts only the prepared frontend/token and releases the reload guard for retry', async () => {
-    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [], candidateStatus: 'ready', error: null };
+    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [], candidateStatus: 'ready', error: null, palettes: [] };
     let prepares = 0;
     mocked.invoke.mockImplementation(async (command: string) => {
       if (command === 'lua_automation_status') return { state: 'ready', configPath: null, error: null, diagnostics: [] };

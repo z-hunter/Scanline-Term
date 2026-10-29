@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { ApplicationCursorState } from './TerminalSession';
+import type { TerminalColorProfile } from 'scanline-virtual-screen/core';
 
 export type LuaAutomationTab = {
   id: string;
@@ -27,6 +28,7 @@ export type LuaReloadPreparation = {
   cleanup: LuaReloadCleanup[];
   candidateStatus: 'ready' | 'error' | 'disabled';
   error: string | null;
+  palettes: TerminalColorProfile[] | null;
 };
 
 export type LuaAutomationStatus = {

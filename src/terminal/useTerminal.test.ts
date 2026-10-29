@@ -31,7 +31,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { mocked.handlers.set(name, handler); return () => mocked.handlers.delete(name); }),
 }));
 
-import { DEFAULT_CRT_SETTINGS, RESOLUTIONS, type PresetSettings } from '../crt/settings';
+import { DEFAULT_CRT_SETTINGS, replaceLuaColorProfiles, RESOLUTIONS, type PresetSettings } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { terminalDimensions } from './ScanlineTerminalRenderer';
 import { adjacentTabId, browserTabColor, linkAt, linkAtLine, nextTabId, previousActiveTabId, previousTabId, reorderTabs, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
@@ -529,9 +529,21 @@ describe('terminal launch event', () => {
     });
     await act(async () => { hookResult.resizeSource(output); });
     let first!: string | null; let second!: string | null;
+    const palette = (background: string) => ({ id: 'lua:users' as const, label: "User's", foreground: '#ffffff', background, colors: Array(16).fill('#123456') });
+    replaceLuaColorProfiles([palette('#000000')]);
     await act(async () => { first = await hookResult.openSession(); second = await hookResult.openSession(); });
-    const replacement = { version: 1 as const, resolution: '1280x800' as const, crt: { ...DEFAULT_CRT_SETTINGS, consoleFontSize: 22 } };
+    const replacement = { version: 1 as const, resolution: '1280x800' as const, crt: { ...DEFAULT_CRT_SETTINGS, colorProfile: 'lua:users' as const, consoleFontSize: 22 } };
+    const secondPreset = { version: 1 as const, resolution: '1024x768' as const, crt: { ...DEFAULT_CRT_SETTINGS, colorProfile: 'lua:users' as const } };
     await act(async () => { hookResult.selectSession(second!, false, false); hookResult.replaceActivePreset(replacement, 'Trinitron touch', first!); });
+    await act(async () => { hookResult.replaceActivePreset(secondPreset, 'Second preset', second!); });
+    replaceLuaColorProfiles([palette('#010101')]);
+    const activeBeforePaletteRefresh = hookResult.activeTabId;
+    const firstStateBeforePaletteRefresh = hookResult.presetStateForSession(first!);
+    await act(async () => { hookResult.refreshColorProfiles(); });
+    expect(terminalSession(first!)!.terminal!.options.theme?.background).toBe('#010101');
+    expect(terminalSession(second!)!.terminal!.options.theme?.background).toBe('#010101');
+    expect(hookResult.activeTabId).toBe(activeBeforePaletteRefresh);
+    expect(hookResult.presetStateForSession(first!)).toMatchObject({ name: firstStateBeforePaletteRefresh?.name, dirty: false });
     expectedTargetId = first;
     await act(async () => {
       hookResult.selectSession(first!, false, false);
