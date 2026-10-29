@@ -6,6 +6,7 @@ export type LuaAutomationTab = {
   id: string;
   title: string;
   processName: string | null;
+  presetName: string;
   cursor: ApplicationCursorState;
 };
 
@@ -15,6 +16,17 @@ export type LuaAutomationSnapshot = {
   activeTabId: string | null;
   focused: boolean;
   tabs: LuaAutomationTab[];
+};
+
+export type LuaPresetRequest = { frontendId: string; generation: number; tabId: string; name: string };
+
+export type LuaReloadCleanup = { id: string; tabId: string; name: string; expectedCurrentPreset: string };
+export type LuaReloadPreparation = {
+  frontendId: string;
+  token: string;
+  cleanup: LuaReloadCleanup[];
+  candidateStatus: 'ready' | 'error' | 'disabled';
+  error: string | null;
 };
 
 export type LuaAutomationStatus = {
@@ -43,11 +55,15 @@ export class LuaAutomationCoordinator {
   private latest: LuaAutomationSnapshot = { activeTabId: null, focused: false, tabs: [] };
   private frontendId: string | null = null;
   private generation = 0;
+  private actionGeneration = 0;
   private disposed = false;
   private started = false;
   private lastPublished = '';
   private pendingUpdate: { frontendId: string; snapshot: LuaAutomationSnapshot } | null = null;
   private publishing = false;
+  private publication: Promise<void> = Promise.resolve();
+  private reloadToken = 0;
+  private pausedReload: number | null = null;
   private startPromise: Promise<LuaAutomationStatus> | null = null;
   private unlistenCapsPolicy: UnlistenFn | null = null;
   private contextKey = '';
@@ -90,6 +106,10 @@ export class LuaAutomationCoordinator {
     return startPromise;
   }
 
+  getFrontendId(): string | null {
+    return this.frontendId;
+  }
+
   update(snapshot: LuaAutomationSnapshot): void {
     if (this.disposed) return;
     this.latest = snapshot;
@@ -98,15 +118,52 @@ export class LuaAutomationCoordinator {
     if (contextKey !== this.contextKey) {
       this.contextKey = contextKey;
       this.contextRevision += 1;
+      this.actionGeneration = 0;
+      this.lastPublished = '';
       this.acceptedCapsPolicy = null;
       this.onCapsPolicy(null);
     }
     if (this.frontendId) this.publish();
   }
 
+  async pauseForReload(): Promise<number> {
+    const token = ++this.reloadToken;
+    this.pausedReload = token;
+    this.actionGeneration = 0;
+    this.lastPublished = '';
+    this.pendingUpdate = null;
+    this.acceptedCapsPolicy = null;
+    this.onCapsPolicy(null);
+    await this.publication;
+    return token;
+  }
+
+  isReloadCurrent(token: number): boolean {
+    return !this.disposed && this.pausedReload === token;
+  }
+
+  resumeAfterReload(token: number): boolean {
+    if (!this.isReloadCurrent(token)) return false;
+    this.pausedReload = null;
+    this.publish(true);
+    return true;
+  }
+
+  invalidateActions(): void {
+    if (this.disposed) return;
+    this.actionGeneration = 0;
+    this.lastPublished = '';
+    this.publish(true);
+  }
+
+  matchesActionContext(frontendId: string, generation: number, tabId: string): boolean {
+    return !this.disposed && this.pausedReload === null && frontendId === this.frontendId && generation === this.actionGeneration && this.latest.activeTabId === tabId && this.latest.tabs.some((tab) => tab.id === tabId);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.latest = { activeTabId: null, focused: false, tabs: [] };
+    this.pausedReload = null;
     this.acceptedCapsPolicy = null;
     this.onCapsPolicy(null);
     this.disposed = true;
@@ -117,12 +174,22 @@ export class LuaAutomationCoordinator {
   }
 
   private publish(force = false): void {
-    if (!this.frontendId) return;
+    if (!this.frontendId || this.pausedReload !== null) return;
     const key = JSON.stringify(this.latest);
     if (!force && key === this.lastPublished) return;
+    this.actionGeneration = 0;
     this.lastPublished = key;
     this.pendingUpdate = { frontendId: this.frontendId, snapshot: { ...this.latest, tabs: [...this.latest.tabs] } };
-    if (!this.publishing) void this.publishPendingUpdates();
+    this.startPublication();
+  }
+
+  private startPublication(): void {
+    if (this.publishing || !this.pendingUpdate || this.pausedReload !== null) return;
+    this.publishing = true;
+    this.publication = this.publishPendingUpdates().finally(() => {
+      this.publishing = false;
+      this.startPublication();
+    });
   }
 
   private async publishPendingUpdates(): Promise<void> {
@@ -132,7 +199,9 @@ export class LuaAutomationCoordinator {
         const { frontendId, snapshot } = this.pendingUpdate;
         this.pendingUpdate = null;
         try {
-          await this.call('lua_automation_update', { snapshot: { ...snapshot, frontendId, generation: ++this.generation } });
+          const generation = ++this.generation;
+          this.actionGeneration = generation;
+          await this.call('lua_automation_update', { snapshot: { ...snapshot, frontendId, generation } });
         } catch (reason) {
           if (!this.disposed) this.onError(`Lua automation update failed: ${String(reason)}`);
         }
@@ -144,7 +213,7 @@ export class LuaAutomationCoordinator {
   }
 
   private receiveCapsPolicy(lease: CapsPolicyLease): void {
-    if (this.disposed || !this.frontendId || lease.frontendId !== this.frontendId || lease.enabled && !/^[0-9a-f]{16}$/i.test(lease.markerToken ?? '') || lease.policyEpoch < this.latestPolicyEpoch) return;
+    if (this.disposed || this.pausedReload !== null || !this.frontendId || lease.frontendId !== this.frontendId || lease.enabled && !/^[0-9a-f]{16}$/i.test(lease.markerToken ?? '') || lease.policyEpoch < this.latestPolicyEpoch) return;
     if (lease.policyEpoch === this.latestPolicyEpoch && lease.generation < this.latestPolicyGeneration) return;
     const supersedesAccepted = lease.policyEpoch > this.latestPolicyEpoch && this.acceptedCapsPolicy !== null;
     if (lease.policyEpoch > this.latestPolicyEpoch) this.latestPolicyGeneration = lease.generation;

@@ -7,8 +7,8 @@ use std::{
     io::Read,
     path::{Component, Path, PathBuf},
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -16,7 +16,7 @@ use std::{
 use mlua::{Function, HookTriggers, Lua, LuaOptions, StdLib, Table, Value, VmState};
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 
-const MAX_CONFIG_BYTES: usize = 256 * 1024;
+pub const MAX_CONFIG_BYTES: usize = 256 * 1024;
 const MAX_SCRIPT_BYTES: usize = 256 * 1024;
 const MAX_ATTACHMENTS: usize = 64;
 const MAX_MODULES: usize = 64;
@@ -30,6 +30,11 @@ const MAX_EXECUTION_TIME: Duration = Duration::from_millis(50);
 const HOOK_INSTRUCTION_INTERVAL: u32 = 1_000;
 const MAX_VALUE_DEPTH: usize = 16;
 const MAX_VALUE_ITEMS: usize = 1_024;
+const MAX_STATE_KEY_BYTES: usize = 64;
+const MAX_STATE_VALUE_BYTES: usize = 4_096;
+const MAX_STATE_KEYS: usize = 32;
+const MAX_STATE_SCOPE_BYTES: usize = 16 * 1024;
+const MAX_STATE_TOTAL_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CursorStyle {
@@ -52,6 +57,7 @@ pub struct TabState {
     pub id: String,
     pub title: String,
     pub local_process_name: Option<String>,
+    pub preset_name: String,
     pub cursor_style: CursorStyle,
     pub active: bool,
     pub focused: bool,
@@ -94,6 +100,11 @@ pub enum RuntimeEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     SetLayout(String),
+    ApplyPreset(String),
+    RestorePreset {
+        name: String,
+        expected_current: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,13 +127,61 @@ pub struct DispatchResult {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReloadCleanup {
+    pub tab_id: String,
+    pub attachment_key: String,
+    pub name: String,
+    pub expected_current_preset: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReloadDispatchResult {
+    pub cleanup: Vec<ReloadCleanup>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 #[derive(Clone)]
 struct Attachment {
+    state_key: String,
     source_name: String,
     source: Arc<str>,
     process_matches: Option<Vec<String>>,
     options: JsonValue,
     events: HashSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ScenarioValue {
+    Boolean(bool),
+    Integer(i64),
+    Number(f64),
+    String(String),
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ScenarioStateStore(Arc<Mutex<HashMap<(String, String), HashMap<String, ScenarioValue>>>>);
+
+impl ScenarioStateStore {
+    pub fn clear_tab(&self, tab_id: &str) {
+        if let Ok(mut state) = self.0.lock() {
+            state.retain(|(id, _), _| id != tab_id);
+        }
+    }
+
+    pub fn clear_all(&self) {
+        if let Ok(mut state) = self.0.lock() {
+            state.clear();
+        }
+    }
+
+    pub(crate) fn retain(&self, tabs: &HashSet<String>, attachments: &HashSet<String>) {
+        if let Ok(mut state) = self.0.lock() {
+            state.retain(|(tab, attachment), _| {
+                tabs.contains(tab) && attachments.contains(attachment)
+            });
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -135,6 +194,13 @@ struct LuaModule {
 struct ConfigRegistrations {
     attachments: Vec<(String, Option<Vec<String>>, JsonValue)>,
     modules: HashMap<String, String>,
+    settings: Option<ManagedSettings>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ManagedSettings {
+    pub default_preset: Option<String>,
+    pub smooth_scrollback: Option<bool>,
 }
 
 /// Immutable source generation. Reload by constructing a new snapshot and then
@@ -144,19 +210,24 @@ pub struct RuntimeSnapshot {
     config_path: PathBuf,
     attachments: Vec<Attachment>,
     modules: HashMap<String, LuaModule>,
+    settings: Option<ManagedSettings>,
     wants_input_language_events: bool,
 }
 
 struct ScriptInstance {
     source_name: String,
     process_matches: Option<Vec<String>>,
+    state_scope: (String, String),
+    state_store: ScenarioStateStore,
     lua: Lua,
     handlers: HashMap<String, Vec<Function>>,
     activate_handlers: Vec<Function>,
     deactivate_handlers: Vec<Function>,
+    unload_handlers: Vec<Function>,
     active: bool,
     disabled: bool,
     smart_caps: bool,
+    unload_called: bool,
     epoch: Arc<AtomicU64>,
 }
 
@@ -178,13 +249,13 @@ struct TabRuntime {
 pub struct LuaRuntime {
     snapshot: RuntimeSnapshot,
     tabs: HashMap<String, TabRuntime>,
+    state: ScenarioStateStore,
 }
 
 impl RuntimeSnapshot {
     /// Loads the entry file and exactly the `.use()` scripts it declares.
     /// Relative paths are canonicalized under the entry file's directory.
     pub fn load(entry_path: &Path) -> Result<Self, Vec<Diagnostic>> {
-        let mut diagnostics = Vec::new();
         let entry_path = match fs::canonicalize(entry_path) {
             Ok(path) => path,
             Err(error) => {
@@ -195,6 +266,39 @@ impl RuntimeSnapshot {
                 )]);
             }
         };
+        let entry_name = entry_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("config.lua")
+            .to_owned();
+        let entry_source = match read_limited(&entry_path, MAX_CONFIG_BYTES) {
+            Ok(source) => Arc::<str>::from(source),
+            Err(error) => return Err(vec![diagnostic(Some(entry_name), None, error)]),
+        };
+        Self::load_source_at(&entry_path, entry_source)
+    }
+
+    /// Evaluates a candidate entry with the same bounded registration sandbox as a loaded file.
+    pub fn load_source(entry_path: &Path, source: &str) -> Result<Self, Vec<Diagnostic>> {
+        if source.len() > MAX_CONFIG_BYTES {
+            return Err(vec![diagnostic(None, None, "Lua config is too large")]);
+        }
+        let entry_path = fs::canonicalize(entry_path).map_err(|error| {
+            vec![diagnostic(
+                None,
+                None,
+                format!("could not resolve Lua configuration: {error}"),
+            )]
+        })?;
+        Self::load_source_at(&entry_path, Arc::<str>::from(source))
+    }
+
+    fn load_source_at(entry_path: &Path, entry_source: Arc<str>) -> Result<Self, Vec<Diagnostic>> {
+        let mut diagnostics = Vec::new();
+        let entry_source = entry_source
+            .strip_prefix('\u{feff}')
+            .map(Arc::<str>::from)
+            .unwrap_or(entry_source);
         let Some(root) = entry_path.parent() else {
             return Err(vec![diagnostic(
                 None,
@@ -207,11 +311,6 @@ impl RuntimeSnapshot {
             .and_then(|name| name.to_str())
             .unwrap_or("config.lua")
             .to_owned();
-        let entry_source = match read_limited(&entry_path, MAX_CONFIG_BYTES) {
-            Ok(source) => Arc::<str>::from(source),
-            Err(error) => return Err(vec![diagnostic(Some(entry_name), None, error)]),
-        };
-
         let registration_lua = match new_lua() {
             Ok(lua) => lua,
             Err(error) => return Err(vec![diagnostic(None, None, error.to_string())]),
@@ -289,6 +388,7 @@ impl RuntimeSnapshot {
             );
         }
         let mut attachments = Vec::with_capacity(registrations.attachments.len());
+        let mut attachment_occurrences = HashMap::<(String, Vec<String>), usize>::new();
         for (relative, process_matches, options) in registrations.attachments {
             let resolved = match confined_script_path(root, &relative) {
                 Ok(path) => path,
@@ -298,6 +398,22 @@ impl RuntimeSnapshot {
                 }
             };
             let source_name = relative.replace('\\', "/");
+            let mut identity_processes = process_matches
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(|name| name.to_ascii_lowercase())
+                .collect::<Vec<_>>();
+            identity_processes.sort();
+            identity_processes.dedup();
+            let identity_base = (
+                resolved.to_string_lossy().to_ascii_lowercase(),
+                identity_processes,
+            );
+            let occurrence = attachment_occurrences.entry(identity_base.clone()).or_default();
+            let state_key = serde_json::to_string(&(identity_base, *occurrence))
+                .expect("attachment identity contains only strings");
+            *occurrence += 1;
             if attachments.len() >= MAX_ATTACHMENTS {
                 return Err(vec![diagnostic(
                     Some(entry_name),
@@ -390,6 +506,7 @@ impl RuntimeSnapshot {
                     })
                     .unwrap_or_default();
                 attachments.push(Attachment {
+                    state_key,
                     source_name,
                     source,
                     process_matches,
@@ -405,28 +522,90 @@ impl RuntimeSnapshot {
             .iter()
             .any(|attachment| attachment.events.contains("input-language-changed"));
         Ok(Self {
-            config_path: entry_path,
+            config_path: entry_path.to_path_buf(),
             attachments,
             modules,
+            settings: registrations.settings,
             wants_input_language_events,
         })
+    }
+
+    pub fn settings(&self) -> Option<&ManagedSettings> {
+        self.settings.as_ref()
     }
 
     pub fn config_path(&self) -> &Path {
         &self.config_path
     }
 
+    #[cfg(test)]
     pub fn wants_input_language_events(&self) -> bool {
         self.wants_input_language_events
+    }
+
+    pub fn attachment_state_keys(&self) -> HashSet<String> {
+        self.attachments
+            .iter()
+            .map(|attachment| attachment.state_key.clone())
+            .collect()
     }
 }
 
 impl LuaRuntime {
+    #[cfg(test)]
     pub fn new(snapshot: RuntimeSnapshot) -> Self {
+        Self::with_state_store(snapshot, ScenarioStateStore::default())
+    }
+
+    pub fn with_state_store(snapshot: RuntimeSnapshot, state: ScenarioStateStore) -> Self {
         Self {
             snapshot,
             tabs: HashMap::new(),
+            state,
         }
+    }
+
+    pub fn prepare_removed_attachments(
+        &mut self,
+        retained_keys: &HashSet<String>,
+        contexts: &HashMap<String, (TabState, InputState)>,
+    ) -> ReloadDispatchResult {
+        let mut result = ReloadDispatchResult::default();
+        for (tab_id, runtime) in &mut self.tabs {
+            let Some((tab, input)) = contexts.get(tab_id) else {
+                continue;
+            };
+            for script in runtime
+                .scripts
+                .iter_mut()
+                .filter(|script| {
+                    !retained_keys.contains(&script.state_scope.1) && !script.unload_called
+                })
+            {
+                script.unload_called = true;
+                let mut dispatched = DispatchResult::default();
+                Self::run_handlers(script, tab, input, "unload", None, &mut dispatched);
+                result.diagnostics.extend(dispatched.diagnostics);
+                for intent in dispatched.actions {
+                    match intent.action {
+                        Action::RestorePreset { name, expected_current } => {
+                            result.cleanup.push(ReloadCleanup {
+                                tab_id: tab_id.clone(),
+                                attachment_key: script.state_scope.1.clone(),
+                                name,
+                                expected_current_preset: expected_current,
+                            });
+                        }
+                        _ => result.diagnostics.push(diagnostic(
+                            Some(script.source_name.clone()),
+                            Some("unload".into()),
+                            "on_unload may only request preset restoration",
+                        )),
+                    }
+                }
+            }
+        }
+        result
     }
 
     pub fn wants_input_language_events(&self) -> bool {
@@ -439,6 +618,17 @@ impl LuaRuntime {
         snapshot: RuntimeSnapshot,
         tabs: impl IntoIterator<Item = (TabState, InputState)>,
     ) -> Vec<DispatchResult> {
+        let tabs = tabs.into_iter().collect::<Vec<_>>();
+        let tab_ids = tabs
+            .iter()
+            .map(|(tab, _)| tab.id.clone())
+            .collect::<HashSet<_>>();
+        let attachment_keys = snapshot
+            .attachments
+            .iter()
+            .map(|attachment| attachment.state_key.clone())
+            .collect::<HashSet<_>>();
+        self.state.retain(&tab_ids, &attachment_keys);
         self.snapshot = snapshot;
         self.tabs.clear();
         tabs.into_iter()
@@ -529,7 +719,7 @@ impl LuaRuntime {
                     continue;
                 }
             };
-            let (handlers, activate_handlers, deactivate_handlers) = match handlers {
+            let (handlers, activate_handlers, deactivate_handlers, unload_handlers) = match handlers {
                 Ok(handlers) => handlers,
                 Err(error) => {
                     result.diagnostics.push(diagnostic(
@@ -543,13 +733,17 @@ impl LuaRuntime {
             let mut script = ScriptInstance {
                 source_name: attachment.source_name.clone(),
                 process_matches: attachment.process_matches.clone(),
+                state_scope: (tab.id.clone(), attachment.state_key.clone()),
+                state_store: self.state.clone(),
                 lua,
                 handlers,
                 activate_handlers,
                 deactivate_handlers,
+                unload_handlers,
                 active,
                 disabled: false,
                 smart_caps: smart_caps.enabled.load(Ordering::SeqCst),
+                unload_called: false,
                 epoch,
             };
             if active {
@@ -597,9 +791,16 @@ impl LuaRuntime {
                     continue;
                 }
             }
+            let preset_context = matches!(&event, RuntimeEvent::ContextUpdated)
+                && tab.active
+                && process_matches(
+                    script.process_matches.as_deref(),
+                    tab.local_process_name.as_deref(),
+                );
             let callback_allowed = script.active
+                || preset_context
                 || matches!(
-                    event,
+                    &event,
                     RuntimeEvent::TabDeactivated
                         | RuntimeEvent::TabFocusChanged { focused: false }
                         | RuntimeEvent::WindowFocusChanged { focused: false }
@@ -614,6 +815,7 @@ impl LuaRuntime {
                             &event_value,
                             event_name,
                             handler,
+                            preset_context,
                             &mut result,
                         );
                         if script.disabled {
@@ -628,6 +830,7 @@ impl LuaRuntime {
 
     pub fn close_tab(&mut self, tab_id: &str) {
         self.tabs.remove(tab_id);
+        self.state.clear_tab(tab_id);
     }
 
     pub fn smart_caps_enabled(&self, tab_id: &str) -> bool {
@@ -649,12 +852,14 @@ impl LuaRuntime {
     ) {
         let handlers = if lifecycle == "activate" {
             script.activate_handlers.clone()
+        } else if lifecycle == "unload" {
+            script.unload_handlers.clone()
         } else {
             script.deactivate_handlers.clone()
         };
         let value = event.cloned().unwrap_or(JsonValue::Null);
         for handler in handlers {
-            Self::run_callback(script, tab, input, &value, lifecycle, handler, result);
+            Self::run_callback(script, tab, input, &value, lifecycle, handler, false, result);
             if script.disabled {
                 break;
             }
@@ -668,18 +873,25 @@ impl LuaRuntime {
         event: &JsonValue,
         event_name: &str,
         handler: Function,
+        allow_unfocused_preset: bool,
         result: &mut DispatchResult,
     ) {
         let epoch = script.epoch.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
         let pending = Arc::new(Mutex::new(Vec::<Action>::new()));
+        let state_writes = Arc::new(Mutex::new(HashMap::new()));
         if let Err(error) = install_context_api(
             &script.lua,
             tab,
             input,
             script.active,
+            allow_unfocused_preset,
             script.epoch.clone(),
             epoch,
             pending.clone(),
+            script.state_store.clone(),
+            script.state_scope.clone(),
+            state_writes.clone(),
+            event_name == "unload",
         ) {
             result.diagnostics.push(diagnostic(
                 Some(script.source_name.clone()),
@@ -727,6 +939,21 @@ impl LuaRuntime {
         script.epoch.fetch_add(1, Ordering::SeqCst);
         match call {
             Ok(()) if start.elapsed() <= MAX_EXECUTION_TIME => {
+                if event_name != "unload" {
+                    if let Err(error) = commit_state_writes(
+                        &script.state_store,
+                        &script.state_scope,
+                        &state_writes,
+                    ) {
+                        script.disabled = true;
+                        result.diagnostics.push(diagnostic(
+                            Some(script.source_name.clone()),
+                            Some(event_name.to_owned()),
+                            error,
+                        ));
+                        return;
+                    }
+                }
                 if let Ok(mut actions) = pending.lock() {
                     result
                         .actions
@@ -819,6 +1046,62 @@ fn install_registration_api(
     registrations: Arc<Mutex<ConfigRegistrations>>,
 ) -> mlua::Result<()> {
     let module = lua.create_table()?;
+    module.set("settings", {
+        let registrations = registrations.clone();
+        lua.create_function(move |_, settings: Table| {
+            let mut default_preset = None;
+            let mut smooth_scrollback = None;
+            for pair in settings.clone().pairs::<Value, Value>() {
+                let (key, _) = pair?;
+                let Value::String(key) = key else {
+                    return Err(mlua::Error::RuntimeError(
+                        "sterm.settings requires named fields".into(),
+                    ));
+                };
+                let key = key.to_str()?.to_owned();
+                if key != "default_preset" && key != "smooth_scrollback" {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "unknown sterm.settings field '{key}'"
+                    )));
+                }
+            }
+            match settings.get::<Value>("default_preset")? {
+                Value::Nil => {}
+                Value::String(value) => {
+                    let name = value.to_str()?.to_owned();
+                    crate::presets::validate_name(&name).map_err(mlua::Error::RuntimeError)?;
+                    default_preset = Some(name);
+                }
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "default_preset must be a saved preset name or nil".into(),
+                    ));
+                }
+            }
+            match settings.get::<Value>("smooth_scrollback")? {
+                Value::Nil => {}
+                Value::Boolean(value) => smooth_scrollback = Some(value),
+                _ => {
+                    return Err(mlua::Error::RuntimeError(
+                        "smooth_scrollback must be a boolean or nil".into(),
+                    ));
+                }
+            }
+            let mut registrations = registrations.lock().map_err(|_| {
+                mlua::Error::RuntimeError("Lua registration state is unavailable".into())
+            })?;
+            if registrations.settings.is_some() {
+                return Err(mlua::Error::RuntimeError(
+                    "sterm.settings may only be declared once".into(),
+                ));
+            }
+            registrations.settings = Some(ManagedSettings {
+                default_preset,
+                smooth_scrollback,
+            });
+            Ok(())
+        })?
+    })?;
     module.set("module", {
         let registrations = registrations.clone();
         lua.create_function(move |_, (name, path): (String, String)| {
@@ -1035,6 +1318,25 @@ fn install_script_api(
             Ok(())
         })?
     })?;
+    module.set("on_unload", {
+        let handlers = handlers.clone();
+        let handler_count = handler_count.clone();
+        lua.create_function(move |lua, handler: Function| {
+            if handler_count.fetch_add(1, Ordering::Relaxed) >= MAX_HANDLERS_PER_VM {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "script exceeds {MAX_HANDLERS_PER_VM} handler registrations"
+                )));
+            }
+            let list = get_or_create_list(lua, &handlers, "__unload")?;
+            if list.raw_len() > 0 {
+                return Err(mlua::Error::RuntimeError(
+                    "a script may register only one on_unload callback".into(),
+                ));
+            }
+            list.set(list.raw_len() + 1, handler)?;
+            Ok(())
+        })?
+    })?;
     lua.globals().set("sterm", module.clone())?;
     let module_cache = lua.create_table()?;
     let modules_loading = lua.create_table()?;
@@ -1101,7 +1403,12 @@ fn get_or_create_list(lua: &Lua, handlers: &Table, key: &str) -> mlua::Result<Ta
 
 fn collect_handlers(
     table: &Table,
-) -> mlua::Result<(HashMap<String, Vec<Function>>, Vec<Function>, Vec<Function>)> {
+) -> mlua::Result<(
+    HashMap<String, Vec<Function>>,
+    Vec<Function>,
+    Vec<Function>,
+    Vec<Function>,
+)> {
     let mut handlers = HashMap::new();
     for pair in table.clone().pairs::<String, Table>() {
         let (name, list) = pair?;
@@ -1132,7 +1439,16 @@ fn collect_handlers(
         })
         .transpose()?
         .unwrap_or_default();
-    Ok((handlers, activate, deactivate))
+    let unload = table
+        .get::<Table>("__unload")
+        .ok()
+        .map(|list| {
+            list.sequence_values::<Function>()
+                .collect::<mlua::Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok((handlers, activate, deactivate, unload))
 }
 
 fn install_context_api(
@@ -1140,9 +1456,14 @@ fn install_context_api(
     tab: &TabState,
     input: &InputState,
     active: bool,
+    allow_unfocused_preset: bool,
     epoch: Arc<AtomicU64>,
     expected_epoch: u64,
     actions: Arc<Mutex<Vec<Action>>>,
+    state: ScenarioStateStore,
+    scope: (String, String),
+    state_writes: Arc<Mutex<HashMap<String, Option<ScenarioValue>>>>,
+    unloading: bool,
 ) -> mlua::Result<()> {
     let ctx = lua.create_table()?;
     let tab_api = lua.create_table()?;
@@ -1161,6 +1482,11 @@ fn install_context_api(
         "local_process_name",
         lua.create_function(move |_, _: Value| Ok(process.clone()))?,
     )?;
+    let preset_name = tab.preset_name.clone();
+    tab_api.set(
+        "preset_name",
+        lua.create_function(move |_, _: Value| Ok(preset_name.clone()))?,
+    )?;
     let cursor = cursor_to_json(&tab.cursor_style);
     tab_api.set(
         "cursor_style",
@@ -1176,7 +1502,109 @@ fn install_context_api(
         "is_focused",
         lua.create_function(move |_, _: Value| Ok(tab_focused))?,
     )?;
+    let epoch_for_preset = epoch.clone();
+    let actions_for_preset = actions.clone();
+    let preset_for_preset = tab.preset_name.clone();
+    let tab_active = tab.active;
+    let tab_focused = tab.focused;
+    let restoring = unloading;
+    tab_api.set(
+        "apply_preset",
+        lua.create_function(move |_, (_, name): (Value, String)| {
+            if epoch_for_preset.load(Ordering::SeqCst) != expected_epoch {
+                return Err(mlua::Error::RuntimeError(
+                    "callback context has expired".into(),
+                ));
+            }
+            crate::presets::validate_name(&name).map_err(mlua::Error::RuntimeError)?;
+            if !restoring
+                && ((!allow_unfocused_preset && (!active || !tab_active || !tab_focused))
+                    || (allow_unfocused_preset && !tab_active))
+            {
+                return Ok(false);
+            }
+            let mut actions = actions_for_preset
+                .lock()
+                .map_err(|_| mlua::Error::RuntimeError("action queue is unavailable".into()))?;
+            let action = if restoring {
+                Action::RestorePreset {
+                    name,
+                    expected_current: preset_for_preset.clone(),
+                }
+            } else {
+                Action::ApplyPreset(name)
+            };
+            if restoring && actions.iter().any(|existing| existing != &action) {
+                return Err(mlua::Error::RuntimeError(
+                    "on_unload may request only one preset restoration".into(),
+                ));
+            }
+            if actions.contains(&action) {
+                return Ok(true);
+            }
+            if actions.len() >= MAX_ACTIONS_PER_CALLBACK {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "callback exceeds {MAX_ACTIONS_PER_CALLBACK} host actions"
+                )));
+            }
+            actions.push(action);
+            Ok(true)
+        })?,
+    )?;
     ctx.set("tab", tab_api)?;
+    let state_api = lua.create_table()?;
+    let store_for_get = state.clone();
+    let scope_for_get = scope.clone();
+    let writes_for_get = state_writes.clone();
+    let epoch_for_get = epoch.clone();
+    state_api.set(
+        "get",
+        lua.create_function(move |lua, (_, key): (Value, String)| {
+            check_state_key(&key)?;
+            if epoch_for_get.load(Ordering::SeqCst) != expected_epoch {
+                return Err(mlua::Error::RuntimeError("callback context has expired".into()));
+            }
+            let staged = writes_for_get
+                .lock()
+                .map_err(|_| mlua::Error::RuntimeError("scenario state is unavailable".into()))?;
+            if let Some(value) = staged.get(&key) {
+                return value
+                    .as_ref()
+                    .map(|value| scenario_value_to_lua(lua, value))
+                    .unwrap_or(Ok(Value::Nil));
+            }
+            let store = store_for_get
+                .0
+                .lock()
+                .map_err(|_| mlua::Error::RuntimeError("scenario state is unavailable".into()))?;
+            store
+                .get(&scope_for_get)
+                .and_then(|values| values.get(&key))
+                .map(|value| scenario_value_to_lua(lua, value))
+                .unwrap_or(Ok(Value::Nil))
+        })?,
+    )?;
+    let store_for_set = state;
+    let scope_for_set = scope;
+    let writes_for_set = state_writes;
+    let epoch_for_set_state = epoch.clone();
+    state_api.set(
+        "set",
+        lua.create_function(move |_, (_, key, value): (Value, String, Value)| {
+            check_state_key(&key)?;
+            if epoch_for_set_state.load(Ordering::SeqCst) != expected_epoch {
+                return Err(mlua::Error::RuntimeError("callback context has expired".into()));
+            }
+            let value = scenario_value_from_lua(value)?;
+            let mut writes = writes_for_set
+                .lock()
+                .map_err(|_| mlua::Error::RuntimeError("scenario state is unavailable".into()))?;
+            validate_state_write(&store_for_set, &scope_for_set, &writes, &key, &value)?;
+            writes.insert(key, value);
+            Ok(())
+        })?,
+    )?;
+    ctx.set("state", state_api)?;
     let input_api = lua.create_table()?;
     let current_layout = input.current_layout.clone();
     let epoch_for_current = epoch.clone();
@@ -1200,6 +1628,11 @@ fn install_context_api(
             if epoch_for_set.load(Ordering::SeqCst) != expected_epoch {
                 return Err(mlua::Error::RuntimeError(
                     "callback context has expired".into(),
+                ));
+            }
+            if unloading {
+                return Err(mlua::Error::RuntimeError(
+                    "on_unload may only request preset restoration".into(),
                 ));
             }
             if layout.is_empty() || layout.len() > 64 {
@@ -1226,6 +1659,149 @@ fn install_context_api(
     )?;
     ctx.set("input", input_api)?;
     lua.globals().set("__sterm_ctx", ctx)
+}
+
+fn check_state_key(key: &str) -> mlua::Result<()> {
+    if key.is_empty() || key.len() > MAX_STATE_KEY_BYTES {
+        return Err(mlua::Error::RuntimeError(format!(
+            "scenario state keys must be 1 to {MAX_STATE_KEY_BYTES} UTF-8 bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn scenario_value_from_lua(value: Value) -> mlua::Result<Option<ScenarioValue>> {
+    match value {
+        Value::Nil => Ok(None),
+        Value::Boolean(value) => Ok(Some(ScenarioValue::Boolean(value))),
+        Value::Integer(value) => Ok(Some(ScenarioValue::Integer(value))),
+        Value::Number(value) if value.is_finite() => Ok(Some(ScenarioValue::Number(value))),
+        Value::Number(_) => Err(mlua::Error::RuntimeError(
+            "scenario state numbers must be finite".into(),
+        )),
+        Value::String(value) => {
+            let value = value.to_str()?.to_owned();
+            if value.len() > MAX_STATE_VALUE_BYTES {
+                return Err(mlua::Error::RuntimeError(format!(
+                    "scenario state strings are limited to {MAX_STATE_VALUE_BYTES} UTF-8 bytes"
+                )));
+            }
+            Ok(Some(ScenarioValue::String(value)))
+        }
+        _ => Err(mlua::Error::RuntimeError(
+            "scenario state supports only nil, boolean, finite number, and string values".into(),
+        )),
+    }
+}
+
+fn scenario_value_to_lua(lua: &Lua, value: &ScenarioValue) -> mlua::Result<Value> {
+    match value {
+        ScenarioValue::Boolean(value) => Ok(Value::Boolean(*value)),
+        ScenarioValue::Integer(value) => Ok(Value::Integer(*value)),
+        ScenarioValue::Number(value) => Ok(Value::Number(*value)),
+        ScenarioValue::String(value) => Ok(Value::String(lua.create_string(value)?)),
+    }
+}
+
+fn state_scope_bytes(values: &HashMap<String, ScenarioValue>) -> usize {
+    values
+        .iter()
+        .map(|(key, value)| {
+            key.len()
+                + 16
+                + match value {
+                    ScenarioValue::Boolean(_)
+                    | ScenarioValue::Integer(_)
+                    | ScenarioValue::Number(_) => 8,
+                    ScenarioValue::String(value) => value.len(),
+                }
+        })
+        .sum()
+}
+
+fn validate_state_write(
+    state: &ScenarioStateStore,
+    scope: &(String, String),
+    staged: &HashMap<String, Option<ScenarioValue>>,
+    key: &str,
+    value: &Option<ScenarioValue>,
+) -> mlua::Result<()> {
+    let store = state
+        .0
+        .lock()
+        .map_err(|_| mlua::Error::RuntimeError("scenario state is unavailable".into()))?;
+    let mut projected = store.get(scope).cloned().unwrap_or_default();
+    for (staged_key, staged_value) in staged {
+        match staged_value {
+            Some(value) => {
+                projected.insert(staged_key.clone(), value.clone());
+            }
+            None => {
+                projected.remove(staged_key);
+            }
+        }
+    }
+    match value {
+        Some(value) => {
+            projected.insert(key.to_owned(), value.clone());
+        }
+        None => {
+            projected.remove(key);
+        }
+    }
+    if projected.len() > MAX_STATE_KEYS {
+        return Err(mlua::Error::RuntimeError(format!(
+            "scenario state is limited to {MAX_STATE_KEYS} keys per script and tab"
+        )));
+    }
+    let scope_bytes = state_scope_bytes(&projected);
+    if scope_bytes > MAX_STATE_SCOPE_BYTES {
+        return Err(mlua::Error::RuntimeError(format!(
+            "scenario state is limited to {MAX_STATE_SCOPE_BYTES} bytes per script and tab"
+        )));
+    }
+    let total_bytes = store
+        .iter()
+        .filter(|(other_scope, _)| *other_scope != scope)
+        .map(|(_, values)| state_scope_bytes(values))
+        .sum::<usize>()
+        + scope_bytes;
+    if total_bytes > MAX_STATE_TOTAL_BYTES {
+        return Err(mlua::Error::RuntimeError(format!(
+            "scenario state is limited to {MAX_STATE_TOTAL_BYTES} bytes across the app"
+        )));
+    }
+    Ok(())
+}
+
+fn commit_state_writes(
+    state: &ScenarioStateStore,
+    scope: &(String, String),
+    writes: &Arc<Mutex<HashMap<String, Option<ScenarioValue>>>>,
+) -> Result<(), String> {
+    let writes = writes
+        .lock()
+        .map_err(|_| "scenario state is unavailable".to_owned())?
+        .clone();
+    let mut store = state
+        .0
+        .lock()
+        .map_err(|_| "scenario state is unavailable".to_owned())?;
+    let values = store.entry(scope.clone()).or_default();
+    for (key, value) in writes {
+        match value {
+            Some(value) => {
+                values.insert(key, value);
+            }
+            None => {
+                values.remove(&key);
+            }
+        }
+    }
+    if values.is_empty() {
+        store.remove(scope);
+    }
+    Ok(())
 }
 
 fn json_to_lua(lua: &Lua, value: &JsonValue) -> mlua::Result<Value> {
@@ -1555,6 +2131,7 @@ mod tests {
             id: id.into(),
             title: String::new(),
             local_process_name: process.map(str::to_owned),
+            preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Block,
                 blink: Some(true),
@@ -1622,6 +2199,334 @@ mod tests {
                 "cursor-style-changed",
                 "en-US"
             )]
+        );
+    }
+
+    #[test]
+    fn scenario_state_isolated_by_tab_and_preserved_across_fresh_vms() {
+        let dir = TempDir::new();
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.use('counter.lua')",
+        );
+        dir.write(
+            "counter.lua",
+            "local local_count=0; sterm.on('context-updated', function(ctx) local_count=local_count+1; ctx.state:set('persisted', (ctx.state:get('persisted') or 0)+1); ctx.state:set('local', local_count) end)",
+        );
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let mut runtime = LuaRuntime::new(snapshot.clone());
+        let first = tab("first", None, true, true);
+        let second = tab("second", None, true, true);
+        runtime.attach_tab(first.clone(), InputState::default());
+        runtime.attach_tab(second.clone(), InputState::default());
+        runtime.dispatch(&first, &InputState::default(), RuntimeEvent::ContextUpdated);
+        runtime.dispatch(&second, &InputState::default(), RuntimeEvent::ContextUpdated);
+        let key = snapshot.attachments[0].state_key.clone();
+        let state = runtime.state.0.lock().unwrap();
+        assert_eq!(state[&(first.id.clone(), key.clone())]["persisted"], ScenarioValue::Integer(1));
+        assert_eq!(state[&(second.id.clone(), key.clone())]["persisted"], ScenarioValue::Integer(1));
+        drop(state);
+
+        dir.write(
+            "counter.lua",
+            "local local_count=0; sterm.on('context-updated', function(ctx) local_count=local_count+1; ctx.state:set('persisted', (ctx.state:get('persisted') or 0)+1); ctx.state:set('local', local_count) end)",
+        );
+        let next = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        runtime.reload(next, [(first.clone(), InputState::default())]);
+        runtime.dispatch(&first, &InputState::default(), RuntimeEvent::ContextUpdated);
+        let state = runtime.state.0.lock().unwrap();
+        let values = &state[&(first.id, key)];
+        assert_eq!(values["persisted"], ScenarioValue::Integer(2));
+        assert_eq!(values["local"], ScenarioValue::Integer(1));
+    }
+
+    #[test]
+    fn scenario_state_writes_roll_back_when_callback_fails() {
+        let (_dir, mut runtime) = setup(
+            "sterm.on('context-updated', function(ctx) ctx.state:set('value', 7); error('failed') end)",
+        );
+        let state = tab("a", Some("nvim.exe"), true, true);
+        runtime.attach_tab(state.clone(), InputState::default());
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(runtime.state.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn scenario_state_rejects_non_scalars_and_enforces_scope_limits() {
+        let (_dir, mut runtime) = setup(
+            "sterm.on('context-updated', function(ctx) ctx.state:set('value', {}) end)",
+        );
+        let state = tab("a", Some("nvim.exe"), true, true);
+        runtime.attach_tab(state.clone(), InputState::default());
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert!(result.diagnostics[0].message.contains("only nil, boolean"));
+        assert!(runtime.state.0.lock().unwrap().is_empty());
+
+        let (_dir, mut runtime) = setup(
+            "sterm.on('context-updated', function(ctx) for i=1,33 do ctx.state:set('k'..i, true) end end)",
+        );
+        runtime.attach_tab(state.clone(), InputState::default());
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert!(result.diagnostics[0].message.contains("limited to 32 keys"));
+        assert!(runtime.state.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn settings_capture_evaluates_values_in_the_bounded_registration_vm() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "");
+        let snapshot = RuntimeSnapshot::load_source(
+            &dir.entry(),
+            "local sterm=require 'sterm'; local function choose() return 'DEC VT-100', (1 == 1) end; local preset, enabled=choose(); sterm.settings({default_preset=preset, smooth_scrollback=enabled})",
+        )
+        .unwrap();
+        assert_eq!(
+            snapshot.settings(),
+            Some(&ManagedSettings {
+                default_preset: Some("DEC VT-100".into()),
+                smooth_scrollback: Some(true),
+            })
+        );
+    }
+
+    #[test]
+    fn settings_capture_rejects_unknown_fields_wrong_types_and_duplicates() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "");
+        for source in [
+            "require('sterm').settings({ unknown=true })",
+            "require('sterm').settings({ smooth_scrollback='yes' })",
+            "require('sterm').settings({ default_preset='../escape' })",
+            "require('sterm').settings({}); require('sterm').settings({})",
+        ] {
+            assert!(
+                RuntimeSnapshot::load_source(&dir.entry(), source).is_err(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_preset_uses_tab_action_intent_and_rejects_invalid_names() {
+        let (_dir, mut runtime) = setup(
+            "local sterm=require 'sterm'; sterm.on('context-updated', function(ctx) ctx.tab:apply_preset('DEC VT-100') end)",
+        );
+        let state = tab("a", Some("nvim.exe"), true, true);
+        runtime.attach_tab(state.clone(), InputState::default());
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(
+            result.actions[0].action,
+            Action::ApplyPreset("DEC VT-100".into())
+        );
+
+        let (_dir, mut runtime) = setup(
+            "local sterm=require 'sterm'; sterm.on('context-updated', function(ctx) ctx.tab:apply_preset('../escape') end)",
+        );
+        runtime.attach_tab(state.clone(), InputState::default());
+        let result = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated);
+        assert!(result.actions.is_empty());
+        assert_eq!(result.diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn unfocused_active_context_can_apply_preset_but_not_layout_or_background_actions() {
+        let (_dir, mut runtime) = setup(
+            "local sterm=require 'sterm'; sterm.on('context-updated', function(ctx) ctx.tab:apply_preset('DEC VT-100'); ctx.input:set_layout('en-US') end)",
+        );
+        let unfocused = tab("active", Some("nvim.exe"), true, false);
+        runtime.attach_tab(unfocused.clone(), InputState::default());
+        let result = runtime.dispatch(
+            &unfocused,
+            &InputState::default(),
+            RuntimeEvent::ContextUpdated,
+        );
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(result.actions[0].action, Action::ApplyPreset("DEC VT-100".into()));
+        assert!(!runtime.smart_caps_enabled("active"));
+
+        let mismatch = tab("mismatch", Some("cmd.exe"), true, false);
+        runtime.attach_tab(mismatch.clone(), InputState::default());
+        assert!(runtime
+            .dispatch(&mismatch, &InputState::default(), RuntimeEvent::ContextUpdated)
+            .actions
+            .is_empty());
+
+        let background = tab("background", Some("nvim.exe"), false, false);
+        runtime.attach_tab(background.clone(), InputState::default());
+        assert!(runtime
+            .dispatch(&background, &InputState::default(), RuntimeEvent::ContextUpdated)
+            .actions
+            .is_empty());
+
+        let (_dir, mut deactivation_runtime) = setup(
+            "local sterm=require 'sterm'; sterm.on_deactivate(function(ctx) ctx.tab:apply_preset('DEC VT-100') end)",
+        );
+        let focused = tab("deactivate", Some("nvim.exe"), true, true);
+        deactivation_runtime.attach_tab(focused.clone(), InputState::default());
+        let unfocused = tab("deactivate", Some("nvim.exe"), true, false);
+        assert!(deactivation_runtime
+            .dispatch(
+                &unfocused,
+                &InputState::default(),
+                RuntimeEvent::TabFocusChanged { focused: false },
+            )
+            .actions
+            .is_empty());
+    }
+
+    #[test]
+    fn shipped_far_example_restores_selected_preset_across_process_and_focus_transitions() {
+        let dir = TempDir::new();
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.use('scripts/far_preset.lua', {})",
+        );
+        dir.write(
+            "scripts/far_preset.lua",
+            include_str!("../../examples/lua/scripts/far_preset.lua"),
+        );
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let mut runtime = LuaRuntime::new(snapshot);
+        let mut state = tab("a", Some("cmd.exe"), true, true);
+        state.preset_name = "Saved profile".into();
+        let far = "FAR.EXE";
+
+        assert!(runtime
+            .attach_tab(state.clone(), InputState::default())
+            .actions
+            .is_empty());
+        state.local_process_name = Some(far.into());
+        let entered = runtime.dispatch(
+            &state,
+            &InputState::default(),
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("cmd.exe".into()),
+                new_process: Some(far.into()),
+            },
+        );
+        assert_eq!(
+            entered.actions.len(),
+            1,
+            "diagnostics: {:?}",
+            entered.diagnostics
+        );
+        assert_eq!(
+            entered.actions[0].action,
+            Action::ApplyPreset("DEC VT-100 (1978)".into())
+        );
+
+        state.preset_name = "DEC VT-100 (1978)".into();
+        assert!(runtime
+            .dispatch(&state, &InputState::default(), RuntimeEvent::ContextUpdated)
+            .actions
+            .is_empty());
+
+        state.local_process_name = None;
+        assert!(runtime
+            .dispatch(
+                &state,
+                &InputState::default(),
+                RuntimeEvent::LocalProcessChanged {
+                    old_process: Some(far.into()),
+                    new_process: None
+                },
+            )
+            .actions
+            .is_empty());
+
+        state.local_process_name = Some("cmd.exe".into());
+        let exited = runtime.dispatch(
+            &state,
+            &InputState::default(),
+            RuntimeEvent::LocalProcessChanged {
+                old_process: None,
+                new_process: Some("cmd.exe".into()),
+            },
+        );
+        assert_eq!(exited.actions.len(), 1);
+        assert_eq!(
+            exited.actions[0].action,
+            Action::ApplyPreset("Saved profile".into())
+        );
+        state.preset_name = "Saved profile".into();
+
+        let mut second = tab("b", Some("pwsh.exe"), true, true);
+        second.preset_name = "Another profile".into();
+        assert!(runtime
+            .attach_tab(second.clone(), InputState::default())
+            .actions
+            .is_empty());
+        second.local_process_name = Some(far.into());
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &second,
+                    &InputState::default(),
+                    RuntimeEvent::LocalProcessChanged {
+                        old_process: Some("pwsh.exe".into()),
+                        new_process: Some(far.into()),
+                    },
+                )
+                .actions[0]
+                .action,
+            Action::ApplyPreset("DEC VT-100 (1978)".into())
+        );
+        second.preset_name = "DEC VT-100 (1978)".into();
+        assert!(runtime
+            .dispatch(
+                &second,
+                &InputState::default(),
+                RuntimeEvent::ContextUpdated
+            )
+            .actions
+            .is_empty());
+        second.local_process_name = Some("pwsh.exe".into());
+        assert_eq!(
+            runtime
+                .dispatch(
+                    &second,
+                    &InputState::default(),
+                    RuntimeEvent::LocalProcessChanged {
+                        old_process: Some(far.into()),
+                        new_process: Some("pwsh.exe".into()),
+                    },
+                )
+                .actions[0]
+                .action,
+            Action::ApplyPreset("Another profile".into())
+        );
+
+        state.local_process_name = Some(far.into());
+        let reentered = runtime.dispatch(
+            &state,
+            &InputState::default(),
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("cmd.exe".into()),
+                new_process: Some(far.into()),
+            },
+        );
+        assert_eq!(reentered.actions.len(), 1);
+        state.preset_name = "DEC VT-100 (1978)".into();
+        state.local_process_name = Some("cmd.exe".into());
+        let inactive = tab("a", Some("cmd.exe"), false, false);
+        assert!(runtime
+            .dispatch(
+                &inactive,
+                &InputState::default(),
+                RuntimeEvent::LocalProcessChanged {
+                    old_process: Some(far.into()),
+                    new_process: Some("cmd.exe".into()),
+                },
+            )
+            .actions
+            .is_empty());
+        let resumed = runtime.dispatch(&state, &InputState::default(), RuntimeEvent::TabActivated);
+        assert_eq!(resumed.actions.len(), 1);
+        assert_eq!(
+            resumed.actions[0].action,
+            Action::ApplyPreset("Saved profile".into())
         );
     }
 
@@ -1975,17 +2880,17 @@ end)
             },
         );
         assert!(runtime
-                .dispatch(
-                    &helix_insert,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::CursorStyleChanged {
-                        old_cursor: helix.cursor_style.clone(),
-                        new_cursor: helix_insert.cursor_style.clone(),
-                    },
-                )
-                .actions
+            .dispatch(
+                &helix_insert,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: helix.cursor_style.clone(),
+                    new_cursor: helix_insert.cursor_style.clone(),
+                },
+            )
+            .actions
             .is_empty());
         assert!(runtime
             .dispatch(
@@ -1999,17 +2904,17 @@ end)
             .is_empty());
 
         assert!(runtime
-                .dispatch(
-                    &nvim_insert,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::CursorStyleChanged {
-                        old_cursor: nvim.cursor_style.clone(),
-                        new_cursor: nvim_insert.cursor_style.clone(),
-                    },
-                )
-                .actions
+            .dispatch(
+                &nvim_insert,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: nvim.cursor_style.clone(),
+                    new_cursor: nvim_insert.cursor_style.clone(),
+                },
+            )
+            .actions
             .is_empty());
         assert_eq!(
             runtime
@@ -2027,29 +2932,29 @@ end)
         let mut helix_unfocused = helix.clone();
         helix_unfocused.focused = false;
         assert!(runtime
-                .dispatch(
-                    &helix_unfocused,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::TabFocusChanged { focused: false },
-                )
-                .actions
+            .dispatch(
+                &helix_unfocused,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::TabFocusChanged { focused: false },
+            )
+            .actions
             .is_empty());
         let mut helix_unfocused_normal = helix_unfocused.clone();
         helix_unfocused_normal.cursor_style.shape = CursorShape::Underline;
         assert!(runtime
-                .dispatch(
-                    &helix_unfocused_normal,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::CursorStyleChanged {
-                        old_cursor: helix_insert.cursor_style.clone(),
-                        new_cursor: helix_unfocused_normal.cursor_style.clone(),
-                    },
-                )
-                .actions
+            .dispatch(
+                &helix_unfocused_normal,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: helix_insert.cursor_style.clone(),
+                    new_cursor: helix_unfocused_normal.cursor_style.clone(),
+                },
+            )
+            .actions
             .is_empty());
         let mut helix_refocused = helix_unfocused_normal.clone();
         helix_refocused.focused = true;
@@ -2082,36 +2987,36 @@ end)
         let mut background_normal = background.clone();
         background_normal.cursor_style.shape = CursorShape::Underline;
         assert!(runtime
-                .attach_tab(
-                    background.clone(),
-                    InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                )
-                .actions
+            .attach_tab(
+                background.clone(),
+                InputState {
+                    current_layout: Some("de-DE".into())
+                },
+            )
+            .actions
             .is_empty());
         assert!(runtime
-                .dispatch(
-                    &background_normal,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::CursorStyleChanged {
-                        old_cursor: background.cursor_style.clone(),
-                        new_cursor: background_normal.cursor_style.clone(),
-                    },
-                )
-                .actions
+            .dispatch(
+                &background_normal,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::CursorStyleChanged {
+                    old_cursor: background.cursor_style.clone(),
+                    new_cursor: background_normal.cursor_style.clone(),
+                },
+            )
+            .actions
             .is_empty());
         assert!(runtime
-                .dispatch(
-                    &background_normal,
-                    &InputState {
-                        current_layout: Some("de-DE".into())
-                    },
-                    RuntimeEvent::ContextUpdated,
-                )
-                .actions
+            .dispatch(
+                &background_normal,
+                &InputState {
+                    current_layout: Some("de-DE".into())
+                },
+                RuntimeEvent::ContextUpdated,
+            )
+            .actions
             .is_empty());
     }
 
@@ -2398,17 +3303,17 @@ sterm.on('cursor-style-changed', function() stale.input:set_layout('en-US') end)
     fn execution_and_memory_budgets_stop_loops_and_large_allocations() {
         let lua = new_lua().unwrap();
         assert!(execute_limited(
-                &lua,
-                "while true do if pcall then pcall(function() end) end end",
-                "loop"
-            )
+            &lua,
+            "while true do if pcall then pcall(function() end) end end",
+            "loop"
+        )
         .is_err());
         let lua = new_lua().unwrap();
         assert!(execute_limited(
-                &lua,
-                "local t={}; while true do t[#t+1]=string.rep('x',100000) end",
-                "memory"
-            )
+            &lua,
+            "local t={}; while true do t[#t+1]=string.rep('x',100000) end",
+            "memory"
+        )
         .is_err());
     }
 
@@ -2579,5 +3484,187 @@ sterm.on('cursor-style-changed', function() stale.input:set_layout('en-US') end)
             },
         );
         assert!(result.actions.is_empty() && result.diagnostics.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod scenario_reload_lifecycle_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "sterm-lua-reload-test-{}-{}",
+                std::process::id(),
+                NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn write(&self, name: &str, source: &str) {
+            let path = self.0.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, source).unwrap();
+        }
+
+        fn entry(&self) -> PathBuf {
+            self.0.join("config.lua")
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn tab(process: &str, preset_name: &str) -> TabState {
+        TabState {
+            id: "far-tab".into(),
+            title: "FAR".into(),
+            local_process_name: Some(process.into()),
+            preset_name: preset_name.into(),
+            cursor_style: CursorStyle {
+                shape: CursorShape::Block,
+                blink: Some(true),
+                visible: true,
+            },
+            active: true,
+            focused: true,
+        }
+    }
+
+    fn write_far(dir: &TempDir, target: &str) {
+        dir.write(
+            "config.lua",
+            "local sterm=require 'sterm'; sterm.use('scripts/far_preset.lua', {})",
+        );
+        let source = include_str!("../../examples/lua/scripts/far_preset.lua")
+            .replace("local far_preset = 'DEC VT-100 (1978)'", &format!("local far_preset = '{target}'"));
+        dir.write("scripts/far_preset.lua", &source);
+    }
+
+    #[test]
+    fn shipped_far_binding_keeps_baseline_on_retarget_reload_exit_and_inactive_removal() {
+        let dir = TempDir::new();
+        write_far(&dir, "FAR profile B");
+
+        let initial = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let state_key = initial.attachment_state_keys().into_iter().next().unwrap();
+        let state_store = ScenarioStateStore::default();
+        let mut runtime = LuaRuntime::with_state_store(initial, state_store.clone());
+        let input = InputState::default();
+        let mut tab = tab("cmd.exe", "Saved profile");
+        runtime.attach_tab(tab.clone(), input.clone());
+
+        tab.local_process_name = Some("FAR.EXE".into());
+        let entered = runtime.dispatch(
+            &tab,
+            &input,
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("cmd.exe".into()),
+                new_process: Some("FAR.EXE".into()),
+            },
+        );
+        assert_eq!(entered.actions[0].action, Action::ApplyPreset("FAR profile B".into()));
+        tab.preset_name = "FAR profile B".into();
+        runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
+        let scope = (tab.id.clone(), state_key.clone());
+        assert_eq!(
+            state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
+            ScenarioValue::String("Saved profile".into())
+        );
+
+        write_far(&dir, "FAR profile C");
+        let next = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        tab.focused = false;
+        let reloaded = runtime.reload(next, [(tab.clone(), input.clone())]);
+        assert!(reloaded[0].actions.is_empty());
+        let reload_context = runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
+        assert_eq!(reload_context.actions[0].action, Action::ApplyPreset("FAR profile C".into()));
+        tab.preset_name = "FAR profile C".into();
+        assert!(runtime
+            .dispatch(&tab, &input, RuntimeEvent::ContextUpdated)
+            .actions
+            .is_empty());
+        assert_eq!(
+            state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
+            ScenarioValue::String("Saved profile".into())
+        );
+        let repeated = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        let reloaded = runtime.reload(repeated, [(tab.clone(), input.clone())]);
+        assert!(reloaded[0].actions.is_empty());
+        assert_eq!(
+            runtime
+                .dispatch(&tab, &input, RuntimeEvent::ContextUpdated)
+                .actions[0]
+                .action,
+            Action::ApplyPreset("FAR profile C".into())
+        );
+        assert_eq!(
+            state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
+            ScenarioValue::String("Saved profile".into())
+        );
+
+        tab.preset_name = "FAR profile C".into();
+        tab.local_process_name = Some("cmd.exe".into());
+        runtime.dispatch(
+            &tab,
+            &input,
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("FAR.EXE".into()),
+                new_process: Some("cmd.exe".into()),
+            },
+        );
+        let exited = runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated);
+        assert_eq!(exited.actions[0].action, Action::ApplyPreset("Saved profile".into()));
+        assert!(state_store.0.lock().unwrap().is_empty());
+
+        tab.preset_name = "Saved profile".into();
+        tab.local_process_name = Some("FAR.EXE".into());
+        runtime.dispatch(
+            &tab,
+            &input,
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("cmd.exe".into()),
+                new_process: Some("FAR.EXE".into()),
+            },
+        );
+        assert_eq!(
+            runtime
+                .dispatch(&tab, &input, RuntimeEvent::ContextUpdated)
+                .actions[0]
+                .action,
+            Action::ApplyPreset("FAR profile C".into())
+        );
+        tab.preset_name = "FAR profile C".into();
+        tab.active = false;
+        tab.focused = false;
+
+        let removed = RuntimeSnapshot::load_source(&dir.entry(), "").unwrap();
+        let cleanup = runtime.prepare_removed_attachments(
+            &removed.attachment_state_keys(),
+            &HashMap::from([(tab.id.clone(), (tab.clone(), input))]),
+        );
+        assert_eq!(cleanup.cleanup.len(), 1);
+        assert_eq!(cleanup.cleanup[0].tab_id, tab.id);
+        assert_eq!(cleanup.cleanup[0].attachment_key, state_key);
+        assert_eq!(cleanup.cleanup[0].name, "Saved profile");
+        assert_eq!(cleanup.cleanup[0].expected_current_preset, "FAR profile C");
+        assert_eq!(
+            state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
+            ScenarioValue::String("Saved profile".into())
+        );
+        state_store.retain(
+            &HashSet::from([tab.id.clone()]),
+            &removed.attachment_state_keys(),
+        );
+        assert!(state_store.0.lock().unwrap().is_empty());
     }
 }

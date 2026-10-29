@@ -2,6 +2,10 @@
 -- in the Lua guide. Its files are snapshotted at startup and on Reload config.
 local sterm = require 'sterm'
 
+-- scanline-term:managed-settings:begin
+-- GUI settings are saved here; this inert template declares no overrides.
+-- scanline-term:managed-settings:end
+
 -- Register trusted source explicitly: require() can load these aliases and the
 -- built-in 'sterm' API, never files from the runtime filesystem.
 sterm.module('modal_editor', 'modules/modal_editor.lua')
@@ -26,4 +30,11 @@ sterm.use('editors/nvim.lua', {
 sterm.use('editors/hx.lua', {
   when = { process = { 'hx.exe' } },
 })
+]]
+
+-- FAR Manager preset example: uncomment after confirming the configured FAR
+-- preset exists. It remembers the tab's selected preset on entry and restores it
+-- on exit. Each attachment keeps separate state per terminal tab.
+--[[
+sterm.use('scripts/far_preset.lua')
 ]]

@@ -116,6 +116,12 @@ export function SettingsPanel({
   onPresetNameChange = () => undefined,
   onOpenHome = () => undefined,
   onSetExplorerIntegrationEnabled = () => undefined,
+  defaultPresetName = 'default',
+  showDefaultPreset = true,
+  onDefaultPresetChange = () => undefined,
+  managedSettingsReady = true,
+  managedSettingsSaving = false,
+  onSmoothScrollbackChange,
   smoothScrollDiagnosticsEnabled = false,
   getSmoothScrollDiagnostics = () => '',
   geometryDiagnosticsEnabled = false,
@@ -142,6 +148,12 @@ export function SettingsPanel({
   onPresetNameChange?: (name: string) => void;
   onOpenHome?: () => void;
   onSetExplorerIntegrationEnabled?: (enabled: boolean) => void;
+  defaultPresetName?: string;
+  showDefaultPreset?: boolean;
+  onDefaultPresetChange?: (name: string) => void;
+  managedSettingsReady?: boolean;
+  managedSettingsSaving?: boolean;
+  onSmoothScrollbackChange?: (enabled: boolean) => void;
   smoothScrollDiagnosticsEnabled?: boolean;
   getSmoothScrollDiagnostics?: () => string;
   geometryDiagnosticsEnabled?: boolean;
@@ -322,7 +334,7 @@ export function SettingsPanel({
             smoothScrolling={{
               enabled: stored.smoothScrollback,
               tuiEnabled: stored.smoothTuiScrolling,
-              onEnabledChange: (smoothScrollback) => setStored((current) => ({ ...current, smoothScrollback })),
+              onEnabledChange: onSmoothScrollbackChange ?? ((smoothScrollback) => setStored((current) => ({ ...current, smoothScrollback }))),
               onTuiEnabledChange: (smoothTuiScrolling) => setStored((current) => ({ ...current, smoothTuiScrolling })),
             }}
           />
@@ -373,6 +385,12 @@ export function SettingsPanel({
 
       <SettingsAccordionSection id="system" number={browserTabActive ? 3 : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
         <LuaAutomationPanel status={luaAutomationStatus} reload={reloadLuaConfig} onError={onError} available={luaAutomationAvailable} />
+        {showDefaultPreset && <label className="host-select-control">
+          Default preset for new tabs
+          <select aria-label="Default preset for new tabs" data-testid="default-preset-select" value={defaultPresetName} disabled={!managedSettingsReady || managedSettingsSaving} onChange={(event) => onDefaultPresetChange(event.target.value)}>
+            {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>}
         <label className="host-select-control">
           Default shell
           <select value={stored.defaultShell} onChange={(event) => setStored((current) => ({ ...current, defaultShell: event.target.value }))}>

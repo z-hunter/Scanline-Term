@@ -3,7 +3,8 @@
 use std::{
     collections::HashMap,
     fs::{self, OpenOptions},
-    io::Write,
+    io::{self, Read, Write},
+    ops::Range,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -15,13 +16,14 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State, WebviewWindow};
+use tauri::{Emitter, Manager, State, WebviewWindow};
 
 use crate::{
     TerminalState,
     lua_runtime::{
         Action, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState, LuaRuntime,
-        RuntimeEvent, RuntimeSnapshot, TabState,
+        ManagedSettings, RuntimeEvent, RuntimeSnapshot, ScenarioStateStore,
+        TabState, MAX_CONFIG_BYTES,
     },
 };
 
@@ -33,8 +35,15 @@ const MAX_DIAGNOSTIC_CHARS: usize = 1000;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(2);
 const LAYOUT_POLL: Duration = Duration::from_millis(20);
 const QUEUE_CAPACITY: usize = 16;
+const MAX_RELOAD_CLEANUP_IDS: usize = 64;
 
 static NEXT_FRONTEND_TOKEN: AtomicU64 = AtomicU64::new(1);
+static NEXT_RELOAD_TOKEN: AtomicU64 = AtomicU64::new(1);
+static NEXT_MANAGED_TEMP: AtomicU64 = AtomicU64::new(1);
+static MANAGED_SETTINGS_SAVE_LOCK: Mutex<()> = Mutex::new(());
+
+const MANAGED_BEGIN: &[u8] = b"-- scanline-term:managed-settings:begin";
+const MANAGED_END: &[u8] = b"-- scanline-term:managed-settings:end";
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,6 +62,7 @@ struct FrontendTab {
     title: String,
     #[serde(alias = "localProcessName")]
     process_name: Option<String>,
+    preset_name: String,
     cursor: FrontendCursor,
 }
 
@@ -122,6 +132,28 @@ pub(crate) struct StartResult {
     status: AutomationStatus,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReloadCleanupRequest {
+    id: String,
+    tab_id: String,
+    name: String,
+    expected_current_preset: String,
+    #[serde(skip_serializing)]
+    attachment_key: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReloadPreparation {
+    token: String,
+    frontend_id: String,
+    generation: u64,
+    cleanup: Vec<ReloadCleanupRequest>,
+    candidate_status: &'static str,
+    error: Option<String>,
+}
+
 struct Shared {
     frontend_id: Option<String>,
     generation: u64,
@@ -145,8 +177,32 @@ enum Work {
         window_focused: bool,
         active_tab_id: Option<String>,
     },
+    // Startup bootstrap only; user reloads use the prepare/commit transition.
     Reload {
         epoch: u64,
+    },
+    PrepareReload {
+        token: String,
+        frontend_id: String,
+        generation: u64,
+        epoch: u64,
+        reply: mpsc::Sender<Result<ReloadPreparation, String>>,
+    },
+    CommitReload {
+        token: String,
+        frontend_id: String,
+        handled_cleanup_ids: Vec<String>,
+        reply: mpsc::Sender<Result<AutomationStatus, String>>,
+    },
+    AbortReload {
+        token: String,
+        frontend_id: String,
+        reply: mpsc::Sender<Result<AutomationStatus, String>>,
+    },
+    FailClosed {
+        frontend_id: String,
+        epoch: u64,
+        error: String,
     },
     Shutdown,
 }
@@ -162,11 +218,25 @@ struct PendingLayout {
     deadline: Instant,
 }
 
+struct PendingReload {
+    plan: ReloadPreparation,
+    epoch: u64,
+    candidate: Option<RuntimeSnapshot>,
+    config_path: Option<String>,
+    diagnostics: Vec<AutomationDiagnostic>,
+}
+
 pub struct LuaAutomation {
     app: Option<tauri::AppHandle>,
     shared: Arc<Mutex<Shared>>,
     sender: SyncSender<Work>,
     worker: Mutex<Option<JoinHandle<()>>>,
+}
+
+#[derive(Clone)]
+struct ReloadClient {
+    shared: Arc<Mutex<Shared>>,
+    sender: SyncSender<Work>,
 }
 
 impl LuaAutomation {
@@ -414,6 +484,7 @@ impl LuaAutomation {
                         id: id.clone(),
                         title: tab.title,
                         local_process_name: tab.process_name,
+                        preset_name: tab.preset_name,
                         cursor_style: CursorStyle {
                             shape: cursor_shape(tab.cursor.shape.as_deref()),
                             blink: tab.cursor.blink,
@@ -457,29 +528,172 @@ impl LuaAutomation {
         )
     }
 
-    fn reload(&self, app: &tauri::AppHandle) -> Result<AutomationStatus, String> {
-        crate::caps_hook::revoke(app);
-        let epoch = {
-            let mut shared = self
-                .shared
-                .lock()
-                .map_err(|_| "Lua automation state is unavailable")?;
-            shared.action_epoch = shared.action_epoch.wrapping_add(1);
-            shared.status.state = "loading";
-            shared.status.error = None;
-            shared.action_epoch
-        };
-        self.enqueue(
-            Work::Reload { epoch },
-            "Lua automation reload queue is full",
-        )?;
-        Ok(self.status())
+    fn reload_client(&self) -> ReloadClient {
+        ReloadClient {
+            shared: self.shared.clone(),
+            sender: self.sender.clone(),
+        }
     }
 }
 
 impl Drop for LuaAutomation {
     fn drop(&mut self) {
         self.shutdown();
+    }
+}
+
+impl ReloadClient {
+    fn fail_reload_request(
+        &self,
+        app: &tauri::AppHandle,
+        frontend_id: &str,
+        error: String,
+    ) {
+        crate::caps_hook::revoke(app);
+        let epoch = if let Ok(mut shared) = self.shared.lock() {
+            if shared.frontend_id.as_deref() != Some(frontend_id) {
+                return;
+            }
+            fail_closed(&mut shared, error.clone());
+            shared.action_epoch
+        } else {
+            return;
+        };
+        let _ = self.sender.try_send(Work::FailClosed {
+            frontend_id: frontend_id.to_owned(),
+            epoch,
+            error,
+        });
+    }
+
+    fn prepare_reload(
+        &self,
+        app: &tauri::AppHandle,
+        frontend_id: String,
+    ) -> Result<ReloadPreparation, String> {
+        if frontend_id.is_empty() || frontend_id.len() > 128 {
+            return Err("Lua automation frontend ID is invalid".into());
+        }
+        crate::caps_hook::revoke(app);
+        let (generation, epoch) = {
+            let mut shared = self.shared.lock().map_err(|_| "Lua automation state is unavailable")?;
+            if shared.frontend_id.as_deref() != Some(frontend_id.as_str()) {
+                return Err("Lua automation frontend instance is stale".into());
+            }
+            shared.action_epoch = shared.action_epoch.wrapping_add(1);
+            shared.status.state = "loading";
+            shared.status.error = None;
+            (shared.generation, shared.action_epoch)
+        };
+        let token = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_RELOAD_TOKEN.fetch_add(1, Ordering::Relaxed)
+        );
+        let (reply, response) = mpsc::channel();
+        let work = Work::PrepareReload {
+            token,
+            frontend_id: frontend_id.clone(),
+            generation,
+            epoch,
+            reply,
+        };
+        if let Err(error) = self.sender.try_send(work) {
+            let message = match error {
+                TrySendError::Full(_) => "Lua automation reload queue is full".to_owned(),
+                TrySendError::Disconnected(_) => "Lua automation worker stopped".to_owned(),
+            };
+            self.fail_reload_request(app, &frontend_id, message.clone());
+            return Err(message);
+        }
+        match response.recv_timeout(Duration::from_secs(10)) {
+            Ok(result) => result,
+            Err(_) => {
+                let error = "Lua automation worker did not prepare reload".to_owned();
+                self.fail_reload_request(app, &frontend_id, error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    fn commit_reload(
+        &self,
+        app: &tauri::AppHandle,
+        frontend_id: String,
+        token: String,
+        handled_cleanup_ids: Vec<String>,
+    ) -> Result<AutomationStatus, String> {
+        if token.is_empty()
+            || token.len() > 128
+            || frontend_id.is_empty()
+            || frontend_id.len() > 128
+            || handled_cleanup_ids.len() > MAX_RELOAD_CLEANUP_IDS
+            || handled_cleanup_ids.iter().any(|id| id.is_empty() || id.len() > 128)
+        {
+            return Err("Lua reload acknowledgement is invalid".into());
+        }
+        if self.shared.lock().map_err(|_| "Lua automation state is unavailable")?.frontend_id.as_deref() != Some(frontend_id.as_str()) {
+            return Err("Lua automation frontend instance is stale".into());
+        }
+        let (reply, response) = mpsc::channel();
+        let work = Work::CommitReload {
+            token,
+            frontend_id: frontend_id.clone(),
+            handled_cleanup_ids,
+            reply,
+        };
+        if let Err(error) = self.sender.try_send(work) {
+            let message = match error {
+                TrySendError::Full(_) => "Lua automation reload queue is full".to_owned(),
+                TrySendError::Disconnected(_) => "Lua automation worker stopped".to_owned(),
+            };
+            self.fail_reload_request(app, &frontend_id, message.clone());
+            return Err(message);
+        }
+        match response.recv_timeout(Duration::from_secs(10)) {
+            Ok(result) => result,
+            Err(_) => {
+                let error = "Lua automation worker did not commit reload".to_owned();
+                self.fail_reload_request(app, &frontend_id, error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    fn abort_reload(
+        &self,
+        app: &tauri::AppHandle,
+        frontend_id: String,
+        token: String,
+    ) -> Result<AutomationStatus, String> {
+        if frontend_id.is_empty() || frontend_id.len() > 128 || token.is_empty() || token.len() > 128 {
+            return Err("Lua reload token or frontend ID is invalid".into());
+        }
+        if self.shared.lock().map_err(|_| "Lua automation state is unavailable")?.frontend_id.as_deref() != Some(frontend_id.as_str()) {
+            return Err("Lua automation frontend instance is stale".into());
+        }
+        let (reply, response) = mpsc::channel();
+        let work = Work::AbortReload {
+            token,
+            frontend_id: frontend_id.clone(),
+            reply,
+        };
+        if let Err(error) = self.sender.try_send(work) {
+            let message = match error {
+                TrySendError::Full(_) => "Lua automation reload queue is full".to_owned(),
+                TrySendError::Disconnected(_) => "Lua automation worker stopped".to_owned(),
+            };
+            self.fail_reload_request(app, &frontend_id, message.clone());
+            return Err(message);
+        }
+        match response.recv_timeout(Duration::from_secs(10)) {
+            Ok(result) => result,
+            Err(_) => {
+                let error = "Lua automation worker did not abort reload".to_owned();
+                self.fail_reload_request(app, &frontend_id, error.clone());
+                Err(error)
+            }
+        }
     }
 }
 
@@ -513,12 +727,179 @@ pub fn lua_automation_status(
 }
 
 #[tauri::command]
-pub fn lua_automation_reload(
+pub async fn lua_automation_reload(
     window: WebviewWindow,
     automation: State<'_, LuaAutomation>,
+    frontend_id: String,
+) -> Result<ReloadPreparation, String> {
+    require_main(&window)?;
+    let client = automation.reload_client();
+    let app = window.app_handle().clone();
+    let on_failure = client.clone();
+    let failure_app = app.clone();
+    let failure_frontend_id = frontend_id.clone();
+    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id)).await {
+        Ok(result) => result,
+        Err(_) => {
+            let error = "Lua reload task failed".to_owned();
+            on_failure.fail_reload_request(&failure_app, &failure_frontend_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn lua_automation_prepare_reload(
+    window: WebviewWindow,
+    automation: State<'_, LuaAutomation>,
+    frontend_id: String,
+) -> Result<ReloadPreparation, String> {
+    require_main(&window)?;
+    let client = automation.reload_client();
+    let app = window.app_handle().clone();
+    let on_failure = client.clone();
+    let failure_app = app.clone();
+    let failure_frontend_id = frontend_id.clone();
+    match tauri::async_runtime::spawn_blocking(move || client.prepare_reload(&app, frontend_id)).await {
+        Ok(result) => result,
+        Err(_) => {
+            let error = "Lua reload task failed".to_owned();
+            on_failure.fail_reload_request(&failure_app, &failure_frontend_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn lua_automation_commit_reload(
+    window: WebviewWindow,
+    automation: State<'_, LuaAutomation>,
+    frontend_id: String,
+    token: String,
+    handled_cleanup_ids: Vec<String>,
 ) -> Result<AutomationStatus, String> {
     require_main(&window)?;
-    automation.reload(&window.app_handle())
+    let client = automation.reload_client();
+    let app = window.app_handle().clone();
+    let on_failure = client.clone();
+    let failure_app = app.clone();
+    let failure_frontend_id = frontend_id.clone();
+    match tauri::async_runtime::spawn_blocking(move || {
+        client.commit_reload(&app, frontend_id, token, handled_cleanup_ids)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            let error = "Lua reload task failed".to_owned();
+            on_failure.fail_reload_request(&failure_app, &failure_frontend_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn lua_automation_abort_reload(
+    window: WebviewWindow,
+    automation: State<'_, LuaAutomation>,
+    frontend_id: String,
+    token: String,
+) -> Result<AutomationStatus, String> {
+    require_main(&window)?;
+    let client = automation.reload_client();
+    let app = window.app_handle().clone();
+    let on_failure = client.clone();
+    let failure_app = app.clone();
+    let failure_frontend_id = frontend_id.clone();
+    match tauri::async_runtime::spawn_blocking(move || client.abort_reload(&app, frontend_id, token))
+        .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            let error = "Lua reload task failed".to_owned();
+            on_failure.fail_reload_request(&failure_app, &failure_frontend_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ManagedSettingsPayload {
+    pub default_preset: Option<String>,
+    pub smooth_scrollback: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedSettingsResult {
+    pub settings: ManagedSettingsPayload,
+    pub revision: String,
+    pub path: String,
+    pub has_settings: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LuaPresetRequest {
+    frontend_id: String,
+    generation: u64,
+    tab_id: String,
+    name: String,
+}
+
+#[tauri::command]
+pub fn load_managed_settings(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<ManagedSettingsResult, String> {
+    require_main(&window)?;
+    let path = ensure_managed_config(&app)?;
+    let source = read_managed_config(&path)?;
+    let source_text = std::str::from_utf8(&source)
+        .map_err(|error| format!("Lua configuration is not valid UTF-8: {error}"))?;
+    let snapshot = RuntimeSnapshot::load_source(&path, source_text).map_err(format_snapshot_error)?;
+    Ok(managed_settings_result(&path, &source, snapshot.settings()))
+}
+
+#[tauri::command]
+pub fn save_managed_settings(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    settings: ManagedSettingsPayload,
+    revision: String,
+) -> Result<ManagedSettingsResult, String> {
+    require_main(&window)?;
+    if revision.len() != 16 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("Lua settings revision is invalid".into());
+    }
+    if let Some(name) = &settings.default_preset {
+        crate::presets::validate_name(name)?;
+    }
+    let path = ensure_managed_config(&app)?;
+    ensure_regular_managed_config(&path)?;
+    let original = read_managed_config(&path)?;
+    if revision_token(&path, &original) != revision {
+        return Err("Lua configuration changed since it was loaded; reload settings before saving".into());
+    }
+    let source = std::str::from_utf8(&original)
+        .map_err(|error| format!("Lua configuration is not valid UTF-8: {error}"))?;
+    let candidate = splice_managed_settings(source.as_bytes(), &settings)?;
+    let candidate_source = std::str::from_utf8(&candidate)
+        .map_err(|error| format!("generated Lua configuration is invalid UTF-8: {error}"))?;
+    let snapshot = RuntimeSnapshot::load_source(&path, candidate_source)
+        .map_err(format_snapshot_error)?;
+    let actual_settings = snapshot
+        .settings()
+        .ok_or("generated managed settings declaration was not evaluated")?;
+    if actual_settings.default_preset != settings.default_preset
+        || actual_settings.smooth_scrollback != settings.smooth_scrollback
+    {
+        return Err("managed settings were changed by Lua code outside the managed block".into());
+    }
+
+    commit_managed_config(&path, &original, &candidate)?;
+    Ok(managed_settings_result(&path, &candidate, snapshot.settings()))
 }
 
 fn require_main(window: &WebviewWindow) -> Result<(), String> {
@@ -558,6 +939,7 @@ fn validate_snapshot(snapshot: &FrontendSnapshot) -> Result<(), String> {
         {
             return Err("Lua automation process name is too long".into());
         }
+        crate::presets::validate_name(&tab.preset_name)?;
     }
     Ok(())
 }
@@ -597,13 +979,20 @@ fn worker_loop(
     lua_examples_dir: Option<PathBuf>,
 ) {
     let mut runtime: Option<LuaRuntime> = None;
+    let mut active_epoch = 0;
+    let scenario_state = ScenarioStateStore::default();
+    let mut prepared_reload: Option<PendingReload> = None;
     let mut previous: HashMap<String, TabState> = HashMap::new();
     let mut previous_window_focus = false;
     let mut last_layout = None::<String>;
     let mut last_caps_policy = None::<CachedCapsPolicy>;
     let mut pending: Option<PendingLayout> = None;
     loop {
-        let timeout = if pending.is_some()
+        let transition_pending = shared.lock().ok().is_some_and(|state| {
+            state.status.state == "loading" || state.action_epoch != active_epoch
+        });
+        let timeout = if transition_pending
+            || pending.is_some()
             || runtime
                 .as_ref()
                 .is_some_and(LuaRuntime::wants_input_language_events)
@@ -617,6 +1006,7 @@ fn worker_loop(
                 if !is_current(&shared, &frontend_id, None, epoch) {
                     continue;
                 }
+                active_epoch = epoch;
                 crate::caps_hook::revoke(&app);
                 last_caps_policy = None;
                 for id in previous.keys() {
@@ -624,6 +1014,8 @@ fn worker_loop(
                         runtime.close_tab(id);
                     }
                 }
+                scenario_state.clear_all();
+                prepared_reload = None;
                 previous.clear();
                 previous_window_focus = false;
                 last_layout = None;
@@ -637,11 +1029,17 @@ fn worker_loop(
                 window_focused,
                 active_tab_id,
             }) => {
+                if prepared_reload.is_some()
+                    || shared.lock().ok().is_some_and(|state| state.status.state == "loading")
+                {
+                    continue;
+                }
                 if !is_frontend_epoch_ready(&shared, &frontend_id, epoch)
                     || !is_current(&shared, &frontend_id, Some(generation), epoch)
                 {
                     continue;
                 }
+                active_epoch = epoch;
                 pending = None;
                 let Some(runtime) = runtime.as_mut() else {
                     let context = caps_policy_context(None, &tabs);
@@ -777,7 +1175,7 @@ fn worker_loop(
                     previous_window_focus = focused;
                 }
                 if is_current(&shared, &frontend_id, Some(generation), epoch) {
-                    if let Some(tab) = tabs.iter().find(|tab| tab.active && tab.focused) {
+                    if let Some(tab) = tabs.iter().find(|tab| tab.active) {
                         results.push((
                             tab.id.clone(),
                             runtime.dispatch(tab, &input, RuntimeEvent::ContextUpdated),
@@ -807,10 +1205,300 @@ fn worker_loop(
                     epoch,
                 );
             }
+            Ok(Work::PrepareReload {
+                token,
+                frontend_id,
+                generation,
+                epoch,
+                reply,
+            }) => {
+                if !is_current(&shared, &frontend_id, Some(generation), epoch) {
+                    let same_epoch = shared.lock().ok().is_some_and(|state| {
+                        state.frontend_id.as_deref() == Some(frontend_id.as_str())
+                            && state.action_epoch == epoch
+                    });
+                    if same_epoch {
+                        crate::caps_hook::revoke(&app);
+                        runtime = None;
+                        previous.clear();
+                        scenario_state.clear_all();
+                        prepared_reload = None;
+                        pending = None;
+                        last_caps_policy = None;
+                        set_status(
+                            &shared,
+                            "error",
+                            None,
+                            Some("Lua automation reload context became stale".into()),
+                            vec![AutomationDiagnostic::error(
+                                "Lua automation reload context became stale",
+                            )],
+                        );
+                    }
+                    let _ = reply.send(Err("Lua automation reload request is stale".into()));
+                    continue;
+                }
+                active_epoch = epoch;
+                crate::caps_hook::revoke(&app);
+                last_caps_policy = None;
+                pending = None;
+                let tabs = shared.lock().map(|state| state.tabs.clone()).unwrap_or_default();
+                let language = layouts.current();
+                let contexts = tabs
+                    .iter()
+                    .cloned()
+                    .map(|tab| {
+                        (
+                            tab.id.clone(),
+                            (
+                                tab,
+                                InputState {
+                                    current_layout: language.clone(),
+                                },
+                            ),
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                let (candidate, config_path, candidate_status, error, mut diagnostics) =
+                    match seed_lua_config(
+                        exe_dir.as_deref(),
+                        app_config_dir.as_deref(),
+                        lua_examples_dir.as_deref(),
+                    ) {
+                        Err(error) => (
+                            None,
+                            app_config_dir
+                                .as_deref()
+                                .map(|directory| directory.join("config.lua").display().to_string()),
+                            "error",
+                            Some(error.clone()),
+                            vec![AutomationDiagnostic::error(error)],
+                        ),
+                        Ok(()) => match resolve_config_path(
+                            exe_dir.as_deref(),
+                            app_config_dir.as_deref(),
+                        ) {
+                            None => (None, None, "disabled", None, Vec::new()),
+                            Some(path) => match RuntimeSnapshot::load(&path) {
+                                Ok(snapshot) => (
+                                    Some(snapshot),
+                                    Some(path.display().to_string()),
+                                    "ready",
+                                    None,
+                                    Vec::new(),
+                                ),
+                                Err(items) => (
+                                    None,
+                                    Some(path.display().to_string()),
+                                    "error",
+                                    Some("Lua configuration failed to load".into()),
+                                    render_diagnostics(items),
+                                ),
+                            },
+                        },
+                    };
+                let retained = candidate
+                    .as_ref()
+                    .map(RuntimeSnapshot::attachment_state_keys)
+                    .unwrap_or_default();
+                let mut cleanup_intents: Vec<ReloadCleanupRequest> = prepared_reload
+                    .take()
+                    .map(|previous| {
+                        previous
+                            .plan
+                            .cleanup
+                            .into_iter()
+                            .filter(|cleanup| !retained.contains(&cleanup.attachment_key))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if let Some(runtime) = runtime.as_mut() {
+                    let removed = runtime.prepare_removed_attachments(&retained, &contexts);
+                    diagnostics.extend(removed.diagnostics.into_iter().map(|item| {
+                        AutomationDiagnostic::error(format_diagnostic(item))
+                    }));
+                    cleanup_intents.extend(removed.cleanup.into_iter().map(|item| {
+                        ReloadCleanupRequest {
+                            id: String::new(),
+                            tab_id: item.tab_id,
+                            name: item.name,
+                            expected_current_preset: item.expected_current_preset,
+                            attachment_key: item.attachment_key,
+                        }
+                    }));
+                }
+                let mut unique = std::collections::HashSet::new();
+                cleanup_intents.retain(|cleanup| {
+                    unique.insert((
+                        cleanup.tab_id.clone(),
+                        cleanup.name.clone(),
+                        cleanup.expected_current_preset.clone(),
+                    ))
+                });
+                for (index, cleanup) in cleanup_intents.iter_mut().enumerate() {
+                    cleanup.id = format!("{token}:{index}");
+                }
+                let plan = ReloadPreparation {
+                    token,
+                    frontend_id: frontend_id.clone(),
+                    generation,
+                    cleanup: cleanup_intents,
+                    candidate_status,
+                    error,
+                };
+                let path = config_path;
+                prepared_reload = Some(PendingReload {
+                    plan: plan.clone(),
+                    epoch,
+                    candidate,
+                    config_path: path,
+                    diagnostics,
+                });
+                if reply.send(Ok(plan)).is_err()
+                    && is_current(&shared, &frontend_id, Some(generation), epoch)
+                {
+                    crate::caps_hook::revoke(&app);
+                    runtime = None;
+                    previous.clear();
+                    prepared_reload = None;
+                    scenario_state.clear_all();
+                    pending = None;
+                    last_caps_policy = None;
+                    set_status(
+                        &shared,
+                        "error",
+                        None,
+                        Some("Lua automation reload preparation was abandoned".into()),
+                        vec![AutomationDiagnostic::error(
+                            "Lua automation reload preparation was abandoned",
+                        )],
+                    );
+                }
+            }
+            Ok(Work::CommitReload {
+                token,
+                frontend_id,
+                handled_cleanup_ids,
+                reply,
+            }) => {
+                let Some(prepared) = prepared_reload.as_ref() else {
+                    let _ = reply.send(Err("Lua reload transition is stale".into()));
+                    continue;
+                };
+                let current = shared.lock().ok().is_some_and(|state| {
+                    transition_context_matches(
+                        &state,
+                        &prepared.plan,
+                        prepared.epoch,
+                        &frontend_id,
+                        &token,
+                    )
+                });
+                if !current {
+                    let _ = reply.send(Err("Lua reload transition is stale".into()));
+                    continue;
+                }
+                let expected_ids = prepared
+                    .plan
+                    .cleanup
+                    .iter()
+                    .map(|cleanup| cleanup.id.as_str())
+                    .collect::<Vec<_>>();
+                if !cleanup_acknowledgement_is_exact(&expected_ids, &handled_cleanup_ids) {
+                    let _ = reply.send(Err("Lua reload cleanup acknowledgement is invalid".into()));
+                    continue;
+                }
+                let prepared = prepared_reload.take().unwrap();
+                let tabs: Vec<String> = shared
+                    .lock()
+                    .map(|state| state.tabs.iter().map(|tab| tab.id.clone()).collect())
+                    .unwrap_or_default();
+                if let Some(candidate) = prepared.candidate {
+                    let attachment_keys = candidate.attachment_state_keys();
+                    let tab_ids = tabs.into_iter().collect::<std::collections::HashSet<_>>();
+                    scenario_state.retain(&tab_ids, &attachment_keys);
+                    runtime = Some(LuaRuntime::with_state_store(candidate, scenario_state.clone()));
+                    previous.clear();
+                    let status = AutomationStatus {
+                        state: "ready",
+                        config_path: prepared.config_path,
+                        error: None,
+                        diagnostics: bounded_diagnostics(prepared.diagnostics),
+                    };
+                    if let Ok(mut state) = shared.lock() {
+                        state.status = status.clone();
+                    }
+                    active_epoch = prepared.epoch;
+                    let _ = reply.send(Ok(status));
+                } else {
+                    runtime = None;
+                    previous.clear();
+                    scenario_state.clear_all();
+                    let state_label = prepared.plan.candidate_status;
+                    let status = AutomationStatus {
+                        state: state_label,
+                        config_path: prepared.config_path,
+                        error: prepared.plan.error,
+                        diagnostics: bounded_diagnostics(prepared.diagnostics),
+                    };
+                    if let Ok(mut state) = shared.lock() {
+                        state.status = status.clone();
+                    }
+                    active_epoch = prepared.epoch;
+                    let _ = reply.send(Ok(status));
+                }
+                pending = None;
+                last_caps_policy = None;
+            }
+            Ok(Work::AbortReload { token, frontend_id, reply }) => {
+                let matches = prepared_reload.as_ref().is_some_and(|prepared| {
+                    prepared.plan.token == token && prepared.plan.frontend_id == frontend_id
+                }) && shared.lock().ok().is_some_and(|state| {
+                    state.frontend_id.as_deref() == Some(frontend_id.as_str())
+                });
+                if !matches {
+                    let _ = reply.send(Err("Lua reload transition is stale".into()));
+                    continue;
+                }
+                crate::caps_hook::revoke(&app);
+                runtime = None;
+                previous.clear();
+                prepared_reload = None;
+                scenario_state.clear_all();
+                pending = None;
+                last_caps_policy = None;
+                if let Ok(mut state) = shared.lock() {
+                    state.action_epoch = state.action_epoch.wrapping_add(1);
+                    active_epoch = state.action_epoch;
+                    state.status.state = "error";
+                    state.status.error = Some("Lua reload was aborted; reload config to retry".into());
+                    push_diagnostic(&mut state.status.diagnostics, AutomationDiagnostic::error(
+                        "Lua reload was aborted; reload config to retry",
+                    ));
+                }
+                let _ = reply.send(Ok(shared.lock().map(|state| state.status.clone()).unwrap_or_else(|_| {
+                    AutomationStatus { state: "error", config_path: None, error: Some("Lua automation state is unavailable".into()), diagnostics: Vec::new() }
+                })));
+            }
+            Ok(Work::FailClosed { frontend_id, epoch, error }) => {
+                if shared.lock().ok().is_some_and(|state| state.frontend_id.as_deref() == Some(frontend_id.as_str()) && state.action_epoch == epoch) {
+                    crate::caps_hook::revoke(&app);
+                    runtime = None;
+                    previous.clear();
+                    prepared_reload = None;
+                    scenario_state.clear_all();
+                    pending = None;
+                    last_caps_policy = None;
+                    set_status(&shared, "error", None, Some(error.clone()), vec![AutomationDiagnostic::error(error)]);
+                    active_epoch = epoch;
+                }
+            }
             Ok(Work::Reload { epoch }) => {
                 if !is_epoch_current(&shared, epoch) {
                     continue;
                 }
+                active_epoch = epoch;
                 crate::caps_hook::revoke(&app);
                 last_caps_policy = None;
                 pending = None;
@@ -821,6 +1509,7 @@ fn worker_loop(
                 ) {
                     runtime = None;
                     previous.clear();
+                    scenario_state.clear_all();
                     let config_path = app_config_dir
                         .as_deref()
                         .map(|directory| directory.join("config.lua").display().to_string());
@@ -838,6 +1527,7 @@ fn worker_loop(
                     None => {
                         runtime = None;
                         previous.clear();
+                        scenario_state.clear_all();
                         set_status(&shared, "disabled", None, None, Vec::new());
                         publish_caps_policy_clear(&app, &shared, &mut last_caps_policy, epoch);
                     }
@@ -853,6 +1543,7 @@ fn worker_loop(
                             Err(diagnostics) => {
                                 runtime = None;
                                 previous.clear();
+                                scenario_state.clear_all();
                                 set_status(
                                     &shared,
                                     "error",
@@ -887,7 +1578,10 @@ fn worker_loop(
                                 let dispatches = if let Some(runtime) = runtime.as_mut() {
                                     runtime.reload(snapshot, contexts)
                                 } else {
-                                    let mut new_runtime = LuaRuntime::new(snapshot);
+                                    let mut new_runtime = LuaRuntime::with_state_store(
+                                        snapshot,
+                                        scenario_state.clone(),
+                                    );
                                     let dispatches = contexts
                                         .into_iter()
                                         .map(|(tab, input)| new_runtime.attach_tab(tab, input))
@@ -895,8 +1589,21 @@ fn worker_loop(
                                     runtime = Some(new_runtime);
                                     dispatches
                                 };
-                                let results =
+                                let mut results =
                                     tab_ids.into_iter().zip(dispatches).collect::<Vec<_>>();
+                                if let (Some(runtime), Some(tab)) = (
+                                    runtime.as_mut(),
+                                    tabs.iter().find(|tab| tab.active),
+                                ) {
+                                    results.push((
+                                        tab.id.clone(),
+                                        runtime.dispatch(
+                                            tab,
+                                            &input,
+                                            RuntimeEvent::ContextUpdated,
+                                        ),
+                                    ));
+                                }
                                 previous =
                                     tabs.into_iter().map(|tab| (tab.id.clone(), tab)).collect();
                                 if let Ok(mut shared) = shared.lock() {
@@ -943,9 +1650,37 @@ fn worker_loop(
             }
             Ok(Work::Shutdown) => {
                 crate::caps_hook::revoke(&app);
+                scenario_state.clear_all();
                 break;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                let (loading, current_epoch) = shared
+                    .lock()
+                    .map(|state| (state.status.state == "loading", state.action_epoch))
+                    .unwrap_or((true, active_epoch));
+                if reload_transition_invalidated(active_epoch, current_epoch, loading) {
+                    crate::caps_hook::revoke(&app);
+                    runtime = None;
+                    previous.clear();
+                    prepared_reload = None;
+                    scenario_state.clear_all();
+                    pending = None;
+                    last_caps_policy = None;
+                    active_epoch = current_epoch;
+                    set_status(
+                        &shared,
+                        "error",
+                        None,
+                        Some("Lua automation transition was interrupted".into()),
+                        vec![AutomationDiagnostic::error(
+                            "Lua automation transition was interrupted",
+                        )],
+                    );
+                    continue;
+                }
+                if prepared_reload.is_some() || loading {
+                    continue;
+                }
                 let Some(runtime) = runtime.as_mut() else {
                     continue;
                 };
@@ -1042,6 +1777,7 @@ const LUA_STARTER_FILES: &[(&str, &str)] = &[
     ("editors/nvim.lua", "editors/nvim.lua"),
     ("editors/hx.lua", "editors/hx.lua"),
     ("modules/modal_editor.lua", "modules/modal_editor.lua"),
+    ("scripts/far_preset.lua", "scripts/far_preset.lua"),
     ("sterm.lua", "config.lua"),
 ];
 
@@ -1102,6 +1838,7 @@ fn seed_lua_config(
         .map_err(|error| format!("could not resolve Lua config directory: {error}"))?;
     ensure_lua_subdirectory(&root, "editors")?;
     ensure_lua_subdirectory(&root, "modules")?;
+    ensure_lua_subdirectory(&root, "scripts")?;
 
     // Existing regular dependencies belong to the user and are preserved.
     for (_, destination_relative, _) in &files {
@@ -1188,6 +1925,306 @@ fn resolve_config_path(exe_dir: Option<&Path>, app_config_dir: Option<&Path>) ->
     appdata.filter(|path| path.is_file())
 }
 
+fn ensure_managed_config(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let app_config_dir = app.path().app_config_dir().ok();
+    let examples_dir = if cfg!(debug_assertions) {
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("examples")
+                .join("lua"),
+        )
+    } else {
+        app.path()
+            .resource_dir()
+            .ok()
+            .map(|directory| directory.join("lua-examples"))
+    };
+    seed_lua_config(
+        exe_dir.as_deref(),
+        app_config_dir.as_deref(),
+        examples_dir.as_deref(),
+    )?;
+    resolve_config_path(exe_dir.as_deref(), app_config_dir.as_deref())
+        .ok_or_else(|| "Lua configuration is unavailable".into())
+}
+
+fn managed_settings_result(
+    path: &Path,
+    source: &[u8],
+    settings: Option<&ManagedSettings>,
+) -> ManagedSettingsResult {
+    ManagedSettingsResult {
+        settings: ManagedSettingsPayload {
+            default_preset: settings.and_then(|settings| settings.default_preset.clone()),
+            smooth_scrollback: settings.and_then(|settings| settings.smooth_scrollback),
+        },
+        revision: revision_token(path, source),
+        path: path.display().to_string(),
+        has_settings: settings.is_some(),
+    }
+}
+
+fn format_snapshot_error(diagnostics: Vec<Diagnostic>) -> String {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.message)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn read_managed_config(path: &Path) -> Result<Vec<u8>, String> {
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    if metadata.len() > MAX_CONFIG_BYTES as u64 {
+        return Err("Lua configuration is too large".into());
+    }
+    let mut source = Vec::with_capacity(metadata.len() as usize);
+    fs::File::open(path)
+        .and_then(|file| {
+            file.take(MAX_CONFIG_BYTES as u64 + 1)
+                .read_to_end(&mut source)
+        })
+        .map_err(|error| error.to_string())?;
+    if source.len() > MAX_CONFIG_BYTES {
+        return Err("Lua configuration is too large".into());
+    }
+    Ok(source)
+}
+
+fn ensure_regular_managed_config(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !metadata.file_type().is_file() {
+        return Err("Lua configuration is not a regular file".into());
+    }
+    Ok(())
+}
+
+fn revision_token(path: &Path, source: &[u8]) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut revision = DefaultHasher::new();
+    path.hash(&mut revision);
+    source.hash(&mut revision);
+    format!("{:016x}", revision.finish())
+}
+
+fn commit_managed_config(path: &Path, original: &[u8], candidate: &[u8]) -> Result<(), String> {
+    let _guard = MANAGED_SETTINGS_SAVE_LOCK
+        .lock()
+        .map_err(|_| "Lua settings save lock is unavailable")?;
+    ensure_regular_managed_config(path)?;
+    if read_managed_config(path)? != original {
+        return Err("Lua configuration changed while saving; reload settings before saving".into());
+    }
+    atomic_replace_managed_config(path, candidate)
+}
+
+fn find_managed_block(source: &[u8]) -> Result<Option<Range<usize>>, String> {
+    let mut begin = None;
+    let mut end = None;
+    let mut line_start = 0;
+    while line_start < source.len() {
+        let mut line_end = line_start;
+        while line_end < source.len() && source[line_end] != b'\n' && source[line_end] != b'\r' {
+            line_end += 1;
+        }
+        let mut content_start = line_start;
+        if line_start == 0 && source.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            content_start = 3;
+        }
+        let content = &source[content_start..line_end];
+        if content == MANAGED_BEGIN {
+            if begin.replace(content_start).is_some() {
+                return Err("Lua managed settings markers are duplicated".into());
+            }
+        } else if content == MANAGED_END {
+            if end.replace(line_start).is_some() {
+                return Err("Lua managed settings markers are duplicated".into());
+            }
+        } else if content.windows(MANAGED_BEGIN.len()).any(|part| part == MANAGED_BEGIN)
+            || content.windows(MANAGED_END.len()).any(|part| part == MANAGED_END)
+        {
+            return Err("Lua managed settings marker must occupy its own line".into());
+        }
+        if line_end == source.len() {
+            line_start = source.len();
+        } else if source[line_end] == b'\r' && source.get(line_end + 1) == Some(&b'\n') {
+            line_start = line_end + 2;
+        } else {
+            line_start = line_end + 1;
+        }
+    }
+    match (begin, end) {
+        (None, None) => Ok(None),
+        (Some(start), Some(end_start)) if start < end_start => {
+            let mut end = end_start + MANAGED_END.len();
+            if source.get(end) == Some(&b'\r') {
+                end += 1;
+            }
+            if source.get(end) == Some(&b'\n') {
+                end += 1;
+            }
+            Ok(Some(start..end))
+        }
+        _ => Err("Lua managed settings markers are incomplete or out of order".into()),
+    }
+}
+
+fn newline_style(source: &[u8]) -> &'static str {
+    source
+        .windows(2)
+        .position(|pair| pair == b"\r\n")
+        .map(|_| "\r\n")
+        .unwrap_or("\n")
+}
+
+fn lua_string_literal(value: &str) -> String {
+    let mut literal = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\\' => literal.push_str("\\\\"),
+            '"' => literal.push_str("\\\""),
+            '\n' => literal.push_str("\\n"),
+            '\r' => literal.push_str("\\r"),
+            '\t' => literal.push_str("\\t"),
+            character if character.is_control() => {
+                use std::fmt::Write as _;
+                let _ = write!(literal, "\\{:03}", character as u32);
+            }
+            character => literal.push(character),
+        }
+    }
+    literal.push('"');
+    literal
+}
+
+fn managed_settings_block(settings: &ManagedSettingsPayload, newline: &str, trailing_newline: bool) -> Vec<u8> {
+    let mut fields = Vec::new();
+    if let Some(name) = &settings.default_preset {
+        fields.push(format!("default_preset = {}", lua_string_literal(name)));
+    }
+    if let Some(enabled) = settings.smooth_scrollback {
+        fields.push(format!("smooth_scrollback = {enabled}"));
+    }
+    let call = format!("require('sterm').settings({{ {} }})", fields.join(", "));
+    let mut block = format!(
+        "{begin}{newline}{call}{newline}{end}",
+        begin = String::from_utf8_lossy(MANAGED_BEGIN),
+        end = String::from_utf8_lossy(MANAGED_END),
+    )
+    .into_bytes();
+    if trailing_newline {
+        block.extend_from_slice(newline.as_bytes());
+    }
+    block
+}
+
+fn managed_insertion_offset(source: &[u8]) -> (usize, bool) {
+    let mut start = usize::from(source.starts_with(&[0xEF, 0xBB, 0xBF])) * 3;
+    if source.get(start..start + 2) != Some(b"#!") {
+        return (start, false);
+    }
+    while start < source.len() && source[start] != b'\n' && source[start] != b'\r' {
+        start += 1;
+    }
+    if start == source.len() {
+        return (start, true);
+    }
+    if source[start] == b'\r' && source.get(start + 1) == Some(&b'\n') {
+        (start + 2, false)
+    } else {
+        (start + 1, false)
+    }
+}
+
+fn splice_managed_settings(
+    source: &[u8],
+    settings: &ManagedSettingsPayload,
+) -> Result<Vec<u8>, String> {
+    if let Some(name) = &settings.default_preset {
+        crate::presets::validate_name(name)?;
+    }
+    let newline = newline_style(source);
+    match find_managed_block(source)? {
+        Some(range) => {
+            let trailing_newline = source.get(range.end.saturating_sub(1)) == Some(&b'\n');
+            let block = managed_settings_block(settings, newline, trailing_newline);
+            let mut output = Vec::with_capacity(source.len() - (range.end - range.start) + block.len());
+            output.extend_from_slice(&source[..range.start]);
+            output.extend_from_slice(&block);
+            output.extend_from_slice(&source[range.end..]);
+            Ok(output)
+        }
+        None => {
+            let (offset, needs_separator) = managed_insertion_offset(source);
+            let mut output = Vec::with_capacity(source.len() + 128);
+            output.extend_from_slice(&source[..offset]);
+            if needs_separator {
+                output.extend_from_slice(newline.as_bytes());
+            }
+            output.extend_from_slice(&managed_settings_block(settings, newline, true));
+            output.extend_from_slice(&source[offset..]);
+            Ok(output)
+        }
+    }
+}
+
+fn atomic_replace_managed_config(path: &Path, contents: &[u8]) -> Result<(), String> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Lua configuration name is unavailable")?;
+    let temp = path.with_file_name(format!(
+        ".{file_name}.managed.{}.{}.tmp",
+        std::process::id(),
+        NEXT_MANAGED_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut created = false;
+    let result = (|| -> io::Result<()> {
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)?;
+        created = true;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        // shortcut: an external editor can race after byte comparison; use cross-process locking if that becomes a requirement.
+        replace_managed_file(&temp, path)
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(&temp);
+    }
+    result.map_err(|error| format!("could not safely replace Lua configuration: {error}"))
+}
+
+#[cfg(windows)]
+fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+    use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+    let destination: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    let temp: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination.as_ptr(),
+            temp.as_ptr(),
+            ptr::null(),
+            REPLACEFILE_WRITE_THROUGH,
+            ptr::null(),
+            ptr::null(),
+        )
+    };
+    if replaced == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(temp, destination)
+}
+
 fn is_epoch_current(shared: &Arc<Mutex<Shared>>, epoch: u64) -> bool {
     shared
         .lock()
@@ -1224,6 +2261,20 @@ fn action_context_is_current(
         && shared.status.state == "ready"
         && shared.active_tab_id.as_deref() == Some(tab_id)
         && shared.focused
+}
+
+fn preset_action_context_is_current(
+    shared: &Shared,
+    frontend_id: &str,
+    generation: u64,
+    epoch: u64,
+    tab_id: &str,
+) -> bool {
+    shared.frontend_id.as_deref() == Some(frontend_id)
+        && shared.generation == generation
+        && shared.action_epoch == epoch
+        && shared.status.state == "ready"
+        && shared.active_tab_id.as_deref() == Some(tab_id)
 }
 
 fn layout_acknowledged(current: Option<&str>, resolved_hkl: &str) -> bool {
@@ -1466,6 +2517,66 @@ fn apply_results(
                         }
                     }
                 }
+                Action::ApplyPreset(name) => {
+                    if let Err(error) = crate::presets::validate_name(&name) {
+                        push_shared_diagnostic(
+                            shared,
+                            AutomationDiagnostic::error(format!(
+                                "Lua action {} ({}) on tab {}: {error}",
+                                intent.script, intent.event, tab_id
+                            )),
+                        );
+                        continue;
+                    }
+                    let terminal_state = app.state::<TerminalState>();
+                    let Ok(terminals) = terminal_state.0.lock() else {
+                        continue;
+                    };
+                    if !terminals.contains_key(&tab_id) {
+                        continue;
+                    }
+                    let Ok(current) = shared.lock() else {
+                        continue;
+                    };
+                    if !preset_action_context_is_current(
+                        &current,
+                        frontend_id,
+                        generation,
+                        epoch,
+                        &tab_id,
+                    )
+                    {
+                        continue;
+                    }
+                    drop(current);
+                    drop(terminals);
+                    if let Err(error) = app.emit(
+                        "lua-preset-request",
+                        LuaPresetRequest {
+                            frontend_id: frontend_id.to_owned(),
+                            generation,
+                            tab_id: tab_id.clone(),
+                            name: name.clone(),
+                        },
+                    ) {
+                        push_shared_diagnostic(
+                            shared,
+                            AutomationDiagnostic::error(format!(
+                                "Lua action {} ({}) could not request preset {name}: {error}",
+                                intent.script, intent.event
+                            )),
+                        );
+                    }
+                }
+                Action::RestorePreset { .. } => {
+                    push_shared_diagnostic(
+                        shared,
+                        AutomationDiagnostic::error(format!(
+                            "Lua action {} ({}) restore was outside a reload transition",
+                            intent.script, intent.event
+                        )),
+                    );
+                }
             }
         }
     }
@@ -1547,6 +2658,33 @@ fn fail_closed(shared: &mut Shared, error: String) {
     shared.status.state = "error";
     shared.status.error = Some(error.clone());
     push_diagnostic(&mut shared.status.diagnostics, AutomationDiagnostic::error(error));
+}
+
+fn transition_context_matches(
+    shared: &Shared,
+    plan: &ReloadPreparation,
+    epoch: u64,
+    frontend_id: &str,
+    token: &str,
+) -> bool {
+    shared.frontend_id.as_deref() == Some(frontend_id)
+        && shared.generation == plan.generation
+        && shared.action_epoch == epoch
+        && plan.frontend_id == frontend_id
+        && plan.token == token
+}
+
+fn cleanup_acknowledgement_is_exact(expected: &[&str], received: &[String]) -> bool {
+    if expected.len() != received.len() {
+        return false;
+    }
+    let expected = expected.iter().copied().collect::<std::collections::HashSet<_>>();
+    let received = received.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
+    expected.len() == received.len() && expected == received
+}
+
+fn reload_transition_invalidated(active_epoch: u64, current_epoch: u64, loading: bool) -> bool {
+    !loading && active_epoch != current_epoch
 }
 
 fn push_diagnostic(
@@ -1825,6 +2963,7 @@ mod tests {
             id: id.into(),
             title: id.into(),
             process_name: None,
+            preset_name: "DEC VT-100 (1978)".into(),
             cursor: FrontendCursor {
                 shape: Some("block".into()),
                 blink: Some(true),
@@ -1880,6 +3019,13 @@ mod tests {
         assert!(!snapshot_is_fresh(&state, "front-1", 5));
 
         assert!(action_context_is_current(&state, "front-1", 5, 2, "tab-1"));
+        assert!(preset_action_context_is_current(
+            &state,
+            "front-1",
+            5,
+            2,
+            "tab-1"
+        ));
         assert!(!action_context_is_current(
             &state,
             "old-front",
@@ -1889,17 +3035,48 @@ mod tests {
         ));
         assert!(!action_context_is_current(&state, "front-1", 4, 2, "tab-1"));
         assert!(!action_context_is_current(&state, "front-1", 5, 1, "tab-1"));
+
+        let mut unfocused = shared_state();
+        unfocused.focused = false;
+        assert!(!action_context_is_current(
+            &unfocused,
+            "front-1",
+            5,
+            2,
+            "tab-1"
+        ));
+        assert!(preset_action_context_is_current(
+            &unfocused,
+            "front-1",
+            5,
+            2,
+            "tab-1"
+        ));
+        assert!(!preset_action_context_is_current(
+            &unfocused,
+            "old-front",
+            5,
+            2,
+            "tab-1"
+        ));
+        assert!(!preset_action_context_is_current(
+            &unfocused,
+            "front-1",
+            4,
+            2,
+            "tab-1"
+        ));
     }
 
     #[test]
     fn frontend_cursor_visibility_defaults_true_and_preserves_explicit_hidden_state() {
         let snapshot: FrontendSnapshot = serde_json::from_str(
-            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","cursor":{"shape":"bar","blink":false}}]}"#,
+            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","presetName":"Saved profile","cursor":{"shape":"bar","blink":false}}]}"#,
         )
         .unwrap();
         assert!(snapshot.tabs[0].cursor.visible);
         let hidden: FrontendSnapshot = serde_json::from_str(
-            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","cursor":{"shape":"bar","blink":false,"visible":false}}]}"#,
+            r#"{"frontendId":"front-1","generation":1,"activeTabId":"tab-1","focused":true,"tabs":[{"id":"tab-1","title":"hx.exe","processName":"hx.exe","presetName":"Saved profile","cursor":{"shape":"bar","blink":false,"visible":false}}]}"#,
         )
         .unwrap();
         assert!(!hidden.tabs[0].cursor.visible);
@@ -1941,6 +3118,7 @@ mod tests {
             id: "template-tab".into(),
             title: "Helix".into(),
             local_process_name: Some("hx.exe".into()),
+            preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Underline,
                 blink: Some(false),
@@ -1987,6 +3165,7 @@ mod tests {
             id: "tab-1".into(),
             title: "Helix".into(),
             local_process_name: Some("hx.exe".into()),
+            preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Underline,
                 blink: Some(false),
@@ -2003,6 +3182,7 @@ mod tests {
                 id: "nvim-tab".into(),
                 title: "Neovim".into(),
                 local_process_name: Some("nvim.exe".into()),
+                preset_name: "DEC VT-100 (1978)".into(),
                 cursor_style: CursorStyle {
                     shape: CursorShape::Block,
                     blink: Some(false),
@@ -2180,6 +3360,114 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn managed_settings_splice_preserves_bom_crlf_and_all_unmanaged_bytes() {
+        let root = lua_seed_test_root("managed-bytes");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.lua");
+        let original = concat!(
+            "\u{feff}local sterm=require 'sterm'\r\n",
+            "local preset = ('DEC ' .. 'VT-100')\r\n",
+            "-- scanline-term:managed-settings:begin\r\n",
+            "-- old GUI settings\r\n",
+            "-- scanline-term:managed-settings:end\r\n",
+            "return preset\r\n",
+        );
+        fs::write(&path, original.as_bytes()).unwrap();
+        let prefix = "\u{feff}local sterm=require 'sterm'\r\nlocal preset = ('DEC ' .. 'VT-100')\r\n";
+        let suffix = "return preset\r\n";
+        let candidate = splice_managed_settings(
+            original.as_bytes(),
+            &ManagedSettingsPayload {
+                default_preset: Some("DEC VT-100".into()),
+                smooth_scrollback: Some(false),
+            },
+        )
+        .unwrap();
+        let candidate_text = std::str::from_utf8(&candidate).unwrap();
+        assert!(candidate_text.starts_with(prefix));
+        assert!(candidate_text.ends_with(suffix));
+        assert!(candidate_text.contains("\r\n"));
+        assert!(!candidate_text.contains("-- old GUI settings"));
+        let snapshot = RuntimeSnapshot::load_source(&path, candidate_text).unwrap();
+        assert_eq!(
+            snapshot.settings(),
+            Some(&ManagedSettings {
+                default_preset: Some("DEC VT-100".into()),
+                smooth_scrollback: Some(false),
+            })
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_settings_missing_block_inserts_after_bom_and_shebang() {
+        let source = b"\xEF\xBB\xBF#!/usr/bin/env lua\r\nlocal sterm=require 'sterm'\r\nreturn true\r\n";
+        let candidate = splice_managed_settings(
+            source,
+            &ManagedSettingsPayload {
+                default_preset: None,
+                smooth_scrollback: Some(true),
+            },
+        )
+        .unwrap();
+        assert!(candidate.starts_with(b"\xEF\xBB\xBF#!/usr/bin/env lua\r\n"));
+        let text = std::str::from_utf8(&candidate).unwrap();
+        assert!(text.contains("-- scanline-term:managed-settings:begin\r\n"));
+        assert!(text.ends_with("local sterm=require 'sterm'\r\nreturn true\r\n"));
+    }
+
+    #[test]
+    fn malformed_managed_markers_and_stale_revisions_fail_without_overwriting() {
+        for source in [
+            b"-- scanline-term:managed-settings:begin\n".as_slice(),
+            b"-- scanline-term:managed-settings:end\n-- scanline-term:managed-settings:begin\n",
+            b"-- scanline-term:managed-settings:begin\n-- scanline-term:managed-settings:begin\n-- scanline-term:managed-settings:end\n",
+            b"local marker='-- scanline-term:managed-settings:begin'\n",
+        ] {
+            assert!(splice_managed_settings(source, &ManagedSettingsPayload::default()).is_err());
+        }
+
+        let root = lua_seed_test_root("managed-malformed");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.lua");
+        let malformed = b"-- scanline-term:managed-settings:begin\nuser bytes";
+        fs::write(&path, malformed).unwrap();
+        assert!(splice_managed_settings(malformed, &ManagedSettingsPayload::default()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), malformed);
+        fs::remove_dir_all(root).unwrap();
+
+        let root = lua_seed_test_root("managed-conflict");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.lua");
+        let loaded = b"-- loaded bytes";
+        fs::write(&path, loaded).unwrap();
+        fs::write(&path, b"-- external edit").unwrap();
+        assert!(commit_managed_config(&path, loaded, b"-- candidate").is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"-- external edit");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_atomic_replacement_keeps_the_original_config() {
+        let root = lua_seed_test_root("managed-atomic-failure");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.lua");
+        let missing = root.join("missing.tmp");
+        fs::write(&path, b"-- original").unwrap();
+        assert!(replace_managed_file(&missing, &path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"-- original");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn generated_lua_string_literals_escape_quotes_and_backslashes() {
+        let lua = mlua::Lua::new();
+        let value = "a \"quoted\" \\ path";
+        let literal = lua_string_literal(value);
+        assert_eq!(lua.load(format!("return {literal}")).eval::<String>().unwrap(), value);
+    }
+
     fn lua_seed_test_root(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "scanline-lua-seed-{label}-{}-{}",
@@ -2191,6 +3479,7 @@ mod tests {
     fn write_lua_seed_sources(directory: &Path) {
         fs::create_dir_all(directory.join("editors")).unwrap();
         fs::create_dir_all(directory.join("modules")).unwrap();
+        fs::create_dir_all(directory.join("scripts")).unwrap();
         fs::write(
             directory.join("sterm.lua"),
             include_str!("../../examples/lua/sterm.lua"),
@@ -2211,6 +3500,11 @@ mod tests {
             include_str!("../../examples/lua/modules/modal_editor.lua"),
         )
         .unwrap();
+        fs::write(
+            directory.join("scripts/far_preset.lua"),
+            include_str!("../../examples/lua/scripts/far_preset.lua"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -2222,6 +3516,9 @@ mod tests {
 
         seed_lua_config(None, Some(&config), Some(&source)).unwrap();
 
+        let snapshot = RuntimeSnapshot::load(&config.join("config.lua")).unwrap();
+        assert!(snapshot.settings().is_none());
+
         assert_eq!(
             fs::read(config.join("config.lua")).unwrap(),
             fs::read(source.join("sterm.lua")).unwrap()
@@ -2230,6 +3527,7 @@ mod tests {
             "editors/nvim.lua",
             "editors/hx.lua",
             "modules/modal_editor.lua",
+            "scripts/far_preset.lua",
         ] {
             assert_eq!(
                 fs::read(config.join(relative)).unwrap(),
@@ -2323,5 +3621,86 @@ mod tests {
         assert_eq!(value["diagnostics"][0]["message"], "layout requested");
         assert_eq!(value["diagnostics"][1]["level"], "error");
         assert_eq!(value["diagnostics"][1]["message"], "callback failed");
+    }
+
+    #[test]
+    fn reload_commit_is_bound_to_frontend_token_generation_and_epoch() {
+        let shared = Shared {
+            frontend_id: Some("frontend-1".into()),
+            generation: 7,
+            action_epoch: 11,
+            active_tab_id: None,
+            focused: false,
+            tabs: Vec::new(),
+            status: AutomationStatus {
+                state: "loading",
+                config_path: None,
+                error: None,
+                diagnostics: Vec::new(),
+            },
+        };
+        let plan = ReloadPreparation {
+            token: "reload-1".into(),
+            frontend_id: "frontend-1".into(),
+            generation: 7,
+            cleanup: Vec::new(),
+            candidate_status: "ready",
+            error: None,
+        };
+        assert!(transition_context_matches(
+            &shared,
+            &plan,
+            11,
+            "frontend-1",
+            "reload-1"
+        ));
+        assert!(!transition_context_matches(
+            &shared,
+            &plan,
+            11,
+            "frontend-2",
+            "reload-1"
+        ));
+        assert!(!transition_context_matches(
+            &shared,
+            &plan,
+            11,
+            "frontend-1",
+            "stale-token"
+        ));
+        assert!(!transition_context_matches(
+            &shared,
+            &plan,
+            10,
+            "frontend-1",
+            "reload-1"
+        ));
+    }
+
+    #[test]
+    fn cleanup_ack_requires_every_unique_known_id() {
+        assert!(cleanup_acknowledgement_is_exact(
+            &["reload:0", "reload:1"],
+            &["reload:1".into(), "reload:0".into()]
+        ));
+        assert!(!cleanup_acknowledgement_is_exact(
+            &["reload:0", "reload:1"],
+            &["reload:0".into()]
+        ));
+        assert!(!cleanup_acknowledgement_is_exact(
+            &["reload:0", "reload:1"],
+            &["reload:0".into(), "reload:0".into()]
+        ));
+        assert!(!cleanup_acknowledgement_is_exact(
+            &["reload:0"],
+            &["reload:other".into()]
+        ));
+    }
+
+    #[test]
+    fn epoch_failure_cancels_a_prepared_transition_unless_it_is_loading() {
+        assert!(reload_transition_invalidated(4, 5, false));
+        assert!(!reload_transition_invalidated(4, 5, true));
+        assert!(!reload_transition_invalidated(4, 4, false));
     }
 }

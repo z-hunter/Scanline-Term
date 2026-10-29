@@ -31,7 +31,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => { mocked.handlers.set(name, handler); return () => mocked.handlers.delete(name); }),
 }));
 
-import { DEFAULT_CRT_SETTINGS, RESOLUTIONS } from '../crt/settings';
+import { DEFAULT_CRT_SETTINGS, RESOLUTIONS, type PresetSettings } from '../crt/settings';
 import { terminalSession, TerminalSession } from './TerminalSession';
 import { terminalDimensions } from './ScanlineTerminalRenderer';
 import { adjacentTabId, browserTabColor, linkAt, linkAtLine, nextTabId, previousActiveTabId, previousTabId, reorderTabs, renumberTabs, tabIdAtOrdinal, useTerminal, type TerminalTab } from './useTerminal';
@@ -374,6 +374,54 @@ describe('terminal launch event', () => {
     expect(frame.style.getPropertyValue('aspect-ratio')).toBe('8 / 5');
     await act(async () => { root.unmount(); });
     container.remove(); frame.remove(); vi.restoreAllMocks();
+  });
+
+  it('uses the managed default only for future implicit tabs and lets explicit launch presets win', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockReset();
+    const firstDefault = { version: 1 as const, resolution: '420x300' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    const nextDefault = { version: 1 as const, resolution: '800x600' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    const explicitPreset = { version: 1 as const, resolution: '640x480' as const, crt: { ...DEFAULT_CRT_SETTINGS } };
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'lua_automation_start'
+      ? { frontendId: 'frontend-preset-order', state: 'ready', configPath: null, error: null, diagnostics: [] }
+      : command === 'load_preset' ? explicitPreset : command === 'start_terminal' ? 'cmd.exe' : {}));
+    let currentDefault: PresetSettings = firstDefault;
+    let currentDefaultName = 'first-default';
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      hookResult = useTerminal({ defaultPreset: currentDefault, defaultPresetName: currentDefaultName, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    let firstId: string | null = null;
+    try {
+      await act(async () => { root.render(createElement(TestComponent)); });
+      await act(async () => { firstId = await hookResult.openSession(); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('420x300');
+      expect(hookResult.activePresetState?.name).toBe('first-default');
+
+      currentDefault = nextDefault;
+      currentDefaultName = 'next-default';
+      await act(async () => { root.render(createElement(TestComponent)); });
+      let secondId: string | null = null;
+      await act(async () => { secondId = await hookResult.openSession(); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('800x600');
+      expect(hookResult.activePresetState?.name).toBe('next-default');
+      let explicitId: string | null = null;
+      await act(async () => { explicitId = await hookResult.openSession({ preset: 'custom' }); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('640x480');
+      expect(hookResult.activePresetState?.name).toBe('custom');
+      await act(async () => { hookResult.selectSession(firstId!, false, false); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('420x300');
+      await act(async () => { hookResult.selectSession(secondId!, false, false); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('800x600');
+      await act(async () => { hookResult.selectSession(explicitId!, false, false); });
+      expect(hookResult.activePresetState?.settings.resolution).toBe('640x480');
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+    }
   });
 
   it('sizes a first Physical 8:5 session from the inner bezel raster, not a stale canvas backing size', async () => {

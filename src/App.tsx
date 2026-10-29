@@ -25,10 +25,14 @@ import {
   type PresetSettings,
   type TabPresetState,
 } from "./crt/settings";
+import { useManagedSettings } from "./terminal/useManagedSettings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
+import type { LuaPresetRequest } from "./terminal/lua-automation";
+import { applyLuaPresetCleanup, applyLuaPresetRequest } from "./terminal/lua-preset-request";
+import { LatestSettingsRequest, loadAndCommitLatest } from "./crt/managed-settings";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import { TerminalTabs } from "./ui/TerminalTabs";
 import { AiPanel } from "./ui/AiPanel";
@@ -121,11 +125,15 @@ export default function App() {
   const [stored, setStored] = useState(() =>
     loadStoredSettings(localStorage.getItem(STORAGE_KEY)),
   );
+  const legacySmoothScrollback = useRef(stored.smoothScrollback).current;
   const mcpKeepTabsOpenRef = useRef(stored.mcpKeepTabsOpen);
   mcpKeepTabsOpenRef.current = stored.mcpKeepTabsOpen;
   const [defaultPreset, setDefaultPreset] = useState<PresetSettings>(() => clonePresetSettings(DEFAULT_PRESET_SETTINGS));
+  const [defaultPresetName, setDefaultPresetName] = useState("default");
+  const defaultPresetChangeRequest = useRef(new LatestSettingsRequest()).current;
   const [presets, setPresets] = useState<string[]>(["default"]);
   const [presetsReady, setPresetsReady] = useState(!isTauri());
+  const [managedReloading, setManagedReloading] = useState(false);
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -189,6 +197,8 @@ export default function App() {
       return [...current, { id: nextToastId.current++, message, resetKey: 0 }];
     });
   }, []);
+  const managedSettings = useManagedSettings(legacySmoothScrollback, reportError);
+  const { values: managedValues, ready: managedReady, authoritative: managedAuthoritative, saving: managedSaving, writesEnabled: managedWritesEnabled, load: loadManagedSettings, save: saveManagedSettings, disableWrites: disableManagedWrites, settle: settleManagedSettings } = managedSettings;
   const luaAutomation = useLuaAutomationStatus(reportError);
   const setExplorerIntegrationEnabled = useCallback((enabled: boolean) => {
     if (!isTauri()) {
@@ -227,7 +237,8 @@ export default function App() {
   const toggleTabsBar = useCallback(() => setStored((current) => ({ ...current, hideTabsBar: !current.hideTabsBar })), []);
   const terminal = useTerminal({
     defaultPreset,
-    ready: presetsReady,
+    defaultPresetName,
+    ready: presetsReady && managedReady,
     defaultShell: stored.defaultShell,
     smoothScrollback: stored.smoothScrollback,
     smoothTuiScrolling: stored.smoothTuiScrolling,
@@ -251,6 +262,33 @@ export default function App() {
   });
   const terminalRef = useRef(terminal);
   terminalRef.current = terminal;
+  const luaPresetRequestEpoch = useRef(0);
+  const receiveLuaPresetRequest = useCallback((request: LuaPresetRequest) => {
+    const epoch = luaPresetRequestEpoch.current;
+    if (!request || typeof request.frontendId !== 'string' || !Number.isInteger(request.generation) || typeof request.tabId !== 'string' || typeof request.name !== 'string' || !request.name.trim()) return;
+    void applyLuaPresetRequest(
+      request,
+      (pending) => epoch === luaPresetRequestEpoch.current && terminalRef.current.isLuaPresetRequestCurrent(pending),
+      (tabId) => terminalRef.current.presetStateForSession(tabId),
+      async (name) => {
+        const raw = await invoke<unknown>("load_preset", { name });
+        const loaded = loadPresetSettings(JSON.stringify(raw));
+        if (!loaded) throw new Error("invalid preset format");
+        return loaded;
+      },
+      (settings, name, tabId) => terminalRef.current.replaceActivePreset(settings, name, tabId),
+      reportError,
+    );
+  }, [reportError]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<LuaPresetRequest>("lua-preset-request", ({ payload }) => { receiveLuaPresetRequest(payload); })
+      .then((cleanup) => { if (active) unlisten = cleanup; else cleanup(); })
+      .catch((reason) => reportError(`Could not receive Lua preset requests: ${String(reason)}`));
+    return () => { active = false; unlisten?.(); };
+  }, [receiveLuaPresetRequest, reportError]);
   const activePreset = terminal.activePreset;
   const activePresetState = terminal.activePresetState;
   const resolution =
@@ -310,8 +348,8 @@ export default function App() {
   useEffect(() => {
     if (terminal.search.open) window.requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [terminal.search.open]);
-  const refreshPresets = useCallback(async () => {
-    if (!isTauri()) return;
+  const refreshPresets = useCallback(async (): Promise<string[]> => {
+    if (!isTauri()) return [];
     try {
       let catalog = await invoke<{ path: string; names: string[] }>("list_presets");
       if (!catalog.names.some((name) => name.toLowerCase() === "default")) {
@@ -323,24 +361,55 @@ export default function App() {
         catalog = { ...catalog, names: created.names };
       }
       setPresets(catalog.names);
-      try {
-        const raw = await invoke<unknown>("load_preset", { name: "default" });
-        const loaded = loadPresetSettings(JSON.stringify(raw));
-        if (loaded) setDefaultPreset(loaded);
-        else reportError("Could not load default preset: invalid preset format");
-      } catch (reason) {
-        reportError(`Could not load default preset: ${String(reason)}`);
-      }
+      return catalog.names;
     } catch (reason) {
+      disableManagedWrites();
       reportError(`Could not list presets: ${String(reason)}`);
-    } finally {
-      setPresetsReady(true);
+      return [];
     }
-  }, [reportError]);
+  }, [disableManagedWrites, reportError]);
+  const loadDefaultPreset = useCallback(async (requestedName: string, names: string[]) => {
+    const knownName = (name: string) => names.find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+    let name = knownName(requestedName);
+    if (!name) {
+      reportError(`Could not load default preset ${requestedName}: preset not found`);
+      disableManagedWrites();
+      return null;
+    }
+    try {
+      const raw = await invoke<unknown>("load_preset", { name });
+      const loaded = loadPresetSettings(JSON.stringify(raw));
+      if (!loaded) throw new Error("invalid preset format");
+      return { name, settings: loaded };
+    } catch (reason) {
+      reportError(`Could not load default preset ${name}: ${String(reason)}`);
+      disableManagedWrites();
+      return null;
+    }
+  }, [disableManagedWrites, reportError]);
+  const startupPresetLoad = useRef(false);
   useEffect(() => {
-    if (!isTauri()) return;
-    void refreshPresets();
-  }, [refreshPresets, settingsVisible]);
+    if (!isTauri() || startupPresetLoad.current) return;
+    startupPresetLoad.current = true;
+    let active = true;
+    void (async () => {
+      const loaded = await loadManagedSettings(legacySmoothScrollback);
+      if (!active) return;
+      const names = await refreshPresets();
+      if (!active) return;
+      const result = await loadDefaultPreset(loaded.values.defaultPreset, names);
+      if (!active) return;
+      if (result) {
+        setDefaultPresetName(result.name);
+        setDefaultPreset(result.settings);
+      } else setDefaultPresetName("default");
+      setPresetsReady(true);
+    })();
+    return () => { active = false; startupPresetLoad.current = false; };
+  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, refreshPresets]);
+  useEffect(() => {
+    if (isTauri() && managedReady && startupPresetLoad.current && settingsVisible) void refreshPresets();
+  }, [managedReady, refreshPresets, settingsVisible]);
   const loadPreset = useCallback(async (name: string) => {
     const state = terminal.activePresetState;
     if (!state) return;
@@ -355,6 +424,99 @@ export default function App() {
       reportError(`Could not load preset ${name}: ${String(reason)}`);
     }
   }, [reportError, terminal]);
+  const changeDefaultPreset = useCallback(async (name: string) => {
+    if (!isTauri() || !managedWritesEnabled || managedSaving || managedReloading) return;
+    const request = defaultPresetChangeRequest.begin();
+    const selected = presets.find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+    if (!selected) { reportError(`Could not load default preset ${name}: preset not found`); return; }
+    try {
+      await loadAndCommitLatest(defaultPresetChangeRequest, request, async () => {
+        const raw = await invoke<unknown>("load_preset", { name: selected });
+        const loaded = loadPresetSettings(JSON.stringify(raw));
+        if (!loaded) throw new Error("invalid preset format");
+        return loaded;
+      }, async (loaded) => {
+        const saved = await saveManagedSettings({ defaultPreset: selected });
+        if (!defaultPresetChangeRequest.isCurrent(request)) return;
+        if (saved) {
+          setDefaultPresetName(selected);
+          setDefaultPreset(loaded);
+          return;
+        }
+        const current = await loadManagedSettings(legacySmoothScrollback);
+        if (!defaultPresetChangeRequest.isCurrent(request) || !current.response) return;
+        const names = await refreshPresets();
+        if (!defaultPresetChangeRequest.isCurrent(request)) return;
+        const committed = await loadDefaultPreset(current.values.defaultPreset, names);
+        if (!defaultPresetChangeRequest.isCurrent(request)) return;
+        if (committed) {
+          setDefaultPresetName(committed.name);
+          setDefaultPreset(committed.settings);
+        }
+      });
+    } catch (reason) {
+      if (defaultPresetChangeRequest.isCurrent(request)) reportError(`Could not set default preset ${selected}: ${String(reason)}`);
+    }
+  }, [legacySmoothScrollback, loadDefaultPreset, loadManagedSettings, managedReloading, managedSaving, managedWritesEnabled, presets, refreshPresets, reportError, saveManagedSettings]);
+  const changeSmoothScrollback = useCallback((smoothScrollback: boolean) => {
+    if (!isTauri()) setStored((current) => ({ ...current, smoothScrollback }));
+    else if (managedWritesEnabled && !managedSaving && !managedReloading) void saveManagedSettings({ smoothScrollback });
+  }, [managedReloading, managedSaving, managedWritesEnabled, saveManagedSettings, setStored]);
+  const reloadLuaConfig = useCallback(async () => {
+    setManagedReloading(true);
+    defaultPresetChangeRequest.invalidate();
+    luaPresetRequestEpoch.current += 1;
+    let reloadToken: number | null = null;
+    let preparedForAbort: { frontendId: string; token: string } | null = null;
+    try {
+      reloadToken = await terminal.pauseLuaAutomationForReload();
+      if (reloadToken === null) return;
+      await settleManagedSettings();
+      const frontendId = terminal.luaAutomationFrontendId();
+      if (!frontendId) return;
+      const prepared = await luaAutomation.prepareReload(frontendId);
+      if (!prepared) return;
+      preparedForAbort = { frontendId: prepared.frontendId, token: prepared.token };
+      if (prepared.frontendId !== frontendId || !terminal.isLuaAutomationReloadCurrent(reloadToken)) return;
+      const handledCleanupIds: string[] = [];
+      for (const cleanup of prepared.cleanup) {
+        const result = await applyLuaPresetCleanup(
+          cleanup,
+          () => terminal.isLuaAutomationReloadCurrent(reloadToken!),
+          terminal.isLuaReloadTargetLive,
+          terminal.presetStateForSession,
+          async (name) => {
+            const raw = await invoke<unknown>("load_preset", { name });
+            const loaded = loadPresetSettings(JSON.stringify(raw));
+            if (!loaded) throw new Error("invalid preset format");
+            return loaded;
+          },
+          (settings, name, tabId) => terminal.replaceActivePreset(settings, name, tabId),
+          reportError,
+        );
+        if (result === 'stale') return;
+        handledCleanupIds.push(cleanup.id);
+      }
+      if (!terminal.isLuaAutomationReloadCurrent(reloadToken)) return;
+      const committed = await luaAutomation.commitReload(frontendId, prepared.token, handledCleanupIds);
+      if (!committed) return;
+      preparedForAbort = null;
+      if (prepared.candidateStatus === 'error') return;
+      const loaded = await loadManagedSettings(legacySmoothScrollback);
+      if (!loaded.response) return;
+      const names = await refreshPresets();
+      const result = await loadDefaultPreset(loaded.values.defaultPreset, names);
+      if (result) {
+        setDefaultPresetName(result.name);
+        setDefaultPreset(result.settings);
+      }
+    } finally {
+      if (preparedForAbort) await luaAutomation.abortReload(preparedForAbort.frontendId, preparedForAbort.token);
+      luaPresetRequestEpoch.current += 1;
+      if (reloadToken !== null) terminal.resumeLuaAutomationAfterReload(reloadToken);
+      setManagedReloading(false);
+    }
+  }, [defaultPresetChangeRequest, legacySmoothScrollback, loadDefaultPreset, luaAutomation.abortReload, luaAutomation.commitReload, luaAutomation.prepareReload, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal.isLuaAutomationReloadCurrent, terminal.isLuaReloadTargetLive, terminal.luaAutomationFrontendId, terminal.pauseLuaAutomationForReload, terminal.presetStateForSession, terminal.replaceActivePreset, terminal.resumeLuaAutomationAfterReload]);
   const previewPreset = useCallback(async (name: string, openingTabId: string | null) => {
     if (!openingTabId || activeTabIdRef.current !== openingTabId) return false;
     const request = ++presetPickerRequest.current;
@@ -704,11 +866,14 @@ export default function App() {
       mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
       defaultShell: stored.defaultShell,
       explorerIntegrationEnabled: stored.explorerIntegrationEnabled,
-      smoothScrollback: stored.smoothScrollback,
+      ...(!isTauri() || !managedAuthoritative ? { smoothScrollback: stored.smoothScrollback } : {}),
       smoothTuiScrolling: stored.smoothTuiScrolling,
       browserFormFactor: stored.browserFormFactor,
     }));
-  }, [stored]);
+  }, [managedAuthoritative, stored]);
+  useEffect(() => {
+    if (isTauri() && managedReady) setStored((current) => current.smoothScrollback === managedValues.smoothScrollback ? current : ({ ...current, smoothScrollback: managedValues.smoothScrollback }));
+  }, [managedReady, managedValues.smoothScrollback]);
   useEffect(() => {
     if (isTauri() && stored.explorerIntegrationEnabled) void setExplorerIntegrationEnabled(true);
   }, [setExplorerIntegrationEnabled, stored.explorerIntegrationEnabled]);
@@ -1536,6 +1701,12 @@ export default function App() {
           presetState={activePresetState}
           cursorStyleOverridden={terminal.cursorStyleOverridden}
           presetNames={presets}
+          defaultPresetName={defaultPresetName}
+          showDefaultPreset={isTauri()}
+          onDefaultPresetChange={changeDefaultPreset}
+          managedSettingsReady={presetsReady && managedReady && managedWritesEnabled && !managedReloading}
+          managedSettingsSaving={managedSaving}
+          onSmoothScrollbackChange={changeSmoothScrollback}
           presetDisabled={Boolean(activeBrowser)}
           browserTabActive={Boolean(activeBrowser)}
           onLoadPreset={loadPreset}
@@ -1548,7 +1719,7 @@ export default function App() {
           geometryDiagnosticsEnabled={TERMINAL_GEOMETRY_DIAGNOSTICS}
           getGeometryDiagnostics={terminal.exportGeometryDiagnostics}
           luaAutomationStatus={luaAutomation.status}
-          reloadLuaConfig={luaAutomation.reload}
+          reloadLuaConfig={reloadLuaConfig}
           luaAutomationAvailable={luaAutomation.available}
           onError={reportError}
         />

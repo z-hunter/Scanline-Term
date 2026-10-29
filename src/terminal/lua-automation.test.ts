@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 const snapshot: LuaAutomationSnapshot = {
   activeTabId: 'tab-1', focused: true,
-  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', cursor: { shape: 'bar', blink: true, visible: true } }],
+  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', presetName: 'default', cursor: { shape: 'bar', blink: true, visible: true } }],
 };
 
 describe('LuaAutomationCoordinator', () => {
@@ -49,7 +49,7 @@ describe('LuaAutomationCoordinator', () => {
 
   it('serializes updates and coalesces pending snapshots to the newest state', async () => {
     let finishFirstUpdate!: () => void;
-    const call = vi.fn(<T>(command: string): Promise<T> => {
+    const call = vi.fn(<T>(command: string, _args?: unknown): Promise<T> => {
       if (command === 'lua_automation_start') return Promise.resolve({ frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] } as T);
       if (command === 'lua_automation_update' && call.mock.calls.filter(([name]) => name === command).length === 1) {
         return new Promise<T>((resolve) => { finishFirstUpdate = () => resolve(undefined as T); });
@@ -71,8 +71,86 @@ describe('LuaAutomationCoordinator', () => {
     coordinator.dispose();
   });
 
+  it('rejects a queued preset action after synchronous context invalidation and fresh publication', async () => {
+    const call = vi.fn(<T>(command: string, _args?: unknown): Promise<T> => Promise.resolve((command === 'lua_automation_start'
+      ? { frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] }
+      : undefined) as T));
+    const coordinator = new LuaAutomationCoordinator(vi.fn(), call);
+    await coordinator.start();
+    coordinator.update(snapshot);
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(2));
+    const oldGeneration = (call.mock.calls.at(-1)?.[1] as { snapshot: { generation: number } }).snapshot.generation;
+    expect(coordinator.matchesActionContext('native-frontend', oldGeneration, 'tab-1')).toBe(true);
+
+    coordinator.invalidateActions();
+    expect(coordinator.matchesActionContext('native-frontend', oldGeneration, 'tab-1')).toBe(false);
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(3));
+    const newGeneration = (call.mock.calls.at(-1)?.[1] as { snapshot: { generation: number } }).snapshot.generation;
+    expect(newGeneration).toBeGreaterThan(oldGeneration);
+    expect(coordinator.matchesActionContext('native-frontend', oldGeneration, 'tab-1')).toBe(false);
+    expect(coordinator.matchesActionContext('native-frontend', newGeneration, 'tab-1')).toBe(true);
+    coordinator.update({ ...snapshot, focused: false });
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(4));
+    const unfocusedGeneration = (call.mock.calls.at(-1)?.[1] as { snapshot: { generation: number } }).snapshot.generation;
+    expect(coordinator.matchesActionContext('native-frontend', unfocusedGeneration, 'tab-1')).toBe(true);
+    coordinator.dispose();
+  });
+
+  it('pauses actions and coalesces terminal snapshots until reload cleanup commits', async () => {
+    const call = vi.fn(<T>(command: string, _args?: unknown): Promise<T> => Promise.resolve((command === 'lua_automation_start'
+      ? { frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] }
+      : undefined) as T));
+    const coordinator = new LuaAutomationCoordinator(vi.fn(), call);
+    await coordinator.start();
+    coordinator.update(snapshot);
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(2));
+    const reloadToken = await coordinator.pauseForReload();
+    const oldGeneration = (call.mock.calls.at(-1)?.[1] as { snapshot: { generation: number } }).snapshot.generation;
+    expect(coordinator.matchesActionContext('native-frontend', oldGeneration, 'tab-1')).toBe(false);
+    expect(coordinator.isReloadCurrent(reloadToken)).toBe(true);
+
+    coordinator.update({ ...snapshot, tabs: [{ ...snapshot.tabs[0], presetName: 'restored' }] });
+    expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(2);
+
+    expect(coordinator.resumeAfterReload(reloadToken)).toBe(true);
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(3));
+    expect(call).toHaveBeenLastCalledWith('lua_automation_update', {
+      snapshot: { ...snapshot, tabs: [{ ...snapshot.tabs[0], presetName: 'restored' }], frontendId: 'native-frontend', generation: oldGeneration + 1 },
+    });
+    expect(coordinator.isReloadCurrent(reloadToken)).toBe(false);
+    coordinator.dispose();
+  });
+
+  it('waits for an in-flight snapshot command before allowing native reload preparation', async () => {
+    let finishUpdate!: () => void;
+    const call = vi.fn(<T>(command: string, _args?: unknown): Promise<T> => {
+      if (command === 'lua_automation_start') return Promise.resolve({ frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] } as T);
+      return new Promise<T>((resolve) => { finishUpdate = () => resolve(undefined as T); });
+    });
+    const coordinator = new LuaAutomationCoordinator(vi.fn(), call);
+    await coordinator.start();
+    coordinator.update(snapshot);
+    const paused = coordinator.pauseForReload();
+    let pauseFinished = false;
+    void paused.then(() => { pauseFinished = true; });
+    await Promise.resolve();
+    expect(pauseFinished).toBe(false);
+    coordinator.update({ ...snapshot, tabs: [{ ...snapshot.tabs[0], presetName: 'restored' }] });
+    finishUpdate();
+    const token = await paused;
+    expect(pauseFinished).toBe(true);
+    expect(coordinator.isReloadCurrent(token)).toBe(true);
+    expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(1);
+    coordinator.resumeAfterReload(token);
+    await vi.waitFor(() => expect(call.mock.calls.filter(([name]) => name === 'lua_automation_update')).toHaveLength(2));
+    expect(call).toHaveBeenLastCalledWith('lua_automation_update', {
+      snapshot: { ...snapshot, tabs: [{ ...snapshot.tabs[0], presetName: 'restored' }], frontendId: 'native-frontend', generation: 2 },
+    });
+    coordinator.dispose();
+  });
+
   it('invalidates native state on disposal and ignores later updates', async () => {
-    const call = vi.fn(<T>(command: string): Promise<T> => Promise.resolve((command === 'lua_automation_start'
+    const call = vi.fn(<T>(command: string, _args?: unknown): Promise<T> => Promise.resolve((command === 'lua_automation_start'
       ? { frontendId: 'native-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] }
       : undefined) as T));
     const coordinator = new LuaAutomationCoordinator(vi.fn(), call);

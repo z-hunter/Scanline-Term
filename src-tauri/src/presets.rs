@@ -145,7 +145,7 @@ fn seed_bundled_presets(app: &AppHandle, directory: &Path) -> Result<(), String>
     seed_bundled_presets_from(&bundled_presets_path(app), directory)
 }
 
-fn validate_name(name: &str) -> Result<&str, String> {
+pub(crate) fn validate_name(name: &str) -> Result<&str, String> {
     let raw = name;
     let name = raw.trim();
     if raw != name {

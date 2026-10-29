@@ -1,14 +1,14 @@
 ﻿# Scanline Term — Lua Configuration & Automation Layer
 
-Status: Windows V1 is an intermediate development stage, not a public release. Its automation slice and first-launch profile seeding are implemented and covered by passing Rust tests; the portable packaging script includes the config tree. Frontend tests and build pass. The user reports manually enabled Neovim and Helix bindings work in installed 0.6.0. Earlier development and packaged 0.6.0 Neovim Caps tap/hold smokes passed, as did packaged MCP create/echo/observe/close and cleanup checks. The focused packaged smoke did not establish the full focus/tab/reload/error matrix. The required post-V1 settings scope is listed separately from optional backlog. See the [Lua automation guide](lua-automation.md) for the current API and limits.
-Target: Deliver the Windows V1 automation slice, then complete the required canonical Lua settings/configuration contract before public release.
-Scope: lightweight, sandboxed Lua 5.4 event automation and tab-local scripting in Windows V1; canonical Lua configuration for all GUI settings is required before public release.
+Status: Windows V1 is an intermediate development stage, not a public release. Its bounded automation slice, first-launch profile seeding, and the managed-settings pilot are implemented. The pilot covers saved default preset, smooth scrollback, and a guarded runtime saved-preset action; its frontend/Rust suites pass. It does not complete the full GUI-backed migration. The user reports manually enabled Neovim and Helix bindings work in installed 0.6.0. Earlier development and packaged 0.6.0 Neovim Caps tap/hold smokes passed, as did packaged MCP create/echo/observe/close and cleanup checks. The focused packaged smoke did not establish the full focus/tab/reload/error matrix. See the [Lua automation guide](lua-automation.md) for the current API and limits.
+Target: Deliver the Windows V1 automation slice and managed-settings pilot, then complete the broader canonical Lua settings/configuration contract before public release.
+Scope: lightweight, sandboxed Lua 5.4 event automation and tab-local scripting; the pilot canonicalizes two settings while the broader all-GUI-settings migration remains required before public release.
 
 ## 1. Purpose
 
 ### Accepted and implemented Windows V1 contract
 
-Windows V1 provides bounded Lua event automation plus an explicitly declared Smart Caps policy for a matching active, focused terminal tab. The entry file uses `require 'sterm'`, `sterm.module(name, path)` to declare trusted local modules, and `sterm.use(path, options)` to attach scripts. Lua can load only the built-in `sterm` API and modules captured in that declaration manifest; it receives no runtime filesystem access. During this intermediate stage, GUI settings continue to use the existing JSON persistence and are not yet backed by canonical Lua configuration.
+Windows V1 provides bounded Lua event automation plus an explicitly declared Smart Caps policy for a matching active, focused terminal tab. The entry file uses `require 'sterm'`, `sterm.module(name, path)` to declare trusted local modules, and `sterm.use(path, options)` to attach scripts. Lua can load only the built-in `sterm` API and modules captured in that declaration manifest; it receives no runtime filesystem access. The managed-settings pilot persists `default_preset` and `smooth_scrollback` in the bounded Lua config and adds guarded saved-preset selection; other GUI settings keep their existing JSON/local persistence pending broader migration.
 
 The example entry → editor wrapper → shared modal-editor module pattern supports Neovim and Helix through shared cursor/layout logic. Neovim uses its visible Normal-mode block cursor; Helix additionally treats its hidden physical cursor as Normal mode. Layout changes are guarded by active-tab and window focus checks. Load and runtime failures are surfaced as error toasts, and Edit config opens the current entry file in the operating system's default editor.
 
@@ -30,9 +30,9 @@ Add an optional Lua layer to Scanline Term that can:
 6. expose every GUI-configurable setting through the same validated settings model, including runtime tab-local overrides;
 7. optionally define startup/application configuration, launch profiles, and key bindings.
 
-The feature is intended to enable small workflow automations without turning Scanline Term into a general-purpose scripting host. Scanline Term remains GUI-first: common settings such as fonts, display/CRT options, presets, tabs, browser behavior, and ordinary shortcuts remain configurable through the UI. Lua exists for behavior that is conditional, stateful, or inconvenient to express in GUI controls. Every setting that can be changed through the GUI should also be addressable through Lua through the same typed validation/state path; Lua must not gain a parallel or more weakly validated settings implementation.
+The feature is intended to enable small workflow automations without turning Scanline Term into a general-purpose scripting host. Scanline Term remains GUI-first: common settings such as fonts, display/CRT options, presets, tabs, browser behavior, and ordinary shortcuts remain configurable through the UI. Lua exists for behavior that is conditional, stateful, or inconvenient to express in GUI controls. The managed-settings pilot makes only the saved default preset and smooth scrollback canonical in Lua. Font choice and size remain properties of a saved preset: Lua may select a named saved preset, but must never expose standalone font fields or arbitrary font overrides. The broader post-V1 settings contract is still future work for other GUI settings.
 
-Unlike WezTerm, Scanline Term keeps the GUI as the primary user interface. Windows V1 retains the current JSON-backed GUI settings. For public release after V1, Lua becomes the canonical configuration document behind that GUI: the GUI must read and write the same settings through shared validation and side-effect paths, while users may also edit the file directly. Lua is therefore not an optional parallel escape hatch in the release architecture.
+Unlike WezTerm, Scanline Term keeps the GUI as the primary user interface. The current pilot stores only the saved default preset and smooth scrollback in Lua; other GUI settings retain their existing storage. For public release, Lua should become the canonical configuration document behind the GUI for the broader settings model: the GUI must read and write the same settings through shared validation and side-effect paths, while users may also edit the file directly. Lua is therefore not an optional parallel escape hatch in the release architecture.
 
 The canonical acceptance scenario is automatic Windows input-language management for Vim, Neovim, or Helix based on terminal state:
 
@@ -86,7 +86,7 @@ Scanline Term should not claim to semantically know that a terminal is running V
 
 ### 2.10 Post-V1 release requirement: one settings model, two interfaces
 
-GUI and Lua are peer interfaces to the same canonical settings model. If the GUI can change a setting (font, font size, CRT enablement, CRT parameters, preset, browser form factor, tab-bar behavior, smooth scrolling, etc.), Lua should be able to query and change the equivalent setting unless a specific capability/safety restriction is documented.
+GUI and Lua are peer interfaces to the canonical settings they share. The pilot covers the saved default preset and smooth scrollback. Font choice and size are represented only by named saved presets; Lua can select a preset but cannot set font properties directly. The eventual broader contract may cover other GUI settings through shared validation and side-effect paths, subject to explicit capability restrictions.
 
 Both paths must use the same schema, normalization, range checks, persistence rules, and side-effect handlers. A Lua call must not bypass the behavior used by the GUI, and GUI code must not maintain hidden settings that Lua cannot represent. This is a required post-V1 release contract, not a claim about the current Windows V1 implementation.
 
@@ -139,7 +139,7 @@ Windows V1 resolves its Lua entry using the portable/AppData lookup. Startup and
 ```text
 1. <sterm executable directory>\sterm.lua, if present
 2. %APPDATA%\com.zhunter.scanlineterm\config.lua, otherwise
-3. Windows V1 only: no Lua file → current built-in settings and JSON-backed GUI persistence
+3. If config seeding fails → report the error, keep terminal tabs available, retain legacy GUI values, and disable managed-settings writes until config loads
 ```
 
 These are alternative locations for the same canonical entrypoint, not separate files to load. The executable-directory file takes precedence; the profile path is the installed-build fallback. First-launch seeding creates the profile config only when absent and preserves existing user files. The portable packaging script includes root `sterm.lua` plus its `editors/` and `modules/` dependencies beside the executable. If seeding fails, status reports an error; **Reload config** retries the operation. If no Lua config can be found during V1, the existing GUI settings behavior remains in effect.
@@ -166,9 +166,9 @@ Lua startup configuration
 CLI / explicit per-launch options
 ```
 
-This describes the required post-V1 release model. Windows V1 continues to use its existing JSON-backed GUI settings; canonical Lua configuration, GUI file-backed reads/writes, and synchronization of all GUI settings are not implemented yet. For release, Lua replaces the current JSON settings record as the persisted source of truth; the GUI reads and writes that Lua-backed model rather than maintaining JSON as a separate authority.
+This precedence describes the broader post-V1 release model. The current pilot uses the Lua file as the source of truth only for the saved default preset and smooth scrollback; the remaining GUI settings still use their existing storage. Full GUI file-backed reads/writes and synchronization of every GUI setting are not implemented yet. For release, Lua should replace the remaining settings records as separate authorities and use the same validation and side-effect paths.
 
-When the user saves GUI settings and the profile Lua file is absent, the application must create the configuration file automatically. It must preserve existing user files; portable configuration keeps precedence over the profile copy. First-launch seeding and save-time creation are distinct required behaviors.
+Pilot GUI saves seed a missing profile config before writing the managed block and preserve existing files; portable configuration keeps precedence over the profile copy. The broader release migration must also ensure that any future GUI save path creates a missing profile config without replacing user data.
 
 This precedence applies to constructing the initial/base state for a new tab or application session. Runtime automation is intentionally different: scripts should not repeatedly rewrite saved GUI preferences.
 
@@ -186,7 +186,7 @@ script override layer 2
 effective tab settings
 ```
 
-A runtime script can therefore apply a scoped override, for example a different font or CRT preset while Neovim is active. When that script deactivates, reloads, fails, or its tab closes, its override layer is removed and the current underlying GUI/base value becomes visible again. The implementation must not restore a stale snapshot if the user changed the GUI setting while the script was active.
+A future runtime override layer could apply a named saved preset or another approved non-font setting while Neovim is active. Font choice and size must come only from the selected preset. When a future scoped override deactivates, reloads, fails, or its tab closes, its layer would be removed and the current underlying GUI/base value would become visible again. The implementation must not restore a stale snapshot if the user changed the GUI setting while the script was active. The current pilot provides a guarded one-shot preset action, not scoped override layers.
 
 If multiple active scripts override the same property, declaration/pipeline order is authoritative: later layers win for that property. Diagnostics should identify the current winning source.
 
@@ -542,15 +542,13 @@ No numeric priority system is required in V1 unless real use cases demonstrate t
 
 ## 13. Per-tab script state
 
-Transient state is naturally isolated because each runtime script is instantiated per tab. A script may therefore use ordinary Lua locals/upvalues:
+Each runtime script has a separate VM per attachment and tab, so ordinary Lua locals and module values are isolated but reset on reload. The Windows V1 runtime also provides bounded, memory-only scalar state through `ctx.state:get(key)` and `ctx.state:set(key, value)`. Valid reload retains committed values only for the same tab and canonical attachment identity; a callback error rolls back that callback's writes/actions while preserving previously committed state. Removal calls `sterm.on_unload(ctx)` once per script instance and tab, then clears its state. This API does not persist values to disk or across application restarts.
 
 ```lua
 local insert_layout = nil
 ```
 
-The instance is destroyed with the tab, so this state cannot leak into another tab.
-
-An ergonomic host-managed `tab:state()` store may be added later if useful, but it is not required for the core isolation model and should not be mandatory in V1.
+The instance is destroyed with the tab, so local state cannot leak into another tab. See the [Lua automation guide](lua-automation.md) for attachment identity, value types, and limits.
 
 ## 14. Input-language host API
 
@@ -762,8 +760,6 @@ Example:
 ```lua
 on_activate(function(ctx)
   ctx.settings:override {
-    font = 'Iosevka Term',
-    font_size = 15,
     preset = 'DEC VT-220 (1983)',
     crt = {
       enabled = true,
@@ -778,17 +774,16 @@ The override belongs to that script instance in that tab. It is automatically re
 Candidate query surface:
 
 ```lua
-local effective = ctx.settings:get('font')
-local base = ctx.settings:get_base('font')
-local source = ctx.settings:source('font')
+local effective = ctx.settings:get('preset')
+local base = ctx.settings:get_base('preset')
+local source = ctx.settings:source('preset')
 ```
 
 The implementation may expose a structured settings table instead of string-key access, but it must preserve the same validation and source tracking.
 
 Examples of settings that should eventually be scriptable because they are already GUI-configurable include:
 
-- terminal font and fallback font;
-- font size and cell geometry adjustments;
+- saved preset selection (including that preset's saved font and display settings);
 - cursor shape/blink where host-controlled;
 - preset/profile selection;
 - CRT enablement and all exposed CRT/display parameters;
@@ -816,8 +811,6 @@ Candidate initial actions:
 - `ShowPresetPicker`
 - `ToggleTabBar`
 - `ToggleAI`
-- `IncreaseFontSize`
-- `DecreaseFontSize`
 - `Paste`
 - `CopyMode`
 - `Find`
@@ -906,7 +899,8 @@ Minimum implementation:
 
 - load Lua configuration at application startup;
 - provide a Settings action named `Reload config` and an `Edit config` action that opens the current entry file in the operating system's default editor;
-- on reload, discard old callbacks and rebuild the Lua VM/config cleanly.
+- on reload, rebuild fresh callbacks, locals, and VMs; preserve only committed scalar state for retained tab/attachment identities.
+- before committing, run `on_unload` for removed attachments and apply only guarded saved-preset cleanup; abort fail-closed if prepare, cleanup, or commit fails.
 
 Automatic file watching is not required for V1.
 
@@ -968,7 +962,7 @@ The lists in this section are proposed acceptance coverage for the broader scope
 - tab activation reapplies expected state;
 - reload replaces callbacks without duplicating handlers;
 - Lua failure does not interfere with terminal I/O;
-- application activation can apply tab-local font/preset/CRT overrides and deactivation removes them without affecting other tabs.
+- application activation can select a saved tab-local preset; any future font choice continues to come only from that saved preset.
 
 ### Future/release manual acceptance: Vim/Neovim layout scenario
 

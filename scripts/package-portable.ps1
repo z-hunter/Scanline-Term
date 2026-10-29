@@ -27,14 +27,14 @@ Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destinat
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\window-icon.ico") -Destination $stage
 $luaSource = Join-Path $root "examples\lua"
 $luaResource = Join-Path $stage "lua-examples"
-foreach ($directory in @("editors", "modules", "lua-examples", "lua-examples\editors", "lua-examples\modules")) {
+foreach ($directory in @("editors", "modules", "scripts", "lua-examples", "lua-examples\editors", "lua-examples\modules", "lua-examples\scripts")) {
   New-Item -ItemType Directory -Path (Join-Path $stage $directory) -Force | Out-Null
 }
-foreach ($relativePath in @("sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua")) {
+foreach ($relativePath in @("sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua")) {
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $stage $relativePath)
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $luaResource $relativePath)
 }
-foreach ($requiredPath in @("conpty\x64", "fonts", "presets\default.json", "window-icon.ico", "sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "lua-examples\sterm.lua")) {
+foreach ($requiredPath in @("conpty\x64", "fonts", "presets\default.json", "window-icon.ico", "sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua", "lua-examples\sterm.lua", "lua-examples\scripts\far_preset.lua")) {
   if (-not (Test-Path -LiteralPath (Join-Path $stage $requiredPath))) { throw "Portable package is missing required path: $requiredPath" }
 }
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $stage

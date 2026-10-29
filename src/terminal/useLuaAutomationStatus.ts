@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { LuaAutomationDiagnostic, LuaAutomationStatus } from './lua-automation';
+import type { LuaAutomationDiagnostic, LuaAutomationStatus, LuaReloadPreparation } from './lua-automation';
 
 const emptyStatus: LuaAutomationStatus = { state: 'loading', configPath: null, error: null, diagnostics: [] };
 
@@ -69,27 +69,57 @@ export function useLuaAutomationStatus(onError: (message: string) => void) {
     }
   }, [receive, tauri]);
 
-  const reload = useCallback(async () => {
-    if (!tauri || busy.current) return;
+  const prepareReload = useCallback(async (frontendId: string): Promise<LuaReloadPreparation | null> => {
+    if (!tauri || busy.current) return null;
     busy.current = true;
     const request = generation.current;
     previousDiagnostics.current = [];
     previousErrors.current.clear();
     if (mounted.current) setStatus((current) => ({ ...current, state: 'loading', error: null }));
     try {
-      const current = await invoke<LuaAutomationStatus>('lua_automation_reload');
-      if (mounted.current && request === generation.current) receive(current);
+      return await invoke<LuaReloadPreparation>('lua_automation_prepare_reload', { frontendId });
     } catch (reason) {
-      if (!mounted.current || request !== generation.current) return;
+      busy.current = false;
+      if (!mounted.current || request !== generation.current) return null;
       const message = `Lua configuration reload failed: ${String(reason).slice(0, 500)}`;
       if (!previousErrors.current.has(message)) onErrorRef.current(message);
       previousErrors.current = new Set([message]);
       setStatus((current) => ({ ...current, state: 'error', error: message, diagnostics: [] }));
       previousDiagnostics.current = [];
+      return null;
+    }
+  }, [tauri]);
+
+  const commitReload = useCallback(async (frontendId: string, token: string, handledCleanupIds: string[]): Promise<LuaAutomationStatus | null> => {
+    if (!tauri || !busy.current) return null;
+    const request = generation.current;
+    try {
+      const current = await invoke<LuaAutomationStatus>('lua_automation_commit_reload', { frontendId, token, handledCleanupIds });
+      if (mounted.current && request === generation.current) receive(current);
+      return current;
+    } catch (reason) {
+      if (!mounted.current || request !== generation.current) return null;
+      const message = `Lua configuration reload failed: ${String(reason).slice(0, 500)}`;
+      if (!previousErrors.current.has(message)) onErrorRef.current(message);
+      previousErrors.current = new Set([message]);
+      setStatus((current) => ({ ...current, state: 'error', error: message, diagnostics: [] }));
+      previousDiagnostics.current = [];
+      return null;
     } finally {
       busy.current = false;
     }
   }, [receive, tauri]);
+
+  const abortReload = useCallback(async (frontendId: string, token: string): Promise<void> => {
+    try {
+      const current = await invoke<LuaAutomationStatus>('lua_automation_abort_reload', { frontendId, token });
+      if (mounted.current) receive(current);
+    } catch {
+      // A stale abort is harmless; native accepts only the exact prepared frontend/token.
+    } finally {
+      busy.current = false;
+    }
+  }, [receive]);
 
   useEffect(() => {
     mounted.current = true;
@@ -103,5 +133,5 @@ export function useLuaAutomationStatus(onError: (message: string) => void) {
     return () => { mounted.current = false; generation.current += 1; window.clearInterval(timer); };
   }, [refresh, tauri]);
 
-  return { status, reload, available: tauri };
+  return { status, prepareReload, commitReload, abortReload, available: tauri };
 }

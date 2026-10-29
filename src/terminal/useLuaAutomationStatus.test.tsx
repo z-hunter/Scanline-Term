@@ -6,14 +6,21 @@ const mocked = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn(() => true) }
 vi.mock('@tauri-apps/api/core', () => mocked);
 
 import { useLuaAutomationStatus } from './useLuaAutomationStatus';
-import type { LuaAutomationStatus } from './lua-automation';
+import type { LuaAutomationStatus, LuaReloadPreparation } from './lua-automation';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function Probe({ onError, onStatus }: { onError: (message: string) => void; onStatus?: (status: LuaAutomationStatus) => void }) {
-  const { status, reload } = useLuaAutomationStatus(onError);
+type StatusHook = ReturnType<typeof useLuaAutomationStatus>;
+
+function Probe({ onError, onStatus, onHook }: { onError: (message: string) => void; onStatus?: (status: LuaAutomationStatus) => void; onHook?: (hook: StatusHook) => void }) {
+  const hook = useLuaAutomationStatus(onError);
+  const { status, prepareReload, commitReload } = hook;
   onStatus?.(status);
-  return createElement('button', { onClick: () => void reload() }, status.state);
+  onHook?.(hook);
+  return createElement('button', { onClick: () => void (async () => {
+    const prepared = await prepareReload('frontend');
+    if (prepared) await commitReload(prepared.frontendId, prepared.token, prepared.cleanup.map(({ id }) => id));
+  })() }, status.state);
 }
 
 describe('useLuaAutomationStatus', () => {
@@ -95,7 +102,7 @@ describe('useLuaAutomationStatus', () => {
         }
         throw new Error('connection lost');
       }
-      if (command === 'lua_automation_reload') {
+      if (command === 'lua_automation_prepare_reload') {
         throw new Error('reload crash');
       }
       throw new Error(`unknown command ${command}`);
@@ -124,6 +131,65 @@ describe('useLuaAutomationStatus', () => {
       expect(currentStatus?.configPath).toBe('C:\\test\\sterm.lua');
       expect(currentStatus?.error).toContain('Lua configuration reload failed: Error: reload crash');
       expect(currentStatus?.diagnostics).toEqual([]);
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+      vi.useRealTimers();
+    }
+  });
+
+  it('commits the native prepared token and keeps status polling paused between phases', async () => {
+    const ready: LuaAutomationStatus = { state: 'ready', configPath: 'C:\\test\\sterm.lua', error: null, diagnostics: [] };
+    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [{ id: '0', tabId: 'tab-1', name: 'default', expectedCurrentPreset: 'far' }], candidateStatus: 'ready', error: null };
+    mocked.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lua_automation_status') return ready;
+      if (command === 'lua_automation_prepare_reload') return prepared;
+      if (command === 'lua_automation_commit_reload') return ready;
+      throw new Error(`unknown command ${command}`);
+    });
+    vi.useFakeTimers();
+    let hook!: StatusHook;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(createElement(Probe, { onError: vi.fn(), onHook: (current) => { hook = current; } })); });
+      const preparation = await act(async () => hook.prepareReload('frontend'));
+      expect(preparation).toEqual(prepared);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(mocked.invoke).toHaveBeenCalledTimes(2);
+      await act(async () => { await hook.commitReload(prepared.frontendId, prepared.token, ['0']); });
+      expect(mocked.invoke).toHaveBeenLastCalledWith('lua_automation_commit_reload', { frontendId: 'frontend', token: 'reload-1', handledCleanupIds: ['0'] });
+    } finally {
+      await act(async () => { root.unmount(); });
+      container.remove();
+      vi.useRealTimers();
+    }
+  });
+
+  it('aborts only the prepared frontend/token and releases the reload guard for retry', async () => {
+    const prepared: LuaReloadPreparation = { frontendId: 'frontend', token: 'reload-1', cleanup: [], candidateStatus: 'ready', error: null };
+    let prepares = 0;
+    mocked.invoke.mockImplementation(async (command: string) => {
+      if (command === 'lua_automation_status') return { state: 'ready', configPath: null, error: null, diagnostics: [] };
+      if (command === 'lua_automation_prepare_reload') return { ...prepared, token: `reload-${++prepares}` };
+      if (command === 'lua_automation_abort_reload') return { state: 'error', configPath: null, error: 'reload aborted', diagnostics: [] };
+      throw new Error(`unknown command ${command}`);
+    });
+    vi.useFakeTimers();
+    let hook!: StatusHook;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => { root.render(createElement(Probe, { onError: vi.fn(), onHook: (current) => { hook = current; } })); });
+      const first = await act(async () => hook.prepareReload('frontend'));
+      expect(first?.token).toBe('reload-1');
+      await act(async () => { await hook.abortReload(first!.frontendId, first!.token); });
+      expect(mocked.invoke).toHaveBeenCalledWith('lua_automation_abort_reload', { frontendId: 'frontend', token: 'reload-1' });
+      const retry = await act(async () => hook.prepareReload('frontend'));
+      expect(retry?.token).toBe('reload-2');
+      await act(async () => { await hook.abortReload(retry!.frontendId, retry!.token); });
     } finally {
       await act(async () => { root.unmount(); });
       container.remove();

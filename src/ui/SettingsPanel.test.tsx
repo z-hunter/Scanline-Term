@@ -760,6 +760,33 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
+  it('keeps the new-tab default preset selector separate from the active preset selector', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onDefaultPresetChange = vi.fn();
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...defaultProps,
+        presetNames: ['default', 'custom'],
+        defaultPresetName: 'custom',
+        onDefaultPresetChange,
+      }));
+    });
+    const system = container.querySelector<HTMLButtonElement>('[aria-label="5 System"]');
+    await act(async () => { system?.click(); });
+    const selector = container.querySelector<HTMLSelectElement>('[data-testid="default-preset-select"]');
+    expect(selector?.value).toBe('custom');
+    await act(async () => {
+      selector!.value = 'default';
+      selector!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(onDefaultPresetChange).toHaveBeenCalledWith('default');
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Load preset"]')).not.toBe(selector);
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('enables Save only when settings are dirty or draftName differs from name', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
