@@ -184,7 +184,7 @@ The active CRT pipeline, compositor, profile validation, optional terminal rende
 | Export | Purpose |
 |--------|---------|
 | `DEFAULT_CRT_SETTINGS` | Frozen defaults for all CRT parameters |
-| `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
+| `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-3x4'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
 | `DEFAULT_RESOLUTION` | `'1024x768'` |
 | `ResolutionId` | Union type of resolution identifiers |
 | `StoredSettings` | Global UI/shell/hotkey/update settings, including the Windows Explorer integration switch; legacy `resolution` and `crt` fields are read only for migration |

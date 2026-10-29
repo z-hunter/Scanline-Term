@@ -6,6 +6,7 @@ import { DEFAULT_CRT_SETTINGS, defaultScreenProfile, legacyPresetFromProfile, no
 export const RESOLUTIONS = [
   { id: 'physical', label: 'Physical Window — fill available space' },
   { id: 'physical-4x3', label: 'Physical 4:3 — window pixels', width: 4, height: 3 },
+  { id: 'physical-3x4', label: 'Physical 3:4 — window pixels', width: 3, height: 4 },
   { id: 'physical-8x5', label: 'Physical 8:5 — window pixels', width: 8, height: 5 },
   { id: '420x300', label: 'VGA-X — 420×300 (14:10)', width: 420, height: 300 },
   { id: '640x480', label: 'VGA — 640×480 (4:3)', width: 640, height: 480 },
