@@ -14,6 +14,7 @@
 - Physical CRT screen simulation (toggleable)
 - Smooth pixel-by-pixel line scrolling, even in TUI applications
 - Lightweight and native
+- Lua configuration and scripts allow for automation within the terminal
 - Historical and custom presets for various terminals and screens
 - Built-in mini web browser
 - Built-in AI assistant
@@ -38,7 +39,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 
 ![Scanline Term](assets/screenshot.png)
 
-### 2. Keyboard-First Multitasking & Embedded WebView Browser
+### 2. Keyboard-First Embedded WebView Browser and PDF viewer
 
 Keep your hands on the keyboard and stay in the zone:
 
@@ -58,7 +59,7 @@ Built specifically for Windows with Rust and native APIs:
 
 ![Scanline Term](public/Screenshot_23.png)
 
-### 4. Quake-Style Global Hotkey
+### 4. 'Quake-Style' Global Hotkey
 
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
@@ -72,7 +73,7 @@ Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The
 
 ### 6. Ultra-Lightweight & Fast
 
-Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only *25 MB** (most of which consists of the included fonts), launches instantly, and stays lightweight on system resources.
+Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only *30 MB** (most of which consists of the included fonts), launches instantly, and stays lightweight on system resources.
 
 ---
 ![Scanline Term](public/Screenshot_39.png)
@@ -81,7 +82,7 @@ Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer i
 
 Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
 
-- **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3279, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
+- **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3278, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
 - **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
   - **VGA** (640 × 480)
   - **SVGA** (800 × 600)
