@@ -276,7 +276,7 @@ sequenceDiagram
     Web->>Session: close every owned tab
 ```
 
-The broker assigns an owner per pipe connection and maps opaque handles to internal UUIDs. It rejects missing or cross-owner handles. Active connections have interruptible lifecycle flags; disabling MCP marks them inactive, cancels pending requests, drops their streams and emits owner cleanup before the listener stops. The WebView keeps the owner tag on each session, reuses `terminal-automation.ts`, and never exposes Codex controls for MCP tabs. The current screen is always plain text plus style runs; full scrollback is requested explicitly as plain text.
+The broker assigns an owner per pipe connection and maps opaque handles to internal UUIDs. It rejects missing or cross-owner handles. The sidecar and broker each cap incoming request lines at 1 MiB. The broker accepts at most 16 simultaneous connections and runs at most 64 requests globally; excess connections and requests receive an overload error when the pipe can accept the response. Bridge responses remain uncapped to allow complete scrollback. Active connections have interruptible lifecycle flags; disabling MCP marks them inactive, cancels pending requests, drops their streams and emits owner cleanup before the listener stops. The WebView keeps the owner tag on each session, reuses `terminal-automation.ts`, and never exposes Codex controls for MCP tabs. The current screen is always plain text plus style runs; full scrollback is requested explicitly as plain text.
 
 ### Window Resize → Console Resize
 
@@ -353,7 +353,7 @@ On first launch, Rust parses the positional target, its following arguments, `-P
 - **Writer thread**: receives `Vec<u8>` from an `mpsc::Sender`, writes to the ConPTY input pipe. Blocks on `recv()`, terminates when the sender is dropped or the pipe errors.
 - **Reader and emitter threads**: each session reads its ConPTY output pipe in a `[0; 4096]` buffer loop into a bounded eight-chunk channel. The emitter coalesces up to 32 KiB, emits at most once every 16 ms, and waits for the frontend's `ack_terminal_output` after xterm's write callback before sending more. On EOF or error, it removes only its own entry and emits `terminal-exit`.
 - **`Drop` for `TerminalState`**: kills the child process to prevent orphaned console hosts.
-- **MCP listener**: when enabled, one listener thread accepts local-socket connections; each connection is handled on its own interruptible JSON-lines thread and waits on a correlated response channel. The shared `McpState` owns the listener stop flag, active connection flags, pending requests and monotonic owner/handle counters. Disconnect or MCP disablement cancels that owner's pending requests and emits `mcp-owner-disconnected`; the WebView closes all sessions tagged with that owner.
+- **MCP listener**: when enabled, one listener thread accepts local-socket connections; up to 16 connections each use an interruptible JSON-lines thread, and up to 64 requests globally run concurrently and wait on correlated response channels. Request lines are capped at 1 MiB. The shared `McpState` owns the listener stop flag, active connection flags, pending requests and monotonic owner/handle counters. Disconnect or MCP disablement cancels that owner's pending requests and emits `mcp-owner-disconnected`; the WebView closes all sessions tagged with that owner.
 
 ### Frontend Side
 

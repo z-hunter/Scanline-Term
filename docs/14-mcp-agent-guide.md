@@ -50,7 +50,7 @@ command = 'C:\path\to\ScanlineTerm\src-tauri\target\debug\scanline-term-mcp.exe'
 args = ["--pipe", "scanline-term-mcp-dev"]
 ```
 
-The sidecar speaks MCP JSON-RPC on stdin/stdout. Diagnostics must not be parsed from stdout. A normal client performs this sequence:
+The sidecar speaks MCP JSON-RPC on stdin/stdout. Request lines are limited to 1 MiB; oversized requests receive a parse error and close the sidecar. Diagnostics must not be parsed from stdout. A normal client performs this sequence:
 
 ```text
 initialize

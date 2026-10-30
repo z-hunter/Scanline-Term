@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 
 const SOCKET_NAME: &str = "scanline-term-mcp";
 const PROTOCOL_VERSION: &str = "2025-11-25";
+const MAX_REQUEST_LINE_BYTES: usize = 1024 * 1024;
 
 struct BridgeClient {
     reader: Option<BufReader<Stream>>,
@@ -94,13 +95,28 @@ fn main() {
         }
     };
     let stdin = io::stdin();
+    let mut stdin = stdin.lock();
     let mut bridge = BridgeClient::new(socket_name);
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match read_bounded_line(&mut stdin, &mut line) {
+            Ok(false) => break,
+            Ok(true) => {}
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                write_json(&json_rpc_error(
+                    Value::Null,
+                    -32700,
+                    "Request exceeds the 1 MiB limit",
+                ));
+                break;
+            }
+            Err(_) => break,
+        }
+        if line.trim_ascii().is_empty() {
             continue;
         }
-        let request: Value = match serde_json::from_str(&line) {
+        let request: Value = match serde_json::from_slice(line.trim_ascii()) {
             Ok(request) => request,
             Err(error) => {
                 write_json(&json_rpc_error(
@@ -113,6 +129,32 @@ fn main() {
         };
         if let Some(response) = handle_request(&mut bridge, &request) {
             write_json(&response);
+        }
+    }
+}
+
+fn read_bounded_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<bool> {
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(!line.is_empty());
+        }
+        let remaining = MAX_REQUEST_LINE_BYTES.saturating_sub(line.len());
+        let inspected = &available[..available.len().min(remaining.saturating_add(1))];
+        let consumed = inspected
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(inspected.len(), |index| index + 1);
+        line.extend_from_slice(&inspected[..consumed]);
+        reader.consume(consumed);
+        if line.len() > MAX_REQUEST_LINE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "request line too long",
+            ));
+        }
+        if line.last() == Some(&b'\n') {
+            return Ok(true);
         }
     }
 }
@@ -366,6 +408,33 @@ mod tests {
         assert_eq!(
             socket_name_from_args(["--pipe".into()].into_iter()),
             Err("--pipe requires a named-pipe value".into()),
+        );
+    }
+
+    #[test]
+    fn stdio_request_line_is_bounded_by_bytes() {
+        let mut line = Vec::new();
+        let mut valid = io::Cursor::new(b"{}\n".to_vec());
+        assert!(read_bounded_line(&mut valid, &mut line).unwrap());
+        assert_eq!(line, b"{}\n");
+
+        let mut oversized = io::Cursor::new(vec![b'a'; MAX_REQUEST_LINE_BYTES + 1]);
+        assert_eq!(
+            read_bounded_line(&mut oversized, &mut Vec::new())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut exact = vec![b'a'; MAX_REQUEST_LINE_BYTES - 1];
+        exact.push(b'\n');
+        assert!(read_bounded_line(&mut io::Cursor::new(exact), &mut Vec::new()).unwrap());
+        let multibyte = "é".repeat(MAX_REQUEST_LINE_BYTES / 2 + 1).into_bytes();
+        assert_eq!(
+            read_bounded_line(&mut io::Cursor::new(multibyte), &mut Vec::new())
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
         );
     }
 }
