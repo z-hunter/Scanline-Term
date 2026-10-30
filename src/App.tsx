@@ -936,10 +936,6 @@ export default function App() {
     });
   }, [canonicalGlobals.globalHotkeyEnabled, canonicalGlobals.slideFromTop, managedSettled, reportError, setStored]);
   useEffect(() => {
-    if (isTauri())
-      void invoke<string>("operating_system").then(setOperatingSystem);
-  }, []);
-  useEffect(() => {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
   useEffect(() => {

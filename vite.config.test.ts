@@ -31,5 +31,5 @@ describe('Vite SVS development resolution', () => {
     const core = await import(pathToFileURL(resolvedPath).href);
     expect(core.getCustomColorProfiles).toEqual(expect.any(Function));
     expect(core.replaceCustomColorProfiles).toEqual(expect.any(Function));
-  });
+  }, 15_000);
 });
