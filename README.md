@@ -91,6 +91,12 @@ Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with li
 
 ---
 
+## Lua Configuration & Scripts
+
+Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes. The shipped `User's` palette is enabled by default; optional examples show Vim/Neovim and Helix mode-based layout switching with Smart Caps, plus switching to a saved preset while FAR Manager runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
+
+---
+
 ## Keyboard Shortcuts Cheat Sheet
 
 > **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
