@@ -1918,13 +1918,15 @@ fn seed_lua_config(
         return Err("could not locate the user configuration directory".into());
     };
     let entry = app_config_dir.join("config.lua");
-    if entry.is_file() {
-        return Ok(());
-    }
-    match fs::symlink_metadata(&entry) {
-        Ok(_) => return Err("Lua config destination exists and is not a regular file".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("could not inspect Lua config destination: {error}")),
+    let entry_exists = entry.is_file();
+    if !entry_exists {
+        match fs::symlink_metadata(&entry) {
+            Ok(_) => return Err("Lua config destination exists and is not a regular file".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!("could not inspect Lua config destination: {error}"));
+            }
+        }
     }
     let examples_dir = examples_dir.ok_or("bundled Lua examples are unavailable")?;
     let source_entry = examples_dir.join("sterm.lua");
@@ -1939,6 +1941,9 @@ fn seed_lua_config(
 
     let mut files = Vec::with_capacity(LUA_STARTER_FILES.len());
     for (source_relative, destination_relative) in LUA_STARTER_FILES {
+        if entry_exists && *destination_relative == "config.lua" {
+            continue;
+        }
         let source = examples_dir.join(source_relative);
         let metadata = fs::symlink_metadata(&source).map_err(|error| {
             format!("could not read bundled Lua file {source_relative}: {error}")
@@ -1984,6 +1989,9 @@ fn seed_lua_config(
     }
 
     for (_, destination_relative, contents) in &files {
+        if entry_exists && **destination_relative == "config.lua" {
+            continue;
+        }
         let destination = root.join(destination_relative);
         if fs::symlink_metadata(&destination).is_ok_and(|metadata| metadata.file_type().is_file()) {
             continue;
@@ -3840,22 +3848,31 @@ mod tests {
         let config = root.join("profile");
         write_lua_seed_sources(&source);
         fs::create_dir_all(config.join("editors")).unwrap();
+        let custom_config = b"-- existing user config\n";
+        fs::write(config.join("config.lua"), custom_config).unwrap();
         let custom_dependency = b"-- user's editor script\n";
         fs::write(config.join("editors/nvim.lua"), custom_dependency).unwrap();
 
         seed_lua_config(None, Some(&config), Some(&source)).unwrap();
+        assert_eq!(fs::read(config.join("config.lua")).unwrap(), custom_config);
         assert_eq!(
             fs::read(config.join("editors/nvim.lua")).unwrap(),
             custom_dependency
         );
-        assert!(config.join("config.lua").is_file());
+        for relative in [
+            "editors/hx.lua",
+            "modules/modal_editor.lua",
+            "scripts/far_preset.lua",
+            "palettes/users.lua",
+        ] {
+            assert_eq!(
+                fs::read(config.join(relative)).unwrap(),
+                fs::read(source.join(relative)).unwrap()
+            );
+        }
 
-        let entry_before = fs::read(config.join("config.lua")).unwrap();
-        let custom_config = b"-- existing user config\n";
-        fs::write(config.join("config.lua"), custom_config).unwrap();
         seed_lua_config(None, Some(&config), Some(&source)).unwrap();
         assert_eq!(fs::read(config.join("config.lua")).unwrap(), custom_config);
-        assert_eq!(entry_before, fs::read(source.join("sterm.lua")).unwrap());
         fs::remove_dir_all(root).unwrap();
     }
 
