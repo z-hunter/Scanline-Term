@@ -30,6 +30,7 @@ use crate::{
 const MAX_TABS: usize = 64;
 const MAX_TITLE_CHARS: usize = 4096;
 const MAX_PROCESS_CHARS: usize = 260;
+const MAX_PROCESS_NAMES: usize = 128;
 const MAX_DIAGNOSTICS: usize = 32;
 const MAX_DIAGNOSTIC_CHARS: usize = 1000;
 const ACTION_TIMEOUT: Duration = Duration::from_secs(2);
@@ -62,6 +63,8 @@ struct FrontendTab {
     title: String,
     #[serde(alias = "localProcessName")]
     process_name: Option<String>,
+    #[serde(default, alias = "localProcessNames")]
+    process_names: Vec<String>,
     preset_name: String,
     cursor: FrontendCursor,
 }
@@ -486,6 +489,7 @@ impl LuaAutomation {
                         id: id.clone(),
                         title: tab.title,
                         local_process_name: tab.process_name,
+                        process_names: tab.process_names,
                         preset_name: tab.preset_name,
                         cursor_style: CursorStyle {
                             shape: cursor_shape(tab.cursor.shape.as_deref()),
@@ -1019,8 +1023,13 @@ fn validate_snapshot(snapshot: &FrontendSnapshot) -> Result<(), String> {
             .process_name
             .as_ref()
             .is_some_and(|name| name.chars().count() > MAX_PROCESS_CHARS)
+            || tab.process_names.len() > MAX_PROCESS_NAMES
+            || tab
+                .process_names
+                .iter()
+                .any(|name| name.is_empty() || name.chars().count() > MAX_PROCESS_CHARS)
         {
-            return Err("Lua automation process name is too long".into());
+            return Err("Lua automation process context is invalid".into());
         }
         crate::presets::validate_name(&tab.preset_name)?;
     }
@@ -3190,6 +3199,7 @@ mod tests {
             id: id.into(),
             title: id.into(),
             process_name: None,
+            process_names: Vec::new(),
             preset_name: "DEC VT-100 (1978)".into(),
             cursor: FrontendCursor {
                 shape: Some("block".into()),
@@ -3335,6 +3345,7 @@ mod tests {
             id: "template-tab".into(),
             title: "Helix".into(),
             local_process_name: Some("hx.exe".into()),
+            process_names: vec!["hx.exe".into()],
             preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Underline,
@@ -3382,6 +3393,7 @@ mod tests {
             id: "tab-1".into(),
             title: "Helix".into(),
             local_process_name: Some("hx.exe".into()),
+            process_names: vec!["hx.exe".into()],
             preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Underline,
@@ -3399,6 +3411,7 @@ mod tests {
                 id: "nvim-tab".into(),
                 title: "Neovim".into(),
                 local_process_name: Some("nvim.exe".into()),
+                process_names: vec!["pwsh.exe".into(), "Far.exe".into(), "nvim.exe".into()],
                 preset_name: "DEC VT-100 (1978)".into(),
                 cursor_style: CursorStyle {
                     shape: CursorShape::Block,

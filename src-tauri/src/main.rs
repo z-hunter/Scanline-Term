@@ -1,7 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
     io::{Read, Write},
     mem::size_of,
@@ -336,32 +336,83 @@ fn spawn_terminal(app: &tauri::AppHandle, shell: &OsStr, args: &[String], cwd: O
     command.spawn_with(SessionOptions::new().size(size).backend(backend)).map_err(|error| error.to_string())
 }
 
-fn child_process_name(parent_pid: u32) -> Option<String> {
-    #[cfg(windows)]
-    {
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-        if snapshot == INVALID_HANDLE_VALUE {
-            return None;
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessContext {
+    process_name: Option<String>,
+    process_names: Vec<String>,
+}
+
+fn process_context(parent_pid: u32, processes: &[(u32, u32, String)]) -> ProcessContext {
+    // shortcut: keep at most 128 names; raise this if a supported console tree exceeds it.
+    const MAX_CONSOLE_PROCESSES: usize = 128;
+
+    let mut children = HashMap::<u32, Vec<(u32, String)>>::new();
+    let mut root_name = None;
+    for (process_id, parent_id, name) in processes {
+        if *process_id == parent_pid {
+            root_name = Some(name.clone());
+        } else {
+            children
+                .entry(*parent_id)
+                .or_default()
+                .push((*process_id, name.clone()));
         }
-        let mut entry = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
-        let mut found = None;
-        let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
-        while has_entry {
-            if entry.th32ParentProcessID == parent_pid {
-                let end = entry.szExeFile.iter().position(|&unit| unit == 0).unwrap_or(entry.szExeFile.len());
-                found = Some(String::from_utf16_lossy(&entry.szExeFile[..end]));
-                break;
-            }
-            has_entry = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    for siblings in children.values_mut() {
+        siblings.sort_unstable_by_key(|(process_id, _)| *process_id);
+    }
+
+    let mut process_names = root_name.into_iter().collect::<Vec<_>>();
+    let mut parents = vec![parent_pid];
+    let mut visited = HashSet::from([parent_pid]);
+    let mut process_name = None;
+    while !parents.is_empty() && process_names.len() < MAX_CONSOLE_PROCESSES {
+        let mut descendants = parents
+            .iter()
+            .filter_map(|parent| children.get(parent))
+            .flatten()
+            .filter(|(process_id, _)| visited.insert(*process_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        descendants.sort_unstable_by_key(|(process_id, _)| *process_id);
+        if descendants.is_empty() {
+            break;
         }
-        unsafe { CloseHandle(snapshot) };
-        found
+        let remaining = MAX_CONSOLE_PROCESSES - process_names.len();
+        descendants.truncate(remaining);
+        // shortcut: deepest, latest-PID descendant proxies for the active console app; replace if background trees cause mismatches.
+        process_name = descendants.last().map(|(_, name)| name.clone());
+        process_names.extend(descendants.iter().map(|(_, name)| name.clone()));
+        parents = descendants.into_iter().map(|(process_id, _)| process_id).collect();
     }
-    #[cfg(not(windows))]
-    {
-        let _ = parent_pid;
-        None
+    ProcessContext {
+        process_name: process_name.or_else(|| process_names.last().cloned()),
+        process_names,
     }
+}
+
+#[cfg(windows)]
+fn child_process_context(parent_pid: u32) -> ProcessContext {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return ProcessContext::default();
+    }
+    let mut entry = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+    let mut processes = Vec::new();
+    let mut has_entry = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+    while has_entry {
+        let end = entry.szExeFile.iter().position(|&unit| unit == 0).unwrap_or(entry.szExeFile.len());
+        processes.push((entry.th32ProcessID, entry.th32ParentProcessID, String::from_utf16_lossy(&entry.szExeFile[..end])));
+        has_entry = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    unsafe { CloseHandle(snapshot) };
+    process_context(parent_pid, &processes)
+}
+
+#[cfg(not(windows))]
+fn child_process_context(_parent_pid: u32) -> ProcessContext {
+    ProcessContext::default()
 }
 
 #[cfg(windows)]
@@ -944,11 +995,11 @@ fn resize_terminal(state: State<TerminalState>, session_id: SessionId, cols: u16
 }
 
 #[tauri::command]
-fn active_terminal_process(state: State<TerminalState>, session_id: SessionId) -> Result<Option<String>, String> {
+fn active_terminal_process(state: State<TerminalState>, session_id: SessionId) -> Result<ProcessContext, String> {
     valid_session_id(&session_id)?;
     let process_id = state.0.lock().map_err(|_| "terminal state is unavailable")?
         .get(&session_id).ok_or("terminal is not running")?.child.id();
-    Ok(child_process_name(process_id))
+    Ok(child_process_context(process_id))
 }
 
 #[tauri::command]
@@ -1046,7 +1097,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        child_process_name, dev_conpty_dir, launch_request, powershell_name, pty_size, summon_hotkey,
+        process_context, dev_conpty_dir, launch_request, powershell_name, pty_size, summon_hotkey,
         target_argument, terminal_launch, valid_session_id,
         valid_working_directory, LaunchRequest,
     };
@@ -1089,7 +1140,32 @@ mod tests {
 
     #[test]
     fn unrelated_process_has_no_child() {
-        assert_eq!(child_process_name(u32::MAX), None);
+        assert_eq!(process_context(u32::MAX, &[]), super::ProcessContext::default());
+    }
+
+    #[test]
+    fn process_context_tracks_nested_console_programs_and_selects_the_deepest() {
+        let processes = vec![
+            (10, 1, "pwsh.exe".into()),
+            (20, 10, "Far.exe".into()),
+            (30, 10, "background.exe".into()),
+            (40, 20, "nvim.exe".into()),
+        ];
+
+        assert_eq!(process_context(10, &processes), super::ProcessContext {
+            process_name: Some("nvim.exe".into()),
+            process_names: vec!["pwsh.exe".into(), "Far.exe".into(), "background.exe".into(), "nvim.exe".into()],
+        });
+    }
+
+    #[test]
+    fn process_context_falls_back_to_the_launched_process_when_it_has_no_children() {
+        let processes = vec![(10, 1, "Far.exe".into())];
+
+        assert_eq!(process_context(10, &processes), super::ProcessContext {
+            process_name: Some("Far.exe".into()),
+            process_names: vec!["Far.exe".into()],
+        });
     }
 
     #[test]

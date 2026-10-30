@@ -194,6 +194,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
         id: session.id,
         title: tab.title.replace(/^\d+\.\s*/, ''),
         processName: session.localProcessName,
+        processNames: session.localProcessNames,
         presetName: preset.name,
         cursor: session.applicationCursorState,
       })),

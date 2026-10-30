@@ -8,6 +8,7 @@ export type LuaAutomationTab = {
   id: string;
   title: string;
   processName: string | null;
+  processNames: string[];
   presetName: string;
   cursor: ApplicationCursorState;
 };

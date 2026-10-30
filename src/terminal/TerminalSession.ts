@@ -8,6 +8,7 @@ import { terminalMouse, type MouseTrackingMode } from "./terminal-mouse";
 import { win32InputKey } from "../win32-input";
 
 export type TerminalSize = { cols: number; rows: number };
+type ActiveTerminalProcess = { processName: string | null; processNames: string[] };
 export type TerminalLaunch = { command?: string | null; args?: string[] | null; cwd?: string | null; preset?: string | null };
 export type TerminalInputAction =
   | { kind: "text"; text: string; submit?: boolean }
@@ -197,6 +198,7 @@ export class TerminalSession {
   title: string | null = null;
   private shellName: string | null = null;
   private processName: string | null = null;
+  private processNames: string[] = [];
   private processInterval: number | null = null;
   private unlisten: UnlistenFn[] = [];
   private disposables: { dispose(): void }[] = [];
@@ -428,6 +430,10 @@ export class TerminalSession {
 
   get localProcessName(): string | null {
     return this.processName;
+  }
+
+  get localProcessNames(): string[] {
+    return this.processNames;
   }
 
   private setApplicationCursorState(shape: ApplicationCursorShape, blink: boolean | null, visible = this.applicationCursorVisible): void {
@@ -694,15 +700,22 @@ export class TerminalSession {
   private pollProcess(): void {
     if (this.processPollPending || this.disposed || this.exited) return;
     this.processPollPending = true;
-    void invoke<string | null>("active_terminal_process", { sessionId: this.id })
-      .then((name) => {
-        const processName = name ?? this.shellName;
-        if (this.disposed || this.exited || processName === this.processName) return;
+    void invoke<ActiveTerminalProcess | string | null>("active_terminal_process", { sessionId: this.id })
+      .then((result) => {
+        const observed = typeof result === 'object' && result !== null
+          ? result
+          : { processName: result, processNames: result ? [result] : [] };
+        const processName = observed.processName ?? this.shellName;
+        const processNames = observed.processNames.length ? observed.processNames : processName ? [processName] : [];
+        const processChanged = processName !== this.processName;
+        const treeChanged = processNames.length !== this.processNames.length || processNames.some((name, index) => name !== this.processNames[index]);
+        if (this.disposed || this.exited || (!processChanged && !treeChanged)) return;
         if (this.title?.toLowerCase() === this.shellName?.toLowerCase())
           this.title = null;
         this.processName = processName;
+        this.processNames = processNames;
         this.onAutomationStateChange();
-        if (!this.title && processName)
+        if (processChanged && !this.title && processName)
           this.onProcessName(processName);
       })
       .catch((reason) => {

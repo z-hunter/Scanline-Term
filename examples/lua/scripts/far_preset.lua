@@ -23,10 +23,7 @@ end
 local function update_far_preset(ctx)
   if not ctx.tab:is_active() then return end
 
-  local process = ctx.tab:local_process_name()
-  if process == nil then return end
-  -- The host reports executable basenames; Windows may vary their case.
-  local far_is_running = string.lower(process) == 'far.exe'
+  local far_is_running = ctx.tab:has_process('far.exe')
 
   if far_is_running then
     if far_was_running then return end

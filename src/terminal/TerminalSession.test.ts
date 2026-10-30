@@ -380,6 +380,25 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('publishes process-tree changes even when the deepest process name stays the same', async () => {
+    const onAutomationStateChange = vi.fn();
+    let observed = { processName: 'nvim.exe', processNames: ['pwsh.exe', 'Far.exe', 'nvim.exe'] };
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(
+      command === 'start_terminal' ? 'pwsh.exe' : command === 'active_terminal_process' ? observed : undefined,
+    ));
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onAutomationStateChange);
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await vi.waitFor(() => expect(session.localProcessNames).toEqual(['pwsh.exe', 'Far.exe', 'nvim.exe']));
+    const updates = onAutomationStateChange.mock.calls.length;
+
+    observed = { processName: 'nvim.exe', processNames: ['pwsh.exe', 'nvim.exe'] };
+    Reflect.get(session, 'pollProcess').call(session);
+
+    await vi.waitFor(() => expect(session.localProcessNames).toEqual(['pwsh.exe', 'nvim.exe']));
+    expect(onAutomationStateChange).toHaveBeenCalledTimes(updates + 1);
+    session.dispose();
+  });
+
   it('preserves custom OSC title when child process changes', async () => {
     const onProcessName = vi.fn();
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onProcessName);

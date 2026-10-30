@@ -61,6 +61,7 @@ pub struct TabState {
     pub id: String,
     pub title: String,
     pub local_process_name: Option<String>,
+    pub process_names: Vec<String>,
     pub preset_name: String,
     pub cursor_style: CursorStyle,
     pub active: bool,
@@ -738,6 +739,7 @@ impl LuaRuntime {
             let epoch = Arc::new(AtomicU64::new(1));
             let active = process_matches(
                 attachment.process_matches.as_deref(),
+                &tab.process_names,
                 tab.local_process_name.as_deref(),
             ) && tab.active
                 && tab.focused;
@@ -846,6 +848,7 @@ impl LuaRuntime {
             }
             let should_be_active = process_matches(
                 script.process_matches.as_deref(),
+                &tab.process_names,
                 tab.local_process_name.as_deref(),
             ) && tab.active
                 && tab.focused;
@@ -865,6 +868,7 @@ impl LuaRuntime {
                 && tab.active
                 && process_matches(
                     script.process_matches.as_deref(),
+                    &tab.process_names,
                     tab.local_process_name.as_deref(),
                 );
             let callback_allowed = script.active
@@ -1831,6 +1835,18 @@ fn install_context_api(
         "local_process_name",
         lua.create_function(move |_, _: Value| Ok(process.clone()))?,
     )?;
+    let process_names = tab.process_names.clone();
+    let local_process_name = tab.local_process_name.clone();
+    tab_api.set(
+        "has_process",
+        lua.create_function(move |_, (_tab, name): (Value, String)| {
+            Ok(process_matches(
+                Some(std::slice::from_ref(&name)),
+                &process_names,
+                local_process_name.as_deref(),
+            ))
+        })?,
+    )?;
     let preset_name = tab.preset_name.clone();
     tab_api.set(
         "preset_name",
@@ -2382,17 +2398,27 @@ fn palette_color(color: String) -> mlua::Result<String> {
     Ok(color.to_ascii_uppercase())
 }
 
-fn process_matches(matches: Option<&[String]>, process: Option<&str>) -> bool {
+fn process_name_matches(candidate: &str, process: &str) -> bool {
+    let candidate = candidate.rsplit(['\\', '/']).next().unwrap_or(candidate);
+    let process = process.rsplit(['\\', '/']).next().unwrap_or(process);
+    candidate.eq_ignore_ascii_case(process)
+}
+
+fn process_matches(
+    matches: Option<&[String]>,
+    process_names: &[String],
+    process: Option<&str>,
+) -> bool {
     let Some(matches) = matches else {
         return true;
     };
-    let Some(process) = process else {
-        return false;
-    };
-    let process = process.rsplit(['\\', '/']).next().unwrap_or(process);
-    matches
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case(process))
+    matches.iter().any(|candidate| {
+        process_names
+            .iter()
+            .any(|process| process_name_matches(candidate, process))
+            || process_names.is_empty()
+                && process.is_some_and(|process| process_name_matches(candidate, process))
+    })
 }
 
 fn event_name(event: &RuntimeEvent) -> &'static str {
@@ -2486,6 +2512,16 @@ fn tab_to_json(tab: &TabState) -> JsonValue {
             .clone()
             .map_or(JsonValue::Null, JsonValue::String),
     );
+    object.insert(
+        "process_names".into(),
+        JsonValue::Array(
+            tab.process_names
+                .iter()
+                .cloned()
+                .map(JsonValue::String)
+                .collect(),
+        ),
+    );
     object.insert("cursor_style".into(), cursor_to_json(&tab.cursor_style));
     object.insert("active".into(), tab.active.into());
     object.insert("focused".into(), tab.focused.into());
@@ -2566,6 +2602,7 @@ mod tests {
             id: id.into(),
             title: String::new(),
             local_process_name: process.map(str::to_owned),
+            process_names: process.into_iter().map(str::to_owned).collect(),
             preset_name: "DEC VT-100 (1978)".into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Block,
@@ -3016,6 +3053,7 @@ mod tests {
                 .is_empty()
         );
         state.local_process_name = Some(far.into());
+        state.process_names = vec!["cmd.exe".into(), far.into()];
         let entered = runtime.dispatch(
             &state,
             &InputState::default(),
@@ -3044,27 +3082,13 @@ mod tests {
         );
 
         state.local_process_name = None;
-        assert!(
-            runtime
-                .dispatch(
-                    &state,
-                    &InputState::default(),
-                    RuntimeEvent::LocalProcessChanged {
-                        old_process: Some(far.into()),
-                        new_process: None
-                    },
-                )
-                .actions
-                .is_empty()
-        );
-
-        state.local_process_name = Some("cmd.exe".into());
+        state.process_names = vec!["cmd.exe".into()];
         let exited = runtime.dispatch(
             &state,
             &InputState::default(),
             RuntimeEvent::LocalProcessChanged {
-                old_process: None,
-                new_process: Some("cmd.exe".into()),
+                old_process: Some(far.into()),
+                new_process: None,
             },
         );
         assert_eq!(exited.actions.len(), 1);
@@ -3073,6 +3097,18 @@ mod tests {
             Action::ApplyPreset("Saved profile".into())
         );
         state.preset_name = "Saved profile".into();
+
+        state.local_process_name = Some("cmd.exe".into());
+        state.process_names = vec!["cmd.exe".into()];
+        let shell_ready = runtime.dispatch(
+            &state,
+            &InputState::default(),
+            RuntimeEvent::LocalProcessChanged {
+                old_process: None,
+                new_process: Some("cmd.exe".into()),
+            },
+        );
+        assert!(shell_ready.actions.is_empty());
 
         let mut second = tab("b", Some("pwsh.exe"), true, true);
         second.preset_name = "Another profile".into();
@@ -3083,6 +3119,7 @@ mod tests {
                 .is_empty()
         );
         second.local_process_name = Some(far.into());
+        second.process_names = vec!["pwsh.exe".into(), far.into()];
         assert_eq!(
             runtime
                 .dispatch(
@@ -3109,6 +3146,7 @@ mod tests {
                 .is_empty()
         );
         second.local_process_name = Some("pwsh.exe".into());
+        second.process_names = vec!["pwsh.exe".into()];
         assert_eq!(
             runtime
                 .dispatch(
@@ -3125,6 +3163,7 @@ mod tests {
         );
 
         state.local_process_name = Some(far.into());
+        state.process_names = vec!["cmd.exe".into(), far.into()];
         let reentered = runtime.dispatch(
             &state,
             &InputState::default(),
@@ -3136,6 +3175,7 @@ mod tests {
         assert_eq!(reentered.actions.len(), 1);
         state.preset_name = "DEC VT-100 (1978)".into();
         state.local_process_name = Some("cmd.exe".into());
+        state.process_names = vec!["cmd.exe".into()];
         let inactive = tab("a", Some("cmd.exe"), false, false);
         assert!(
             runtime
@@ -3197,6 +3237,19 @@ mod tests {
         let snapshot = runtime.snapshot.clone();
         runtime.reload(snapshot, [(activated, InputState::default())]);
         assert!(runtime.smart_caps_enabled("b"));
+    }
+
+    #[test]
+    fn process_filter_matches_an_editor_nested_under_a_file_manager() {
+        let (_dir, mut runtime) = setup("local sterm=require 'sterm'; sterm.on('context-updated', function(ctx) ctx.input:set_layout('en-US') end)");
+        let mut nested_editor = tab("nested", Some("nvim.exe"), true, true);
+        nested_editor.process_names = vec!["pwsh.exe".into(), "Far.exe".into(), "nvim.exe".into()];
+
+        let input = InputState::default();
+        runtime.attach_tab(nested_editor.clone(), input.clone());
+        let result = runtime.dispatch(&nested_editor, &input, RuntimeEvent::ContextUpdated);
+        assert_eq!(result.actions.len(), 1);
+        assert_eq!(result.actions[0].action, Action::SetLayout("en-US".into()));
     }
 
     #[test]
@@ -4191,6 +4244,7 @@ mod scenario_reload_lifecycle_tests {
             id: "far-tab".into(),
             title: "FAR".into(),
             local_process_name: Some(process.into()),
+            process_names: vec![process.into()],
             preset_name: preset_name.into(),
             cursor_style: CursorStyle {
                 shape: CursorShape::Block,
@@ -4228,6 +4282,7 @@ mod scenario_reload_lifecycle_tests {
         runtime.attach_tab(tab.clone(), input.clone());
 
         tab.local_process_name = Some("FAR.EXE".into());
+        tab.process_names = vec!["cmd.exe".into(), "FAR.EXE".into()];
         let entered = runtime.dispatch(
             &tab,
             &input,
@@ -4247,6 +4302,33 @@ mod scenario_reload_lifecycle_tests {
             state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
             ScenarioValue::String("Saved profile".into())
         );
+
+        tab.local_process_name = Some("nvim.exe".into());
+        tab.process_names = vec!["pwsh.exe".into(), "FAR.EXE".into(), "nvim.exe".into()];
+        runtime.dispatch(
+            &tab,
+            &input,
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("FAR.EXE".into()),
+                new_process: Some("nvim.exe".into()),
+            },
+        );
+        assert!(runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated).actions.is_empty());
+        assert_eq!(
+            state_store.0.lock().unwrap()[&scope]["far_preset.baseline"],
+            ScenarioValue::String("Saved profile".into())
+        );
+        tab.local_process_name = Some("FAR.EXE".into());
+        tab.process_names = vec!["pwsh.exe".into(), "FAR.EXE".into()];
+        runtime.dispatch(
+            &tab,
+            &input,
+            RuntimeEvent::LocalProcessChanged {
+                old_process: Some("nvim.exe".into()),
+                new_process: Some("FAR.EXE".into()),
+            },
+        );
+        assert!(runtime.dispatch(&tab, &input, RuntimeEvent::ContextUpdated).actions.is_empty());
 
         write_far(&dir, "FAR profile C");
         let next = RuntimeSnapshot::load(&dir.entry()).unwrap();
@@ -4286,6 +4368,7 @@ mod scenario_reload_lifecycle_tests {
 
         tab.preset_name = "FAR profile C".into();
         tab.local_process_name = Some("cmd.exe".into());
+        tab.process_names = vec!["pwsh.exe".into()];
         runtime.dispatch(
             &tab,
             &input,
@@ -4303,6 +4386,7 @@ mod scenario_reload_lifecycle_tests {
 
         tab.preset_name = "Saved profile".into();
         tab.local_process_name = Some("FAR.EXE".into());
+        tab.process_names = vec!["pwsh.exe".into(), "FAR.EXE".into()];
         runtime.dispatch(
             &tab,
             &input,

@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 const snapshot: LuaAutomationSnapshot = {
   activeTabId: 'tab-1', focused: true,
-  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', presetName: 'default', cursor: { shape: 'bar', blink: true, visible: true } }],
+  tabs: [{ id: 'tab-1', title: '1. nvim.exe', processName: 'nvim.exe', processNames: ['nvim.exe'], presetName: 'default', cursor: { shape: 'bar', blink: true, visible: true } }],
 };
 
 describe('LuaAutomationCoordinator', () => {
