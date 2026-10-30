@@ -47,35 +47,8 @@ pub struct HomeConfigPayload {
 }
 
 pub fn default_config() -> HomeConfig {
-    HomeConfig {
-        version: CURRENT_VERSION,
-        title: "Scanline Home".into(),
-        categories: vec![HomeCategory {
-            title: "Development".into(),
-            links: vec![
-                HomeLink {
-                    title: "GitHub".into(),
-                    url: "https://github.com/".into(),
-                    shortcut: Some("g".into()),
-                },
-                HomeLink {
-                    title: "Tauri Docs".into(),
-                    url: "https://v2.tauri.app/".into(),
-                    shortcut: Some("t".into()),
-                },
-                HomeLink {
-                    title: "Scanline Term".into(),
-                    url: "https://github.com/z-hunter/Scanline-Term".into(),
-                    shortcut: Some("s".into()),
-                },
-                HomeLink {
-                    title: "Quest".into(),
-                    url: "https://github.com/z-hunter/Quest".into(),
-                    shortcut: Some("q".into()),
-                },
-            ],
-        }],
-    }
+    serde_json::from_str(include_str!("../../home-default.json"))
+        .expect("built-in home config must be valid")
 }
 
 fn string_length(value: &str) -> usize {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import defaultHomeConfigData from '../../home-default.json';
 
 export type HomeLink = { title: string; url: string; shortcut?: string };
 export type HomeCategory = { title: string; links: HomeLink[] };
@@ -19,16 +20,7 @@ const hintLabelAt = (index: number, total: number) => {
   return label;
 };
 
-const defaultHomeConfig = (): HomeConfig => ({
-  version: 2,
-  title: 'Scanline Home',
-  categories: [{ title: 'Development', links: [
-    { title: 'GitHub', url: 'https://github.com/', shortcut: 'g' },
-    { title: 'Tauri Docs', url: 'https://v2.tauri.app/', shortcut: 't' },
-    { title: 'Scanline Term', url: 'https://github.com/z-hunter/Scanline-Term', shortcut: 's' },
-    { title: 'Quest', url: 'https://github.com/z-hunter/Quest', shortcut: 'q' },
-  ] }],
-});
+const defaultHomeConfig = (): HomeConfig => structuredClone(defaultHomeConfigData) as HomeConfig;
 
 const urlValue = (value: string) => {
   const candidate = /^(?:https?:\/\/|file:\/)/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;

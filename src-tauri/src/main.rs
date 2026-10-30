@@ -23,7 +23,6 @@ use std::sync::atomic::AtomicBool;
 use windows_sys::Win32::{
     Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
     System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
-    System::Registry::{RegCloseKey, RegDeleteTreeW, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ},
 };
 
 use conpty_oxide::{
@@ -34,6 +33,7 @@ use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
 mod codex;
 mod browser;
 mod caps_hook;
+mod explorer;
 mod home;
 mod lua_automation;
 mod lua_runtime;
@@ -421,97 +421,6 @@ fn operating_system() -> String {
     std::process::Command::new("cmd.exe").args(["/d", "/s", "/c", "ver"]).output()
         .ok().map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
         .filter(|version| !version.is_empty()).unwrap_or_else(|| std::env::consts::OS.to_owned())
-}
-
-#[cfg(windows)]
-fn explorer_context_key(relative: &str) -> String {
-    format!("Software\\Classes\\{relative}\\shell\\ScanlineTerm.OpenHere")
-}
-
-#[cfg(windows)]
-fn set_registry_string(key: &str, name: Option<&str>, value: &str) -> Result<(), String> {
-    use windows_sys::Win32::System::Registry::RegCreateKeyW;
-    let key: Vec<u16> = key.encode_utf16().chain(std::iter::once(0)).collect();
-    let name: Vec<u16> = name.unwrap_or("").encode_utf16().chain(std::iter::once(0)).collect();
-    let value: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut handle = std::ptr::null_mut();
-    let status = unsafe { RegCreateKeyW(HKEY_CURRENT_USER, key.as_ptr(), &mut handle) };
-    if status != 0 { return Err(format!("could not create Explorer registry key ({status})")); }
-    let status = unsafe {
-        RegSetValueExW(handle, name.as_ptr(), 0, REG_SZ, value.as_ptr().cast(), (value.len() * size_of::<u16>()) as u32)
-    };
-    unsafe { RegCloseKey(handle); }
-    if status == 0 { Ok(()) } else { Err(format!("could not write Explorer registry value ({status})")) }
-}
-
-#[cfg(windows)]
-fn remove_explorer_context_key(key: &str) -> Result<(), String> {
-    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND};
-    let key: Vec<u16> = key.encode_utf16().chain(std::iter::once(0)).collect();
-    let mut handle = std::ptr::null_mut();
-    let status = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, key.as_ptr(), 0, KEY_SET_VALUE, &mut handle) };
-    if status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND { return Ok(()); }
-    if status != 0 { return Err(format!("could not open Explorer registry key ({status})")); }
-    let default_name = [0];
-    let icon_name: Vec<u16> = "Icon".encode_utf16().chain(std::iter::once(0)).collect();
-    for name in [&default_name[..], &icon_name] {
-        let status = unsafe { RegDeleteValueW(handle, name.as_ptr()) };
-        if status != 0 && status != ERROR_FILE_NOT_FOUND {
-            unsafe { RegCloseKey(handle); }
-            return Err(format!("could not remove Explorer registry value ({status})"));
-        }
-    }
-    unsafe { RegCloseKey(handle); }
-    let command_key: Vec<u16> = format!("{}\\command", String::from_utf16_lossy(&key[..key.len() - 1]))
-        .encode_utf16().chain(std::iter::once(0)).collect();
-    let status = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, command_key.as_ptr()) };
-    if status == 0 || status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND { Ok(()) }
-    else { Err(format!("could not remove Explorer command registry key ({status})")) }
-}
-
-#[cfg(windows)]
-fn apply_explorer_integration(enabled: bool, icon_path: Option<&Path>) -> Result<(), String> {
-    let directory_key = explorer_context_key("Directory");
-    let background_key = explorer_context_key("Directory\\Background");
-    if !enabled {
-        let directory_result = remove_explorer_context_key(&directory_key);
-        let background_result = remove_explorer_context_key(&background_key);
-        return directory_result.and(background_result);
-    }
-    let executable = std::env::current_exe().map_err(|error| format!("could not locate Scanline Term executable: {error}"))?;
-    let executable = executable.to_string_lossy();
-    let command = format!("\"{executable}\" -T -P \"%1\"");
-    let background_command = format!("\"{executable}\" -T -P \"%V\"");
-    let icon_path = icon_path.ok_or("Scanline Term window icon is unavailable")?.to_string_lossy();
-    let register = || {
-        set_registry_string(&directory_key, None, "Open ScanlineTerm here")?;
-        set_registry_string(&directory_key, Some("Icon"), &icon_path)?;
-        set_registry_string(&format!("{directory_key}\\command"), None, &command)?;
-        set_registry_string(&background_key, None, "Open ScanlineTerm here")?;
-        set_registry_string(&background_key, Some("Icon"), &icon_path)?;
-        set_registry_string(&format!("{background_key}\\command"), None, &background_command)
-    };
-    if let Err(error) = register() {
-        let _ = remove_explorer_context_key(&directory_key);
-        let _ = remove_explorer_context_key(&background_key);
-        return Err(error);
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn set_explorer_integration(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let icon_path = if enabled {
-            Some(app.path().resolve("window-icon.ico", BaseDirectory::Resource).map_err(|error| format!("could not locate Scanline Term window icon: {error}"))?)
-        } else {
-            None
-        };
-        apply_explorer_integration(enabled, icon_path.as_deref())
-    }
-    #[cfg(not(windows))]
-    { let _ = (app, enabled); Err("Windows Explorer integration is only available on Windows".into()) }
 }
 
 #[cfg(windows)]
@@ -1109,7 +1018,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, explorer::set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
         .build(tauri::generate_context!())
         .expect("error while building Scanline Term")
         .run(|_app_handle, _event| {

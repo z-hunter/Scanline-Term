@@ -4,378 +4,286 @@
 
 ---
 
+## Codebase Metrics & Volume
+
+Scanline Term is built with a dual-layer architecture: a native **Rust/Tauri backend** handling low-level OS operations (Win32 API, ConPTY, hooks, IPC, Lua sandbox) and a **React/TypeScript frontend** handling UI composition, terminal state, and CRT shader adaptation via the **Scanline Virtual Screen (SVS)** engine.
+
+### Code Volume Summary
+
+| Layer / Language | Total Files | Total Lines (LOC) | Code Lines | Comments | Blank Lines |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **Rust (`.rs`)** | 13 | 14,624 | 13,339 | 483 | 802 |
+| **TypeScript (`.ts`)** | 55 | 9,427 | 8,406 | 103 | 918 |
+| **TypeScript JSX (`.tsx`)** | 19 | 5,864 | 5,498 | 37 | 329 |
+| **CSS (`.css`)** | 1 | 1,183 | 1,035 | 6 | 142 |
+| **Lua Scripts (`.lua`)** | 7 | 280 | 187 | 63 | 30 |
+| **JSON (Presets & Schemas)** | 39 | 11,327 | 11,327 | 0 | 0 |
+| **Markdown Documentation** | 27 | 5,753 | 3,581 | 614 | 1,558 |
+| **PowerShell Tooling (`.ps1`)** | 5 | 1,785 | 1,722 | 11 | 52 |
+| **Other Configs (`html, toml, yml, js`)** | 5 | 416 | 375 | 10 | 31 |
+| **Total Repository** | **171** | **~50,659** | **45,470** | **1,327** | **3,862** |
+
+### Test vs. Production Code
+
+Across the combined Rust backend and frontend production/test line totals, **over 41% of those lines are dedicated to automated tests**; this metric does not cover the full repository:
+
+* **Rust Backend:** 9,020 prod lines / **5,604 test lines (38.3% test ratio)** via embedded `#[cfg(test)]` modules.
+* **Frontend TS/TSX:** 8,031 prod lines / **7,212 test lines (47.3% test ratio)** across 33 dedicated test suites.
+* **External Engine SVS:** ~3,100 prod lines in `Scanline-Virtual-Screen`, pinned by immutable commit.
+
+---
+
 ## Repository Tree
 
 ```
 ScanlineTerm/
-├── docs/                         # This documentation
+├── home-default.json                      # Shared starter config for native and browser home pages
+├── docs/                                  # 19 technical documentation chapters
 ├── examples/
-│   └── lua/                      # Optional Lua examples; editor bindings are commented out by default
+│   └── lua/                               # Sandboxed Lua scripts & user palette presets
 ├── public/
-│   ├── icon.svg                  # Favicon / window icon
-│   ├── scanline-term-eye.png     # Product artwork
-│   └── splash.jpg                # Splash screen image (256×256)
+│   ├── icon.svg                           # Favicon & window icon
+│   ├── scanline-term-eye.png              # Product artwork
+│   └── splash.jpg                         # Splash screen image (256×256)
 ├── src/
-│   ├── ai/
-│   │   ├── CodexClient.ts         # app-server JSON-RPC client
-│   │   ├── modelSelection.ts      # per-tab model/effort defaults and fallback
-│   │   └── protocol.ts            # minimal protocol subset
+│   ├── ai/                                # Codex app-server client & protocol
+│   │   ├── chatMessages.ts                # Chat message models & delta aggregation
+│   │   ├── CodexClient.ts                 # JSON-RPC process client and event routing
+│   │   ├── modelSelection.ts              # Model tier & reasoning effort resolution
+│   │   ├── protocol.ts                    # Minimal JSON-RPC protocol types
+│   │   └── useCodexAssistant.ts           # Per-session assistant state and turn lifecycle
 │   ├── assets/
-│   │   └── scanline-term-mini.png  # Logo asset
-│   ├── crt/
-│   │   ├── settings.ts            # Host persistence and display-mode adapters
-│   │   └── useCRT.ts              # SVS render-loop and resize lifecycle adapter
-│   ├── App.tsx                    # React composition root
-│   ├── terminal/                  # xterm/ConPTY session, renderer and input helpers
-│   ├── terminal/terminal-automation.ts # Shared Codex/MCP observation and input dispatch
-│   ├── terminal/ScanlineTerminalRenderer.ts # SVS xterm adapter plus host image overlays
-│   ├── ui/                        # SettingsPanel, AiPanel, HomeDashboard, TerminalTabs, TabGallery, ScrollbackScrollbar, native menu, layoutFit and Knob components
-│   ├── main.tsx                   # React entry point (createRoot)
-│   ├── styles.css                 # Application stylesheet
-│   ├── assets.d.ts                # TypeScript type shim for .png imports
-│   ├── terminal/terminal-input.ts # VT key encoding (standard terminal mode)
-│   ├── terminal/terminal-search.ts # Literal smart-case search over xterm buffers
-│   ├── terminal/shells.ts # Stable shell identity, default resolution and catalog grouping
-│   ├── terminal/terminal-input.test.ts # Unit tests for VT key encoding
-│   ├── terminal/automation-probe.ts # Dev-only context/layout bridge; no per-key IPC
-│   ├── terminal/automation-probe-state.ts # Dev-only layout state and shared Caps tap-hold reducer
-│   ├── terminal/caps-frame.ts # Decode marked native Caps edge frames
-│   ├── terminal/lua-automation.ts # Frontend snapshots and Caps policy lease checks
-│   ├── terminal/useLuaAutomationStatus.ts # Lua status polling and reload
-│   ├── ui/LuaAutomationPanel.tsx # Lua status, diagnostics, and reload controls
-│   ├── win32-input.ts             # Win32 Input Mode key encoding
-│   ├── win32-input.test.ts        # Unit tests for Win32 Input Mode
-│   ├── terminal/terminal-mouse.ts # Mouse event SGR/X10 encoding
-│   ├── terminal/terminal-mouse.test.ts # Unit tests for mouse encoding
-│   └── terminal-responses.test.ts # Test: xterm cursor-position report
+│   │   └── scanline-term-mini.png         # UI badge & mini logo asset
+│   ├── crt/                               # CRT parameters, validation & SVS loop hook
+│   │   ├── managed-settings.ts            # Persistence adapter for preset configurations
+│   │   ├── settings.ts                    # Resolution definitions & CRT settings validation
+│   │   └── useCRT.ts                      # WebGL render loop & canvas synchronization hook
+│   ├── terminal/                          # xterm.js / ConPTY adapter, input & automation
+│   │   ├── automation-probe.ts            # Dev-only context bridge & layout probe
+│   │   ├── automation-probe-state.ts      # Tap/Hold classifier & probe reducer
+│   │   ├── caps-frame.ts                  # Marked native Caps edge frame decoder
+│   │   ├── lua-automation.ts              # Frontend snapshots & Caps policy leases
+│   │   ├── lua-preset-request.ts          # Safe preset request validation & rejection
+│   │   ├── ScanlineTerminalRenderer.ts    # SVS host adapter, image overlays & splash screen
+│   │   ├── shells.ts                      # Shell identity, command resolution & catalog
+│   │   ├── terminal-automation.ts         # Shared Codex/MCP observation & input dispatch
+│   │   ├── terminal-input.ts              # Standard VT escape sequence keyboard encoder
+│   │   ├── terminal-mouse.ts              # X10 & SGR (1006) terminal mouse encoder
+│   │   ├── terminal-scroll-heuristic.ts   # Fullscreen TUI scroll detection
+│   │   ├── terminal-search.ts             # Smart-case buffer search across viewport & history
+│   │   ├── terminal-tab-color.ts          # Post-it tab color palettes & CSS variable mapper
+│   │   ├── TerminalSession.ts             # xterm.js instance lifecycle & ConPTY stream buffer
+│   │   ├── useLuaAutomationStatus.ts      # Lua diagnostics polling & reload hook
+│   │   ├── useManagedSettings.ts          # Settings persistence synchronization hook
+│   │   └── useTerminal.ts                 # Central tab state, PTY stream & canvas binding hook
+│   ├── ui/                                # UI components, dialogs & panels
+│   │   ├── AiPanel.tsx                    # Codex AI terminal assistant drawer
+│   │   ├── HomeDashboard.tsx              # Blank tab launchpad & bookmark dashboard
+│   │   ├── layoutFit.ts                   # Pixel-precise terminal grid dimension calculator
+│   │   ├── LuaAutomationPanel.tsx         # Lua status, diagnostics & reload controls
+│   │   ├── nativeNewTabMenu.ts            # Shared Win32 native popup menu for new tabs
+│   │   ├── QuickPresetPicker.tsx          # Fast preset preview dialog (Alt+P) with rollback
+│   │   ├── ScrollbackScrollbar.tsx        # Styled CRT frame scrollbar with auto-fade
+│   │   ├── SettingsPanel.tsx              # Full configuration drawer (CRT, font, system)
+│   │   ├── TabGallery.tsx                 # Visual tab matrix overview & CRT thumbnails
+│   │   └── TerminalTabs.tsx               # Post-it tab strip with drag-and-drop reordering
+│   ├── App.tsx                            # React composition root & global shortcut coordinator
+│   ├── assets.d.ts                        # TypeScript declarations for image imports
+│   ├── main.tsx                           # React 18 DOM mount point
+│   ├── styles.css                         # Global CRT frame, scanlines, post-it notes styling
+│   └── win32-input.ts                     # Win32 Console Mode key encoding tables (?9001h)
 ├── src-tauri/
 │   ├── src/
-│   │   ├── codex.rs              # Codex app-server lifecycle and JSONL bridge
-│   │   ├── mcp.rs                # Named-pipe MCP broker, owner/handle isolation
-│   │   ├── bin/scanline-term-mcp.rs # stdio MCP JSON-RPC sidecar
-│   │   ├── home.rs               # Validated home.json load/save and backup handling
-│   │   ├── presets.rs            # Bounded preset catalog and atomic JSON file commands
-│   │   ├── automation_probe.rs   # Debug/env-gated Windows hook and layout probe
-│   │   ├── lua_automation.rs     # Bounded native worker and Windows layout bridge
-│   │   ├── lua_runtime.rs        # Sandboxed per-tab Lua VM and event dispatch
-│   │   ├── caps_hook.rs          # Leased Smart Caps hook and marked key-edge forwarding
-│   │   └── main.rs               # ★ Rust backend — Tauri commands, ConPTY, fonts
-│   ├── capabilities/
-│   │   └── default.json          # Tauri security capability grants
-│   ├── resources/
-│   │   ├── fonts/                 # Non-standard fonts used by canonical presets
-│   │   └── presets/               # Canonical preset JSON files
-│   │   └── conpty/x64/           # Bundled ConPTY DLLs (Windows x64)
-│   ├── icons/                    # Application icons (.ico, .png)
-│   ├── tauri.conf.json           # Tauri build and window configuration
-│   ├── Cargo.toml                # Rust crate manifest
-│   ├── Cargo.lock                # Rust dependency lock
-│   ├── build.rs                  # Tauri build hook (tauri_build::build)
-│   └── THIRD_PARTY_NOTICES.md    # Third-party license notices
-├── index.html                    # HTML entry point with splash screen
-├── package.json                  # npm scripts and dependencies
-├── vite.config.ts                # Vite + React; index.html-only dependency scanning
-├── vitest.config.ts              # Vitest config (happy-dom environment)
-├── eslint.config.js              # ESLint flat config
-├── tsconfig.json                 # TypeScript project references root
-├── tsconfig.app.json             # Frontend TypeScript config
-├── tsconfig.node.json            # Node-side TypeScript config
-├── BACKLOG.md                    # Planned features
-├── README.md                     # Project readme
-└── LICENSE                       # MIT license
+│   │   ├── bin/
+│   │   │   └── scanline-term-mcp.rs       # Standalone stdio MCP JSON-RPC sidecar CLI
+│   │   ├── automation_probe.rs            # Debug-only Windows hook & input injection probe
+│   │   ├── browser.rs                     # Native child WebViews for browser tabs
+│   │   ├── caps_hook.rs                   # Low-level Windows hook (`WH_KEYBOARD_LL`) & Smart Caps
+│   │   ├── codex.rs                       # Codex app-server child process & JSONL bridge
+│   │   ├── explorer.rs                    # Per-user Windows Explorer folder integration
+│   │   ├── home.rs                        # Validated home.json manager with .bak recovery
+│   │   ├── lua_automation.rs              # Native worker, layout bridge & settings sync
+│   │   ├── lua_runtime.rs                 # Sandboxed Lua VM (mlua), budgets & event loop
+│   │   ├── main.rs                        # Tauri entry point, ConPTY lifecycle, font scan
+│   │   ├── mcp.rs                         # Named-pipe MCP broker (`scanline-term-mcp[-dev]`)
+│   │   ├── presets.rs                     # CRT preset catalog & atomic file operations
+│   │   └── window_state.rs                # Window size/position persistence & monitor safety
+│   ├── capabilities/                      # Tauri security permission capabilities
+│   ├── resources/                         # Bundled ConPTY DLLs, fonts & canonical presets
+│   ├── icons/                             # Windows executable & taskbar icons
+│   ├── Cargo.toml                         # Rust crate manifest & dependencies
+│   └── tauri.conf.json                    # Tauri application configuration
+├── vite.config.ts                         # Vite configuration
+├── vitest.config.ts                       # Vitest unit test runner configuration
+├── package.json                           # Frontend scripts & pinned SVS dependency
+└── tsconfig.json                          # TypeScript root configuration
 ```
 
 ---
 
 ## File-by-File Guide
 
-> **Current frontend composition:** `App.tsx` is the layout root. `terminal/useTerminal.ts` owns terminal sessions plus ephemeral browser tabs, per-tab image lists, active input routing, per-tab colors, and terminal-canvas context-menu routing; `ui/TerminalTabs.tsx` renders the post-it tab strip. `ui/QuickPresetPicker.tsx` provides the temporary preset-preview dialog with rollback on cancellation. `ui/nativeNewTabMenu.ts` builds the shared Tauri native new-tab and image-delete popups. Blank browser tabs render `ui/HomeDashboard.tsx` in the main WebView and promote to native child WebViews after navigation; remote browser tabs deliberately bypass the CRT pipeline. `src-tauri/src/browser.rs` owns those child WebViews, their Menu-shortcut bridge, validated HTTP(S)/local-document targets, page title/theme-color events, and the explicit browser → main-WebView focus handoff; `src-tauri/src/home.rs` owns the validated `%APPDATA%\\com.zhunter.scanlineterm\\home.json` document.
+### 1. Application Composition Root & Styles
 
-`App.tsx` also owns the Codex thread-to-terminal-session map and chat state. See [Codex Terminal Assistant](./10-ai-assistant.md) before changing that routing or the app-server isolation.
+#### [`src/App.tsx`](../src/App.tsx) *(composition root)*
+The primary React composition root. Rather than containing low-level terminal rendering directly, it coordinates all submodules:
+* **Global Hotkey & Shortcut Routing:** Handles `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Tab` / `Ctrl+Shift+Tab` (tab cycle), `Alt+Enter` (fullscreen), `Alt+P` (quick preset picker), `Menu+Backspace` (tab gallery), and `Ctrl+F` (search).
+* **Modal Dialog & Drawer State:** Controls visibility of `SettingsPanel`, `AiPanel`, `QuickPresetPicker`, `TabGallery`, and in-canvas search overlays.
+* **Codex Session Mapping:** Supplies active-tab context to `useCodexAssistant`, which owns each tab's thread, messages, model selection, and turn lifecycle.
+* **CRT Preview Cache:** Captures lightweight thumbnail frames of inactive tabs to feed the `TabGallery`.
+* **Browser Child WebView Handoff:** Notifies `src-tauri/src/browser.rs` to show, resize, or hide child WebViews when switching between terminal and browser tabs.
 
-#### [`src/ui/TerminalTabs.tsx`](../src/ui/TerminalTabs.tsx)
-
-Renders the normal post-it tab strip. The active tab can be reordered with pointer drag when at least two tabs exist; the dragged tab follows the pointer and the order is committed on release. Keyboard moves are supplied by `useTerminal` and animate one-position steps. The component owns only presentation and pointer tracking, while `useTerminal.moveTab()` performs the shared move-and-renumber operation. Gallery reordering is intentionally separate and keyboard-only.
-
-#### [`src/ui/TabGallery.tsx`](../src/ui/TabGallery.tsx)
-
-Renders the temporary static tab overview, including 400px-target matrix placement, ordinal left/right and spatial up/down navigation, keyboard-only tab reordering, terminal canvas previews, browser placeholders, focus trapping, and reduced-motion-aware transitions. `App.tsx` supplies the live tab order and in-memory CRT frame cache; `useCRT.captureFrame()` keeps each terminal preview bounded to 720px wide. Horizontal moves use adjacent ordinal positions; vertical moves choose the nearest card in the next or previous row. It opens from `Menu+Backspace` or safe free-background clicks (including the monitor frame and physical-window gutters), never from terminal content, controls, panels, or notifications.
-
-### AI assistant
-
-| File | Public responsibility |
-|---|---|
-| [`ai/CodexClient.ts`](../src/ai/CodexClient.ts) | One app-server client: initialization, paged visible-model catalog, pending-request table, generation filtering, notifications and debug stream. |
-| [`ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Pure Luna/medium preference and model-effort fallback logic for each terminal tab. |
-| [`ai/protocol.ts`](../src/ai/protocol.ts) | Small JSON-RPC `Json`, `Rpc` and event types used at the integration boundary. |
-| [`ui/AiPanel.tsx`](../src/ui/AiPanel.tsx) | Renders the active session's local messages, slash-command palette, model/effort picker, sign-in action and debug console. |
-| [`terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | `snapshot`, `waitForOutput` and `sendAutomationInput` used by the dynamic tools; resize/input ordering is serialized here. |
-
-### Frontend Core
-
-#### [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts)
-
-Scanline Term's host adapter over SVS's optional xterm renderer. It owns application-specific terminal presentation: tab-local normalized image state and hit testing, TUI scroll detection/diagnostics, tab colours, and the branded browser-preview mock screen with the shared `/icon.png` splash logo. The terminal canvas renderer, display pipeline and public API are maintained in the [SVS repository](https://github.com/z-hunter/Scanline-Virtual-Screen).
-
-#### [`src/terminal/terminal-search.ts`](../src/terminal/terminal-search.ts)
-
-Pure xterm-buffer search helpers. Normal-buffer searches include scrollback; alternate-buffer searches inspect only the current viewport. Matches are literal with smart-case matching and expose physical line/cell ranges for renderer highlighting and navigation.
-
-#### [`src/terminal/terminal-automation.ts`](../src/terminal/terminal-automation.ts)
-
-Normalizes and dispatches shared terminal tools for the built-in Codex assistant and MCP bridge. It validates text/key actions, semantic primary/secondary/wheel mouse actions, bounded waits, and the optional full-scrollback request.
-
-#### [`src/App.tsx`](../src/App.tsx)
-
-The single React component that constitutes the entire UI. Contains:
-
-| Section | Lines (approx) | Responsibility |
-|---------|------|------|
-| Type definitions | 1–25 | `NumericKey`, `Control`, `CopyPoint`, `CopySelection`, settings control definitions |
-| `Knob` component | 53–76 | Rotary knob widget with pointer-drag, wheel, and keyboard interaction |
-| Layout helpers | 78–121 | `terminalPadding()`, `fontCellSize()`, `terminalDimensions()`, `sourceDimensions()`, `activeColorProfile()`, `cellColor()`, `canvasFont()` |
-| `App()` — state | 269–300 | React state: `stored` (settings), `error`, `terminalLive`, `monospaceFonts`, `settingsVisible`, `terminalSize`, `fps`. Refs for terminal, filter, canvas, input, modes, copy selection. |
-| `App()` — effects | 297–466 | Settings persistence (localStorage), resolution sync, font enumeration, terminal init (xterm + ConPTY), resize handling, render loop (rAF) |
-| `App()` — input | 468–664 | `sendInput()`, mouse cell mapping, copy selection, mouse handlers (down/up/move/leave/wheel), keyboard handler (keydown/keyup with capture) |
-| `App()` — JSX | 666–836 | Layout: display panel + settings panel. Controls: resolution, color mode, color profile, bloom algorithm, console font/size, knob groups, checkboxes, reset button |
-
-**Key state refs** (mutable refs for use in event handlers without re-renders):
-
-| Ref | Type | Purpose |
-|-----|------|---------|
-| `terminalRef` | `Terminal \| null` | xterm instance |
-| `renderer` | `VirtualScreenRenderer` | SVS display facade owned through `useCRT` |
-| `sourceRef` | `HTMLCanvasElement \| null` | Source canvas for terminal drawing |
-| `outputRef` | `HTMLCanvasElement` | WebGL output canvas (DOM ref) |
-| `sendInputRef` | `(input: string) => void` | Stable reference to `sendInput` closure |
-| `win32InputModeRef` | `boolean` | Whether ConPTY enabled Win32 Input Mode (`?9001h`) |
-| `sgrMouseModeRef` | `boolean` | Whether SGR mouse mode is active (`?1006h`) |
-| `menuKeyDownRef` | `boolean` | Context menu key is held |
-| `fullscreenShortcutRef` | `boolean` | Alt+Enter in progress |
-| `copyModeRef` | `boolean` | Copy-mode active (Menu+C) |
-| `copyStartRowRef` | `CopyPoint \| null` | Drag selection anchor |
-| `copySelectionRef` | `CopySelection \| null` | Current selection range |
-| `pressedMouseButtonsRef` | `Set<number>` | Currently pressed mouse buttons |
-| `terminalSizeRef` | `{cols, rows}` | Last sent terminal dimensions |
-| `resolutionRef` | resolution object | Current resolution for use in callbacks |
-| `settingsRef` | `CRTSettings` | Current settings for use in rAF loop |
-
-#### [`src/ui/HomeDashboard.tsx`](../src/ui/HomeDashboard.tsx)
-
-Renders the dependency-free home page for a blank browser tab. It loads and saves the validated `home.json` document through Tauri commands, filters links, handles single-key shortcuts, provides browser-style `F` hints for every visible action, and promotes a home tab to a native WebView2 tab when navigation starts.
-
-#### [`src/ui/nativeNewTabMenu.ts`](../src/ui/nativeNewTabMenu.ts)
-
-Builds the shared Tauri native popup used by the `+` button and terminal-canvas context menu. It owns the three menu actions and the configured-shell submenu so browser and terminal entry points stay identical. The native popup is required when a browser child WebView2 is visible because CSS menus in the main WebView cannot overlap that native surface.
-
-#### [`src/ui/ScrollbackScrollbar.tsx`](../src/ui/ScrollbackScrollbar.tsx)
-
-Renders the transient scrollback indicator in the screen-frame border. It owns thumb geometry, pointer-capture dragging, accessibility values, and the two-second fade timer; xterm scroll position remains owned by `terminal/useTerminal.ts`.
+#### [`src/styles.css`](../src/styles.css) *(1,183 lines)*
+Global application stylesheet implementing the physical CRT monitor aesthetic:
+* Outer bezel chassis, glass reflection, curved corners, and screen power-on/off flicker.
+* Sticky-note (post-it) styling for tabs with realistic paper creases, drop shadows, and active drag states.
+* Floating panels, rotary knob styling, search highlight boxes, and custom scrollbars.
 
 ---
 
-#### Scanline Virtual Screen
+### 2. Terminal & ConPTY Adapter Layer (`src/terminal/`)
 
-The active CRT pipeline, compositor, profile validation, optional terminal renderer, and controlled Display/Terminal/advanced CRT settings sections are supplied by [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen). Scanline Term composes those sections with host-owned presets, diagnostics, UI, and system controls. Its technical API and rendering details are intentionally documented there. For the Scanline Term boundary, update process and validation matrix, see [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
+#### [`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts) *(1,060 lines)*
+The core React hook governing terminal and browser tab lifecycle:
+* **Tab Collections:** Manages `tabs: WorkspaceTab[]`, active tab index, tab reordering via pointer drag, and renumbering.
+* **PTY Binding:** Invokes `start_terminal` and `close_terminal`, binds incoming `terminal-output` events to the active xterm instance.
+* **Canvas Mounting:** Attaches offscreen and on-screen rendering targets to SVS.
+* **Context Menus:** Manages native and web context menus for shells, images, and split operations.
 
----
+#### [`src/terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) *(813 lines)*
+Encapsulates a single xterm.js terminal instance:
+* Receives raw PTY chunks from Rust, buffering and dispatching them into xterm.
+* Handles viewport vs. scrollback buffer queries (`getScrollbackLines`).
+* Serializes dimension changes (`resize(cols, rows)`) to prevent ConPTY race conditions.
+* Provides automation snapshot facilities (`snapshot()`, `waitForOutput()`) for Codex and MCP.
 
-#### [`src/crt/settings.ts`](../src/crt/settings.ts)
+#### [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) *(143 lines)*
+Scanline Term's host adapter over the SVS WebGL compositor:
+* Binds the current terminal session to SVS's `VirtualScreenRenderer`.
+* Renders tab-local inline images (e.g. Sixel / graphics protocols) and manages image hit-testing.
+* Displays the fallback mock screen and branded `/icon.png` splash screen when no terminal is connected.
 
-| Export | Purpose |
-|--------|---------|
-| `DEFAULT_CRT_SETTINGS` | Frozen defaults for all CRT parameters |
-| `RESOLUTIONS` | Array of `{id, label, width?, height?}` — `'physical'`, `'physical-4x3'`, `'physical-3x4'`, `'physical-8x5'`, `'420x300'`, `'640x480'`, `'800x600'`, `'1024x768'`, `'1280x800'` |
-| `DEFAULT_RESOLUTION` | `'1024x768'` |
-| `ResolutionId` | Union type of resolution identifiers |
-| `StoredSettings` | Global UI/shell/hotkey/update settings, including the Windows Explorer integration switch; legacy `resolution` and `crt` fields are read only for migration |
-| `loadStoredSettings(raw)` | Parses JSON from localStorage, validates each field against range constraints, migrates legacy profile names (`retrowave`/`zx-spectrum` → `cyberpunk`), returns safe defaults on any error |
-
-`ScreenProfile` is supplied by the pinned SVS package. Scanline Term keeps its `PresetSettings` compatibility shape and per-tab `{ name, draftName, settings, dirty }` state while writing canonical profiles. The SVS schema and migration rules are documented upstream; the host-specific persistence boundary is documented in [Scanline Virtual Screen Integration](./12-scanline-virtual-screen.md).
-
----
-
-#### [`src/terminal-input.ts`](../src/terminal-input.ts)
-
-Standard VT terminal key encoding (used when Win32 Input Mode is **not** active).
-
-| Export | Purpose |
-|--------|---------|
-| `TerminalInputModes` | `{ applicationCursorKeysMode, applicationKeypadMode }` |
-| `terminalKey(event, modes)` | Returns a VT escape sequence string or `null`. Handles: F1–F24 with modifiers, cursor keys (DECCKM), numpad (DECKPAM), tilde keys (Insert/Delete/PgUp/PgDn), Pause, Escape, Backspace, Tab/Shift-Tab, Enter, Ctrl+letter, Alt+key |
-
-Key encoding details:
-- Function keys: `\x1bOP`..`\x1bOS` for F1–F4, `\x1b[15~`..`\x1b[45~` for F5–F24
-- Modifiers encoded as `1 + shift + 2*alt + 4*ctrl`
-- Ctrl+letter: maps A–Z → 0x01–0x1A via `controlCharacter()`
-- Ctrl+Space / Ctrl+2 → NUL; Ctrl+? → DEL
+#### Specialized Terminal Helpers:
+* **[`terminal-input.ts`](../src/terminal/terminal-input.ts) (62 lines):** Standard VT escape sequence encoder (cursor keys, function keys F1–F24, tilde sequences, modifier bitmasks).
+* **[`win32-input.ts`](../src/win32-input.ts) (99 lines):** Win32 Console Mode (`?9001h`) encoder. Translates browser keyboard events into 7-field `\x1b[vk;sc;uc;kd;cs;1_` sequences with virtual key codes and scan codes.
+* **[`terminal-mouse.ts`](../src/terminal/terminal-mouse.ts) (28 lines):** Encodes mouse clicks, drags, and wheel actions into X10 or SGR (`\x1b[<...M/m`) formats.
+* **[`terminal-search.ts`](../src/terminal/terminal-search.ts) (67 lines):** Smart-case search across visible viewport and scrollback buffer history.
+* **[`terminal-scroll-heuristic.ts`](../src/terminal/terminal-scroll-heuristic.ts) (81 lines):** Heuristic detector identifying full-screen TUI scrolling (e.g., Far Manager, Vim, Midnight Commander) for smooth sub-line rendering.
+* **[`lua-automation.ts`](../src/terminal/lua-automation.ts) (258 lines):** Gathers frontend state snapshots, focus generation counters, and verifies Smart Caps policy leases.
+* **[`caps-frame.ts`](../src/terminal/caps-frame.ts) (96 lines):** Decodes binary frames from the native low-level keyboard hook.
+* **[`shells.ts`](../src/terminal/shells.ts) (18 lines):** Detects and resolves installed shells (PowerShell, CMD, WSL, Git Bash) and custom profile mappings.
 
 ---
 
-#### [`src/win32-input.ts`](../src/win32-input.ts)
+### 3. User Interface Components (`src/ui/`)
 
-Win32 Input Mode (`?9001h`) key encoding. Sends both keydown and keyup events with full Win32 virtual key codes, scan codes, and modifier state.
-
-| Export | Purpose |
-|--------|---------|
-| `win32InputKey(event, keyDown)` | Returns `\x1b[vk;sc;uc;kd;cs;1_` — a 7-field CSI sequence |
-
-Fields: `virtualKey`, `scanCode`, `unicodeCharacter`, `keyDown` (0/1), `controlState` (bitmask: enhanced/right-ctrl 0x04, left-ctrl 0x08, right-alt 0x01, left-alt 0x02, shift 0x10, caps-lock 0x80, num-lock 0x20, scroll-lock 0x40), repeat count (always 1).
-
-Contains lookup tables for:
-- Named keys (punctuation, modifiers, navigation, numpad)
-- Letter scan codes (QWERTY layout, `letterScans`)
-- Digit scan codes (`digitScans`)
-- Function key scan codes F1–F24 (`functionScans`)
-
-#### [`src-tauri/src/automation_probe.rs`](../src-tauri/src/automation_probe.rs)
-
-Debug-build-only Windows experiment enabled with `SCANLINE_TERM_AUTOMATION_PROBE=1`. It observes and controls the shared low-level hook owned by [`caps_hook.rs`](../src-tauri/src/caps_hook.rs); it does not install a second hook. The probe owns guarded marked-token injection, pinned-main-WebView focus checks, installed-HKL inventory, and layout request/readback events. The frontend bridge in `terminal/automation-probe.ts` runs only in dev builds, handles token events synchronously through existing encoders, and sends tab/focus context and cursor-driven layout requests. Each frontend instance emits `automation-probe-ready { frontendId }` and carries the ID on context and layout request/change/error messages; native status echoes it. Native logical context and generations reset only for a new ID, while the physical swallowed-down latch remains until matching key-up or hook teardown. A 20 ms native poll observes focused-thread HKL changes. This is probe infrastructure, not a product setting or production API; CapsLock input ordering still requires live validation.
-
-#### Lua terminal automation
-
-[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) owns the joined native worker, bounded event queue, frontend/tab generation checks, Windows layout request/readback, first-launch profile seeding, Smart Caps policy, and the `load_managed_settings` / `save_managed_settings` commands. [`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) owns the confined source snapshot, safe Lua subset, tab-local VMs, manifest-limited `require`, bounded registration-time `include`, custom ANSI palette and shell declarations, lifecycle handlers, `sterm.settings()` capture, temporary window/panel intents, runtime preset intents, and transactional `ctx.state` access. A valid reload rebuilds VMs and locals while retaining bounded state only for matching tab/attachment identities; removed attachments run one preset-only unload callback before state is cleared. Reload uses prepare, cleanup, and commit stages; candidate palette and shell catalogs publish from the frozen snapshot only after commit. The GUI-managed default shell stores a stable custom profile ID; the frontend resolves it to command and arguments for future implicit tabs, while explicit command launches take precedence. Source revision checks and atomic replacement protect edits, while bytes outside the block are retained. [`window_state.rs`](../src-tauri/src/window_state.rs) saves normal-window geometry periodically, restores it on request, and pauses saves during temporary Lua geometry overrides until a user drag/resize. [`caps_hook.rs`](../src-tauri/src/caps_hook.rs) owns the Windows keyboard hook, policy leases, and marked key edges. The frontend bridge in [`lua-automation.ts`](../src/terminal/lua-automation.ts) publishes terminal snapshots and validates leases; [`useManagedSettings.ts`](../src/terminal/useManagedSettings.ts) coordinates managed values, and [`lua-preset-request.ts`](../src/terminal/lua-preset-request.ts) rejects dirty-target and stale preset requests. [`shells.ts`](../src/terminal/shells.ts) keeps shell identity stable across renames and groups custom profiles after detected shells. Per-key edges never enter Lua or use per-key IPC. Lua may select saved presets but exposes no standalone font properties. Startup/reload seeding preserves existing profile files. See [Lua automation](lua-automation.md) for state identity, limits, compatibility, runtime guards, and sandbox details.
+* **[`SettingsPanel.tsx`](../src/ui/SettingsPanel.tsx) (471 lines):** Full configuration drawer combining SVS CRT display parameters with host settings (font family/size, cursor style, audio bell, MCP toggle, shell defaults, and Explorer integration).
+* **[`AiPanel.tsx`](../src/ui/AiPanel.tsx) (339 lines):** Slide-out drawer for the OpenAI Codex terminal assistant. Includes conversation turns, streaming typing indicator, model/effort selector, and shell execution blocks.
+* **[`TabGallery.tsx`](../src/ui/TabGallery.tsx) (268 lines):** Matrix overview (opened via `Menu+Backspace`) displaying live CRT thumbnails of all open tabs with spatial keyboard navigation.
+* **[`HomeDashboard.tsx`](../src/ui/HomeDashboard.tsx) (259 lines):** Start page for blank browser tabs, featuring categorized bookmarks, quick search, and shell launchers.
+* **[`TerminalTabs.tsx`](../src/ui/TerminalTabs.tsx) (234 lines):** Post-it style tab strip with animated drag-and-drop reordering and color badges.
+* **[`ScrollbackScrollbar.tsx`](../src/ui/ScrollbackScrollbar.tsx) (147 lines):** Transient CRT monitor border scrollbar with mouse drag-capture and auto-fade.
+* **[`layoutFit.ts`](../src/ui/layoutFit.ts) (90 lines):** Mathematical grid calculator determining exact character columns and rows fitting within current window dimensions.
+* **[`QuickPresetPicker.tsx`](../src/ui/QuickPresetPicker.tsx) (71 lines):** Fast CRT preset preview dialog with automatic rollback on cancellation.
 
 ---
 
-#### [`src/terminal-mouse.ts`](../src/terminal-mouse.ts)
+### 4. CRT Pipeline & Adapters (`src/crt/`)
 
-| Export | Purpose |
-|--------|---------|
-| `MouseTrackingMode` | `'none' | 'x10' | 'vt200' | 'drag' | 'any'` |
-| `MouseAction` | `'press' | 'release' | 'move' | 'wheel-up' | 'wheel-down'` |
-| `MouseEventData` | Full mouse event descriptor |
-| `terminalMouse(event)` | Returns SGR (`\x1b[<...M/m`) or X10 (`\x1b[M...`) encoded string |
-
-Button code calculation includes modifier bits (shift=4, alt=8, ctrl=16), wheel offset (64/65), and move flag (32).
+* **[`settings.ts`](../src/crt/settings.ts) (330 lines):** Validates, sanitizes, and clamps CRT configuration parameters (curvature, scanlines, bloom, phosphor persistence, jitter). Exposes resolution presets (`1024x768`, `640x480`, etc.).
+* **[`useCRT.ts`](../src/crt/useCRT.ts) (98 lines):** Manages the WebGL rendering loop (`requestAnimationFrame`), canvas resize observer, and coordinates frame capture for thumbnail previews.
+* **[`managed-settings.ts`](../src/crt/managed-settings.ts) (76 lines):** Adapter handling preset persistence and migration between local storage and disk.
 
 ---
 
-#### Shared display data
+### 5. AI Assistant Integration (`src/ai/`)
 
-CRT settings, color profiles, profile validation and renderer helpers are owned by the pinned [Scanline Virtual Screen](https://github.com/z-hunter/Scanline-Virtual-Screen) dependency. Scanline Term only adapts those values to its tabs, persistence and settings shell.
+* **[`CodexClient.ts`](../src/ai/CodexClient.ts) (210 lines):** JSON-RPC client for the local `codex app-server` process via Tauri IPC; resolves responses and forwards server notifications.
+* **[`useCodexAssistant.ts`](../src/ai/useCodexAssistant.ts):** Owns per-session assistant conversations, model selection, event handling, and turn lifecycle; `App.tsx` supplies active-tab context and renders the panel.
+* **[`modelSelection.ts`](../src/ai/modelSelection.ts) (43 lines):** Helper logic determining supported model tiers and reasoning effort settings.
+* **[`chatMessages.ts`](../src/ai/chatMessages.ts) (25 lines):** Chat history model and delta text aggregator.
+* **[`protocol.ts`](../src/ai/protocol.ts) (20 lines):** Type definitions for JSON-RPC payloads and Codex lifecycle events.
 
 ---
 
-### Rust Backend
+### 6. Native Rust Backend (`src-tauri/src/`)
 
-#### [`src-tauri/src/codex.rs`](../src-tauri/src/codex.rs)
+* **[`lua_automation.rs`](../src-tauri/src/lua_automation.rs) (3,155 lines prod / 847 tests):** High-performance native worker thread managing Lua automation. Owns thread-safe message queues, layout requests, window positioning, and state snapshots.
+* **[`caps_hook.rs`](../src-tauri/src/caps_hook.rs) (1,229 lines prod / 196 tests):** Low-level Windows keyboard hook (`WH_KEYBOARD_LL`). Implements Smart Caps: intercepts CapsLock to distinguish rapid taps (dispatched as Esc) from held presses (modifier/mode switches), issuing temporary policy leases to the frontend.
+* **[`main.rs`](../src-tauri/src/main.rs) (1,136 lines prod / 307 tests):** Main entry point. Handles ConPTY process lifecycle (`CreatePseudoConsole`), asynchronous I/O thread pools, DirectWrite font enumeration, and native Windows menus.
+* **[`automation_probe.rs`](../src-tauri/src/automation_probe.rs) (918 lines prod / 85 tests):** Debug/testing probe for synthetic keyboard injection and layout event inspection without interfering with user input.
+* **[`lua_runtime.rs`](../src-tauri/src/lua_runtime.rs) (610 lines prod / 3,735 tests):** Heavily tested sandboxed Lua runtime (`mlua`). Sets up per-tab isolated VMs, strict instruction and memory budgets, and exposes safe terminal control APIs.
+* **[`mcp.rs`](../src-tauri/src/mcp.rs) (520 lines prod / 36 tests):** Named pipe server (`\\.\pipe\scanline-term-mcp[-dev]`) implementing Model Context Protocol for external AI agents.
+* **[`presets.rs`](../src-tauri/src/presets.rs) (341 lines prod / 141 tests):** File-system manager for CRT presets with atomic writes and `.bak` backups.
+* **[`bin/scanline-term-mcp.rs`](../src-tauri/src/bin/scanline-term-mcp.rs) (301 lines prod / 70 tests):** Standalone stdio MCP CLI adapter bridging AI tools to the named pipe broker.
+* **[`home.rs`](../src-tauri/src/home.rs) (277 lines prod / 91 tests):** Manages `%APPDATA%/.../home.json` configuration and bookmarks.
+* **[`window_state.rs`](../src-tauri/src/window_state.rs) (271 lines prod / 54 tests):** Saves and restores window size and position with multi-monitor boundary validation.
+* **[`browser.rs`](../src-tauri/src/browser.rs) (174 lines prod / 37 tests):** Controls native child WebViews for embedded browser tabs, isolating them from CRT post-processing.
+* **[`codex.rs`](../src-tauri/src/codex.rs) (88 lines prod):** Spawns and manages the `codex app-server --stdio` child process tree.
+* **[`explorer.rs`](../src-tauri/src/explorer.rs):** Owns per-user Explorer registry verbs and the `set_explorer_integration` Tauri command.
 
-Owns the singleton hidden `codex app-server --stdio` process. It validates the CLI version, creates an app-local isolated `CODEX_HOME` and workspace, converts JSON-RPC messages to JSONL, emits `codex-message` / `codex-stderr` / `codex-exit`, and kills the known process tree on shutdown.
+---
 
-#### [`src-tauri/src/home.rs`](../src-tauri/src/home.rs)
+## External Engine: Scanline Virtual Screen (`@svs/core`)
 
-Owns the versioned home document at the Tauri app config path. It validates links and shortcuts, creates the default example, writes through a temporary file, and retains `home.json.bak` for recovery.
+The WebGL rendering engine and analog CRT post-processing pipeline are maintained in the separate repository [`Scanline-Virtual-Screen`](https://github.com/z-hunter/Scanline-Virtual-Screen) and pinned by immutable commit.
 
-#### [`src-tauri/src/presets.rs`](../src-tauri/src/presets.rs)
+### Engine Architecture & Key Files
 
-Owns the `%APPDATA%\\com.zhunter.scanlineterm\\presets` directory and the `list_presets`, `load_preset`, and `save_preset` Tauri commands. Names are validated as safe single Windows filenames, only regular bounded JSON files are listed, and writes use a temporary file plus `.bak` recovery copy. The Rust side does not interpret CRT fields; the WebView applies the shared settings validator before changing a tab.
+| Module / File | LOC (prod) | Size | Responsibility & Key Exports |
+|:---|:---:|:---:|:---|
+| **`src/core/CRTFilter.ts`** | **1,793** | 92 KB | **Full WebGL CRT shader pipeline:** multi-pass barrel distortion, scanlines, shadow/slot/aperture grille phosphor masks, Kawase/Gaussian bloom, phosphor persistence decay (`persistenceDecay`), noise, chromatic aberration, and bezel reflection. |
+| **`src/terminal/TerminalRenderer.ts`** | **536** | 40 KB | **Offscreen 2D character rasterizer:** reads xterm.js buffer cells, renders monospace glyphs, custom pixel-perfect box-drawing characters, and smooth scroll interpolations into textures. |
+| **`src/core/profile.ts`** | **183** | 10 KB | Type contracts and schema definitions for `ScreenProfile`, `CRTVisualSettings`, and `TerminalSettings`. |
+| **`src/react/ScreenProfileSections.tsx`** | **173** | 21 KB | React UI controls and collapsible accordions for adjusting CRT parameters. |
+| **`src/core/color-profiles.ts`** | **96** | 5 KB | Monochrome phosphor color models (Amber, Green P1, Green P39, Paper White, Blue CRT) and RGB remapping. |
+| **`src/react/settingHelp.ts`** | **54** | 5 KB | Human-readable descriptions and help tooltips for every CRT adjustment setting. |
+| **`src/presets/builtins.ts`** | **35** | 2 KB | 17 canonical hardware presets: IBM 5151 (MDA), DEC VT-100/220, Commodore 8-bit, Trinitron, Robotron, etc. |
 
-#### [`src-tauri/src/window_state.rs`](../src-tauri/src/window_state.rs)
+---
 
-Stores the main window's outer position and physical client-area size in `window-state.json`, restores it only when Lua settings allow, and suspends periodic saves during Lua geometry overrides. Older saved outer sizes are converted once to client-area sizes. A user initiated drag/resize clears the temporary override.
+## Tauri Commands & IPC Interface
 
-#### [`src-tauri/src/mcp.rs`](../src-tauri/src/mcp.rs) and [`src-tauri/src/bin/scanline-term-mcp.rs`](../src-tauri/src/bin/scanline-term-mcp.rs)
+### Commands (Frontend → Rust)
 
-`mcp.rs` owns the optional current-user named-pipe listener, per-connection owners, opaque terminal handles, request correlation and disconnect cleanup. The sidecar is a dependency-light stdio MCP JSON-RPC adapter; it exposes only the terminal tools and never receives internal session IDs.
+| Command | Parameters | Returns | Called From |
+|:---|:---|:---|:---|
+| `start_terminal` | `sessionId, cols, rows, launch?` | `String` (executable) | Spawning a terminal tab |
+| `initial_terminal_launch` | — | `{ command?, args?, cwd? }` | App startup launch |
+| `write_terminal` | `sessionId, input` | `Result<(), String>` | Sending user keystrokes / input |
+| `resize_terminal` | `sessionId, cols, rows` | `Result<(), String>` | Window or panel dimension resize |
+| `active_terminal_process` | `sessionId` | `Option<String>` | Foreground child process detection |
+| `close_terminal` | `sessionId` | `Result<(), String>` | Closing a tab / killing ConPTY process |
+| `list_monospace_fonts` | — | `Vec<String>` | Enumerating installed monospace fonts |
+| `list_available_shells` | — | `{ name, command }[]` | Populating shell selector |
+| `set_global_hotkey_enabled`| `enabled, slideFromTop` | `Result<(), String>` | Registering `Win+~` hotkey |
+| `set_explorer_integration` | `enabled` | `Result<(), String>` | Windows Explorer context menu verbs |
+| `load_managed_settings` | — | Managed settings bundle | Loading Lua config & presets |
+| `save_managed_settings` | `settings, revision` | Managed settings bundle | Persisting GUI-managed settings |
+| `restore_window_state` | — | `boolean` | Restoring saved window geometry |
+| `load_home_config` | — | `{ path, config }` | Reading bookmarks for home tab |
+| `save_home_config` | `config` | `{ path, config }` | Saving bookmarks for home tab |
+| `codex_start` | — | `{ generation, version }` | Launching Codex app-server |
+| `codex_send` | `generation, rpc` | `Result<(), String>` | Forwarding JSON-RPC message to Codex |
+| `codex_stop` | `generation` | `Result<(), String>` | Stopping Codex process tree |
+| `mcp_set_enabled` | `enabled` | `Result<(), String>` | Toggling MCP Named Pipe server |
+| `mcp_respond` | `requestId, result, error?`| `Result<(), String>` | Answering external MCP tool requests |
 
-#### [`src-tauri/src/main.rs`](../src-tauri/src/main.rs)
+### Events (Rust → Frontend)
 
-| Item | Purpose |
-|------|---------|
-| `TerminalSession` | Holds `Child`, `Sender<Vec<u8>>` (input channel), `PtyController` |
-| `TerminalState` | `Mutex<HashMap<SessionId, TerminalSession>>` with `Drop` that kills every child |
-| `pty_size(cols, rows)` | Validates dimensions: cols ∈ [20, 300], rows ∈ [8, 150] |
-| `bundled_conpty_dir(app)` | Resolves ConPTY DLL path: dev = `CARGO_MANIFEST_DIR/resources/conpty/x64`, release = Tauri resource `conpty/x64` |
-| `collect_monospace_font()` | Win32 `EnumFontFamiliesExW` callback; filters by `TMPF_FIXED_PITCH`, skips `@`-prefixed and empty names |
-| **`#[tauri::command] list_monospace_fonts()`** | Enumerates all system monospace fonts using GDI; returns `Vec<String>` sorted via `BTreeSet` |
-| **`#[tauri::command] list_available_shells()`** | Finds Command Prompt, Windows PowerShell, PowerShell and Git Bash from standard locations and `PATH`; returns display names and executable paths |
-| **`#[tauri::command] start_terminal(app, state, session_id, cols, rows, launch)`** | Validates the UUID, spawns and registers a ConPTY session with an optional command, argument list and working directory, falling back to `%ComSpec%` when the requested shell cannot start |
-| **`#[tauri::command] initial_terminal_launch()`** | Returns the parsed launch request for the first terminal tab |
-| **`#[tauri::command] write_terminal(state, session_id, input)`** | Clones the target session's `mpsc::Sender`, sends `input.into_bytes()` |
-| **`#[tauri::command] resize_terminal(state, session_id, cols, rows)`** | Validates with `pty_size()`, calls the target controller's `resize()` |
-| **`#[tauri::command] active_terminal_process(state, session_id)`** | Returns the image name of the direct child process of the shell, if one is running |
-| **`#[tauri::command] close_terminal(state, session_id)`** | Idempotently removes and kills the target child process |
-| **`#[tauri::command] set_global_hotkey_enabled(app, enabled, slide_from_top)`** | Registers or unregisters global `Win+~`; optionally animates the main window from above the monitor when toggling it |
-| **`#[tauri::command] set_explorer_integration(enabled)`** | Registers or removes Scanline Term's per-user folder and folder-background context-menu verbs |
-| `main()` | Builds Tauri app with terminal and Codex managed state, app-server/opener/global-shortcut plugins and command handlers |
-| **Tests** | `limits_terminal_dimensions`, `validates_frontend_session_ids`, bundled ConPTY integration tests |
-
-### Tauri Commands and Events
-
-#### Commands (frontend → Rust)
-
-| Command | Parameters | Returns | Called from |
-|---------|------------|---------|------------|
-| `start_terminal` | `sessionId, cols: u16, rows: u16, launch?` | executable filename | Create a terminal tab |
-| `initial_terminal_launch` | — | `{ command?, args?, cwd? }` | First terminal tab |
-| `write_terminal` | `sessionId, input: String` | `Result<(), String>` | `sendInput()`, keyboard/mouse handlers |
-| `resize_terminal` | `sessionId, cols: u16, rows: u16` | `Result<(), String>` | Resize all live tabs after display changes |
-| `active_terminal_process` | `sessionId` | `Option<String>` | Poll active child process for the tab-title fallback |
-| `close_terminal` | `sessionId` | `Result<(), String>` | Tab close button |
-| `list_monospace_fonts` | — | `Vec<String>` | Font enumeration effect |
-| `list_available_shells` | — | `{ name, command }[]` | Default-shell selector |
-| `operating_system` | — | OS/version string | Terminal-assistant instructions |
-| `set_global_hotkey_enabled` | `enabled: boolean, slideFromTop: boolean` | `Result<(), String>` | Persisted global-hotkey and slide-animation settings effect |
-| `set_explorer_integration` | `enabled: boolean` | `Result<(), String>` | System settings; writes or removes only the app-owned HKCU Explorer keys |
-| `load_managed_settings` | — | `{ settings, hasSettings, revision, path, palettes, shells }` | Load managed values and validated ANSI palette and custom shell catalogs from the bounded Lua config |
-| `restore_window_state` | — | `boolean` | Restore saved main-window geometry after Lua settings are loaded |
-| `save_managed_settings` | `settings, revision` | `{ settings, hasSettings, revision, path, palettes, shells }` | Revision-checked update of the GUI-owned Lua settings block and return the current bounded Lua catalogs |
-| `load_home_config` | — | `{ path, config }` | Home dashboard initialization/reload |
-| `save_home_config` | `config` | `{ path, config }` | Home dashboard editor actions |
-| `codex_start` | — | `{ generation, version, workspace }` | Start or reuse isolated app-server |
-| `codex_send` | `generation, JSON-RPC object` | `Result<(), String>` | `CodexClient` requests, notifications and tool responses; rejects stale generations |
-| `codex_stop` | `generation` | `Result<(), String>` | Generation-safe shutdown; stale generation is a no-op |
-| `mcp_set_enabled` | `enabled: boolean` | `Result<(), String>` | Settings effect starts/stops the local MCP listener |
-| `mcp_respond` | `requestId, result, error?` | `Result<(), String>` | Frontend response to a broker request |
-
-#### Events (Rust → frontend)
-
-| Event | Payload | Listener |
-|-------|---------|----------|
-| `terminal-output` | `{ sessionId, data: Vec<u8> }` | Matching `TerminalSession` → `terminal.write()` |
-| `terminal-exit` | `{ sessionId }` | Marks that tab exited while preserving its screen buffer |
-| `terminal-launch` | `{ command?, args?, cwd? }` | Opens a new tab after a second `-T` invocation |
-| `browser-title` | `{ sessionId, title }` | Updates a native browser tab title from the document title |
-| `browser-color` | `{ sessionId, background }` | Updates a native browser tab color from the page theme/background |
-| `browser-shortcut` | `{ sessionId, code, shiftKey }` | Routes an allow-listed Menu shortcut, including Shift, from a native browser child |
-| `browser-launch` | `{ kind, url }` | Opens a browser tab from a later CLI invocation |
-| `lua-preset-request` | `{ frontendId, generation, tabId, name }` | Applies a saved preset only to its current, focused, clean target tab |
-| `codex-message` | `{ generation, message }` | `CodexClient` JSON-RPC router |
-| `codex-stderr` | `{ generation, text }` | Available diagnostic event; not yet subscribed by the frontend |
-| `codex-exit` | `{ generation, text }` | Fails pending Codex requests for the active generation |
-| `mcp-request` | `{ requestId, ownerId, method, params }` | MCP frontend dispatcher |
-| `mcp-owner-disconnected` | `{ ownerId }` | Closes all sessions owned by the pipe connection |
-
-### Configuration
-
-#### [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json)
-
-| Key | Value | Notes |
-|-----|-------|-------|
-| `productName` | `"Scanline Term"` | Display name |
-| `mainBinaryName` | `"sterm"` | Bundled executable is `sterm.exe` |
-| `identifier` | `"com.zhunter.scanlineterm"` | Bundle identifier |
-| `app.windows[0].theme` | `"Dark"` | Forces dark title bar |
-| `app.windows[0].width/height` | 1440 × 960 | Default window size |
-| `app.security.csp` | `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'` | Content Security Policy |
-| `bundle.targets` | `["msi"]` | Windows MSI installer |
-| `bundle.resources` | ConPTY, presets, fonts, and `../examples/lua/` mapped to `lua-examples/` | Release examples are inert resources; the sample entry includes the user palette declaration, while editor scripts remain inactive |
-| `bundle.createUpdaterArtifacts` | `true` | Creates signed updater artifacts and signatures |
-| `plugins.updater` | GitHub Releases `latest.json` | Verifies and installs signed releases |
-| `bundle.windows.wix` | `wix/path.wxs` | Adds the installation directory to the system `PATH`; removed on uninstall |
-
-#### [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json)
-
-Grants to `main` window:
-- `core:event:allow-listen` — Required for `terminal-output` and `terminal-exit` events
-- `core:window:allow-is-fullscreen` — Alt+Enter fullscreen check
-- `core:window:allow-set-fullscreen` — Alt+Enter fullscreen toggle
-- `opener:allow-open-url` (`https://**`) — ChatGPT browser login URL only
-
-#### [`src-tauri/capabilities/desktop.json`](../src-tauri/capabilities/desktop.json)
-
-Grants `updater:default` to the desktop `main` window so it can check, download, and install signed updates.
+| Event | Payload | Listener | Description |
+|:---|:---|:---|:---|
+| `terminal-output` | `{ sessionId, data: Vec<u8> }` | `TerminalSession` | Raw PTY output stream chunks |
+| `terminal-exit` | `{ sessionId }` | `useTerminal` | Process exit notification |
+| `terminal-launch` | `{ command?, args?, cwd? }` | `App.tsx` | Second CLI instance launch request |
+| `browser-title` | `{ sessionId, title }` | `useTerminal` | Document title change from child WebView |
+| `browser-color` | `{ sessionId, background }`| `useTerminal` | Background color change from child WebView |
+| `browser-shortcut` | `{ sessionId, code, shiftKey }`| `App.tsx` | Forwarded shortcut from child WebView |
+| `lua-preset-request`| `{ frontendId, tabId, name }` | `useManagedSettings` | Requested preset change from Lua script |
+| `codex-message` | `{ generation, message }` | `CodexClient` | Incoming JSON-RPC response from Codex |
+| `codex-exit` | `{ generation, text }` | `CodexClient` | Unexpected termination of Codex server |
+| `mcp-request` | `{ requestId, ownerId, method, params }` | `terminal-automation` | Inbound tool call from external MCP client |
+| `mcp-owner-disconnected` | `{ ownerId }` | `useTerminal` | Closes terminal sessions tied to disconnected pipe |
 
 ---
 

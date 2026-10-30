@@ -1,8 +1,8 @@
 use std::{
     hash::BuildHasher,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Mutex,
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -80,11 +80,6 @@ fn latch_physical_caps_down(
     true
 }
 
-#[cfg(windows)]
-static POLICY_ARMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-const PRODUCTION_FRAME_SUPPORTED: bool = true;
-
-#[cfg(not(windows))]
 static POLICY_ARMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -100,18 +95,6 @@ struct PolicyCandidate {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyLease {
-    pub frontend_id: String,
-    pub generation: u64,
-    pub policy_epoch: u64,
-    pub marker_token: String,
-    pub tab_id: Option<String>,
-    pub process_name: Option<String>,
-    pub enabled: bool,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyAck {
     pub frontend_id: String,
     pub generation: u64,
     pub policy_epoch: u64,
@@ -164,6 +147,12 @@ fn disabled_lease(control: &mut Control, previous: PolicyLease) -> PolicyLease {
         process_name: previous.process_name,
         enabled: false,
     }
+}
+
+fn disarm_policy() {
+    POLICY_ARMED.store(false, std::sync::atomic::Ordering::Release);
+    clear_marker_token();
+    cancel_logical_hold();
 }
 
 fn random_marker_token() -> String {
@@ -263,9 +252,7 @@ impl CapsHook {
         let previous = if identity_changed {
             let previous = control.active.take().or_else(|| control.pending.take());
             control.pending = None;
-            POLICY_ARMED.store(false, std::sync::atomic::Ordering::Release);
-            clear_marker_token();
-            cancel_logical_hold();
+            disarm_policy();
             previous
         } else {
             None
@@ -309,9 +296,7 @@ impl CapsHook {
         let previous = control.active.take().or_else(|| control.pending.take());
         control.pending = None;
         control.active = None;
-        POLICY_ARMED.store(false, std::sync::atomic::Ordering::Release);
-        clear_marker_token();
-        cancel_logical_hold();
+        disarm_policy();
         if let (Some(app), Some(previous)) = (app, previous) {
             let _ = app.emit("caps-policy-lease", disabled_lease(&mut control, previous));
         }
@@ -406,9 +391,7 @@ impl CapsHook {
             }
             control.pending = None;
             control.active = None;
-            POLICY_ARMED.store(false, std::sync::atomic::Ordering::Release);
-            clear_marker_token();
-            cancel_logical_hold();
+            disarm_policy();
             app.emit(
                 "caps-policy-lease",
                 disabled_lease(&mut control, previous.unwrap()),
@@ -418,7 +401,7 @@ impl CapsHook {
         Ok(true)
     }
 
-    fn acknowledge(&self, ack: PolicyAck) -> bool {
+    fn acknowledge(&self, ack: PolicyLease) -> bool {
         let Ok(mut control) = self.control.lock() else {
             return false;
         };
@@ -447,7 +430,6 @@ impl CapsHook {
             || !context_matches
             || !native_focus_is_valid()
             || !hook_active()
-            || !PRODUCTION_FRAME_SUPPORTED
             || !activate_marker_token(&marker_token)
         {
             if control
@@ -498,9 +480,7 @@ impl CapsHook {
         control.closed = true;
         control.pending = None;
         control.active = None;
-        POLICY_ARMED.store(false, std::sync::atomic::Ordering::Release);
-        clear_marker_token();
-        cancel_logical_hold();
+        disarm_policy();
     }
 }
 
@@ -563,7 +543,7 @@ pub(crate) fn publish_candidate(
 pub fn caps_policy_ack(
     window: tauri::WebviewWindow,
     hook: State<'_, CapsHook>,
-    ack: PolicyAck,
+    ack: PolicyLease,
 ) -> bool {
     window.label() == "main" && hook.acknowledge(ack)
 }
@@ -607,23 +587,14 @@ pub(crate) fn native_focus_is_valid() -> bool {
     false
 }
 
+#[cfg(all(windows, debug_assertions))]
 fn trace_hook_event(vk: u32, down: bool, injected: bool, own_token: bool, result: u64) -> usize {
-    #[cfg(all(windows, debug_assertions))]
-    {
-        return crate::automation_probe::record_shared_hook(vk, down, injected, own_token, result);
-    }
-    #[cfg(not(all(windows, debug_assertions)))]
-    {
-        let _ = (vk, down, injected, own_token, result);
-        0
-    }
+    crate::automation_probe::record_shared_hook(vk, down, injected, own_token, result)
 }
 
+#[cfg(all(windows, debug_assertions))]
 fn trace_hook_result(slot: usize, result: u64) {
-    #[cfg(all(windows, debug_assertions))]
     crate::automation_probe::set_shared_send_result(slot, result);
-    #[cfg(not(all(windows, debug_assertions)))]
-    let _ = (slot, result);
 }
 
 #[cfg(windows)]
@@ -639,9 +610,9 @@ fn hook_active() -> bool {
 #[cfg(windows)]
 mod windows_hook {
     use super::{
-        build_caps_frame, classify_caps_up, marker_signature_matches, random_marker_value,
-        select_caps_mode, AppHandle, CapsFrameKind, CapsMode, FrameInputSpec, FRAME_INPUT_COUNT,
-        POLICY_ARMED, VK_NONAME_CODE,
+        AppHandle, CapsFrameKind, CapsMode, FRAME_INPUT_COUNT, FrameInputSpec, POLICY_ARMED,
+        VK_NONAME_CODE, build_caps_frame, classify_caps_up, marker_signature_matches,
+        random_marker_value, select_caps_mode,
     };
     use std::{
         mem::size_of,
@@ -659,15 +630,15 @@ mod windows_hook {
         System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
         UI::{
             Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_CAPITAL,
+                INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_CAPITAL,
                 VK_NONAME,
             },
             WindowsAndMessaging::{
-                CallNextHookEx, DispatchMessageW, GetAncestor, GetForegroundWindow,
-                GetGUIThreadInfo, GetWindowThreadProcessId, IsChild, MsgWaitForMultipleObjects,
-                PeekMessageW, PostThreadMessageW, SetWindowsHookExW, TranslateMessage,
-                UnhookWindowsHookEx, GA_ROOT, GUITHREADINFO, HC_ACTION, KBDLLHOOKSTRUCT,
-                LLKHF_INJECTED, MSG, PM_NOREMOVE, PM_REMOVE, QS_ALLINPUT, WH_KEYBOARD_LL,
+                CallNextHookEx, DispatchMessageW, GA_ROOT, GUITHREADINFO, GetAncestor,
+                GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, HC_ACTION,
+                IsChild, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, MsgWaitForMultipleObjects,
+                PM_NOREMOVE, PM_REMOVE, PeekMessageW, PostThreadMessageW, QS_ALLINPUT,
+                SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL,
                 WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
             },
         },
@@ -682,8 +653,11 @@ mod windows_hook {
     pub(super) static TARGET_PID: AtomicU32 = AtomicU32::new(0);
     pub(super) static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
     pub(super) static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+    #[cfg(debug_assertions)]
     pub(super) static HOOK_STARTED_TICK: AtomicU64 = AtomicU64::new(0);
+    #[cfg(debug_assertions)]
     pub(super) static HOOK_LOOP_HEARTBEAT_TICK: AtomicU64 = AtomicU64::new(0);
+    #[cfg(debug_assertions)]
     pub(super) static HOOK_CALLBACK_COUNT: AtomicU64 = AtomicU64::new(0);
     static CURRENT_MARKER_TOKEN: AtomicU64 = AtomicU64::new(0);
     static CAPS_PHYSICAL_DOWN_TIME: AtomicU32 = AtomicU32::new(0);
@@ -693,6 +667,7 @@ mod windows_hook {
     static CAPS_LATCHED_KIND: AtomicU32 = AtomicU32::new(LATCH_NONE);
     static FRAME_FAILURE_COUNT: AtomicU64 = AtomicU64::new(0);
     static FRAME_FAILURE_REPORTED: AtomicBool = AtomicBool::new(false);
+    #[cfg(debug_assertions)]
     static DEBUG_ARMED: AtomicBool = AtomicBool::new(false);
     static CAPS_SUPPRESSED_DOWN: AtomicBool = AtomicBool::new(false);
     static CAPS_LOGICAL_DOWN: AtomicBool = AtomicBool::new(false);
@@ -709,6 +684,7 @@ mod windows_hook {
         CURRENT_MARKER_TOKEN.store(0, Ordering::Release);
     }
 
+    #[cfg(debug_assertions)]
     pub(super) fn set_debug_armed(enabled: bool) {
         DEBUG_ARMED.store(enabled, Ordering::Release);
     }
@@ -772,11 +748,14 @@ mod windows_hook {
                 return;
             }
             HOOK_ACTIVE.store(true, Ordering::Release);
+            #[cfg(debug_assertions)]
             HOOK_STARTED_TICK.store(tick_ms(), Ordering::Release);
+            #[cfg(debug_assertions)]
             HOOK_LOOP_HEARTBEAT_TICK.store(tick_ms(), Ordering::Release);
             let _ = ready.send(Ok(()));
             loop {
                 let result = MsgWaitForMultipleObjects(0, null(), 0, 100, QS_ALLINPUT);
+                #[cfg(debug_assertions)]
                 HOOK_LOOP_HEARTBEAT_TICK.store(tick_ms(), Ordering::Release);
                 if result == WAIT_FAILED {
                     break;
@@ -828,6 +807,7 @@ mod windows_hook {
     }
 
     unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        #[cfg(debug_assertions)]
         HOOK_CALLBACK_COUNT.fetch_add(1, Ordering::Relaxed);
         if code != HC_ACTION as i32 {
             return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
@@ -855,6 +835,7 @@ mod windows_hook {
         }
         let target_foreground = target_is_foreground();
         if own_frame || own_debug_marker {
+            #[cfg(debug_assertions)]
             if DEBUG_ARMED.load(Ordering::Acquire) {
                 super::trace_hook_event(vk, down, injected, true, 0);
             }
@@ -870,13 +851,15 @@ mod windows_hook {
         if vk == VK_CAPITAL as u32 && down && target_foreground {
             // This one atomic snapshot selects both the frame token and the latch. A
             // concurrent revoke/re-arm cannot mix the old authorization with a new token.
-            let mode = select_caps_mode(
-                CURRENT_MARKER_TOKEN.load(Ordering::Acquire),
-                DEBUG_ARMED.load(Ordering::Acquire),
-            );
+            #[cfg(debug_assertions)]
+            let debug_armed = DEBUG_ARMED.load(Ordering::Acquire);
+            #[cfg(not(debug_assertions))]
+            let debug_armed = false;
+            let mode = select_caps_mode(CURRENT_MARKER_TOKEN.load(Ordering::Acquire), debug_armed);
             if mode == CapsMode::PassThrough {
                 return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
             }
+            #[cfg(debug_assertions)]
             let trace_slot = if DEBUG_ARMED.load(Ordering::Acquire) {
                 Some(super::trace_hook_event(vk, down, injected, false, 0))
             } else {
@@ -907,6 +890,7 @@ mod windows_hook {
             } else {
                 send_debug_marker(true)
             };
+            #[cfg(debug_assertions)]
             if let Some(slot) = trace_slot {
                 super::trace_hook_result(
                     slot,
@@ -934,6 +918,7 @@ mod windows_hook {
             CAPS_LATCHED_KIND.store(LATCH_NONE, Ordering::Release);
         }
         if vk == VK_CAPITAL as u32 && up && CAPS_SUPPRESSED_DOWN.swap(false, Ordering::AcqRel) {
+            #[cfg(debug_assertions)]
             if DEBUG_ARMED.load(Ordering::Acquire) {
                 super::trace_hook_event(vk, false, injected, false, 0);
             }
@@ -1003,6 +988,7 @@ mod windows_hook {
         }
     }
 
+    #[cfg(debug_assertions)]
     fn tick_ms() -> u64 {
         unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() }
     }
@@ -1060,6 +1046,7 @@ mod windows_hook {
         unsafe { SendInput(1, &mut input, size_of::<INPUT>() as i32) }
     }
 
+    #[cfg(debug_assertions)]
     pub(super) fn frame_failure_count() -> u64 {
         FRAME_FAILURE_COUNT.load(Ordering::Acquire)
     }
@@ -1144,7 +1131,7 @@ fn start_windows_hook(
     hook
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn set_debug_armed(enabled: bool) {
     windows_hook::set_debug_armed(enabled);
     if !enabled {
@@ -1153,32 +1140,29 @@ pub(crate) fn set_debug_armed(enabled: bool) {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn set_debug_armed(_enabled: bool) {}
-
-#[cfg(not(windows))]
 fn cancel_logical_hold() {}
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn hook_is_active() -> bool {
     windows_hook::HOOK_ACTIVE.load(std::sync::atomic::Ordering::Acquire)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn hook_callback_count() -> u64 {
     windows_hook::HOOK_CALLBACK_COUNT.load(std::sync::atomic::Ordering::Acquire)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn hook_started_tick() -> u64 {
     windows_hook::HOOK_STARTED_TICK.load(std::sync::atomic::Ordering::Acquire)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn hook_heartbeat_tick() -> u64 {
     windows_hook::HOOK_LOOP_HEARTBEAT_TICK.load(std::sync::atomic::Ordering::Acquire)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn frame_failure_count() -> u64 {
     windows_hook::frame_failure_count()
 }
@@ -1188,32 +1172,7 @@ fn cancel_logical_hold() {
     windows_hook::cancel_logical_hold();
 }
 
-#[cfg(not(windows))]
-pub(crate) fn hook_is_active() -> bool {
-    false
-}
-
-#[cfg(not(windows))]
-pub(crate) fn hook_callback_count() -> u64 {
-    0
-}
-
-#[cfg(not(windows))]
-pub(crate) fn hook_started_tick() -> u64 {
-    0
-}
-
-#[cfg(not(windows))]
-pub(crate) fn hook_heartbeat_tick() -> u64 {
-    0
-}
-
-#[cfg(not(windows))]
-pub(crate) fn frame_failure_count() -> u64 {
-    0
-}
-
-#[cfg(windows)]
+#[cfg(all(windows, debug_assertions))]
 pub(crate) fn tick_ms() -> u64 {
     unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() }
 }
@@ -1232,11 +1191,11 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     use super::{
-        build_caps_frame, classify_caps_up, disabled_lease, latch_physical_caps_down,
-        marker_signature_matches, random_marker_token, select_caps_mode,
-        startup_hook_error_to_report, token_up_ready, CapsFrameKind, CapsMode, Context, Control,
-        PolicyLease, FRAME_INPUT_COUNT, FRAME_START_DOWN_SCAN, FRAME_START_UP_HELD_SCAN,
-        FRAME_START_UP_TAP_SCAN, FRAME_TERMINATOR_SCAN, VK_NONAME_CODE,
+        CapsFrameKind, CapsMode, Context, Control, FRAME_INPUT_COUNT, FRAME_START_DOWN_SCAN,
+        FRAME_START_UP_HELD_SCAN, FRAME_START_UP_TAP_SCAN, FRAME_TERMINATOR_SCAN, PolicyLease,
+        VK_NONAME_CODE, build_caps_frame, classify_caps_up, disabled_lease,
+        latch_physical_caps_down, marker_signature_matches, random_marker_token, select_caps_mode,
+        startup_hook_error_to_report, token_up_ready,
     };
 
     #[test]
@@ -1348,7 +1307,9 @@ mod tests {
         let first = startup_hook_error_to_report("SetWindowsHookEx failed", &reported);
         assert_eq!(
             first.as_deref(),
-            Some("Caps Lua policy is enabled, but the native keyboard hook failed to start: SetWindowsHookEx failed")
+            Some(
+                "Caps Lua policy is enabled, but the native keyboard hook failed to start: SetWindowsHookEx failed"
+            )
         );
         assert_eq!(
             startup_hook_error_to_report("SetWindowsHookEx failed", &reported),
@@ -1361,9 +1322,11 @@ mod tests {
         let first = random_marker_token();
         let second = random_marker_token();
         assert_eq!(first.len(), 16);
-        assert!(first
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
+        assert!(
+            first
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        );
         assert_ne!(first, "0000000000000000");
         assert_ne!(first, second);
     }
@@ -1387,6 +1350,32 @@ mod tests {
         assert_eq!(disabled.policy_epoch, 8);
         assert_eq!(disabled.marker_token, "0123456789abcdef");
         assert!(!disabled.enabled);
+    }
+
+    #[test]
+    fn lease_ack_uses_the_existing_camel_case_wire_shape() {
+        let ack = PolicyLease {
+            frontend_id: "frontend".into(),
+            generation: 12,
+            policy_epoch: 7,
+            marker_token: "0123456789abcdef".into(),
+            tab_id: Some("tab".into()),
+            process_name: Some("nvim.exe".into()),
+            enabled: true,
+        };
+        let expected = serde_json::json!({
+            "frontendId": "frontend",
+            "generation": 12,
+            "policyEpoch": 7,
+            "markerToken": "0123456789abcdef",
+            "tabId": "tab",
+            "processName": "nvim.exe",
+            "enabled": true,
+        });
+
+        let decoded: PolicyLease = serde_json::from_value(expected.clone()).unwrap();
+        assert_eq!(decoded, ack);
+        assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
     }
 
     #[test]

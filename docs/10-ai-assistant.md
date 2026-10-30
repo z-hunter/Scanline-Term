@@ -39,7 +39,8 @@ sequenceDiagram
 |---|---|---|
 | Native process host | [`src-tauri/src/codex.rs`](../src-tauri/src/codex.rs) | Finds and version-checks Codex, owns one child `codex app-server --stdio`, frames JSONL and emits process events. |
 | Protocol client | [`src/ai/CodexClient.ts`](../src/ai/CodexClient.ts) | Initializes app-server, assigns monotonic JSON-RPC IDs, resolves responses and routes server notifications. |
-| Application integration | [`src/App.tsx`](../src/App.tsx) | Maps `threadId` to terminal tab, starts threads/turns, supplies snapshots, handles tool calls and streams chat messages. |
+| Assistant lifecycle | [`src/ai/useCodexAssistant.ts`](../src/ai/useCodexAssistant.ts) | Maps `threadId` to terminal tab, starts threads/turns, supplies snapshots, handles tool calls, and owns per-tab chats and model selection. |
+| Application wiring | [`src/App.tsx`](../src/App.tsx) | Supplies active-tab context and settings, then passes assistant state and actions to `AiPanel`. |
 | Protocol subset | [`src/ai/protocol.ts`](../src/ai/protocol.ts) | Minimal JSON-RPC types used by the application; generated Codex protocol types are deliberately not imported. |
 | Model selection | [`src/ai/modelSelection.ts`](../src/ai/modelSelection.ts) | Chooses the per-tab Codex model and supported reasoning effort, including the Luna/medium default and safe fallback. |
 | Terminal bridge | [`src/terminal/TerminalSession.ts`](../src/terminal/TerminalSession.ts) | Builds snapshots, waits for xterm output, and encodes/enqueues automation input. |
@@ -67,7 +68,7 @@ The opener capability permits only `https://**` URLs in [`src-tauri/capabilities
 
 ## Thread and turn lifecycle
 
-Threads are created lazily on the first user message for a terminal tab. `App.tsx` keeps the local map `sessionId → threadId`, while messages are stored under their `sessionId`. One app-server process can therefore serve more than one tab without any tool call being able to select a different destination.
+Threads are created lazily on the first user message for a terminal tab. `useCodexAssistant` keeps the local map `sessionId → threadId`, while messages are stored under their `sessionId`. One app-server process can therefore serve more than one tab without any tool call being able to select a different destination.
 
 Thread configuration is:
 
