@@ -8,7 +8,7 @@ A modern Windows terminal with authentic CRT emulation.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/z.hunter)
 
-[![Scanline Term](src-tauri/icons/icon.png)](https://www.youtube.com/watch?v=9nzTOLjYX2w)
+[![Watch the video](src-tauri/icons/icon.png)](https://www.youtube.com/watch?v=9nzTOLjYX2w)
 
 **Scanline Term** is a Windows terminal emulator, featuring:
 
