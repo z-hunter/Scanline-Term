@@ -1,14 +1,16 @@
 # Scanline Term - The Past’s Future
 
+A modern Windows terminal with authentic CRT emulation.
+
 [![Release](https://img.shields.io/github/v/release/z-hunter/Scanline-Term?include_prereleases&color=emerald&label=Release)](https://github.com/z-hunter/Scanline-Term/releases)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-0078D6?logo=windows)](https://github.com/z-hunter/Scanline-Term)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri%202%20%2B%20Rust-orange?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/z.hunter)
 
-![Scanline Term](src-tauri/icons/icon.png)
+![Scanline Term](src-tauri/icons/icon.png)(<https://www.youtube.com/watch?v=9nzTOLjYX2w>)
 
-**Scanline Term** is a "retro-futuristic" Windows terminal emulator, featuring:
+**Scanline Term** is a Windows terminal emulator, featuring:
 
 - Instant response, GPU rendering, multithreading
 - Physical CRT screen simulation (toggleable)
@@ -16,12 +18,13 @@
 - Lightweight and native
 - Lua configuration and scripts allow for automation within the terminal
 - Historical and custom presets for various terminals and screens
-- Built-in mini web browser
+- Built-in mini web browser/PDF viewer
 - Built-in AI assistant
-- Static sessions gallery for visual tab switching
+- MCP server
+- Visual tab switching (gallery mode)
 - Open Source
 
-Combining the raw nostalgia of cathode-ray tube monitors with modern power-user capabilities — multi-tab ConPTY sessions, vim-like search, a Quake-style console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
+Combining the raw nostalgia of cathode-ray tube monitors with modern power-user capabilities — multi-tab sessions, vim-like search, a 'Quake-style' console global hotkey, and a context-aware AI terminal assistant — Scanline Term brings the golden era of computing straight into your modern developer workflow.
 
 ---
 
@@ -39,7 +42,7 @@ Scanline Term features a custom multi-pass WebGL shader pipeline extracted from 
 
 ![Scanline Term](assets/screenshot.png)
 
-### 2. Keyboard-First Embedded WebView Browser and PDF viewer
+### 2. Keyboard-First workflow
 
 Keep your hands on the keyboard and stay in the zone:
 
@@ -78,24 +81,20 @@ Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer i
 ---
 ![Scanline Term](public/Screenshot_39.png)
 
-## Display Profiles & Virtual Resolutions
-
-Scanline Term includes a **CRT Display Lab** settings panel (`Menu + S`) with live sliders for every visual parameter.
-
-- **Curated Color Profiles**: Classic DOS VGA, Windows Campbell, Amber Phosphor, Matrix Green Phosphor, Commodore 64, IBM 3278, Cyberpunk Neon, B&W (~6500K White Phosphor), and Phosphor Blue.
-- **Virtual Resolutions**: Toggle between authentic retro grid resolutions or pixel-sharp rendering:
-  - **VGA** (640 × 480)
-  - **SVGA** (800 × 600)
-  - **XGA** (1024 × 768)
-  - **Native** (Full resolution)
-
----
-
 ## Lua Configuration & Scripts
 
-Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes. The shipped `User's` palette is enabled by default; optional examples show Vim/Neovim and Helix mode-based layout switching with Smart Caps, plus switching to a saved preset while FAR Manager runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
+Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes.
+The shipped `User's` palette is enabled by default; optional examples show **Vim/Neovim** and **Helix** mode-based layout switching with Smart Caps, plus switching to a saved preset while **FAR Manager** runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
 
 ---
+
+### Quick Preset Picker
+
+`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys to choose a preview, use the mouse wheel to scroll the list, or click a row to choose its preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
+
+### Sessions Gallery
+
+`Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move the selection. While Gallery is open, `Menu + Shift + ←/→` or `Menu + Shift + H/L` moves the selected card one position horizontally, and `Menu + Shift + ↑/↓` or `Menu + Shift + K/J` moves it to the nearest card in the adjacent row. Gallery reordering is keyboard-only; cards animate into their new positions and tab numbers are refreshed after every move. `Enter`, `Space`, or `1`…`9`/`0` opens a tab, while `Esc`, `Menu + Backspace`, or a click outside a card returns unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
 
 ## Keyboard Shortcuts Cheat Sheet
 
@@ -129,18 +128,6 @@ Lua can set global defaults, add custom ANSI palettes and shell profiles, and ru
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
 
 While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
-
-### Quick Preset Picker
-
-`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys to choose a preview, use the mouse wheel to scroll the list, or click a row to choose its preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
-
-### Sessions Gallery
-
-`Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move the selection. While Gallery is open, `Menu + Shift + ←/→` or `Menu + Shift + H/L` moves the selected card one position horizontally, and `Menu + Shift + ↑/↓` or `Menu + Shift + K/J` moves it to the nearest card in the adjacent row. Gallery reordering is keyboard-only; cards animate into their new positions and tab numbers are refreshed after every move. `Enter`, `Space`, or `1`…`9`/`0` opens a tab, while `Esc`, `Menu + Backspace`, or a click outside a card returns unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
-
-### Tab Reordering
-
-When the tab bar contains more than one tab, the active tab can be dragged left or right. The tab under the pointer becomes active when the drag starts; the tab follows the pointer and the other tabs make room, but the order is committed only when the pointer is released. Keyboard moves are discrete one-position steps and animate the tab to its new slot. All reorder paths keep tab numbering sequential.
 
 ### Browser Tab Keyboard Navigation
 
@@ -326,4 +313,4 @@ The display module is [Scanline Virtual Screen](https://github.com/z-hunter/Scan
 
 ---
 
-*Enjoy CRT computing! PRs, suggestions, and feedback are always welcome.*
+*Enjoy! PRs, suggestions, and feedback are always welcome.*

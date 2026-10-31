@@ -6,3 +6,4 @@ src-tauri/gen/
 .playwright-cli/
 output/
 *.tsbuildinfo
+outputs/scanline-term-audience-strategy-2026-10.html
