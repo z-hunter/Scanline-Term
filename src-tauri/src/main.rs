@@ -746,6 +746,15 @@ fn is_window_active(window: &tauri::WebviewWindow) -> bool {
 fn focus_webview(window: &tauri::WebviewWindow) {}
 
 fn restore_and_focus_window(window: &tauri::WebviewWindow) {
+    #[cfg(windows)]
+    if should_animate_window_restore(
+        SLIDE_FROM_TOP_ENABLED.load(Ordering::SeqCst),
+        window.is_visible().unwrap_or(true),
+        SUMMON_HIDING.load(Ordering::SeqCst),
+    ) {
+        slide_summon_window(window, true);
+        return;
+    }
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();
@@ -756,6 +765,10 @@ fn restore_and_focus_window(window: &tauri::WebviewWindow) {
         std::thread::sleep(std::time::Duration::from_millis(50));
         focus_webview(&window_clone);
     });
+}
+
+fn should_animate_window_restore(slide_from_top: bool, visible: bool, hiding: bool) -> bool {
+    slide_from_top && (!visible || hiding)
 }
 
 fn toggle_summon_window(window: &tauri::WebviewWindow) {
@@ -1098,7 +1111,7 @@ fn main() {
 mod tests {
     use super::{
         process_context, dev_conpty_dir, launch_request, powershell_name, pty_size, summon_hotkey,
-        target_argument, terminal_launch, valid_session_id,
+        should_animate_window_restore, target_argument, terminal_launch, valid_session_id,
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
@@ -1113,6 +1126,14 @@ mod tests {
     #[test]
     fn uses_win_backquote_for_global_summon() {
         assert_eq!(summon_hotkey(), (0x4008, 0xC0));
+    }
+
+    #[test]
+    fn animates_restore_for_a_summoned_or_hiding_window_only_when_enabled() {
+        assert!(should_animate_window_restore(true, false, false));
+        assert!(should_animate_window_restore(true, true, true));
+        assert!(!should_animate_window_restore(true, true, false));
+        assert!(!should_animate_window_restore(false, false, false));
     }
 
     #[cfg(windows)]
