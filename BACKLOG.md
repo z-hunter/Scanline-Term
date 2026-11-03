@@ -1,5 +1,26 @@
 # Backlog
 
+## Improve CRT RGB phosphor mask realism
+
+The current procedural mask modulates the final RGB image with a fixed stripe
+pattern. Improve its scale and light response while keeping the inexpensive
+single-pass path:
+
+- Define mask pitch as a virtual triad count across the active raster so it
+  stays consistent across window sizes and output resolutions; do not bind it
+  to the monitor's physical LCD/OLED subpixel layout.
+- Use footprint-aware mask filtering to reduce moire during scaling and screen
+  curvature, and compare aperture, slot and shadow patterns at common output
+  resolutions.
+- Preserve average brightness without clipping highlights; refine phosphor
+  profiles and ensure bloom/halation follow emitted masked light.
+- Validate with white, RGB, CMY and grayscale patterns plus terminal text at
+  1080p, 1440p and 4K. Record visual quality and GPU cost before choosing
+  defaults.
+
+Implement and validate this in the Scanline Virtual Screen repository, then
+update Scanline Term's pinned dependency only after the package change is ready.
+
 ## Investigate faster native window restoration
 
 Measure whether applying saved window position/size before the frontend starts
