@@ -732,13 +732,12 @@ pub fn lua_automation_start(
 
 #[tauri::command]
 pub fn lua_automation_update(
-    window: WebviewWindow,
+    app: tauri::AppHandle,
     automation: State<'_, LuaAutomation>,
     terminals: State<'_, TerminalState>,
     snapshot: FrontendSnapshot,
 ) -> Result<(), String> {
-    require_main(&window)?;
-    automation.update(&window.app_handle(), snapshot, &terminals)
+    automation.update(&app, snapshot, &terminals)
 }
 
 #[tauri::command]
@@ -910,10 +909,8 @@ struct LuaPanelVisibility {
 
 #[tauri::command]
 pub fn load_managed_settings(
-    window: WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<ManagedSettingsResult, String> {
-    require_main(&window)?;
     let path = ensure_managed_config(&app)?;
     let source = read_managed_config(&path)?;
     let source_text = std::str::from_utf8(&source)
@@ -931,12 +928,10 @@ pub fn load_managed_settings(
 
 #[tauri::command]
 pub fn save_managed_settings(
-    window: WebviewWindow,
     app: tauri::AppHandle,
     settings: ManagedSettingsPayload,
     revision: String,
 ) -> Result<ManagedSettingsResult, String> {
-    require_main(&window)?;
     if revision.len() != 16 || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("Lua settings revision is invalid".into());
     }
