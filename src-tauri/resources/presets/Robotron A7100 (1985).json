@@ -3,7 +3,7 @@
     "aberration": 0,
     "aberrationFalloff": 2,
     "ambientGlassLight": 0.8,
-    "antiAliasedPixels": false,
+    "antiAliasedPixels": true,
     "backgroundDesaturation": 0.5,
     "beamModulation": 0.15000000000000002,
     "bezelGlow": true,
