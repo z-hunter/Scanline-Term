@@ -930,7 +930,14 @@ export default function App() {
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
       const rect = canvas.getBoundingClientRect();
-      return { x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)) };
+      const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+      const renderer = terminal.renderer;
+      const source = renderer?.sourceCanvas;
+      const mapped = renderer?.sourcePointAt(rect.left + x, rect.top + y, canvas, terminal.settingsRef.current);
+      return mapped && source?.width && source.height
+        ? { x: Math.max(0, Math.min(rect.width, mapped.x / source.width * rect.width)), y: Math.max(0, Math.min(rect.height, mapped.y / source.height * rect.height)) }
+        : { x, y };
     };
     const mouse = (event: globalThis.MouseEvent) => {
       event.preventDefault(); event.stopImmediatePropagation(); if (event.type === "mousedown") canvas.focus();
