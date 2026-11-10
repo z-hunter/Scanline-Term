@@ -129,22 +129,28 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('shows browser form factor, UI, and System settings before CRT emulation is enabled', async () => {
+  it('shows browser form factor and a disabled CRT emulation control by default', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
       currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
     });
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, stored: currentStored, setStored, browserTabActive: true })); });
+    await act(async () => { root.render(createElement(SettingsPanel, {
+      ...defaultProps,
+      stored: { ...currentStored, crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: false } },
+      setStored,
+      browserTabActive: true,
+      presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: false } }, dirty: false },
+    })); });
     expect(container.textContent).toContain('SETTINGS');
     expect(container.textContent).toContain('BROWSER TAB');
     expect(container.textContent).not.toContain('CONSOLE BUFFER');
     expect(container.textContent).not.toContain('CRT display lab');
     expect(container.querySelector('legend')?.textContent).toBe('Browser');
-    expect(Array.from(container.querySelectorAll('legend')).map((legend) => legend.textContent)).toEqual(['Browser', 'UI', 'System']);
+    expect(Array.from(container.querySelectorAll('.settings-panel > [data-section-id], .settings-panel > .preset-controls > [data-section-id]')).map((section) => section.querySelector('legend')?.textContent)).toEqual(['Browser', 'CRT', 'UI', 'System']);
     expect(container.textContent).not.toContain('Presets');
-    expect(container.textContent).not.toContain('Color mode');
+    expect((container.querySelector('[data-testid="control-crtEmulation"]') as HTMLInputElement).checked).toBe(false);
     const formFactor = container.querySelector<HTMLSelectElement>('[data-testid="browser-form-factor-select"]');
     expect(formFactor?.options).toHaveLength(3);
     await act(async () => {
@@ -170,6 +176,8 @@ describe('SettingsPanel font-size editing flow', () => {
     const browserSection = container.querySelector<HTMLElement>('[data-section-id="browser"]');
     const crtSection = container.querySelector<HTMLElement>('[data-section-id="crt"]');
     expect(browserSection?.contains(crtSection!)).toBe(false);
+    expect(browserSection?.textContent).not.toContain('CRT emulation (experiment)');
+    expect((container.querySelector('[data-testid="control-crtEmulation"]') as HTMLInputElement).checked).toBe(true);
     expect(container.textContent).toContain('Scanline intensity');
     await act(async () => { root.unmount(); });
     container.remove();

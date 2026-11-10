@@ -108,7 +108,6 @@ export default function App() {
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
-  const [browserCrtTabs, setBrowserCrtTabs] = useState<Record<string, boolean>>({});
   const [browserCrtReady, setBrowserCrtReady] = useState(false);
   const [presetPickerInitial, setPresetPickerInitial] = useState<TabPresetState | null>(null);
   const [presetPickerTabId, setPresetPickerTabId] = useState<string | null>(null);
@@ -321,8 +320,7 @@ export default function App() {
     RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
-  const browserCrtEnabled = Boolean(activeBrowserId && browserCrtTabs[activeBrowserId]);
-  const setBrowserCrtEnabled = (enabled: boolean) => { if (activeBrowserId) setBrowserCrtTabs((current) => ({ ...current, [activeBrowserId]: enabled })); };
+  const browserCrtEnabled = Boolean(activeBrowserId && activePreset.crt.crtEmulation);
   const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === stored.browserFormFactor) ?? BROWSER_FORM_FACTORS[0];
   const physicalWindow = activeBrowser ? browserFormFactor.id === "physical" : resolution.id === "physical";
   const screenRatio = activeBrowser
@@ -850,11 +848,30 @@ export default function App() {
     };
     const onFrame = (event: { payload: { sessionId: string; data?: string; error?: string } }) => {
       if (event.payload.sessionId !== browser.id) return;
+      if (event.payload.error) { busy = false; reportError(`Browser frame capture failed: ${event.payload.error}`); return; }
       busy = false;
-      if (event.payload.error) { window.clearInterval(timer); reportError(`Browser frame capture failed: ${event.payload.error}`); return; }
       if (!event.payload.data) return;
       const image = new Image();
-      image.onload = () => { if (!disposed) { terminal.renderer?.setBrowserPreview(image); setBrowserCrtReady(true); } };
+      image.onload = () => {
+        if (disposed) return;
+        terminal.renderer?.setBrowserPreview(image);
+        setBrowserCrtReady(true);
+        const canvas = galleryFramesRef.current.get(browser.id)?.canvas ?? document.createElement("canvas");
+        const scale = Math.min(1, 800 / image.naturalWidth);
+        const width = Math.round(image.naturalWidth * scale);
+        const height = Math.round(image.naturalHeight * scale);
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        const context = canvas.getContext("2d");
+        if (context) {
+          context.drawImage(image, 0, 0, width, height);
+          galleryFramesRef.current.set(browser.id, {
+            canvas,
+            aspectRatio: image.naturalWidth / Math.max(1, image.naturalHeight),
+            showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel),
+          });
+        }
+      };
       image.src = `data:image/jpeg;base64,${event.payload.data}`;
     };
     void listen("browser-experiment-frame", onFrame).then((stop) => {
@@ -864,14 +881,14 @@ export default function App() {
         if (busy) return;
         busy = true;
         void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch((reason) => { busy = false; reportError(`Browser frame capture failed: ${String(reason)}`); });
-      }, 200);
+      }, 100);
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
       const rect = canvas.getBoundingClientRect();
       return { x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)) };
     };
     const mouse = (event: globalThis.MouseEvent) => {
-      event.preventDefault(); event.stopImmediatePropagation(); canvas.focus();
+      event.preventDefault(); event.stopImmediatePropagation(); if (event.type === "mousedown") canvas.focus();
       const p = point(event);
       const params: Record<string, unknown> = { type: event.type === "mousedown" ? "mousePressed" : event.type === "mouseup" ? "mouseReleased" : "mouseMoved", x: p.x, y: p.y };
       if (event.type !== "mousemove" || event.buttons) params.button = event.button === 0 ? "left" : event.button === 1 ? "middle" : event.button === 2 ? "right" : "none";
@@ -881,7 +898,7 @@ export default function App() {
     const wheel = (event: globalThis.WheelEvent) => { event.preventDefault(); event.stopImmediatePropagation(); const p = point(event); dispatch("Input.dispatchMouseEvent", { type: "mouseWheel", x: p.x, y: p.y, deltaX: event.deltaX, deltaY: event.deltaY, button: "none" }); };
     const contextMenu = (event: globalThis.MouseEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
     const key = (event: KeyboardEvent) => {
-      if (document.activeElement !== canvas) return;
+      if (event.defaultPrevented || document.activeElement !== canvas) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const modifiers = (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
       dispatch("Input.dispatchKeyEvent", { type: event.type === "keydown" ? "keyDown" : "keyUp", key: event.key, code: event.code, text: event.type === "keydown" && event.key.length === 1 ? event.key : undefined, windowsVirtualKeyCode: event.keyCode, nativeVirtualKeyCode: event.keyCode, modifiers });
@@ -1329,7 +1346,6 @@ export default function App() {
           presetDisabled={Boolean(activeBrowser)}
           browserTabActive={Boolean(activeBrowser)}
           browserCrtEnabled={browserCrtEnabled}
-          onBrowserCrtEnabledChange={setBrowserCrtEnabled}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}

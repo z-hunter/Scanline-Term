@@ -473,7 +473,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   }, [onError]);
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset: TabPresetState = { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings: clonePresetSettings(defaultPresetRef.current), dirty: false }; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
+    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const settings = clonePresetSettings(defaultPresetRef.current); settings.crt.crtEmulation = false; const preset: TabPresetState = { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings, dirty: false }; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
     setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
     void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });

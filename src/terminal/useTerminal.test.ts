@@ -308,6 +308,7 @@ describe('terminal launch event', () => {
     await act(async () => { hookResult.openBrowser(); });
     const browserId = hookResult.activeTabId!;
     expect(hookResult.activePresetState).toMatchObject({ name: 'default', settings: { resolution: '1024x768' } });
+    expect(hookResult.activePresetState?.settings.crt.crtEmulation).toBe(false);
     await act(async () => {
       hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, consoleFontSize: 19 } }, dirty: true }));
     });

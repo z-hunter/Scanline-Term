@@ -57,7 +57,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const labelAt = (n, total = 0) => { let w = 1, c = labels.length; while (total > c) { w++; c *= labels.length; } let s = ''; for (let i = w - 1; i >= 0; i--) s += labels[Math.floor(n / Math.pow(labels.length, i)) % labels.length]; return s; };
   const clearHints = () => { hint?.nodes.forEach(n => n.remove()); hint = null; };
   const showHints = () => { clearHints(); const items = [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button]')].filter(e => { const r=e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; }); const entries=items.map((element,index)=>({element,label:labelAt(index, items.length)})); const nodes=entries.map(({element,label})=>{ const r=element.getBoundingClientRect(), node=document.createElement('i'); node.textContent=label; node.style.cssText=`position:fixed;z-index:2147483647;left:${r.left}px;top:${r.top}px;background:#ffe66d;color:#111;padding:1px 3px;font:12px monospace;font-style:normal;pointer-events:none`; document.documentElement.append(node); return node; }); hint={entries,nodes,typed:''}; };
-  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; box.innerHTML = '<button type="button" data-back aria-label="Back">←</button><button type="button" data-forward aria-label="Forward">→</button><input aria-label="Address" style="min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px" />'; const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const v=input.value.trim(); close(); if(v) location.href=/^(?:https?|file):\/\//i.test(v)?v:`https://${v}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
+  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; box.innerHTML = '<button type="button" data-back aria-label="Back">←</button><button type="button" data-forward aria-label="Forward">→</button><input aria-label="Address" style="min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px" />'; const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const v=input.value.trim(); close(); if(v) location.href=/^(?:https?|file):\/\//i.test(v)?v:`https://${v}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
   addEventListener('keydown', e => {
     if (e.key === 'ContextMenu') { menu = true; return; }
     if (menu) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) shortcut(e.code, e.shiftKey); return; }
@@ -99,6 +99,16 @@ fn browser_color_value(value: &str) -> Option<String> {
         Some(format!("#{value}"))
     } else {
         None
+    }
+}
+
+fn browser_frame_payload(session_id: &str, response: &str) -> serde_json::Value {
+    let data = serde_json::from_str::<serde_json::Value>(response)
+        .ok()
+        .and_then(|value| value.get("data").and_then(serde_json::Value::as_str).map(str::to_owned));
+    match data {
+        Some(data) => serde_json::json!({ "sessionId": session_id, "data": data }),
+        None => serde_json::json!({ "sessionId": session_id, "error": "capture response did not contain image data" }),
     }
 }
 
@@ -161,10 +171,9 @@ pub fn browser_devtools(app: tauri::AppHandle, state: State<BrowserState>, sessi
             let callback = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |status, response| {
                 if let Err(error) = status {
                     if capture { let _ = app_for_callback.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_callback, "error": error.to_string() })); }
-                } else if capture && let Ok(value) = serde_json::from_str::<serde_json::Value>(&response) {
-                    if let Some(data) = value.get("data").and_then(serde_json::Value::as_str) {
-                        let _ = app_for_callback.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_callback, "data": data }));
-                    }
+                } else if capture {
+                    let payload = browser_frame_payload(&id_for_callback, &response);
+                    let _ = app_for_callback.emit("browser-experiment-frame", payload);
                 }
                 Ok(())
             }));
@@ -208,7 +217,15 @@ pub fn close_browser(state: State<BrowserState>, session_id: BrowserId) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url};
+    use super::{browser_color_value, browser_frame_payload, browser_shortcut, browser_target_url, browser_url};
+
+    #[test]
+    fn browser_frame_response_always_has_data_or_error() {
+        let id = "11111111-1111-1111-1111-111111111111";
+        assert_eq!(browser_frame_payload(id, r#"{"data":"jpeg"}"#), serde_json::json!({ "sessionId": id, "data": "jpeg" }));
+        assert_eq!(browser_frame_payload(id, "not json"), serde_json::json!({ "sessionId": id, "error": "capture response did not contain image data" }));
+        assert_eq!(browser_frame_payload(id, r#"{"data":false}"#), serde_json::json!({ "sessionId": id, "error": "capture response did not contain image data" }));
+    }
 
     #[test]
     fn accepts_only_http_urls() {
