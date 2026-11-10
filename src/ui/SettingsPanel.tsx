@@ -112,6 +112,8 @@ export function SettingsPanel({
   presetNames = [],
   presetDisabled = false,
   browserTabActive = false,
+  browserCrtEnabled = false,
+  onBrowserCrtEnabledChange = () => undefined,
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
@@ -144,6 +146,8 @@ export function SettingsPanel({
   presetNames?: string[];
   presetDisabled?: boolean;
   browserTabActive?: boolean;
+  browserCrtEnabled?: boolean;
+  onBrowserCrtEnabledChange?: (enabled: boolean) => void;
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
@@ -229,6 +233,33 @@ export function SettingsPanel({
     resolution: profile.virtualScreen.modeId as ResolutionId,
     crt: profileToRenderSettings(profile),
   }));
+  const presetSection = (disabled: boolean, number: number) => <SettingsAccordionSection id="presets" number={number} title="Presets" icon="presets" pinned disabled={disabled}>
+    <div className="preset-picker">
+      <div className="preset-picker-row">
+        <input
+          value={presetState?.draftName ?? ''}
+          placeholder={disabled ? 'Terminal tabs only' : 'Preset name'}
+          aria-label="Preset name"
+          onChange={(event) => onPresetNameChange(event.target.value)}
+        />
+        <span className="glass-button-recess"><button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button></span>
+      </div>
+      <label className="preset-load-control">
+        <select
+          aria-label="Load preset"
+          defaultValue=""
+          onChange={(event) => {
+            const name = event.target.value;
+            event.currentTarget.value = '';
+            if (name) onLoadPreset(name);
+          }}
+        >
+          <option value="" disabled>Load preset…</option>
+          {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </label>
+    </div>
+  </SettingsAccordionSection>;
 
   return (
     <aside
@@ -296,33 +327,7 @@ export function SettingsPanel({
       </header>
 
       {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'}>
-        <SettingsAccordionSection id="presets" number={0} title="Presets" icon="presets" pinned disabled={presetDisabled}>
-          <div className="preset-picker">
-            <div className="preset-picker-row">
-              <input
-                value={presetState?.draftName ?? ''}
-                placeholder={presetDisabled ? 'Terminal tabs only' : 'Preset name'}
-                aria-label="Preset name"
-                onChange={(event) => onPresetNameChange(event.target.value)}
-              />
-              <span className="glass-button-recess"><button type="button" data-testid="preset-save" disabled={!canSavePreset} onClick={() => onSavePreset(presetState?.draftName ?? '')}>Save</button></span>
-            </div>
-            <label className="preset-load-control">
-              <select
-                aria-label="Load preset"
-                defaultValue=""
-                onChange={(event) => {
-                  const name = event.target.value;
-                  event.currentTarget.value = '';
-                  if (name) onLoadPreset(name);
-                }}
-              >
-                <option value="" disabled>Load preset…</option>
-                {presetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-          </div>
-        </SettingsAccordionSection>
+        {presetSection(presetDisabled, 0)}
 
         <SettingsAccordionSection id="display" number={1} title="Display" icon="display" expanded={Boolean(expandedSections.display)} disabled={presetDisabled} onToggle={() => toggleSection('display')}>
           <DisplaySettingsSection value={screenProfile} modes={RESOLUTIONS} onChange={updateProfile} showChannelSwitch={false} />
@@ -348,6 +353,7 @@ export function SettingsPanel({
       </fieldset>}
 
       {browserTabActive && <SettingsAccordionSection id="browser" number={1} title="Browser" icon="browser" expanded={Boolean(expandedSections.browser)} onToggle={() => toggleSection('browser')}>
+        <Switch label="CRT emulation (experiment)" checked={browserCrtEnabled} onChange={onBrowserCrtEnabledChange} />
         <label className="host-select-control">
           Browser form factor
           <select
@@ -360,8 +366,14 @@ export function SettingsPanel({
           </select>
         </label>
       </SettingsAccordionSection>}
+      {browserTabActive && browserCrtEnabled && <fieldset className="preset-controls">
+        {presetSection(false, 2)}
+        <SettingsAccordionSection id="crt" number={3} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} onToggle={() => toggleSection('crt')}>
+          <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+        </SettingsAccordionSection>
+      </fieldset>}
 
-      <SettingsAccordionSection id="ui" number={browserTabActive ? 2 : 4} title="UI" icon="ui" expanded={Boolean(expandedSections.ui)} onToggle={() => toggleSection('ui')}>
+      <SettingsAccordionSection id="ui" number={browserTabActive ? (browserCrtEnabled ? 4 : 2) : 4} title="UI" icon="ui" expanded={Boolean(expandedSections.ui)} onToggle={() => toggleSection('ui')}>
         <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
         <Switch label="Tab switch animation" checked={stored.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, channelSwitchEffect }))} />
         <div className="host-setting-block">
@@ -384,7 +396,7 @@ export function SettingsPanel({
         </label>
       </SettingsAccordionSection>
 
-      <SettingsAccordionSection id="system" number={browserTabActive ? 3 : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
+      <SettingsAccordionSection id="system" number={browserTabActive ? (browserCrtEnabled ? 5 : 3) : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
         <LuaAutomationPanel status={luaAutomationStatus} reload={reloadLuaConfig} onError={onError} available={luaAutomationAvailable} />
         {showDefaultPreset && <label className="host-select-control">
           Default preset for new tabs

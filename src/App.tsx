@@ -108,6 +108,8 @@ export default function App() {
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [browserCrtTabs, setBrowserCrtTabs] = useState<Record<string, boolean>>({});
+  const [browserCrtReady, setBrowserCrtReady] = useState(false);
   const [presetPickerInitial, setPresetPickerInitial] = useState<TabPresetState | null>(null);
   const [presetPickerTabId, setPresetPickerTabId] = useState<string | null>(null);
   const presetPickerRequest = useRef(0);
@@ -319,6 +321,8 @@ export default function App() {
     RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
+  const browserCrtEnabled = Boolean(activeBrowserId && browserCrtTabs[activeBrowserId]);
+  const setBrowserCrtEnabled = (enabled: boolean) => { if (activeBrowserId) setBrowserCrtTabs((current) => ({ ...current, [activeBrowserId]: enabled })); };
   const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === stored.browserFormFactor) ?? BROWSER_FORM_FACTORS[0];
   const physicalWindow = activeBrowser ? browserFormFactor.id === "physical" : resolution.id === "physical";
   const screenRatio = activeBrowser
@@ -328,14 +332,14 @@ export default function App() {
   presetPickerInitialRef.current = presetPickerInitial;
   presetPickerTabIdRef.current = presetPickerTabId;
   const openPresetPicker = useCallback(() => {
-    if (presetPickerOpen || activeBrowser || !terminal.activePresetState) return;
+    if (presetPickerOpen || (activeBrowser && !browserCrtEnabled) || !terminal.activePresetState) return;
     const state = terminal.activePresetState;
     const tabId = terminal.activeTabId;
     if (!tabId) return;
     setPresetPickerInitial({ ...state, settings: clonePresetSettings(state.settings) });
     setPresetPickerTabId(tabId);
     setPresetPickerOpen(true);
-  }, [activeBrowser, presetPickerOpen, terminal]);
+  }, [activeBrowser, browserCrtEnabled, presetPickerOpen, terminal]);
   openPresetPickerRef.current = openPresetPicker;
   useEffect(() => {
     if (!presetPickerOpen || !presetPickerTabId || activeTabIdRef.current === presetPickerTabId) return;
@@ -640,7 +644,7 @@ export default function App() {
     onError: reportError,
     onResizeSource: terminal.resizeSource,
     onFrame: TERMINAL_GEOMETRY_DIAGNOSTICS ? terminal.recordFirstDraw : undefined,
-    enabled: !activeBrowser && !galleryOpen,
+    enabled: (!activeBrowser || browserCrtEnabled) && !galleryOpen,
   });
   useEffect(() => {
     const frame = screenRef.current;
@@ -815,9 +819,11 @@ export default function App() {
     if (!isTauri()) return;
     const update = () => {
       const rect = screenRef.current?.getBoundingClientRect();
+      const keepRendererLive = browserCrtEnabled && browserCrtReady && activeBrowser?.page === "web" && !galleryOpen;
+      // Hidden WebView2 instances throttle rendering; clip this visible child outside the host window instead.
       const payload = {
         sessionId: !galleryOpen && activeBrowser?.page === "web" ? activeBrowserId : null,
-        bounds: !galleryOpen && activeBrowser?.page === "web" && rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined,
+        bounds: !galleryOpen && activeBrowser?.page === "web" && rect ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height } : undefined,
       };
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
@@ -826,7 +832,66 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, browserCrtEnabled, browserCrtReady, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
+  useEffect(() => { setBrowserCrtReady(false); }, [activeBrowserId, browserCrtEnabled]);
+  useEffect(() => {
+    const canvas = outputRef.current;
+    const browser = activeBrowser;
+    if (!canvas || !browser || !browserCrtEnabled || browser.page !== "web" || galleryOpen || !isTauri()) {
+      terminal.renderer?.setBrowserPreview(null);
+      return;
+    }
+    let disposed = false;
+    let busy = false;
+    let timer = 0;
+    let unlisten: (() => void) | undefined;
+    const dispatch = (method: string, params: Record<string, unknown>) => {
+      void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => reportError(`Browser experiment input failed: ${String(reason)}`));
+    };
+    const onFrame = (event: { payload: { sessionId: string; data?: string; error?: string } }) => {
+      if (event.payload.sessionId !== browser.id) return;
+      busy = false;
+      if (event.payload.error) { window.clearInterval(timer); reportError(`Browser frame capture failed: ${event.payload.error}`); return; }
+      if (!event.payload.data) return;
+      const image = new Image();
+      image.onload = () => { if (!disposed) { terminal.renderer?.setBrowserPreview(image); setBrowserCrtReady(true); } };
+      image.src = `data:image/jpeg;base64,${event.payload.data}`;
+    };
+    void listen("browser-experiment-frame", onFrame).then((stop) => {
+      if (disposed) { stop(); return; }
+      unlisten = stop;
+      timer = window.setInterval(() => {
+        if (busy) return;
+        busy = true;
+        void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch((reason) => { busy = false; reportError(`Browser frame capture failed: ${String(reason)}`); });
+      }, 200);
+    }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
+    const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)) };
+    };
+    const mouse = (event: globalThis.MouseEvent) => {
+      event.preventDefault(); event.stopImmediatePropagation(); canvas.focus();
+      const p = point(event);
+      const params: Record<string, unknown> = { type: event.type === "mousedown" ? "mousePressed" : event.type === "mouseup" ? "mouseReleased" : "mouseMoved", x: p.x, y: p.y };
+      if (event.type !== "mousemove" || event.buttons) params.button = event.button === 0 ? "left" : event.button === 1 ? "middle" : event.button === 2 ? "right" : "none";
+      if (event.type === "mousedown") params.clickCount = 1;
+      dispatch("Input.dispatchMouseEvent", params);
+    };
+    const wheel = (event: globalThis.WheelEvent) => { event.preventDefault(); event.stopImmediatePropagation(); const p = point(event); dispatch("Input.dispatchMouseEvent", { type: "mouseWheel", x: p.x, y: p.y, deltaX: event.deltaX, deltaY: event.deltaY, button: "none" }); };
+    const contextMenu = (event: globalThis.MouseEvent) => { event.preventDefault(); event.stopImmediatePropagation(); };
+    const key = (event: KeyboardEvent) => {
+      if (document.activeElement !== canvas) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const modifiers = (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
+      dispatch("Input.dispatchKeyEvent", { type: event.type === "keydown" ? "keyDown" : "keyUp", key: event.key, code: event.code, text: event.type === "keydown" && event.key.length === 1 ? event.key : undefined, windowsVirtualKeyCode: event.keyCode, nativeVirtualKeyCode: event.keyCode, modifiers });
+    };
+    canvas.addEventListener("mousedown", mouse, true); canvas.addEventListener("mouseup", mouse, true); canvas.addEventListener("mousemove", mouse, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: false }); canvas.addEventListener("contextmenu", contextMenu, true); canvas.addEventListener("keydown", key, true); canvas.addEventListener("keyup", key, true);
+    return () => {
+      disposed = true; window.clearInterval(timer); unlisten?.(); terminal.renderer?.setBrowserPreview(null);
+      canvas.removeEventListener("mousedown", mouse, true); canvas.removeEventListener("mouseup", mouse, true); canvas.removeEventListener("mousemove", mouse, true); canvas.removeEventListener("wheel", wheel, true); canvas.removeEventListener("contextmenu", contextMenu, true); canvas.removeEventListener("keydown", key, true); canvas.removeEventListener("keyup", key, true);
+    };
+  }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, galleryOpen, outputRef, reportError, terminal.renderer]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -1164,9 +1229,9 @@ export default function App() {
           >
             <canvas
               ref={outputRef}
-              className={`output-canvas${activeBrowser ? " browser-hidden" : ""}`}
+              className={`output-canvas${activeBrowser && !browserCrtEnabled ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
-              tabIndex={terminal.live ? 0 : -1}
+              tabIndex={terminal.live || (activeBrowser && browserCrtEnabled) ? 0 : -1}
               aria-label={terminal.live ? "Windows console" : "CRT display"}
               {...terminal.canvasProps}
             />
@@ -1263,6 +1328,8 @@ export default function App() {
           onSmoothScrollbackChange={changeSmoothScrollback}
           presetDisabled={Boolean(activeBrowser)}
           browserTabActive={Boolean(activeBrowser)}
+          browserCrtEnabled={browserCrtEnabled}
+          onBrowserCrtEnabledChange={setBrowserCrtEnabled}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}

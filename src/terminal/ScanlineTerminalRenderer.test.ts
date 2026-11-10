@@ -22,6 +22,12 @@ describe('ScanlineTerminalRenderer', () => {
     expect(renderer.imageAtSourcePoint(90, 90)).toBeNull();
   });
 
+  it('exposes the captured browser page as a full-screen overlay', () => {
+    const renderer = new TerminalRenderer(); renderer.resizeSource(320, 240);
+    renderer.setBrowserPreview({ complete: true, naturalWidth: 800, naturalHeight: 600 } as HTMLImageElement);
+    expect(renderer.getOverlays()).toEqual([expect.objectContaining({ id: 'browser-preview', x: 0, y: 0, width: 320, height: 240, zIndex: 0 })]);
+  });
+
   it('reports image-only changes when terminal rows stay unchanged', () => {
     const context = { globalAlpha: 1, fillStyle: '', font: '', textAlign: 'left', textBaseline: 'middle', drawImage: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 8, fontBoundingBoxAscent: 8, fontBoundingBoxDescent: 2 }) };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);

@@ -36,7 +36,7 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - the branded browser-preview mock and its `/icon.png` splash logo;
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
-[`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
+[`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. The browser CRT experiment adds its latest WebView2 JPEG frame as a full-screen runtime overlay through this same boundary. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.
 
 SVS owns the custom palette registry and groups Lua palettes after built-ins in its controlled settings section. Scanline Term applies the full native snapshot before loading saved presets. A successful Lua reload applies the prepared candidate snapshot only after commit; failed loads retain the last good catalog. Missing `lua:` references remain saved, render with SVS's built-in fallback, and produce a warning. Catalog changes refresh the theme and tab colors of every live session without changing preset names or dirty state.
 

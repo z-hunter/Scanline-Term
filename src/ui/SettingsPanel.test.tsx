@@ -129,7 +129,7 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('shows browser form factor, UI, and System settings for a browser tab', async () => {
+  it('shows browser form factor, UI, and System settings before CRT emulation is enabled', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {
       currentStored = typeof updater === 'function' ? updater(currentStored) : updater;
@@ -144,7 +144,7 @@ describe('SettingsPanel font-size editing flow', () => {
     expect(container.querySelector('legend')?.textContent).toBe('Browser');
     expect(Array.from(container.querySelectorAll('legend')).map((legend) => legend.textContent)).toEqual(['Browser', 'UI', 'System']);
     expect(container.textContent).not.toContain('Presets');
-    expect(container.textContent).not.toContain('Virtual resolution');
+    expect(container.textContent).not.toContain('Color mode');
     const formFactor = container.querySelector<HTMLSelectElement>('[data-testid="browser-form-factor-select"]');
     expect(formFactor?.options).toHaveLength(3);
     await act(async () => {
@@ -153,6 +153,26 @@ describe('SettingsPanel font-size editing flow', () => {
     });
     expect(currentStored.browserFormFactor).toBe('8:5');
     root.unmount(); container.remove();
+  });
+
+  it('shows separate Presets and CRT sections for browser tabs with CRT enabled', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(SettingsPanel, {
+      ...defaultProps,
+      browserTabActive: true,
+      browserCrtEnabled: true,
+      presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, dirty: false },
+      presetNames: ['default', 'VGA'],
+    })); });
+    expect(Array.from(container.querySelectorAll('.settings-panel > [data-section-id], .settings-panel > .preset-controls > [data-section-id]')).map((section) => section.querySelector('legend')?.textContent)).toEqual(['Browser', 'Presets', 'CRT', 'UI', 'System']);
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Load preset"]')?.options).toHaveLength(3);
+    const browserSection = container.querySelector<HTMLElement>('[data-section-id="browser"]');
+    const crtSection = container.querySelector<HTMLElement>('[data-section-id="crt"]');
+    expect(browserSection?.contains(crtSection!)).toBe(false);
+    expect(container.textContent).toContain('Scanline intensity');
+    await act(async () => { root.unmount(); });
+    container.remove();
   });
 
   it('shows and updates the Disable AI assistant switch', async () => {

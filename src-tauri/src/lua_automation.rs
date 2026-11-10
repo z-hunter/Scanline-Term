@@ -742,10 +742,8 @@ pub fn lua_automation_update(
 
 #[tauri::command]
 pub fn lua_automation_status(
-    window: WebviewWindow,
     automation: State<'_, LuaAutomation>,
 ) -> Result<AutomationStatus, String> {
-    require_main(&window)?;
     Ok(automation.status())
 }
 

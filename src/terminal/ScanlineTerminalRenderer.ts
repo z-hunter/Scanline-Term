@@ -15,6 +15,7 @@ export const SMOOTH_SCROLL_DIAGNOSTICS = false;
 
 export class TerminalRenderer extends CoreTerminalRenderer {
   private images: TerminalImage[] = [];
+  private browserPreview: HTMLImageElement | null = null;
   private boundTerminal: Terminal | null = null;
   private writeSubscription: { dispose(): void } | null = null;
   private tuiScrollingEnabled = false;
@@ -132,8 +133,9 @@ export class TerminalRenderer extends CoreTerminalRenderer {
   }
 
   setImages(images: TerminalImage[]): void { this.images = images; this.cancelScroll(); this.markDirty(); }
+  setBrowserPreview(image: HTMLImageElement | null): void { this.browserPreview = image; this.markDirty(); }
   markImagesDirty(): void { this.cancelScroll(); this.markDirty(); }
-  getOverlays(): ScreenOverlay[] { return this.images.filter((image) => image.image.complete && image.image.naturalWidth > 0).map((image, index) => ({ id: image.id, source: image.image, x: image.x * this.sourceCanvas.width, y: image.y * this.sourceCanvas.height, width: image.width * this.sourceCanvas.width, height: image.height * this.sourceCanvas.height, zIndex: index, opacity: 1 })); }
+  getOverlays(): ScreenOverlay[] { const overlays = this.images.filter((image) => image.image.complete && image.image.naturalWidth > 0).map((image, index) => ({ id: image.id, source: image.image, x: image.x * this.sourceCanvas.width, y: image.y * this.sourceCanvas.height, width: image.width * this.sourceCanvas.width, height: image.height * this.sourceCanvas.height, zIndex: index + 1, opacity: 1 })); if (this.browserPreview?.complete && this.browserPreview.naturalWidth > 0) overlays.unshift({ id: 'browser-preview', source: this.browserPreview, x: 0, y: 0, width: this.sourceCanvas.width, height: this.sourceCanvas.height, zIndex: 0, opacity: 1 }); return overlays; }
   imageAtSourcePoint(x: number, y: number): TerminalImage | null { for (let index = this.images.length - 1; index >= 0; index -= 1) { const image = this.images[index]; const left = image.x * this.sourceCanvas.width; const top = image.y * this.sourceCanvas.height; const width = image.width * this.sourceCanvas.width; const height = image.height * this.sourceCanvas.height; if (x >= left && y >= top && x <= left + width && y <= top + height) return image; } return null; }
   dispose(): void { this.writeSubscription?.dispose(); this.writeSubscription = null; this.boundTerminal = null; this.previousSnapshot = null; super.dispose(); this.images = []; }
 }

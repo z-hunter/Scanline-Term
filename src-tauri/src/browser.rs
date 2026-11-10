@@ -1,6 +1,8 @@
 use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use tauri::{webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
+use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2};
+use windows::core::HSTRING;
 
 type BrowserId = String;
 
@@ -142,17 +144,49 @@ pub fn navigate_browser(app: tauri::AppHandle, state: State<BrowserState>, sessi
 }
 
 #[tauri::command]
+pub fn browser_devtools(app: tauri::AppHandle, state: State<BrowserState>, session_id: BrowserId, method: String, params: serde_json::Value) -> Result<(), String> {
+    valid_id(&session_id)?;
+    if !matches!(method.as_str(), "Page.captureScreenshot" | "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent") { return Err("unsupported browser experiment command".into()); }
+    let params = serde_json::to_string(&params).map_err(|error| error.to_string())?;
+    let browser_state = state.0.lock().map_err(|_| "browser state is unavailable")?;
+    let browser = browser_state.webviews.get(&session_id).ok_or("browser is not running")?;
+    let app_for_callback = app.clone();
+    let id_for_callback = session_id.clone();
+    let capture = method == "Page.captureScreenshot";
+    browser.with_webview(move |platform| unsafe {
+        let result = (|| -> windows::core::Result<()> {
+            let core: ICoreWebView2 = platform.controller().CoreWebView2()?;
+            let method = HSTRING::from(method);
+            let params = HSTRING::from(params);
+            let callback = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |status, response| {
+                if let Err(error) = status {
+                    if capture { let _ = app_for_callback.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_callback, "error": error.to_string() })); }
+                } else if capture && let Ok(value) = serde_json::from_str::<serde_json::Value>(&response) {
+                    if let Some(data) = value.get("data").and_then(serde_json::Value::as_str) {
+                        let _ = app_for_callback.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_callback, "data": data }));
+                    }
+                }
+                Ok(())
+            }));
+            core.CallDevToolsProtocolMethod(&method, &params, &callback)
+        })();
+        if let Err(error) = result { if capture { let _ = app.emit("browser-experiment-frame", serde_json::json!({ "sessionId": session_id, "error": error.to_string() })); } }
+    }).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn set_active_browser(app: tauri::AppHandle, state: State<BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>) -> Result<(), String> {
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
     let return_to_terminal = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         let return_to_terminal = state.active.is_some() && session_id.is_none();
+        let became_active = state.active != session_id;
         state.active = session_id.clone(); state.bounds = bounds.clone();
         for (id, browser) in state.webviews.iter() {
+            if let Some(rect) = &bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
             if Some(id) == session_id.as_ref() {
-                if let Some(rect) = &bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
                 browser.show().map_err(|e| e.to_string())?; trace(&app, "show", id, bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
-                let _ = browser.set_focus();
+                if became_active { let _ = browser.set_focus(); }
             } else { let _ = browser.hide(); }
         }
         return_to_terminal

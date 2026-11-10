@@ -280,8 +280,9 @@ describe('terminal launch event', () => {
       return Promise.resolve({});
     });
     let hookResult!: ReturnType<typeof useTerminal>;
+    const onTogglePresetPicker = vi.fn();
     function TestComponent() {
-      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, channelSwitchEffect: false, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, channelSwitchEffect: false, ready: false, onError: vi.fn(), onToggleSettings: vi.fn(), onTogglePresetPicker });
       useEffect(() => { hookResult = result; });
       return null;
     }
@@ -305,6 +306,22 @@ describe('terminal launch event', () => {
     expect(latestSnapshot()).toMatchObject({ tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: true, visible: false } })]) });
 
     await act(async () => { hookResult.openBrowser(); });
+    const browserId = hookResult.activeTabId!;
+    expect(hookResult.activePresetState).toMatchObject({ name: 'default', settings: { resolution: '1024x768' } });
+    await act(async () => {
+      hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, consoleFontSize: 19 } }, dirty: true }));
+    });
+    expect(hookResult.activePresetState?.settings.crt.consoleFontSize).toBe(19);
+    expect(hookResult.settingsRef.current.consoleFontSize).toBe(19);
+    expect(hookResult.tabs.find((tab) => tab.id === browserId)).toMatchObject({ preset: { dirty: true, settings: { crt: { consoleFontSize: 19 } } } });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', code: 'ContextMenu', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'ContextMenu', bubbles: true }));
+    });
+    expect(onTogglePresetPicker).toHaveBeenCalledOnce();
+    await act(async () => { hookResult.selectSession(nvimId!, false, false); hookResult.selectSession(browserId, false, false); });
+    expect(hookResult.activePresetState?.settings.crt.consoleFontSize).toBe(19);
     await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[6 q', resolve)); });
     expect(latestSnapshot()).toMatchObject({ activeTabId: null, focused: false, tabs: expect.arrayContaining([expect.objectContaining({ id: nvimId, cursor: { shape: 'bar', blink: false, visible: false } })]) });
 

@@ -16,6 +16,8 @@ serde_json = "1"
 interprocess = "2.4.4"
 mlua = { version = "0.12.2", features = ["lua54", "vendored", "send"] }
 tauri = { version = "2.11.1", features = ["unstable", "image-png", "protocol-asset"] }
+webview2-com = "0.38.2"
+windows = { version = "0.61.3", features = ["Win32_Foundation"] }
 url = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"

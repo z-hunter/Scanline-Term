@@ -218,6 +218,10 @@ Each browser tab owns a separate WebView2 controller. Hiding a browser child doe
 
 WebView2 does not preserve a held `Menu` modifier across the browser → terminal boundary. After that transition, the user must release and press Menu again before another Menu shortcut; do not synthesize modifier key state to hide this limitation.
 
+### Experimental Browser CRT
+
+The Browser settings switch starts a transient experiment: Rust asks the child WebView2 for JPEG frames through `Page.captureScreenshot`, and the frontend displays each frame as an SVS full-screen overlay. After the first frame, the native child remains visible to WebView2 but moves outside the host window, because hidden WebView2 instances throttle rendering. Canvas mouse, wheel, and keyboard events are routed back through the DevTools `Input` domain. The toggle and each browser tab's CRT preset are transient; enabling CRT adds separate Presets and CRT settings sections. Preset selection uses the shared preset catalog and `Menu+P` navigator.
+
 ### Native context menu
 
 The `+` tab button and terminal canvas suppress the browser's default context menu and invoke the shared `ui/nativeNewTabMenu.ts` builder in the desktop build. The popup contains `New Terminal tab`, `New Browser tab`, and a `Shells` submenu populated by `list_available_shells`. Tauri renders it as a native Windows popup, which keeps the complete menu above native browser child WebView2 surfaces; a DOM menu cannot cross that z-order boundary. Browser preview mode retains the DOM fallback for development without Tauri.

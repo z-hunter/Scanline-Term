@@ -21,7 +21,7 @@ import type { ScrollbackScrollbarState } from '../ui/ScrollbackScrollbar';
 import { resolveShellLaunch, type ShellInfo } from './shells';
 
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
-export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web' } & TabColor;
+export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web'; preset?: TabPresetState } & TabColor;
 export type WorkspaceTab = TerminalTab | BrowserTab;
 export type { ShellInfo } from './shells';
 type SessionRecord = { tab: TerminalTab; session: TerminalSession; ownerId: string | null; inputLocked: boolean; preset: TabPresetState; images: TerminalImage[] };
@@ -330,7 +330,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     renderer.current?.cancelScroll();
     renderer.current?.markDirty();
   }, [onError, refreshTabColor]);
-  const selectSession = useCallback((id: string, animate = true, capturePrevious = true) => {
+  const selectSession = useCallback((id: string, animate = true, capturePrevious = true, browserPreset?: TabPresetState) => {
     if (pendingSelection.current !== null) {
       window.clearTimeout(pendingSelection.current);
       pendingSelection.current = null;
@@ -351,7 +351,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     cancelAutomationProbeInput('tab-change');
     recentTabs.current = [id, ...recentTabs.current.filter((item) => item !== id)];
     activeRef.current = id; refreshAutomationProbeContext(); pendingFirstDraw.current = record && TERMINAL_GEOMETRY_DIAGNOSTICS ? id : null; setActiveTabId(id); scrollIntentRef.current = false; scrollbackRef.current = null; setScrollback(null); clearSearch();
-    if (!record) { setActivePresetState(null); setCursorStyleOverridden(false); settingsRef.current = { ...displaySettings(defaultPresetRef.current.crt, defaultPresetRef.current.resolution), channelSwitchEffect: channelSwitchEffectRef.current }; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); luaAutomation.current?.update(luaAutomationSnapshot()); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: defaultPresetRef.current.resolution })); return; }
+    if (!record) { const tab = tabsRef.current.find((item) => item.id === id); const preset = browserPreset ?? (tab?.kind === 'browser' ? tab.preset : undefined); setActivePresetState(preset ?? null); setCursorStyleOverridden(false); settingsRef.current = { ...displaySettings(preset?.settings.crt ?? defaultPresetRef.current.crt, preset?.settings.resolution ?? defaultPresetRef.current.resolution), channelSwitchEffect: channelSwitchEffectRef.current }; setLive(false); renderer.current!.bindTerminal(null); renderer.current!.setImages([]); renderer.current!.setFocused(false); renderer.current!.setSelection(null); luaAutomation.current?.update(luaAutomationSnapshot()); requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: preset?.settings.resolution ?? defaultPresetRef.current.resolution })); return; }
     setCursorStyleOverridden(record.session.cursorStyleOverridden);
     record.session.setTerminalFocused(Boolean(document.hasFocus() && outputRef.current && document.activeElement === outputRef.current));
     luaAutomation.current?.update(luaAutomationSnapshot());
@@ -362,8 +362,19 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     requestAnimationFrame(() => recordGeometry('tab-select-frame', { sessionId: id, resolution: record.preset.settings.resolution }));
   }, [cancelAutomationProbeInput, clearSearch, luaAutomationSnapshot, publishScrollback, recordGeometry, refreshAutomationProbeContext]);
   const updateActivePreset = useCallback((update: (current: TabPresetState) => TabPresetState) => {
-    const record = activeRef.current ? sessions.current.get(activeRef.current) : undefined;
-    if (!record) return;
+    const id = activeRef.current;
+    const record = id ? sessions.current.get(id) : undefined;
+    if (!record) {
+      const tab = id ? tabsRef.current.find((item) => item.id === id) : undefined;
+      if (!id || tab?.kind !== 'browser') return;
+      const current = tab.preset ?? { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings: clonePresetSettings(defaultPresetRef.current), dirty: false };
+      const next = update(current);
+      updateTab(id, (item) => item.kind === 'browser' ? { ...item, preset: next } : item);
+      setActivePresetState(next);
+      settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
+      renderer.current?.cancelScroll(); renderer.current?.markDirty();
+      return;
+    }
     const previousProfile = record.preset.settings.crt.colorProfile;
     const next = update(record.preset);
     record.preset = next;
@@ -374,10 +385,21 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     setActivePresetState(next);
     settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
     renderer.current?.cancelScroll(); renderer.current?.markDirty();
-  }, [luaAutomationSnapshot]);
+  }, [luaAutomationSnapshot, updateTab]);
   const replaceActivePreset = useCallback((settings: PresetSettings, name: string, sessionId = activeRef.current) => {
     const record = sessionId ? sessions.current.get(sessionId) : undefined;
-    if (!record) return;
+    if (!record) {
+      const tab = sessionId ? tabsRef.current.find((item) => item.id === sessionId) : undefined;
+      if (!sessionId || tab?.kind !== 'browser') return;
+      const next = { name, draftName: name, settings: clonePresetSettings(settings), dirty: false };
+      updateTab(sessionId, (item) => item.kind === 'browser' ? { ...item, preset: next } : item);
+      if (activeRef.current === sessionId) {
+        setActivePresetState(next);
+        settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
+        renderer.current?.cancelScroll(); renderer.current?.markDirty();
+      }
+      return;
+    }
     const previousProfile = record.preset.settings.crt.colorProfile;
     const next = { name, draftName: name, settings: clonePresetSettings(settings), dirty: false };
     record.preset = next;
@@ -390,7 +412,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
       settingsRef.current = { ...displaySettings(next.settings.crt, next.settings.resolution), channelSwitchEffect: channelSwitchEffectRef.current };
       renderer.current?.cancelScroll(); renderer.current?.markDirty();
     }
-  }, [luaAutomationSnapshot]);
+  }, [luaAutomationSnapshot, updateTab]);
   const markActivePresetSaved = useCallback((name: string) => {
     updateActivePreset((current) => ({ ...current, name, draftName: name, dirty: false }));
   }, [updateActivePreset]);
@@ -451,8 +473,8 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   }, [onError]);
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc' };
-    setTabs((current) => [...current, tab]); setActivePresetState(null); selectSession(id, false);
+    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const preset: TabPresetState = { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings: clonePresetSettings(defaultPresetRef.current), dirty: false }; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
+    setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
     void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [onError, selectSession, updateTab]);
@@ -615,7 +637,9 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
       return;
     }
     outputRef.current = output;
-    const preset = (activeRef.current ? sessions.current.get(activeRef.current)?.preset.settings : undefined) ?? defaultPresetRef.current;
+    const activeId = activeRef.current;
+    const activeTab = activeId ? tabsRef.current.find((tab) => tab.id === activeId) : undefined;
+    const preset = (activeId ? sessions.current.get(activeId)?.preset.settings : undefined) ?? (activeTab?.kind === 'browser' ? activeTab.preset?.settings : undefined) ?? defaultPresetRef.current;
     const resolution = RESOLUTIONS.find((item) => item.id === preset.resolution) ?? RESOLUTIONS[6];
     const frame = output.parentElement;
     const browserActive = tabsRef.current.some((tab) => tab.id === activeRef.current && tab.kind === 'browser');

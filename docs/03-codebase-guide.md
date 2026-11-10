@@ -127,7 +127,7 @@ ScanlineTerm/
 
 #### [`src/App.tsx`](../src/App.tsx) *(composition root)*
 The primary React composition root. Rather than containing low-level terminal rendering directly, it coordinates all submodules:
-* **Global Hotkey & Shortcut Routing:** Handles `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Tab` / `Ctrl+Shift+Tab` (tab cycle), `Alt+Enter` (fullscreen), `Alt+P` (quick preset picker), `Menu+Backspace` (tab gallery), and `Ctrl+F` (search).
+* **Global Hotkey & Shortcut Routing:** Handles `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Tab` / `Ctrl+Shift+Tab` (tab cycle), `Alt+Enter` (fullscreen), `Menu+P` (quick preset picker), `Menu+Backspace` (tab gallery), and `Ctrl+F` (search).
 * **Modal Dialog & Drawer State:** Controls visibility of `SettingsPanel`, `AiPanel`, `QuickPresetPicker`, `TabGallery`, and in-canvas search overlays.
 * **Codex Session Mapping:** Supplies active-tab context to `useCodexAssistant`, which owns each tab's thread, messages, model selection, and turn lifecycle.
 * **CRT Preview Cache:** Captures lightweight thumbnail frames of inactive tabs to feed the `TabGallery`.
@@ -147,6 +147,7 @@ Global application stylesheet implementing the physical CRT monitor aesthetic:
 The core React hook governing terminal and browser tab lifecycle:
 * **Tab Collections:** Manages `tabs: WorkspaceTab[]`, active tab index, tab reordering via pointer drag, and renumbering.
 * **PTY Binding:** Invokes `start_terminal` and `close_terminal`, binds incoming `terminal-output` events to the active xterm instance.
+* **Browser CRT Presets:** Keeps a transient CRT preset with each browser tab and applies it to the shared renderer settings while that tab is active.
 * **Canvas Mounting:** Attaches offscreen and on-screen rendering targets to SVS.
 * **Context Menus:** Manages native and web context menus for shells, images, and split operations.
 
@@ -161,6 +162,7 @@ Encapsulates a single xterm.js terminal instance:
 Scanline Term's host adapter over the SVS WebGL compositor:
 * Binds the current terminal session to SVS's `VirtualScreenRenderer`.
 * Renders tab-local inline images (e.g. Sixel / graphics protocols) and manages image hit-testing.
+* In the browser CRT experiment, places the latest captured WebView2 frame in the SVS overlay list.
 * Displays the fallback mock screen and branded `/icon.png` splash screen when no terminal is connected.
 
 #### Specialized Terminal Helpers:
