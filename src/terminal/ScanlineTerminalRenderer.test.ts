@@ -24,7 +24,8 @@ describe('ScanlineTerminalRenderer', () => {
 
   it('exposes the captured browser page as a full-screen overlay', () => {
     const renderer = new TerminalRenderer(); renderer.resizeSource(320, 240);
-    renderer.setBrowserPreview({ complete: true, naturalWidth: 800, naturalHeight: 600 } as HTMLImageElement);
+    const cachedFrame = document.createElement('canvas'); cachedFrame.width = 800; cachedFrame.height = 600;
+    renderer.setBrowserPreview(cachedFrame);
     expect(renderer.getOverlays()).toEqual([expect.objectContaining({ id: 'browser-preview', x: 0, y: 0, width: 320, height: 240, zIndex: 0 })]);
   });
 

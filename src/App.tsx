@@ -100,6 +100,7 @@ export default function App() {
   const [presetsReady, setPresetsReady] = useState(!isTauri());
   const [, setPaletteCatalogRevision] = useState(0);
   const [managedReloading, setManagedReloading] = useState(false);
+  const [browserFormFactorOverride, setBrowserFormFactorOverride] = useState<typeof stored.browserFormFactor | null>(null);
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [systemShells, setSystemShells] = useState<ShellInfo[]>([]);
   const [luaShells, setLuaShells] = useState<ShellInfo[]>([]);
@@ -133,6 +134,7 @@ export default function App() {
     width: typeof window !== "undefined" ? window.innerWidth : 1440,
     height: typeof window !== "undefined" ? window.innerHeight : 960,
   }));
+  const [browserFps, setBrowserFps] = useState(0);
   const [tabSpace, setTabSpace] = useState(36);
   const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
   const lastUndisturbedWidth = useRef(0);
@@ -154,6 +156,7 @@ export default function App() {
   const aiEnabled = !canonicalGlobals.aiAssistantDisabled;
   const managedWriterRef = useRef({ managedReady, managedAuthoritative, managedReloading, managedWritesEnabled, saveManagedSettings, reportError });
   managedWriterRef.current = { managedReady, managedAuthoritative, managedReloading, managedWritesEnabled, saveManagedSettings, reportError };
+  const canPersistManagedSettings = managedWritesEnabled && managedReady && managedAuthoritative && !managedReloading;
   const setStored = useCallback((action: React.SetStateAction<typeof stored>) => {
     const writer = managedWriterRef.current;
     const current = storedRef.current;
@@ -174,6 +177,19 @@ export default function App() {
       if (Object.keys(patch).length) void writer.saveManagedSettings(patch as Parameters<typeof writer.saveManagedSettings>[0]);
     }
   }, []);
+  const setBrowserFormFactor = useCallback((browserFormFactor: typeof stored.browserFormFactor) => {
+    if (isTauri() && !canPersistManagedSettings) setBrowserFormFactorOverride(browserFormFactor);
+    else {
+      setBrowserFormFactorOverride(null);
+      setStored((current) => current.browserFormFactor === browserFormFactor ? current : { ...current, browserFormFactor });
+    }
+  }, [canPersistManagedSettings, setStored]);
+  useEffect(() => {
+    if (!browserFormFactorOverride || !canPersistManagedSettings) return;
+    const browserFormFactor = browserFormFactorOverride;
+    setBrowserFormFactorOverride(null);
+    setStored((current) => current.browserFormFactor === browserFormFactor ? current : { ...current, browserFormFactor });
+  }, [browserFormFactorOverride, canPersistManagedSettings, setStored]);
   const luaAutomation = useLuaAutomationStatus(reportError);
   const windowRestoreStarted = useRef(false);
   useEffect(() => {
@@ -321,7 +337,7 @@ export default function App() {
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
   const browserCrtEnabled = Boolean(activeBrowserId && activePreset.crt.crtEmulation);
-  const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === stored.browserFormFactor) ?? BROWSER_FORM_FACTORS[0];
+  const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === (browserFormFactorOverride ?? stored.browserFormFactor)) ?? BROWSER_FORM_FACTORS[0];
   const physicalWindow = activeBrowser ? browserFormFactor.id === "physical" : resolution.id === "physical";
   const screenRatio = activeBrowser
     ? "width" in browserFormFactor ? browserFormFactor.width / browserFormFactor.height : undefined
@@ -620,7 +636,7 @@ export default function App() {
       reportError(`Could not save preset: ${String(reason)}`);
     }
   }, [reportError, terminal]);
-  const panelStored: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
+  const panelStored: typeof stored = { ...stored, browserFormFactor: browserFormFactor.id, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
   const showBezel = activePreset.crt.crtEmulation && activePreset.crt.showBezel;
   const setPanelStored = useCallback((action: React.SetStateAction<typeof stored>) => {
     const currentPanel: typeof stored = { ...stored, resolution: activePreset.resolution as typeof stored.resolution, crt: activePreset.crt };
@@ -832,10 +848,19 @@ export default function App() {
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
   }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, browserCrtEnabled, galleryOpen, presetPickerOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
+  useLayoutEffect(() => {
+    if (!activeBrowser || activeBrowser.page !== "web" || (!browserCrtEnabled && !presetPickerOpen)) return;
+    const cachedFrame = galleryFramesRef.current.get(activeBrowser.id)?.canvas;
+    if (cachedFrame) {
+      terminal.renderer?.setBrowserPreview(cachedFrame);
+      browserPreviewTabId.current = activeBrowser.id;
+    }
+  }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, presetPickerOpen, terminal.renderer]);
   useEffect(() => {
     const canvas = outputRef.current;
     const browser = activeBrowser;
     if (!canvas || !browser || (!browserCrtEnabled && !presetPickerOpen) || browser.page !== "web" || galleryOpen || !isTauri()) {
+      setBrowserFps(0);
       terminal.renderer?.setBrowserPreview(null);
       browserPreviewTabId.current = null;
       return;
@@ -848,7 +873,10 @@ export default function App() {
     let busy = false;
     let consecutiveCaptureFailures = 0;
     let timer = 0;
+    let fpsTimer = 0;
+    let decodedFrames = 0;
     let unlisten: (() => void) | undefined;
+    setBrowserFps(0);
     const captureFailed = (reason: unknown) => {
       busy = false;
       if (++consecutiveCaptureFailures === 3) reportError(`Browser frame capture failed: ${String(reason)}`);
@@ -862,12 +890,13 @@ export default function App() {
         captureFailed(event.payload.error);
         return;
       }
-      busy = false;
-      if (!event.payload.data) return;
+      if (!event.payload.data) { busy = false; return; }
       consecutiveCaptureFailures = 0;
       const image = new Image();
       image.onload = () => {
+        busy = false;
         if (disposed) return;
+        decodedFrames += 1;
         terminal.renderer?.setBrowserPreview(image);
         browserPreviewTabId.current = browser.id;
         const canvas = galleryFramesRef.current.get(browser.id)?.canvas ?? document.createElement("canvas");
@@ -886,16 +915,18 @@ export default function App() {
           });
         }
       };
+      image.onerror = () => { busy = false; };
       image.src = `data:image/jpeg;base64,${event.payload.data}`;
     };
     void listen("browser-experiment-frame", onFrame).then((stop) => {
       if (disposed) { stop(); return; }
       unlisten = stop;
+      fpsTimer = window.setInterval(() => { setBrowserFps(decodedFrames); decodedFrames = 0; }, 1000);
       timer = window.setInterval(() => {
         if (busy) return;
         busy = true;
         void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch(captureFailed);
-      }, 100);
+      }, 1000 / 30);
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -919,7 +950,7 @@ export default function App() {
     };
     canvas.addEventListener("mousedown", mouse, true); canvas.addEventListener("mouseup", mouse, true); canvas.addEventListener("mousemove", mouse, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: false }); canvas.addEventListener("contextmenu", contextMenu, true); canvas.addEventListener("keydown", key, true); canvas.addEventListener("keyup", key, true);
     return () => {
-      disposed = true; window.clearInterval(timer); unlisten?.();
+      disposed = true; window.clearInterval(timer); window.clearInterval(fpsTimer); unlisten?.();
       canvas.removeEventListener("mousedown", mouse, true); canvas.removeEventListener("mouseup", mouse, true); canvas.removeEventListener("mousemove", mouse, true); canvas.removeEventListener("wheel", wheel, true); canvas.removeEventListener("contextmenu", contextMenu, true); canvas.removeEventListener("keydown", key, true); canvas.removeEventListener("keyup", key, true);
     };
   }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, terminal.renderer]);
@@ -1347,6 +1378,7 @@ export default function App() {
           shells={shells}
           terminalSize={terminal.size}
           fps={fps}
+          browserFps={browserFps}
           appVersion={appVersion}
           presetState={activePresetState}
           cursorStyleOverridden={terminal.cursorStyleOverridden}
@@ -1360,6 +1392,7 @@ export default function App() {
           presetDisabled={Boolean(activeBrowser)}
           browserTabActive={Boolean(activeBrowser)}
           browserCrtEnabled={browserCrtEnabled}
+          onBrowserFormFactorChange={setBrowserFormFactor}
           onLoadPreset={loadPreset}
           onSavePreset={savePreset}
           onPresetNameChange={(name) => terminal.updateActivePreset((current) => ({ ...current, draftName: name, dirty: current.dirty || name !== current.name }))}

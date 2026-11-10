@@ -106,6 +106,7 @@ export function SettingsPanel({
   shells,
   terminalSize,
   fps,
+  browserFps = 0,
   appVersion,
   presetState = null,
   cursorStyleOverridden = false,
@@ -113,6 +114,7 @@ export function SettingsPanel({
   presetDisabled = false,
   browserTabActive = false,
   browserCrtEnabled = false,
+  onBrowserFormFactorChange = (browserFormFactor) => setStored((current) => ({ ...current, browserFormFactor })),
   onLoadPreset = () => undefined,
   onSavePreset = () => undefined,
   onPresetNameChange = () => undefined,
@@ -139,6 +141,7 @@ export function SettingsPanel({
   shells: ShellInfo[];
   terminalSize: { cols: number; rows: number };
   fps: number;
+  browserFps?: number;
   appVersion: string;
   presetState?: TabPresetState | null;
   cursorStyleOverridden?: boolean;
@@ -146,6 +149,7 @@ export function SettingsPanel({
   presetDisabled?: boolean;
   browserTabActive?: boolean;
   browserCrtEnabled?: boolean;
+  onBrowserFormFactorChange?: (browserFormFactor: StoredSettings['browserFormFactor']) => void;
   onLoadPreset?: (name: string) => void;
   onSavePreset?: (name: string) => void;
   onPresetNameChange?: (name: string) => void;
@@ -322,7 +326,7 @@ export function SettingsPanel({
           <p className="eyebrow">SETTINGS</p>
           <button type="button" className="settings-home-button" data-testid="settings-home" aria-label="Open Scanline Term home" title="Open Scanline Term home" onClick={onOpenHome}>?</button>
         </div>
-        <p className="display-status">{browserTabActive ? 'BROWSER TAB' : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
+        <p className="display-status">{browserTabActive ? `BROWSER TAB · FPS: ${browserFps}` : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
       </header>
 
       {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'}>
@@ -358,7 +362,7 @@ export function SettingsPanel({
             aria-label="Browser form factor"
             data-testid="browser-form-factor-select"
             value={stored.browserFormFactor}
-            onChange={(event) => setStored((current) => ({ ...current, browserFormFactor: event.target.value as StoredSettings['browserFormFactor'] }))}
+            onChange={(event) => onBrowserFormFactorChange(event.target.value as StoredSettings['browserFormFactor'])}
           >
             {BROWSER_FORM_FACTORS.map((factor) => <option key={factor.id} value={factor.id}>{factor.label}</option>)}
           </select>
