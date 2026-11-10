@@ -141,6 +141,7 @@ describe('SettingsPanel font-size editing flow', () => {
       stored: { ...currentStored, crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: false } },
       setStored,
       browserTabActive: true,
+      browserCrtEnabled: true,
       presetState: { name: 'default', draftName: 'default', settings: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: false } }, dirty: false },
     })); });
     expect(container.textContent).toContain('SETTINGS');

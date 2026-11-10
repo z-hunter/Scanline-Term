@@ -170,6 +170,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   const geometryDiagnostics = useRef<Record<string, unknown>[]>([]);
   const shellCatalogRef = useRef(shells);
   shellCatalogRef.current = shells;
+  const browserCreations = useRef(new Map<string, { url: string; promise: Promise<void> }>());
   const defaultPresetRef = useRef(initialPreset); const defaultPresetNameRef = useRef(defaultPresetName); const settingsRef = useRef(initialPreset.crt); const defaultShellRef = useRef(defaultShell); const smoothScrollbackRef = useRef(smoothScrollback); const rmbMenuInTermRef = useRef(rmbMenuInTerm); const channelSwitchEffectRef = useRef(channelSwitchEffect); const outputRef = useRef<HTMLCanvasElement | null>(null); const sessions = useRef(new Map<string, SessionRecord>()); const browsers = useRef(new Set<string>()); const tabsRef = useRef<WorkspaceTab[]>([]); const activeRef = useRef<string | null>(null); const recentTabs = useRef<string[]>([]); const nextOrdinal = useRef(1); const colorFrames = useRef(new Map<string, number>()); const pressed = useRef(new Set<number>()); const copyStart = useRef<CopyPoint | null>(null); const linkClick = useRef<{ url: string; selection: { start: CopyPoint; end: CopyPoint } } | null>(null); const copyMode = useRef(false); const imageDrag = useRef<{ image: TerminalImage; x: number; y: number } | null>(null); const menu = useRef(false); const menuEvent = useRef<KeyboardEvent | null>(null); const menuShortcut = useRef(false); const fullscreen = useRef(false); const suppressAlt = useRef(false); const pendingAlt = useRef<KeyboardEvent[]>([]); const forwardedAltRef = useRef(new Map<string, { event: KeyboardEvent; session: TerminalSession }>()); const alt = useRef(false); const closing = useRef(new Set<string>()); const onErrorRef = useRef(onError); const onTerminalTabTransitionRef = useRef(onTerminalTabTransition); const pendingSelection = useRef<number | null>(null); const pendingFirstDraw = useRef<string | null>(null); const scrollbackActivity = useRef(0); const scrollbackRef = useRef<ScrollbackScrollbarState | null>(null); const scrollIntentRef = useRef(false);
   const searchRef = useRef(search); searchRef.current = search;
   const galleryOpenRef = useRef(galleryOpen); galleryOpenRef.current = galleryOpen;
@@ -471,20 +472,34 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     record.images.push(item); if (activeRef.current === id) renderer.current!.setImages(record.images);
     try { void fetch(convertFileSrc(path)).then((response) => { if (!response.ok) throw new Error(`asset request returned ${response.status}`); return response.blob(); }).then((blob) => { item.objectUrl = URL.createObjectURL(blob); image.src = item.objectUrl; }).catch((reason) => { const index = record.images.indexOf(item); if (index >= 0) record.images.splice(index, 1); if (activeRef.current === id) { renderer.current!.markImagesDirty(); onError(`Could not load image: ${String(reason)}`); } }); } catch (reason) { record.images.splice(record.images.indexOf(item), 1); onError(`Could not load image: ${String(reason)}`); }
   }, [onError]);
+  const createBrowser = useCallback((id: string, url: string) => {
+    const existing = browserCreations.current.get(id);
+    if (existing) return existing;
+    const creation = { url, promise: invoke('create_browser', { sessionId: id, url }).then(() => { browsers.current.add(id); }) };
+    browserCreations.current.set(id, creation);
+    void creation.promise.then(
+      () => { if (browserCreations.current.get(id) === creation) browserCreations.current.delete(id); },
+      () => { if (browserCreations.current.get(id) === creation) browserCreations.current.delete(id); },
+    );
+    return creation;
+  }, []);
   const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
     const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const settings = clonePresetSettings(defaultPresetRef.current); settings.crt.crtEmulation = false; const preset: TabPresetState = { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings, dirty: false }; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
     setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
-    void invoke('create_browser', { sessionId: id, url }).then(() => browsers.current.add(id)).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
-  }, [onError, selectSession, updateTab]);
+    void createBrowser(id, url).promise.catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
+  }, [createBrowser, onError, selectSession, updateTab]);
   const navigateBrowser = useCallback((id: string, value: string) => {
     const url = /^(?:https?:\/\/|file:\/)/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
     try { const parsed = new URL(url); if (!/^(?:https?|file):$/.test(parsed.protocol)) throw new Error('URL must use http, https, or file'); } catch (reason) { onError(`Invalid browser URL: ${String(reason)}`); return; }
     setAddressTabId(null);
-    const command = browsers.current.has(id) ? 'navigate_browser' : 'create_browser';
-    void invoke(command, { sessionId: id, url }).then(() => { browsers.current.add(id); updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'web' as const, status: 'running', title: `${current.ordinal}. ${new URL(url).hostname}` } : current); }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'home' as const, status: 'failed' } : current); onError(`Browser navigation failed: ${String(reason)}`); });
-  }, [onError, updateTab]);
+    const pending = browserCreations.current.get(id);
+    const navigation = pending
+      ? pending.promise.then(() => pending.url === url ? undefined : invoke('navigate_browser', { sessionId: id, url }))
+      : browsers.current.has(id) ? invoke('navigate_browser', { sessionId: id, url }) : createBrowser(id, url).promise;
+    void navigation.then(() => { browsers.current.add(id); updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'web' as const, status: 'running', title: `${current.ordinal}. ${new URL(url).hostname}` } : current); }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'home' as const, status: 'failed' } : current); onError(`Browser navigation failed: ${String(reason)}`); });
+  }, [createBrowser, onError, updateTab]);
   const closeSession = useCallback(async (id: string, skipConfirmation = false, preserveWindow = false) => {
     const tab = tabsRef.current.find((item) => item.id === id); const record = sessions.current.get(id);
     if (tab?.kind === 'browser') { const nativeBrowser = browsers.current.delete(id); recentTabs.current = recentTabs.current.filter((item) => item !== id); const next = adjacentTabId(tabsRef.current, id); const remaining = renumberTabs(tabsRef.current.filter((item) => item.id !== id)); let focusTerminal = false; setAddressTabId((current) => current === id ? null : current); nextOrdinal.current = remaining.length + 1; tabsRef.current = remaining; setTabs((current) => renumberTabs(current.filter((item) => item.id !== id))); if (activeRef.current === id) { const targetId = next ?? remaining[0]?.id; if (targetId) { focusTerminal = sessions.current.has(targetId); selectSession(targetId); } else try { await getCurrentWindow().close(); } catch (reason) { onError(`Could not close application: ${String(reason)}`); } } const restoreTerminalFocus = () => { if (focusTerminal) window.requestAnimationFrame(() => outputRef.current?.focus()); }; if (nativeBrowser) void invoke('close_browser', { sessionId: id }).catch((reason) => onError(`Browser close failed: ${String(reason)}`)).finally(restoreTerminalFocus); else restoreTerminalFocus(); return; }

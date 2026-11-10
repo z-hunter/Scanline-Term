@@ -226,6 +226,7 @@ export function SettingsPanel({
   const copySmoothScrollDiagnostics = () => void navigator.clipboard.writeText(getSmoothScrollDiagnostics()).then(() => setScrollDiagnosticsCopied(true)).catch(() => setScrollDiagnosticsCopied(false));
   const copyGeometryDiagnostics = () => void navigator.clipboard.writeText(getGeometryDiagnostics()).then(() => setGeometryDiagnosticsCopied(true)).catch(() => setGeometryDiagnosticsCopied(false));
   const screenProfile = profileFromLegacyPreset({ version: 1, resolution: stored.resolution, crt: stored.crt });
+  const browserCrtSettingsEnabled = browserCrtEnabled && stored.crt.crtEmulation;
   const updateProfile = (profile: ScreenProfile) => setStored((current) => ({
     ...current,
     resolution: profile.virtualScreen.modeId as ResolutionId,
@@ -364,13 +365,13 @@ export function SettingsPanel({
         </label>
       </SettingsAccordionSection>}
       {browserTabActive && <fieldset className="preset-controls">
-        {browserCrtEnabled && presetSection(false, 2)}
-        <SettingsAccordionSection id="crt" number={browserCrtEnabled ? 3 : 2} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} onToggle={() => toggleSection('crt')}>
+        {browserCrtSettingsEnabled && presetSection(false, 2)}
+        <SettingsAccordionSection id="crt" number={browserCrtSettingsEnabled ? 3 : 2} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} onToggle={() => toggleSection('crt')}>
           <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
         </SettingsAccordionSection>
       </fieldset>}
 
-      <SettingsAccordionSection id="ui" number={browserTabActive ? (browserCrtEnabled ? 4 : 3) : 4} title="UI" icon="ui" expanded={Boolean(expandedSections.ui)} onToggle={() => toggleSection('ui')}>
+      <SettingsAccordionSection id="ui" number={browserTabActive ? (browserCrtSettingsEnabled ? 4 : 3) : 4} title="UI" icon="ui" expanded={Boolean(expandedSections.ui)} onToggle={() => toggleSection('ui')}>
         <Switch label="RMB menu in term." checked={stored.rmbMenuInTerm} onChange={(rmbMenuInTerm) => setStored((current) => ({ ...current, rmbMenuInTerm }))} />
         <Switch label="Tab switch animation" checked={stored.channelSwitchEffect} onChange={(channelSwitchEffect) => setStored((current) => ({ ...current, channelSwitchEffect }))} />
         <div className="host-setting-block">
@@ -393,7 +394,7 @@ export function SettingsPanel({
         </label>
       </SettingsAccordionSection>
 
-      <SettingsAccordionSection id="system" number={browserTabActive ? (browserCrtEnabled ? 5 : 4) : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
+      <SettingsAccordionSection id="system" number={browserTabActive ? (browserCrtSettingsEnabled ? 5 : 4) : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>
         <LuaAutomationPanel status={luaAutomationStatus} reload={reloadLuaConfig} onError={onError} available={luaAutomationAvailable} />
         {showDefaultPreset && <label className="host-select-control">
           Default preset for new tabs

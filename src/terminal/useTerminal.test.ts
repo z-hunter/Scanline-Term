@@ -439,6 +439,32 @@ describe('terminal launch event', () => {
     container.remove(); frame.remove(); vi.restoreAllMocks();
   });
 
+  it('shares an in-flight WebView creation with address navigation for the same browser tab', async () => {
+    mocked.handlers.clear();
+    mocked.invoke.mockReset();
+    let finishCreate!: (value: unknown) => void;
+    mocked.invoke.mockImplementation((command: string) => command === 'create_browser'
+      ? new Promise((resolve) => { finishCreate = resolve; })
+      : Promise.resolve({}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    function TestComponent() {
+      const result = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, onError: vi.fn(), onToggleSettings: vi.fn() });
+      useEffect(() => { hookResult = result; });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { hookResult.openBrowser('https://example.com'); });
+    const browserId = hookResult.activeTabId!;
+    await act(async () => { hookResult.navigateBrowser(browserId, 'https://example.com'); });
+    expect(mocked.invoke.mock.calls.filter(([command]) => command === 'create_browser')).toHaveLength(1);
+    await act(async () => { finishCreate({}); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(mocked.invoke.mock.calls.filter(([command]) => command === 'navigate_browser')).toHaveLength(0);
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('uses the managed default only for future implicit tabs and lets explicit launch presets win', async () => {
     mocked.handlers.clear();
     mocked.invoke.mockReset();

@@ -108,7 +108,6 @@ export default function App() {
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
   const [gallerySnapshot, setGallerySnapshot] = useState<{ activeId: string | null; frames: ReadonlyMap<string, GalleryFrame>; originRect: DOMRect | null } | null>(null);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
-  const [browserCrtReady, setBrowserCrtReady] = useState(false);
   const [presetPickerInitial, setPresetPickerInitial] = useState<TabPresetState | null>(null);
   const [presetPickerTabId, setPresetPickerTabId] = useState<string | null>(null);
   const presetPickerRequest = useRef(0);
@@ -116,6 +115,7 @@ export default function App() {
   const presetPickerTabIdRef = useRef<string | null>(null);
   const activeTabIdRef = useRef<string | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
+  const browserPreviewTabId = useRef<string | null>(null);
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
   const galleryMenuRef = useRef(false);
@@ -642,7 +642,7 @@ export default function App() {
     onError: reportError,
     onResizeSource: terminal.resizeSource,
     onFrame: TERMINAL_GEOMETRY_DIAGNOSTICS ? terminal.recordFirstDraw : undefined,
-    enabled: (!activeBrowser || browserCrtEnabled) && !galleryOpen,
+    enabled: (!activeBrowser || browserCrtEnabled || presetPickerOpen) && !galleryOpen,
   });
   useEffect(() => {
     const frame = screenRef.current;
@@ -817,11 +817,12 @@ export default function App() {
     if (!isTauri()) return;
     const update = () => {
       const rect = screenRef.current?.getBoundingClientRect();
-      const keepRendererLive = browserCrtEnabled && browserCrtReady && activeBrowser?.page === "web" && !galleryOpen;
-      // Hidden WebView2 instances throttle rendering; clip this visible child outside the host window instead.
+      const showBrowser = !galleryOpen && !presetPickerOpen && activeBrowser?.page === "web";
+      const keepRendererLive = browserCrtEnabled && showBrowser;
+      // Keep the child offscreen from the first frame so it cannot cover CRT output; hiding it throttles WebView2 rendering.
       const payload = {
-        sessionId: !galleryOpen && activeBrowser?.page === "web" ? activeBrowserId : null,
-        bounds: !galleryOpen && activeBrowser?.page === "web" && rect ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height } : undefined,
+        sessionId: showBrowser ? activeBrowserId : null,
+        bounds: showBrowser && rect ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height } : undefined,
       };
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
@@ -830,14 +831,18 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => observer.disconnect();
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, browserCrtEnabled, browserCrtReady, galleryOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
-  useEffect(() => { setBrowserCrtReady(false); }, [activeBrowserId, browserCrtEnabled]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, browserCrtEnabled, galleryOpen, presetPickerOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
   useEffect(() => {
     const canvas = outputRef.current;
     const browser = activeBrowser;
-    if (!canvas || !browser || !browserCrtEnabled || browser.page !== "web" || galleryOpen || !isTauri()) {
+    if (!canvas || !browser || (!browserCrtEnabled && !presetPickerOpen) || browser.page !== "web" || galleryOpen || !isTauri()) {
       terminal.renderer?.setBrowserPreview(null);
+      browserPreviewTabId.current = null;
       return;
+    }
+    if (browserPreviewTabId.current !== browser.id) {
+      terminal.renderer?.setBrowserPreview(null);
+      browserPreviewTabId.current = browser.id;
     }
     let disposed = false;
     let busy = false;
@@ -864,7 +869,7 @@ export default function App() {
       image.onload = () => {
         if (disposed) return;
         terminal.renderer?.setBrowserPreview(image);
-        setBrowserCrtReady(true);
+        browserPreviewTabId.current = browser.id;
         const canvas = galleryFramesRef.current.get(browser.id)?.canvas ?? document.createElement("canvas");
         const scale = Math.min(1, 800 / image.naturalWidth);
         const width = Math.round(image.naturalWidth * scale);
@@ -914,10 +919,10 @@ export default function App() {
     };
     canvas.addEventListener("mousedown", mouse, true); canvas.addEventListener("mouseup", mouse, true); canvas.addEventListener("mousemove", mouse, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: false }); canvas.addEventListener("contextmenu", contextMenu, true); canvas.addEventListener("keydown", key, true); canvas.addEventListener("keyup", key, true);
     return () => {
-      disposed = true; window.clearInterval(timer); unlisten?.(); terminal.renderer?.setBrowserPreview(null);
+      disposed = true; window.clearInterval(timer); unlisten?.();
       canvas.removeEventListener("mousedown", mouse, true); canvas.removeEventListener("mouseup", mouse, true); canvas.removeEventListener("mousemove", mouse, true); canvas.removeEventListener("wheel", wheel, true); canvas.removeEventListener("contextmenu", contextMenu, true); canvas.removeEventListener("keydown", key, true); canvas.removeEventListener("keyup", key, true);
     };
-  }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, galleryOpen, outputRef, reportError, terminal.renderer]);
+  }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, terminal.renderer]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -1255,7 +1260,7 @@ export default function App() {
           >
             <canvas
               ref={outputRef}
-              className={`output-canvas${activeBrowser && !browserCrtEnabled ? " browser-hidden" : ""}`}
+              className={`output-canvas${activeBrowser && !browserCrtEnabled && !presetPickerOpen ? " browser-hidden" : ""}`}
               data-testid="output-canvas"
               tabIndex={terminal.live || (activeBrowser && browserCrtEnabled) ? 0 : -1}
               aria-label={terminal.live ? "Windows console" : "CRT display"}
