@@ -841,16 +841,25 @@ export default function App() {
     }
     let disposed = false;
     let busy = false;
+    let consecutiveCaptureFailures = 0;
     let timer = 0;
     let unlisten: (() => void) | undefined;
+    const captureFailed = (reason: unknown) => {
+      busy = false;
+      if (++consecutiveCaptureFailures === 3) reportError(`Browser frame capture failed: ${String(reason)}`);
+    };
     const dispatch = (method: string, params: Record<string, unknown>) => {
       void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => reportError(`Browser experiment input failed: ${String(reason)}`));
     };
     const onFrame = (event: { payload: { sessionId: string; data?: string; error?: string } }) => {
       if (event.payload.sessionId !== browser.id) return;
-      if (event.payload.error) { busy = false; reportError(`Browser frame capture failed: ${event.payload.error}`); return; }
+      if (event.payload.error) {
+        captureFailed(event.payload.error);
+        return;
+      }
       busy = false;
       if (!event.payload.data) return;
+      consecutiveCaptureFailures = 0;
       const image = new Image();
       image.onload = () => {
         if (disposed) return;
@@ -880,7 +889,7 @@ export default function App() {
       timer = window.setInterval(() => {
         if (busy) return;
         busy = true;
-        void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch((reason) => { busy = false; reportError(`Browser frame capture failed: ${String(reason)}`); });
+        void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch(captureFailed);
       }, 100);
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
