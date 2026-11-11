@@ -970,6 +970,7 @@ fieldset {
 .settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005); }
 .settings-panel .settings-section-content[hidden] { display: none; }
 .settings-panel .settings-section-content > .svs-settings-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.settings-panel .browser-crt-settings > .crt-section > .svs-switch { display: none; }
 .settings-panel .settings-section[data-section-id="display"] .display-section > legend,
 .settings-panel .settings-section[data-section-id="terminal"] .terminal-section > legend,
 .settings-panel .settings-section[data-section-id="crt"] .crt-section > legend { display: none; }

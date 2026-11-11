@@ -71,6 +71,7 @@ const settingHelp: Record<string, string> = {
   'Bezel highlight': 'Set the brightness of highlights along the monitor frame.',
   'Monitor frame': 'Show the simulated physical monitor frame around the screen.',
   'Browser form factor': 'Choose the viewport aspect ratio used for browser tabs.',
+  'Lossless capture (slow)': 'Use PNG instead of JPEG for browser CRT frames.',
   'RMB menu in term.': 'Show the context menu when right-clicking inside the terminal.',
   'Tab switch animation': 'Briefly rolls the image during tab changes, like a momentary loss of scan sync. Works with CRT emulation on or off.',
   'Tab placement': 'Place the tab bar to the left of or above the monitor.',
@@ -107,6 +108,9 @@ export function SettingsPanel({
   terminalSize,
   fps,
   browserFps = 0,
+  browserCaptureMetrics = '',
+  browserCaptureFormat,
+  onBrowserCaptureFormatChange,
   appVersion,
   presetState = null,
   cursorStyleOverridden = false,
@@ -142,6 +146,9 @@ export function SettingsPanel({
   terminalSize: { cols: number; rows: number };
   fps: number;
   browserFps?: number;
+  browserCaptureMetrics?: string;
+  browserCaptureFormat?: 'jpeg' | 'png';
+  onBrowserCaptureFormatChange?: (format: 'jpeg' | 'png') => void;
   appVersion: string;
   presetState?: TabPresetState | null;
   cursorStyleOverridden?: boolean;
@@ -327,6 +334,7 @@ export function SettingsPanel({
           <button type="button" className="settings-home-button" data-testid="settings-home" aria-label="Open Scanline Term home" title="Open Scanline Term home" onClick={onOpenHome}>?</button>
         </div>
         <p className="display-status">{browserTabActive ? `BROWSER TAB · FPS: ${browserFps}` : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
+        {browserTabActive && browserCaptureMetrics && <p className="display-status">{browserCaptureMetrics}</p>}
       </header>
 
       {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'}>
@@ -371,7 +379,13 @@ export function SettingsPanel({
       {browserTabActive && <fieldset className="preset-controls">
         {browserCrtSettingsEnabled && presetSection(false, 2)}
         <SettingsAccordionSection id="crt" number={browserCrtSettingsEnabled ? 3 : 2} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} onToggle={() => toggleSection('crt')}>
-          <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+          {browserCaptureFormat && onBrowserCaptureFormatChange
+            ? <div className="browser-crt-settings">
+              <Switch label="CRT Emulation" checked={screenProfile.crt.crtEmulation} className="browser-crt-emulation" onChange={(crtEmulation) => updateProfile({ ...screenProfile, crt: { ...screenProfile.crt, crtEmulation } })} />
+              {screenProfile.crt.crtEmulation && <Switch label="Lossless capture (slow)" checked={browserCaptureFormat === 'png'} onChange={(enabled) => onBrowserCaptureFormatChange(enabled ? 'png' : 'jpeg')} />}
+              <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
+            </div>
+            : <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />}
         </SettingsAccordionSection>
       </fieldset>}
 

@@ -184,6 +184,39 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
+  it('places lossless browser capture below CRT Emulation and hides it when CRT is off', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    const props = {
+      ...defaultProps,
+      browserTabActive: true,
+      browserCrtEnabled: true,
+      browserCaptureFormat: 'jpeg' as const,
+      onBrowserCaptureFormatChange: vi.fn(),
+      stored: { ...defaultProps.stored, crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: true } },
+    };
+    await act(async () => { root.render(createElement(SettingsPanel, props)); });
+
+    const browserCRT = container.querySelector('.browser-crt-settings')!;
+    const controls = Array.from(browserCRT.children);
+    expect(controls[0].querySelector('.svs-switch-label')?.textContent).toBe('CRT Emulation');
+    expect(controls[1].querySelector('.svs-switch-label')?.textContent).toBe('Lossless capture (slow)');
+    expect(controls[2].classList.contains('crt-section')).toBe(true);
+    await act(async () => { controls[1].querySelector<HTMLInputElement>('input')?.click(); });
+    expect(props.onBrowserCaptureFormatChange).toHaveBeenCalledWith('png');
+
+    await act(async () => {
+      root.render(createElement(SettingsPanel, {
+        ...props,
+        stored: { ...props.stored, crt: { ...props.stored.crt, crtEmulation: false } },
+      }));
+    });
+    expect(container.querySelector('.browser-crt-settings')?.textContent).not.toContain('Lossless capture (slow)');
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('shows and updates the Disable AI assistant switch', async () => {
     let currentStored = defaultProps.stored;
     const setStored = vi.fn((updater) => {

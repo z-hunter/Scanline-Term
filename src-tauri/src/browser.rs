@@ -1,8 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
 
 use tauri::{webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
-use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2};
-use windows::core::HSTRING;
+use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2, take_pwstr};
+use windows::core::{HSTRING, PWSTR};
 
 type BrowserId = String;
 
@@ -18,7 +18,7 @@ impl BrowserState {
 }
 
 #[derive(Default)]
-pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, active: Option<BrowserId>, bounds: Option<BrowserBounds> }
+pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds> }
 
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,16 +102,6 @@ fn browser_color_value(value: &str) -> Option<String> {
     }
 }
 
-fn browser_frame_payload(session_id: &str, response: &str) -> serde_json::Value {
-    let data = serde_json::from_str::<serde_json::Value>(response)
-        .ok()
-        .and_then(|value| value.get("data").and_then(serde_json::Value::as_str).map(str::to_owned));
-    match data {
-        Some(data) => serde_json::json!({ "sessionId": session_id, "data": data }),
-        None => serde_json::json!({ "sessionId": session_id, "error": "capture response did not contain image data" }),
-    }
-}
-
 fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option<String>) -> Result<(), String> {
     let state = app.state::<BrowserState>();
     valid_id(&session_id)?;
@@ -130,6 +120,35 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
             .on_document_title_changed(move |_, title| { if let Some((_, raw_color)) = title.rsplit_once('\u{2063}') { if let Some(color) = browser_color_value(raw_color) { let _ = app_for_title.emit("browser-color", serde_json::json!({ "sessionId": id, "background": color })); return; } } let _ = app_for_title.emit("browser-title", serde_json::json!({ "sessionId": id, "title": title })); }),
         LogicalPosition::new(0.0, 0.0), LogicalSize::new(1.0, 1.0)
     ).map_err(|e| e.to_string())?;
+    let screencast_active = Arc::new(AtomicBool::new(false));
+    let event_active = screencast_active.clone();
+    let app_for_frames = app.clone();
+    let frame_session_id = session_id.clone();
+    let event_error_session_id = session_id.clone();
+    let store_session_id = session_id.clone();
+    let app_for_event_setup_error = app.clone();
+    browser.with_webview(move |platform| unsafe {
+        let result = (|| -> windows::core::Result<()> {
+            let core: ICoreWebView2 = platform.controller().CoreWebView2()?;
+            let receiver = core.GetDevToolsProtocolEventReceiver(&HSTRING::from("Page.screencastFrame"))?;
+            let handler = DevToolsProtocolEventReceivedEventHandler::create(Box::new(move |_, args| {
+                if !event_active.load(Ordering::Relaxed) { return Ok(()); }
+                let Some(args) = args else { return Ok(()); };
+                let mut json = PWSTR::null();
+                args.ParameterObjectAsJson(&mut json)?;
+                let payload = serde_json::from_str::<serde_json::Value>(&take_pwstr(json)).unwrap_or_default();
+                let data = payload.get("data").and_then(serde_json::Value::as_str);
+                let screencast_session_id = payload.get("sessionId").and_then(serde_json::Value::as_i64);
+                if let (Some(data), Some(screencast_session_id)) = (data, screencast_session_id) {
+                    let _ = app_for_frames.emit("browser-experiment-frame", serde_json::json!({ "sessionId": frame_session_id, "screencastSessionId": screencast_session_id, "data": data }));
+                }
+                Ok(())
+            }));
+            let mut token = 0;
+            receiver.add_DevToolsProtocolEventReceived(&handler, &mut token)
+        })();
+        if let Err(error) = result { let _ = app_for_event_setup_error.emit("browser-experiment-frame", serde_json::json!({ "sessionId": event_error_session_id, "error": error.to_string() })); }
+    }).map_err(|e| e.to_string())?;
     browser.hide().map_err(|e| e.to_string())?;
     let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
     if state.active.as_deref() == Some(&session_id) {
@@ -137,6 +156,7 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
         browser.show().map_err(|e| e.to_string())?; trace(&app, "show-after-create", &session_id, state.bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
     }
     state.webviews.insert(session_id, browser);
+    state.screencast_active.insert(store_session_id, screencast_active);
     Ok(())
 }
 
@@ -156,13 +176,17 @@ pub fn navigate_browser(app: tauri::AppHandle, state: State<BrowserState>, sessi
 #[tauri::command]
 pub fn browser_devtools(app: tauri::AppHandle, state: State<BrowserState>, session_id: BrowserId, method: String, params: serde_json::Value) -> Result<(), String> {
     valid_id(&session_id)?;
-    if !matches!(method.as_str(), "Page.captureScreenshot" | "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent") { return Err("unsupported browser experiment command".into()); }
+    if !matches!(method.as_str(), "Page.startScreencast" | "Page.stopScreencast" | "Page.screencastFrameAck" | "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent") { return Err("unsupported browser experiment command".into()); }
     let params = serde_json::to_string(&params).map_err(|error| error.to_string())?;
     let browser_state = state.0.lock().map_err(|_| "browser state is unavailable")?;
     let browser = browser_state.webviews.get(&session_id).ok_or("browser is not running")?;
     let app_for_callback = app.clone();
     let id_for_callback = session_id.clone();
-    let capture = method == "Page.captureScreenshot";
+    let id_for_error = session_id.clone();
+    let screencast_active = browser_state.screencast_active.get(&session_id).cloned().ok_or("browser screencast is unavailable")?;
+    if method == "Page.startScreencast" { screencast_active.store(true, Ordering::Relaxed); }
+    if method == "Page.stopScreencast" { screencast_active.store(false, Ordering::Relaxed); }
+    let capture = method == "Page.startScreencast";
     browser.with_webview(move |platform| unsafe {
         let result = (|| -> windows::core::Result<()> {
             let core: ICoreWebView2 = platform.controller().CoreWebView2()?;
@@ -171,15 +195,12 @@ pub fn browser_devtools(app: tauri::AppHandle, state: State<BrowserState>, sessi
             let callback = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |status, response| {
                 if let Err(error) = status {
                     if capture { let _ = app_for_callback.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_callback, "error": error.to_string() })); }
-                } else if capture {
-                    let payload = browser_frame_payload(&id_for_callback, &response);
-                    let _ = app_for_callback.emit("browser-experiment-frame", payload);
-                }
+                } else { let _ = response; }
                 Ok(())
             }));
             core.CallDevToolsProtocolMethod(&method, &params, &callback)
         })();
-        if let Err(error) = result { if capture { let _ = app.emit("browser-experiment-frame", serde_json::json!({ "sessionId": session_id, "error": error.to_string() })); } }
+        if let Err(error) = result { if capture { let _ = app.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_error, "error": error.to_string() })); } }
     }).map_err(|error| error.to_string())
 }
 
@@ -211,21 +232,14 @@ pub fn close_browser(state: State<BrowserState>, session_id: BrowserId) -> Resul
     valid_id(&session_id)?;
     let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
     if state.active.as_deref() == Some(&session_id) { state.active = None; }
+    if let Some(active) = state.screencast_active.remove(&session_id) { active.store(false, Ordering::Relaxed); }
     if let Some(browser) = state.webviews.remove(&session_id) { browser.close().map_err(|e| e.to_string())?; }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_color_value, browser_frame_payload, browser_shortcut, browser_target_url, browser_url};
-
-    #[test]
-    fn browser_frame_response_always_has_data_or_error() {
-        let id = "11111111-1111-1111-1111-111111111111";
-        assert_eq!(browser_frame_payload(id, r#"{"data":"jpeg"}"#), serde_json::json!({ "sessionId": id, "data": "jpeg" }));
-        assert_eq!(browser_frame_payload(id, "not json"), serde_json::json!({ "sessionId": id, "error": "capture response did not contain image data" }));
-        assert_eq!(browser_frame_payload(id, r#"{"data":false}"#), serde_json::json!({ "sessionId": id, "error": "capture response did not contain image data" }));
-    }
+    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url};
 
     #[test]
     fn accepts_only_http_urls() {

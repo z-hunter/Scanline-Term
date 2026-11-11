@@ -135,6 +135,8 @@ export default function App() {
     height: typeof window !== "undefined" ? window.innerHeight : 960,
   }));
   const [browserFps, setBrowserFps] = useState(0);
+  const [browserCaptureMetrics, setBrowserCaptureMetrics] = useState("");
+  const [browserCaptureFormat, setBrowserCaptureFormat] = useState<"jpeg" | "png">("jpeg");
   const [tabSpace, setTabSpace] = useState(36);
   const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
   const lastUndisturbedWidth = useRef(0);
@@ -861,6 +863,7 @@ export default function App() {
     const browser = activeBrowser;
     if (!canvas || !browser || (!browserCrtEnabled && !presetPickerOpen) || browser.page !== "web" || galleryOpen || !isTauri()) {
       setBrowserFps(0);
+      setBrowserCaptureMetrics("");
       terminal.renderer?.setBrowserPreview(null);
       browserPreviewTabId.current = null;
       return;
@@ -872,31 +875,49 @@ export default function App() {
     let disposed = false;
     let busy = false;
     let consecutiveCaptureFailures = 0;
-    let timer = 0;
     let fpsTimer = 0;
     let decodedFrames = 0;
+    let frameIntervalTotal = 0;
+    let decodeMsTotal = 0;
+    let frameBytesTotal = 0;
+    let frameWidth = 0;
+    let frameHeight = 0;
+    let previousFrameAt = 0;
     let unlisten: (() => void) | undefined;
     setBrowserFps(0);
+    setBrowserCaptureMetrics("Measuring capture pipeline…");
     const captureFailed = (reason: unknown) => {
       busy = false;
-      if (++consecutiveCaptureFailures === 3) reportError(`Browser frame capture failed: ${String(reason)}`);
+      if (++consecutiveCaptureFailures === 3) reportError(`Browser screencast failed: ${String(reason)}`);
     };
     const dispatch = (method: string, params: Record<string, unknown>) => {
       void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => reportError(`Browser experiment input failed: ${String(reason)}`));
     };
-    const onFrame = (event: { payload: { sessionId: string; data?: string; error?: string } }) => {
+    const onFrame = (event: { payload: { sessionId: string; screencastSessionId?: number; data?: string; error?: string } }) => {
       if (event.payload.sessionId !== browser.id) return;
       if (event.payload.error) {
-        captureFailed(event.payload.error);
+        reportError(`Browser screencast failed: ${event.payload.error}`);
         return;
       }
-      if (!event.payload.data) { busy = false; return; }
+      if (!event.payload.data || event.payload.screencastSessionId === undefined) return;
+      if (busy) {
+        dispatch("Page.screencastFrameAck", { sessionId: event.payload.screencastSessionId });
+        return;
+      }
+      busy = true;
+      const eventReceivedAt = performance.now();
       consecutiveCaptureFailures = 0;
       const image = new Image();
       image.onload = () => {
         busy = false;
         if (disposed) return;
         decodedFrames += 1;
+        if (previousFrameAt) frameIntervalTotal += eventReceivedAt - previousFrameAt;
+        previousFrameAt = eventReceivedAt;
+        decodeMsTotal += performance.now() - eventReceivedAt;
+        frameBytesTotal += Math.floor(event.payload.data!.length * 0.75);
+        frameWidth = image.naturalWidth;
+        frameHeight = image.naturalHeight;
         terminal.renderer?.setBrowserPreview(image);
         browserPreviewTabId.current = browser.id;
         const canvas = galleryFramesRef.current.get(browser.id)?.canvas ?? document.createElement("canvas");
@@ -914,19 +935,30 @@ export default function App() {
             showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel),
           });
         }
+        dispatch("Page.screencastFrameAck", { sessionId: event.payload.screencastSessionId });
       };
-      image.onerror = () => { busy = false; };
-      image.src = `data:image/jpeg;base64,${event.payload.data}`;
+      image.onerror = () => {
+        busy = false;
+        captureFailed("frame image decode failed");
+        dispatch("Page.screencastFrameAck", { sessionId: event.payload.screencastSessionId });
+      };
+      image.src = `data:image/${browserCaptureFormat};base64,${event.payload.data}`;
     };
     void listen("browser-experiment-frame", onFrame).then((stop) => {
       if (disposed) { stop(); return; }
       unlisten = stop;
-      fpsTimer = window.setInterval(() => { setBrowserFps(decodedFrames); decodedFrames = 0; }, 1000);
-      timer = window.setInterval(() => {
-        if (busy) return;
-        busy = true;
-        void invoke("browser_devtools", { sessionId: browser.id, method: "Page.captureScreenshot", params: { format: "jpeg", quality: 65 } }).catch(captureFailed);
-      }, 1000 / 30);
+      fpsTimer = window.setInterval(() => {
+        const count = decodedFrames;
+        setBrowserFps(count);
+        if (import.meta.env.DEV) setBrowserCaptureMetrics(count
+          ? `STREAM ${Math.round(frameIntervalTotal / Math.max(1, count - 1))} ms · DECODE ${Math.round(decodeMsTotal / count)} ms · ${browserCaptureFormat.toUpperCase()} ${Math.round(frameBytesTotal / count / 1024)} KiB @ ${frameWidth}×${frameHeight}`
+          : "Waiting for browser frames");
+        decodedFrames = 0;
+        frameIntervalTotal = 0;
+        decodeMsTotal = 0;
+        frameBytesTotal = 0;
+      }, 1000);
+      dispatch("Page.startScreencast", { format: browserCaptureFormat, quality: 65, everyNthFrame: 1 });
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
       const rect = canvas.getBoundingClientRect();
@@ -957,10 +989,10 @@ export default function App() {
     };
     canvas.addEventListener("mousedown", mouse, true); canvas.addEventListener("mouseup", mouse, true); canvas.addEventListener("mousemove", mouse, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: false }); canvas.addEventListener("contextmenu", contextMenu, true); canvas.addEventListener("keydown", key, true); canvas.addEventListener("keyup", key, true);
     return () => {
-      disposed = true; window.clearInterval(timer); window.clearInterval(fpsTimer); unlisten?.();
+      disposed = true; window.clearInterval(fpsTimer); dispatch("Page.stopScreencast", {}); unlisten?.();
       canvas.removeEventListener("mousedown", mouse, true); canvas.removeEventListener("mouseup", mouse, true); canvas.removeEventListener("mousemove", mouse, true); canvas.removeEventListener("wheel", wheel, true); canvas.removeEventListener("contextmenu", contextMenu, true); canvas.removeEventListener("keydown", key, true); canvas.removeEventListener("keyup", key, true);
     };
-  }, [activeBrowser?.id, activeBrowser?.page, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, terminal.renderer]);
+  }, [activeBrowser?.id, activeBrowser?.page, browserCaptureFormat, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, terminal.renderer]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -1386,6 +1418,9 @@ export default function App() {
           terminalSize={terminal.size}
           fps={fps}
           browserFps={browserFps}
+          browserCaptureMetrics={browserCaptureMetrics}
+          browserCaptureFormat={import.meta.env.DEV ? browserCaptureFormat : undefined}
+          onBrowserCaptureFormatChange={import.meta.env.DEV ? setBrowserCaptureFormat : undefined}
           appVersion={appVersion}
           presetState={activePresetState}
           cursorStyleOverridden={terminal.cursorStyleOverridden}
