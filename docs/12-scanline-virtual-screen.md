@@ -17,7 +17,7 @@ The SVS repository is the technical source of truth for its architecture, public
 `package.json` pins SVS to an immutable Git commit. Do not replace it with a branch name or a mutable tag during normal application work.
 
 ```json
-"scanline-virtual-screen": "https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/1d9f9d2704ef4a4ac72c44c2cfe682e5a8dbe0a6"
+"scanline-virtual-screen": "https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/fb9bcffbd05e9baf8af8d65606363fe1ddd65896"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
