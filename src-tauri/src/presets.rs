@@ -13,7 +13,8 @@ const MAX_FILE_BYTES: u64 = 64 * 1024;
 const RENAMED_BUNDLED_PRESETS: &[(&str, &str)] = &[
     ("no CRT.json", "Clean - No CRT.json"),
     ("Trinitron touch.json", "Clean - Trinitron touch.json"),
-    ("Modern CRT (00x).json", "Modern CRT (2010).json"),
+    ("Modern CRT (00x).json", "Clean - Modern CRT.json"),
+    ("Modern CRT (2010).json", "Clean - Modern CRT.json"),
     ("WapourWare 2.json", "VapourWare 2.json"),
 ];
 
@@ -453,6 +454,42 @@ mod tests {
             .unwrap();
         seed_bundled_presets_from(&bundled, &user).unwrap();
         assert_eq!(fs::read_to_string(&old).unwrap(), r#"{"version":3}"#);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn renamed_modern_crt_preset_replaces_an_older_user_copy() {
+        let root = std::env::temp_dir().join(format!(
+            "scanline-modern-crt-rename-{}",
+            std::process::id()
+        ));
+        let bundled = root.join("bundled");
+        let user = root.join("user");
+        fs::create_dir_all(&bundled).unwrap();
+        fs::create_dir_all(&user).unwrap();
+        let source = bundled.join("Clean - Modern CRT.json");
+        let old = user.join("Modern CRT (2010).json");
+        fs::write(&source, r#"{"version":2}"#).unwrap();
+        fs::write(&old, r#"{"version":1}"#).unwrap();
+        let now = SystemTime::now();
+        OpenOptions::new()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(now))
+            .unwrap();
+        OpenOptions::new()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(now - std::time::Duration::from_secs(1)))
+            .unwrap();
+        seed_bundled_presets_from(&bundled, &user).unwrap();
+        assert!(!old.exists());
+        assert_eq!(
+            fs::read_to_string(user.join("Clean - Modern CRT.json")).unwrap(),
+            r#"{"version":2}"#
+        );
         let _ = fs::remove_dir_all(root);
     }
 
