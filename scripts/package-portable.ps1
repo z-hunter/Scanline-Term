@@ -24,6 +24,7 @@ Copy-Item -LiteralPath $mcpBinary -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\conpty") -Destination $stage -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\fonts") -Destination $stage -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destination $stage -Recurse
+New-Item -ItemType Directory -Path (Join-Path $stage "palettes") -Force | Out-Null
 Copy-Item -Path (Join-Path $root "src-tauri\resources\palettes\*") -Destination (Join-Path $stage "palettes") -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\window-icon.ico") -Destination $stage
 $luaSource = Join-Path $root "examples\lua"
