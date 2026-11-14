@@ -541,11 +541,10 @@ pub(crate) fn publish_candidate(
 
 #[tauri::command]
 pub fn caps_policy_ack(
-    window: tauri::WebviewWindow,
     hook: State<'_, CapsHook>,
     ack: PolicyLease,
 ) -> bool {
-    window.label() == "main" && hook.acknowledge(ack)
+    hook.acknowledge(ack)
 }
 
 #[cfg(windows)]
