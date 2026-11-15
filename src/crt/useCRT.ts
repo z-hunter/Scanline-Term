@@ -9,18 +9,20 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   useEffect(() => { 
     const output = outputRef.current; if (!output) return; 
-    let screen = new VirtualScreenRenderer(output);
+    let screen: VirtualScreenRenderer | null = new VirtualScreenRenderer(output);
     screenRef.current = screen;
+    renderer.setRasterScale(screen.rasterScale);
 
     let raf = 0; let reported = false; let renderFailed = false; let breathingPrimed = false; let count = 0; let started = performance.now();
     
     let initialResize = true;
-    const onContextLost = (event: Event) => { event.preventDefault(); renderFailed = true; screen.dispose(); screenRef.current = null; };
+    const onContextLost = (event: Event) => { event.preventDefault(); renderFailed = true; screen?.dispose(); screen = null; screenRef.current = null; renderer.setRasterScale(1); };
     const onContextRestored = () => {
       try {
-        screen = new VirtualScreenRenderer(output);
-        screenRef.current = screen;
-        screen.clearPersistence();
+        const restored = new VirtualScreenRenderer(output);
+        screen = restored;
+        screenRef.current = restored;
+        renderer.setRasterScale(restored.rasterScale);
         renderFailed = false;
         reported = false;
         breathingPrimed = false;
@@ -42,7 +44,7 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
       onResizeSource(output, initialResize ? 'crt-initial' : 'output-resize-observer');
       initialResize = false;
       renderer.markDirty(); 
-      screen.clearPersistence();
+      screen?.clearPersistence();
     }; 
     let dprQuery: MediaQueryList | null = null;
     const watchDpr = () => {
@@ -56,25 +58,33 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
     window.addEventListener('resize', resize);
     watchDpr();
     
-    const render = (now: number) => { 
-      if (enabledRef.current) { 
-        const wasScrollAnimating = renderer.isScrollAnimating;
-        const changed = renderer.draw(now / 1000, settingsRef.current); 
-        if (!screen.isValid() && settingsRef.current.crtEmulation && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); }
-        if (!breathingPrimed && renderer.hasMeasuredLuma) { screen.restartBreathing(); breathingPrimed = true; }
-        let rendered = false;
-        if (!renderFailed && (changed || wasScrollAnimating || renderer.isScrollAnimating || screen.isChannelSwitchAnimating() || settingsRef.current.crtEmulation)) {
-          try { screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed); rendered = true; } catch (reason) { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
+    const render = (now: number) => {
+      try {
+        if (enabledRef.current) {
+          const changed = renderer.draw(now / 1000, settingsRef.current);
+          const activeScreen = screen;
+          if (activeScreen && !renderFailed) {
+            const wasScrollAnimating = renderer.isScrollAnimating;
+            if (!activeScreen.isValid() && settingsRef.current.crtEmulation && !reported) { reported = true; onError('WebGL is unavailable in this WebView.'); }
+            if (!breathingPrimed && renderer.hasMeasuredLuma) { activeScreen.restartBreathing(); breathingPrimed = true; }
+            let rendered = false;
+            if (changed || wasScrollAnimating || renderer.isScrollAnimating || activeScreen.isChannelSwitchAnimating() || settingsRef.current.crtEmulation) {
+              try { activeScreen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed); renderer.setRasterScale(activeScreen.rasterScale); rendered = true; } catch (reason) { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
+            }
+            if (rendered) onFrame?.(output, now, changed);
+          }
+          count += 1;
         }
-        if (rendered) onFrame?.(output, now, changed);
-        count += 1; 
-      } 
-      if (now - started >= 500) { 
-        setFps(Math.round(count * 1000 / (now - started))); 
-        count = 0; started = now; 
-      } 
-      raf = requestAnimationFrame(render); 
-    }; 
+        if (now - started >= 500) {
+          setFps(Math.round(count * 1000 / (now - started)));
+          count = 0; started = now;
+        }
+      } catch (reason) {
+        if (!renderFailed) { renderFailed = true; onError(`Screen frame failed: ${String(reason)}`); }
+      } finally {
+        raf = requestAnimationFrame(render);
+      }
+    };
     
     raf = requestAnimationFrame(render); 
     return () => { 
@@ -84,8 +94,9 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
       output.removeEventListener('webglcontextlost', onContextLost);
       output.removeEventListener('webglcontextrestored', onContextRestored);
       dprQuery?.removeEventListener('change', onDprChange);
-      screen.dispose();
+      screen?.dispose();
       screenRef.current = null;
+      renderer.setRasterScale(1);
     }; 
   }, [onError, onFrame, onResizeSource, renderer, settingsRef]);
   useEffect(() => { screenRef.current?.clearPersistence(); }, [resolution]);
@@ -96,6 +107,7 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
     const changed = renderer.draw(performance.now() / 1000, settingsRef.current);
     try {
       screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+      renderer.setRasterScale(screen.rasterScale);
     } catch (reason) {
       onError(`Could not capture CRT frame: ${String(reason)}`);
       return null;

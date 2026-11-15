@@ -36,7 +36,7 @@ These files are complex, tightly coupled, and easy to break:
 | **`src-tauri/src/mcp.rs` / `src-tauri/src/bin/scanline-term-mcp.rs`** | 🟠 High | MCP named-pipe ownership, opaque handle isolation and stdio protocol; mistakes can expose or leak terminal sessions. |
 | **`src/win32-input.ts`** | 🟠 High | Virtual key code and scan code lookup tables. Errors cause incorrect key delivery to console apps. Hard to test without specific Windows apps. |
 | **`src/crt/settings.ts`** | 🟡 Medium | Validation logic; incorrect ranges silently corrupt or reject settings. Well-tested but changes need test updates. |
-| **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts`** | 🟠 High | Shared compositor and CRT/pass-through lifecycle; incorrect ordering or disposal affects every host. The dependency is pinned to an immutable commit; package changes must be released separately. |
+| **`scanline-virtual-screen/core` / `src/terminal/ScanlineTerminalRenderer.ts` / `src/crt/useCRT.ts`** | 🟠 High | Shared compositor lifecycle and rendered raster-scale handoff for input mapping; incorrect ordering or disposal affects host rendering and hit tests. The dependency is pinned to an immutable commit; package changes must be released separately. |
 | **`src/terminal/terminal-input.ts`** | 🟡 Medium | VT encoding tables and modifier math. Well-tested but encoding errors break console interaction. |
 | **`src/terminal/terminal-mouse.ts`** | 🟢 Low | Small, well-tested encoder. |
 
@@ -153,7 +153,7 @@ Use this table to identify which files to inspect and test when implementing com
 | **Change font handling** | `App.tsx` (fontCellSize, terminalDimensions), `main.rs` (list_monospace_fonts) | Varies | `tauri:dev`, resize test |
 | **Change console shell catalog/default** | `lua_runtime.rs` (`sterm.shells` validation), `lua_automation.rs` (load/reload catalog), `main.rs` (`start_terminal`, `%ComSpec%`), `terminal/shells.ts`, `terminal/useTerminal.ts`, `ui/SettingsPanel.tsx`, `ui/TerminalTabs.tsx`, `ui/nativeNewTabMenu.ts` | Same native/frontend paths plus focused shell catalog, menu, and default-launch tests | `cargo test`, focused `npm test`, `npm run build`, `tauri:dev`: auto/custom ordering, stable ID after rename, duplicate executable profiles with different args, missing custom profile error, explicit command precedence, legacy executable default |
 | **Add text attributes (bold/underline)** | `App.tsx` (drawTerminal), xterm buffer API | `App.tsx` | Visual in `tauri:dev` |
-| **Fix mouse coordinates** | `App.tsx` (terminalMouseCell, copyPoint) | `App.tsx` | `tauri:dev` with TUI app |
+| **Fix mouse coordinates** | SVS `TerminalRenderer` mapping, `crt/useCRT.ts`, `terminal/useTerminal.ts` | SVS package plus last-render scale handoff | SVS tests, `npm test`, `tauri:dev`: CRT on/off, curvature and breathing, all four screen corners |
 | **Add a new resolution** | `settings.ts` (RESOLUTIONS) | `settings.ts` | `npm test`, visual in dev |
 | **Change persistence behavior** | SVS package and `crt/useCRT.ts` | Package plus host lifecycle if needed | SVS checks, `npm test`, visual in dev |
 | **Change terminal-tab presets** | `settings.ts`, `useTerminal.ts`, `SettingsPanel.tsx`, `presets.rs`, `App.tsx` | Same frontend state path plus Rust file commands | `npm test`, `cargo test`, `tauri:dev`: two tabs with different resolution/font/CRT settings, load/save/overwrite and dirty confirmations |

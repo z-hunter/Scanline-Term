@@ -77,7 +77,7 @@ graph TB
   TerminalRenderer --> Xterm
   TerminalRenderer --> SourceCanvas
 
-  UseCRT --> TerminalRenderer
+  UseCRT -->|sync last rendered rasterScale| TerminalRenderer
   UseCRT --> SVS
   SourceCanvas --> SVS
   UseTerminal --> SVS
@@ -226,13 +226,16 @@ sequenceDiagram
     participant User as User
     participant Canvas as Output Canvas
     participant App as App.tsx mouse handlers
+    participant UseCRT as crt/useCRT.ts
+    participant TerminalRenderer as SVS TerminalRenderer
     participant Mouse as terminal-mouse.ts
     participant Invoke as invoke("write_terminal")
     participant NativeMenu as Tauri native menu
 
     User->>Canvas: mousedown / mousemove / mouseup / wheel
     Canvas->>App: React mouse event handler
-    App->>App: TerminalRenderer.cellAtPoint() — apply CRT curve and map to cell coords
+    App->>App: TerminalRenderer.cellAtPoint() — apply bezel inset, CRT curve, then the rendered raster scale
+    Note over UseCRT,TerminalRenderer: useCRT copies the scale used by the last SVS frame; source-point and cell hit tests share it
     alt Ctrl + Middle Button on HTTP(S) URL
         App->>App: Highlight the URL while Ctrl and pointer remain over it
         App->>App: openBrowser(URL) on middle-button release

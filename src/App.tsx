@@ -32,6 +32,7 @@ import {
 import { useManagedSettings } from "./terminal/useManagedSettings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
+import { browserViewportPoint } from "./terminal/browser-coordinate";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
 import type { LuaPresetRequest } from "./terminal/lua-automation";
@@ -967,9 +968,11 @@ export default function App() {
       const renderer = terminal.renderer;
       const source = renderer?.sourceCanvas;
       const mapped = renderer?.sourcePointAt(rect.left + x, rect.top + y, canvas, terminal.settingsRef.current);
+      const frame = screenRef.current?.getBoundingClientRect();
+      const viewport = { width: frame?.width || rect.width, height: frame?.height || rect.height };
       return mapped && source?.width && source.height
-        ? { x: Math.max(0, Math.min(rect.width, mapped.x / source.width * rect.width)), y: Math.max(0, Math.min(rect.height, mapped.y / source.height * rect.height)) }
-        : { x, y };
+        ? browserViewportPoint(mapped, source, viewport)
+        : browserViewportPoint({ x, y }, rect, viewport);
     };
     const mouse = (event: globalThis.MouseEvent) => {
       event.preventDefault(); event.stopImmediatePropagation(); if (event.type === "mousedown") canvas.focus();

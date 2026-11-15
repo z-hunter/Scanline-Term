@@ -4,21 +4,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CRT_SETTINGS } from './settings';
 import { useCRT } from './useCRT';
 
-const mocked = vi.hoisted(() => ({ render: vi.fn(), constructed: 0, disposed: 0 }));
+const mocked = vi.hoisted(() => ({ render: vi.fn(), constructed: 0, disposed: 0, callsAfterDispose: 0, failValidity: false, setRasterScale: vi.fn() }));
 vi.mock('scanline-virtual-screen/core', async (importOriginal) => ({
   ...await importOriginal<typeof import('scanline-virtual-screen/core')>(),
   VirtualScreenRenderer: class {
+    private disposed = false;
     constructor() { mocked.constructed += 1; }
-    clearPersistence() {}
-    dispose() { mocked.disposed += 1; }
-    isValid() { return true; }
-    isChannelSwitchAnimating() { return false; }
+    clearPersistence() { if (this.disposed) mocked.callsAfterDispose += 1; }
+    dispose() { mocked.disposed += 1; this.disposed = true; }
+    isValid() { if (this.disposed) mocked.callsAfterDispose += 1; if (mocked.failValidity) throw new Error('validity check failed'); return true; }
+    restartBreathing() { if (this.disposed) mocked.callsAfterDispose += 1; }
+    get rasterScale() { return 1.25; }
+    isChannelSwitchAnimating() { if (this.disposed) mocked.callsAfterDispose += 1; return false; }
     render = mocked.render;
   },
 }));
 
 describe('useCRT settings ref', () => {
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); mocked.render.mockReset(); mocked.constructed = 0; mocked.disposed = 0; });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); mocked.render.mockReset(); mocked.setRasterScale.mockReset(); mocked.constructed = 0; mocked.disposed = 0; mocked.callsAfterDispose = 0; mocked.failValidity = false; });
 
   it('draws with synchronously switched settings on the next frame without a React rerender', async () => {
     const targetSettings = { ...DEFAULT_CRT_SETTINGS, colorProfile: 'commodore-64' as const, consoleFontSize: 22 };
@@ -37,6 +40,7 @@ describe('useCRT settings ref', () => {
       hasMeasuredLuma: false,
       markDirty: vi.fn(),
       getOverlays: vi.fn(() => []),
+      setRasterScale: mocked.setRasterScale,
     } as never;
     const onFrame = vi.fn(() => { calls.push('frame'); });
     function TestComponent() {
@@ -52,6 +56,7 @@ describe('useCRT settings ref', () => {
 
     expect(draw).toHaveBeenCalledWith(0.016, targetSettings);
     expect(onFrame).toHaveBeenCalledWith(container.querySelector('canvas'), 16, true);
+    expect(mocked.setRasterScale).toHaveBeenCalledWith(1.25);
     expect(calls).toEqual(['render', 'frame']);
     await act(async () => { root.unmount(); });
     container.remove();
@@ -79,6 +84,7 @@ describe('useCRT settings ref', () => {
           hasMeasuredLuma: false,
           markDirty: vi.fn(),
           getOverlays: vi.fn(() => []),
+          setRasterScale: mocked.setRasterScale,
         } as never,
         onError,
         onResizeSource: vi.fn(),
@@ -112,7 +118,7 @@ describe('useCRT settings ref', () => {
       const result = useCRT({
         settingsRef: { current: { ...DEFAULT_CRT_SETTINGS } },
         resolution: { id: '1024x768', width: 1024, height: 768 },
-        renderer: { draw, compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: false, markDirty: vi.fn(), getOverlays: vi.fn(() => []) } as never,
+        renderer: { draw, compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: true, markDirty: vi.fn(), getOverlays: vi.fn(() => []), setRasterScale: mocked.setRasterScale } as never,
         onError,
         onResizeSource: vi.fn(),
       });
@@ -125,15 +131,19 @@ describe('useCRT settings ref', () => {
     expect(mocked.constructed).toBe(1);
 
     const lost = new Event('webglcontextlost', { cancelable: true });
-    await act(async () => { output.dispatchEvent(lost); frames[0](16); });
+    await act(async () => { output.dispatchEvent(lost); window.dispatchEvent(new Event('resize')); frames[0](16); });
     expect(lost.defaultPrevented).toBe(true);
+    expect(mocked.callsAfterDispose).toBe(0);
     expect(mocked.render).not.toHaveBeenCalled();
 
+    mocked.failValidity = true;
     await act(async () => { output.dispatchEvent(new Event('webglcontextrestored')); frames[1](32); });
     expect(mocked.constructed).toBe(2);
     expect(mocked.disposed).toBe(1);
-    expect(mocked.render).toHaveBeenCalledTimes(1);
-    expect(onError).not.toHaveBeenCalled();
+    expect(mocked.render).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith('Screen frame failed: Error: validity check failed');
+    await act(async () => { frames[2](48); });
+    expect(frames).toHaveLength(4);
     await act(async () => { root.unmount(); });
     container.remove();
   });
@@ -155,7 +165,7 @@ describe('useCRT settings ref', () => {
       const result = useCRT({
         settingsRef: { current: { ...DEFAULT_CRT_SETTINGS } },
         resolution: { id: 'physical' } as never,
-        renderer: { draw: vi.fn(() => false), compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: false, markDirty: vi.fn(), getOverlays: vi.fn(() => []) } as never,
+        renderer: { draw: vi.fn(() => false), compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: false, markDirty: vi.fn(), getOverlays: vi.fn(() => []), setRasterScale: mocked.setRasterScale } as never,
         onError: vi.fn(), onResizeSource,
       });
       return createElement('canvas', { ref: result.outputRef });

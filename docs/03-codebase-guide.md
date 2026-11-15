@@ -69,6 +69,7 @@ ScanlineTerm/
 │   │   ├── terminal-automation.ts         # Shared Codex/MCP observation & input dispatch
 │   │   ├── terminal-input.ts              # Standard VT escape sequence keyboard encoder
 │   │   ├── terminal-mouse.ts              # X10 & SGR (1006) terminal mouse encoder
+│   │   ├── browser-coordinate.ts          # CRT points scaled into child WebView CSS bounds
 │   │   ├── terminal-scroll-heuristic.ts   # Fullscreen TUI scroll detection
 │   │   ├── terminal-search.ts             # Smart-case buffer search across viewport & history
 │   │   ├── terminal-tab-color.ts          # Post-it tab color palettes & CSS variable mapper
@@ -169,6 +170,7 @@ Scanline Term's host adapter over the SVS WebGL compositor:
 * **[`terminal-input.ts`](../src/terminal/terminal-input.ts) (62 lines):** Standard VT escape sequence encoder (cursor keys, function keys F1–F24, tilde sequences, modifier bitmasks).
 * **[`win32-input.ts`](../src/win32-input.ts) (99 lines):** Win32 Console Mode (`?9001h`) encoder. Translates browser keyboard events into 7-field `\x1b[vk;sc;uc;kd;cs;1_` sequences with virtual key codes and scan codes.
 * **[`terminal-mouse.ts`](../src/terminal/terminal-mouse.ts) (28 lines):** Encodes mouse clicks, drags, and wheel actions into X10 or SGR (`\x1b[<...M/m`) formats.
+* **[`browser-coordinate.ts`](../src/terminal/browser-coordinate.ts):** Scales mapped CRT source coordinates into the native browser viewport dimensions.
 * **[`terminal-search.ts`](../src/terminal/terminal-search.ts) (67 lines):** Smart-case search across visible viewport and scrollback buffer history.
 * **[`terminal-scroll-heuristic.ts`](../src/terminal/terminal-scroll-heuristic.ts) (81 lines):** Heuristic detector identifying full-screen TUI scrolling (e.g., Far Manager, Vim, Midnight Commander) for smooth sub-line rendering.
 * **[`lua-automation.ts`](../src/terminal/lua-automation.ts) (258 lines):** Gathers frontend state snapshots, focus generation counters, and verifies Smart Caps policy leases.
@@ -193,7 +195,7 @@ Scanline Term's host adapter over the SVS WebGL compositor:
 ### 4. CRT Pipeline & Adapters (`src/crt/`)
 
 * **[`settings.ts`](../src/crt/settings.ts) (330 lines):** Validates, sanitizes, and clamps CRT configuration parameters (curvature, scanlines, bloom, phosphor persistence, jitter). Exposes resolution presets (`1024x768`, `640x480`, etc.).
-* **[`useCRT.ts`](../src/crt/useCRT.ts) (98 lines):** Manages the WebGL rendering loop (`requestAnimationFrame`), canvas resize observer, and coordinates frame capture for thumbnail previews.
+* **[`useCRT.ts`](../src/crt/useCRT.ts) (98 lines):** Manages the WebGL rendering loop (`requestAnimationFrame`), canvas resize observer, frame capture for thumbnail previews, and syncs the last rendered SVS raster scale to the terminal hit-test mapper.
 * **[`managed-settings.ts`](../src/crt/managed-settings.ts) (76 lines):** Adapter handling preset persistence and migration between local storage and disk.
 
 ---

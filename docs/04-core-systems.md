@@ -220,7 +220,7 @@ WebView2 does not preserve a held `Menu` modifier across the browser → termina
 
 ### Experimental Browser CRT
 
-The Browser settings section keeps the form-factor selector. The CRT section is always visible for browser tabs and its CRT Emulation switch defaults off for each new tab. When enabled, Rust starts a WebView2 `Page.startScreencast` stream and forwards `Page.screencastFrame` events to the frontend. The frontend decodes and displays a frame, then sends `Page.screencastFrameAck` to release the next frame. It caches a downscaled copy for that browser tab's Gallery card. The Settings panel reports the number of decoded browser frames in the last second and, in development builds, stream interval, decode time, frame size and dimensions. After the first frame, the native child remains visible to WebView2 but moves outside the host window, because hidden WebView2 instances throttle rendering. Canvas mouse, wheel, and keyboard events are routed back through the DevTools `Input` domain. Browser CRT presets are transient; enabling CRT exposes Presets. Preset selection uses the shared preset catalog and `Menu+P` navigator.
+The Browser settings section keeps the form-factor selector. The CRT section is always visible for browser tabs and its CRT Emulation switch defaults off for each new tab. When enabled, Rust starts a WebView2 `Page.startScreencast` stream and forwards `Page.screencastFrame` events to the frontend. The frontend decodes and displays a frame, then sends `Page.screencastFrameAck` to release the next frame. It caches a downscaled copy for that browser tab's Gallery card. The Settings panel reports the number of decoded browser frames in the last second and, in development builds, stream interval, decode time, frame size and dimensions. After the first frame, the native child remains visible to WebView2 but moves outside the host window, because hidden WebView2 instances throttle rendering. Canvas mouse, wheel, and keyboard events are routed back through the DevTools `Input` domain. Browser pointer coordinates map from the terminal canvas through the CRT transform, then scale into the outer frame dimensions used for the native WebView bounds. Browser CRT presets are transient; enabling CRT exposes Presets. Preset selection uses the shared preset catalog and `Menu+P` navigator.
 
 ### Native context menu
 
@@ -270,18 +270,32 @@ The SGR mode (`?1006h`) affects the encoding format (SGR vs X10 legacy).
 
 ### Cell Coordinate Mapping
 
-`TerminalRenderer.cellAtPoint()` maps output-canvas coordinates through the CRT curve and then into terminal cells:
+`TerminalRenderer.cellAtPoint()` maps output-canvas coordinates through the bezel inset and CRT curve, then applies the centered raster scale used by the last rendered frame before mapping into terminal cells. `useCRT.ts` copies `VirtualScreenRenderer.rasterScale` into `TerminalRenderer` after each frame and capture, so `sourcePointAt()` and `cellAtPoint()` use the same scale as the visible raster. The scale comes from the cached global GPU luma for the previous source frame; its 1×1 readback is skipped while CRT emulation or breathing is off.
+
+The mapping order is:
 
 ```typescript
 let u = (clientX - rect.left) / rect.width;
 let v = (clientY - rect.top) / rect.height;
-if (settings.crtEmulation && settings.curvature > 0) {
-  let x = (u - 0.5) * 2 * (1 + settings.curvature * 0.1);
-  let y = (v - 0.5) * 2 * (1 + settings.curvature * 0.1);
-  x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5;
-  y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5;
-  u = x / 2 + 0.5;
-  v = y / 2 + 0.5;
+if (settings.crtEmulation) {
+  if ((settings.bezelThickness ?? 0) > 0) {
+    const insetX = settings.bezelThickness / (output.width || rect.width);
+    const insetY = settings.bezelThickness / (output.height || rect.height);
+    u = (u - insetX) / Math.max(0.0001, 1 - 2 * insetX);
+    v = (v - insetY) / Math.max(0.0001, 1 - 2 * insetY);
+  }
+  if (settings.curvature > 0) {
+    let x = (u - 0.5) * 2 * (1 + settings.curvature * 0.1);
+    let y = (v - 0.5) * 2 * (1 + settings.curvature * 0.1);
+    x *= 1 + Math.pow(Math.abs(y) / 5, 2) * settings.curvature * 5;
+    y *= 1 + Math.pow(Math.abs(x) / 4, 2) * settings.curvature * 5;
+    u = x / 2 + 0.5;
+    v = y / 2 + 0.5;
+  }
+  if (u >= 0 && u <= 1 && v >= 0 && v <= 1 && settings.breathing > 0) {
+    u = (u - 0.5) * rasterScale + 0.5;
+    v = (v - 0.5) * rasterScale + 0.5;
+  }
 }
 const cell = fontCellSize(...);
 const offset = terminalContentOffset(source.width, source.height, terminal.cols, terminal.rows, cell);
@@ -289,7 +303,7 @@ col = Math.floor((u * source.width - offset.x) / cell.width) + 1;
 row = Math.floor((v * source.height - offset.y) / cell.height) + 1;
 ```
 
-The inline TypeScript mapping matches the shader's `curve()` formula. Selection and terminal mouse input therefore follow the visible curvature back into source-canvas coordinates.
+The inline TypeScript mapping matches the shader's `curve()` formula and then uses the raster scale from that same rendered frame. Bezel pixels outside the curved screen surface keep their existing bounds behavior. Selection and terminal mouse input therefore follow the visible raster back into source-canvas coordinates.
 
 ### Scrollback
 
