@@ -51,7 +51,7 @@ export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse
     { id: 'scanline-copy-by-mouse', text: 'Select and copy by mouse [menu-C]', action: onCopyByMouse },
     separator,
     { id: 'scanline-toggle-tabs-bar', text: 'Hide/show tab bar [menu-Z]', action: onToggleTabsBar },
-    { id: 'scanline-open-preset-browser', text: 'Open preset browser [menu-P]', action: onOpenPresetPicker },
+    { id: 'scanline-open-preset-browser', text: 'Presets selector [menu-P]', action: onOpenPresetPicker },
     { id: 'scanline-gallery', text: 'Gallery [menu-backspace]', action: onToggleGallery },
   ] });
   await menu.popup();

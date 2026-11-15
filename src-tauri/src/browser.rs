@@ -91,7 +91,7 @@ fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<(String, bool)> 
     let id = segments.next()?; let raw_code = segments.next()?;
     let (code, shift) = raw_code.strip_prefix("Shift-").map_or((raw_code, false), |code| (code, true));
     if url.scheme() != "scanline-term" || url.host_str() != Some("shortcut") || id != session_id || segments.next().is_some() { return None; }
-    matches!(code, "KeyS" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "KeyH" | "KeyL" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote").then(|| (code.to_owned(), shift))
+    matches!(code, "KeyS" | "KeyP" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "KeyH" | "KeyL" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote").then(|| (code.to_owned(), shift))
 }
 
 fn browser_color_value(value: &str) -> Option<String> {

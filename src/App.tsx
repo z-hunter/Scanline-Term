@@ -349,7 +349,7 @@ export default function App() {
   presetPickerInitialRef.current = presetPickerInitial;
   presetPickerTabIdRef.current = presetPickerTabId;
   const openPresetPicker = useCallback(() => {
-    if (presetPickerOpen || (activeBrowser && !browserCrtEnabled) || !terminal.activePresetState) return;
+    if (presetPickerOpen || !terminal.activePresetState) return;
     const state = terminal.activePresetState;
     const tabId = terminal.activeTabId;
     if (!tabId) return;
