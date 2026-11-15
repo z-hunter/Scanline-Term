@@ -9,12 +9,29 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   useEffect(() => { 
     const output = outputRef.current; if (!output) return; 
-    const screen = new VirtualScreenRenderer(output);
+    let screen = new VirtualScreenRenderer(output);
     screenRef.current = screen;
 
     let raf = 0; let reported = false; let renderFailed = false; let breathingPrimed = false; let count = 0; let started = performance.now();
     
     let initialResize = true;
+    const onContextLost = (event: Event) => { event.preventDefault(); renderFailed = true; screen.dispose(); screenRef.current = null; };
+    const onContextRestored = () => {
+      try {
+        screen = new VirtualScreenRenderer(output);
+        screenRef.current = screen;
+        screen.clearPersistence();
+        renderFailed = false;
+        reported = false;
+        breathingPrimed = false;
+        renderer.markDirty();
+      } catch (reason) {
+        renderFailed = true;
+        onError(`Screen renderer restore failed: ${String(reason)}`);
+      }
+    };
+    output.addEventListener('webglcontextlost', onContextLost);
+    output.addEventListener('webglcontextrestored', onContextRestored);
     const resize = () => { 
       const rect = output.getBoundingClientRect(); 
       const dpr = window.devicePixelRatio || 1; 
@@ -64,6 +81,8 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onResizeSou
       cancelAnimationFrame(raf); 
       observer.disconnect(); 
       window.removeEventListener('resize', resize);
+      output.removeEventListener('webglcontextlost', onContextLost);
+      output.removeEventListener('webglcontextrestored', onContextRestored);
       dprQuery?.removeEventListener('change', onDprChange);
       screen.dispose();
       screenRef.current = null;
