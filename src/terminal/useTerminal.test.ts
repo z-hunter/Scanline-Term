@@ -321,6 +321,10 @@ describe('terminal launch event', () => {
       window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'ContextMenu', bubbles: true }));
     });
     expect(onTogglePresetPicker).toHaveBeenCalledOnce();
+    const crtPreset = { ...hookResult.activePresetState!.settings, crt: { ...hookResult.activePresetState!.settings.crt, crtEmulation: true } };
+    await act(async () => { hookResult.replaceActivePreset(crtPreset, 'CRT enabled', browserId); });
+    expect(hookResult.activePreset.crt.crtEmulation).toBe(true);
+    expect(hookResult.tabs.find((tab) => tab.id === browserId)).toMatchObject({ preset: { settings: { crt: { crtEmulation: true } } } });
     await act(async () => { hookResult.selectSession(nvimId!, false, false); hookResult.selectSession(browserId, false, false); });
     expect(hookResult.activePresetState?.settings.crt.consoleFontSize).toBe(19);
     await act(async () => { await new Promise<void>((resolve) => terminalSession(nvimId!)!.terminal!.write('\x1b[6 q', resolve)); });
@@ -457,6 +461,7 @@ describe('terminal launch event', () => {
     await act(async () => { root.render(createElement(TestComponent)); });
     await act(async () => { hookResult.openBrowser('https://example.com'); });
     const browserId = hookResult.activeTabId!;
+    expect(hookResult.activePresetState?.settings.crt.crtEmulation).toBe(false);
     await act(async () => { hookResult.navigateBrowser(browserId, 'https://example.com'); });
     expect(mocked.invoke.mock.calls.filter(([command]) => command === 'create_browser')).toHaveLength(1);
     await act(async () => { finishCreate({}); await new Promise((resolve) => setTimeout(resolve, 0)); });

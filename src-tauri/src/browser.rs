@@ -257,6 +257,8 @@ mod tests {
         let id = "11111111-1111-1111-1111-111111111111";
         let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap();
         assert_eq!(browser_shortcut(&url, id), Some(("KeyW".into(), false)));
+        let presets = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyP")).unwrap();
+        assert_eq!(browser_shortcut(&presets, id), Some(("KeyP".into(), false)));
         let shifted = url::Url::parse(&format!("scanline-term://shortcut/{id}/Shift-KeyL")).unwrap();
         assert_eq!(browser_shortcut(&shifted, id), Some(("KeyL".into(), true)));
         assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None);
