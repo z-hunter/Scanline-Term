@@ -75,7 +75,7 @@ function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undef
   if (!context) return;
   context.imageSmoothingEnabled = true;
   context.clearRect(0, 0, node.width, node.height);
-  context.drawImage(frame.canvas, 0, 0);
+  context.drawImage(frame.canvas, 0, 0, frame.canvas.width, frame.canvas.height, 0, 0, size.width, size.height);
 }
 
 function nearestInColumn(items: GalleryLayoutItem[], row: number, column: number, direction: -1 | 1): string | null {

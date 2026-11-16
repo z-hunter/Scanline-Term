@@ -25,10 +25,10 @@ vi.mock('scanline-virtual-screen/terminal', () => ({
   TerminalRenderer: class {
     constructor() { state.terminalRendererCreations += 1; }
     compositedCanvas = {};
-    sourceCanvas = { width: 480, height: 360 };
+    sourceCanvas = { width: 300, height: 150 };
     bindTerminal = state.bindTerminal;
     cancelScroll = state.cancelScroll;
-    resizeSource = (width: number, height: number) => { state.resizeSource(width, height); this.sourceCanvas.width = width; this.sourceCanvas.height = height; };
+    resizeSource = (width: number, height: number) => { state.resizeSource(width, height); state.markDirty(); this.sourceCanvas.width = width; this.sourceCanvas.height = height; };
     setFocused = state.setFocused;
     markDirty = state.markDirty;
     draw = state.draw;
@@ -176,6 +176,7 @@ describe('GalleryRenderer', () => {
     state.markDirty.mockClear();
     gallery.render(first, target());
     expect(state.render.mock.calls.at(-1)?.[3]).toBe(false);
+    expect(state.resizeSource).toHaveBeenCalledOnce();
     expect(state.markDirty).not.toHaveBeenCalled();
     gallery.render({ ...first, settings: { consoleFontSize: 16, consoleFont: 'Consolas', cellWidthAdjustment: 0, cellHeightAdjustment: 0, colorProfile: 'amber' } as never }, target());
     expect(state.markDirty).toHaveBeenCalledOnce();

@@ -87,7 +87,7 @@ describe('TabGallery', () => {
       act(() => root.render(createElement(TabGallery, props)));
       const cardCanvas = container.querySelector('canvas');
       expect(cardCanvas).not.toBeNull();
-      expect(drawImage).toHaveBeenCalledWith(cachedCanvas, 0, 0);
+      expect(drawImage).toHaveBeenCalledWith(cachedCanvas, 0, 0, 640, 480, 0, 0, 480, 270);
       act(() => root.render(createElement(TabGallery, { ...props, tabs: [{ ...tabs[0], title: 'updated' }] })));
       expect(drawImage).toHaveBeenCalledTimes(1);
 

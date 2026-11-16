@@ -115,7 +115,7 @@ export class GalleryRenderer {
     const rasterSettings = fitGalleryRasterSettings(settings, source.terminal.cols, source.terminal.rows, width, height, Math.min(width / source.width, height / source.height));
     if (!rasterSettings) throw new Error('Gallery thumbnail cannot fit the full terminal grid.');
     const entry = this.terminalRendererFor(source);
-    entry.renderer.resizeSource(width, height);
+    if (entry.renderer.sourceCanvas.width !== width || entry.renderer.sourceCanvas.height !== height) entry.renderer.resizeSource(width, height);
     entry.renderer.setFocused(false);
     const rasterSettingsKey = [rasterSettings.consoleFontSize, rasterSettings.consoleFont, rasterSettings.fallbackFont, rasterSettings.cellWidthAdjustment, rasterSettings.cellHeightAdjustment, rasterSettings.colorProfile, rasterSettings.cursorStyle, rasterSettings.cursorBrightness].join('|');
     if (entry.rasterSettingsKey !== rasterSettingsKey) {
