@@ -117,6 +117,7 @@ export default function App() {
   const presetPickerTabIdRef = useRef<string | null>(null);
   const activeTabIdRef = useRef<string | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
+  const browserPreviewFramesRef = useRef(new Map<string, HTMLCanvasElement>());
   const browserPreviewTabId = useRef<string | null>(null);
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
@@ -789,7 +790,8 @@ export default function App() {
   startChannelSwitchRef.current = startChannelSwitch;
   joinChannelSwitchRef.current = joinChannelSwitch;
   beforeTabChangeRef.current = (id) => {
-    if (activeBrowserId === id || galleryOpen) return;
+    const captureBrowserCrt = activeBrowserId === id && activeBrowser?.page === "web" && browserCrtEnabled;
+    if (galleryOpen || (activeBrowserId === id && !captureBrowserCrt)) return;
     const canvas = captureFrame();
     if (canvas) galleryFramesRef.current.set(id, { canvas, aspectRatio: canvas.width / Math.max(1, canvas.height), showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel) });
   };
@@ -799,7 +801,8 @@ export default function App() {
       return;
     }
     const activeId = terminal.activeTabId;
-    if (activeId && activeBrowserId !== activeId) {
+    const captureBrowserCrt = activeBrowserId === activeId && activeBrowser?.page === "web" && browserCrtEnabled;
+    if (activeId && (activeBrowserId !== activeId || captureBrowserCrt)) {
       const canvas = captureFrame();
       if (canvas) galleryFramesRef.current.set(activeId, { canvas, aspectRatio: canvas.width / Math.max(1, canvas.height), showBezel: Boolean(activePreset.crt.crtEmulation && activePreset.crt.showBezel) });
     }
@@ -810,6 +813,7 @@ export default function App() {
   useEffect(() => {
     const ids = new Set(terminal.tabs.map((tab) => tab.id));
     galleryFramesRef.current.forEach((_, id) => { if (!ids.has(id)) galleryFramesRef.current.delete(id); });
+    browserPreviewFramesRef.current.forEach((_, id) => { if (!ids.has(id)) browserPreviewFramesRef.current.delete(id); });
   }, [terminal.tabs]);
   useEffect(() => {
     if (!isTauri()) return;
@@ -853,7 +857,7 @@ export default function App() {
   }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, browserCrtEnabled, galleryOpen, presetPickerOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize]);
   useLayoutEffect(() => {
     if (!activeBrowser || activeBrowser.page !== "web" || (!browserCrtEnabled && !presetPickerOpen)) return;
-    const cachedFrame = galleryFramesRef.current.get(activeBrowser.id)?.canvas;
+    const cachedFrame = browserPreviewFramesRef.current.get(activeBrowser.id);
     if (cachedFrame) {
       terminal.renderer?.setBrowserPreview(cachedFrame);
       browserPreviewTabId.current = activeBrowser.id;
@@ -921,7 +925,7 @@ export default function App() {
         frameHeight = image.naturalHeight;
         terminal.renderer?.setBrowserPreview(image);
         browserPreviewTabId.current = browser.id;
-        const canvas = galleryFramesRef.current.get(browser.id)?.canvas ?? document.createElement("canvas");
+        const canvas = browserPreviewFramesRef.current.get(browser.id) ?? document.createElement("canvas");
         const scale = Math.min(1, 800 / image.naturalWidth);
         const width = Math.round(image.naturalWidth * scale);
         const height = Math.round(image.naturalHeight * scale);
@@ -930,6 +934,7 @@ export default function App() {
         const context = canvas.getContext("2d");
         if (context) {
           context.drawImage(image, 0, 0, width, height);
+          browserPreviewFramesRef.current.set(browser.id, canvas);
           galleryFramesRef.current.set(browser.id, {
             canvas,
             aspectRatio: image.naturalWidth / Math.max(1, image.naturalHeight),
