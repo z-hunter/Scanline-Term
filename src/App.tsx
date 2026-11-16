@@ -836,8 +836,8 @@ export default function App() {
     if (!isTauri()) return;
     const update = () => {
       const rect = screenRef.current?.getBoundingClientRect();
-      const showBrowser = !galleryOpen && !presetPickerOpen && activeBrowser?.page === "web";
-      const keepRendererLive = browserCrtEnabled && showBrowser;
+      const showBrowser = !galleryOpen && activeBrowser?.page === "web";
+      const keepRendererLive = (browserCrtEnabled || presetPickerOpen) && showBrowser;
       // Keep the child offscreen from the first frame so it cannot cover CRT output; hiding it throttles WebView2 rendering.
       const payload = {
         sessionId: showBrowser ? activeBrowserId : null,
