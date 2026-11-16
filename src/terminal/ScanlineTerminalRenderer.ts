@@ -141,5 +141,5 @@ export class TerminalRenderer extends CoreTerminalRenderer {
 }
 
 export { applyTabColorMode, terminalAverageColor };
-export { canvasFont, canvasFontLoad, fontCellSize, terminalAverageLuma, terminalContentOffset, terminalDimensions, accessibleTextColor, loadCanvasFont } from 'scanline-virtual-screen/terminal';
+export { canvasFont, canvasFontLoad, fontCellSize, terminalAverageLuma, terminalContentOffset, terminalDimensions, terminalPadding, accessibleTextColor, loadCanvasFont } from 'scanline-virtual-screen/terminal';
 export { detectVerticalScroll, inspectVerticalScroll };

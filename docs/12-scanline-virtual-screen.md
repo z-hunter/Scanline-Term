@@ -14,10 +14,10 @@ The SVS repository is the technical source of truth for its architecture, public
 
 ## Dependency
 
-`package.json` pins SVS to an immutable Git commit. Do not replace it with a branch name or a mutable tag during normal application work.
+`package.json` pins SVS v2.1.9 to immutable commit `8f7fc6558389385ba78f866911d4a9d2775f53f9`. Do not replace it with a branch name or a mutable tag during normal application work.
 
 ```json
-"scanline-virtual-screen": "https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/fb9bcffbd05e9baf8af8d65606363fe1ddd65896"
+"scanline-virtual-screen": "https://codeload.github.com/z-hunter/Scanline-Virtual-Screen/tar.gz/8f7fc6558389385ba78f866911d4a9d2775f53f9"
 ```
 
 `npm ci` installs the exact package commit recorded in `package-lock.json`. The public repository no longer needs contributor SSH access merely to install the dependency.
@@ -34,6 +34,7 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 - loading the validated Lua ANSI palette snapshot from the native runtime and registering it with SVS before presets are normalized; saved presets keep stable `lua:<name>` references, including when a palette is missing;
 - TUI scroll detection and diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; ordinary scroll paths call `beginBufferScroll()`, detected host regions call `beginRegionScroll()`;
 - the branded browser-preview mock and its `/icon.png` splash logo;
+- the temporary Gallery renderer, which uses bounded per-tab xterm adapters and one WebGL compositor with an asynchronous CRT shader-mask cache to render terminal thumbnails sequentially; logical source dimensions are capped at 2.1 megapixels and thumbnail rasters at 480 pixels on the long edge. Previews disable persistence and breathing. Cached frames appear immediately and stay visible until a successful live paint; cards without a cache show a placeholder. The scheduler adapts its 100–500 ms interval only after two consecutive captures exceed 16 ms, recovering after ten captures at or below 16 ms; it keeps static cards after shader timeout, a call over 50 ms, repeated foreground RAF lag, resource caps, context loss, or render errors. These are post-hoc JavaScript timing gates, not a preemptive GPU limit;
 - `requestAnimationFrame`, `ResizeObserver`, screen resize, tab switching and error UI.
 
 [`src/terminal/ScanlineTerminalRenderer.ts`](../src/terminal/ScanlineTerminalRenderer.ts) wraps the optional SVS xterm adapter and converts Scanline Term's normalized image state into SVS overlays. The browser CRT experiment adds its latest WebView2 JPEG frame as a full-screen runtime overlay through this same boundary. [`src/crt/useCRT.ts`](../src/crt/useCRT.ts) is the host-side rendering lifecycle adapter. Do not put any of the host responsibilities above into SVS.

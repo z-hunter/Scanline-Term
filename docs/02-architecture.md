@@ -24,7 +24,8 @@ graph TB
   subgraph "WebView / Frontend (React + WebGL)"
     AppTsx["App.tsx<br/>React composition root"]
     TabsUi["ui/TerminalTabs.tsx<br/>tab strip"]
-    GalleryUi["ui/TabGallery.tsx<br/>static tab overview"]
+    GalleryUi["ui/TabGallery.tsx<br/>terminal live / browser static cards"]
+    GalleryRenderer["terminal/gallery-renderer.ts<br/>isolated sequential preview"]
     HomeUi["ui/HomeDashboard.tsx<br/>local bookmark home"]
     UseTerminal["terminal/useTerminal.ts<br/>terminal lifecycle & input hook"]
     UseCRT["crt/useCRT.ts<br/>CRT animation & render hook"]
@@ -83,6 +84,9 @@ graph TB
   UseTerminal --> SVS
   SVS --> OutputCanvas
   OutputCanvas -->|"captureFrame()"| GalleryUi
+  UseTerminal -->|"per-tab terminal, CRT settings & images"| GalleryRenderer
+  GalleryRenderer --> SVS
+  SVS -->|"temporary preview output"| GalleryUi
   Search --> TerminalRenderer
   HomeUi -->|"invoke load/save_home_config"| Main
   Main -->|"read/write"| HomeFile["AppConfig/home.json"]
@@ -92,7 +96,7 @@ Scanline Term uses the external [Scanline Virtual Screen](https://github.com/z-h
 
 The terminal viewport remains rendered through the shared canvas, while `ScrollbackScrollbar` is a DOM overlay on the screen-frame border. `useTerminal` supplies it with the active xterm buffer's viewport/base/row snapshot and routes pointer dragging back to `scrollToLine()`; the overlay never enters the CRT/WebGL pipeline.
 
-The tab gallery is a temporary DOM overlay owned by `App.tsx`. `useCRT.captureFrame()` redraws the active WebGL output once and copies it into a bounded 2D canvas; a render failure is reported and simply yields no preview. `useTerminal` caches that canvas before a normal tab switch and removes a closed tab's cache entry. Gallery entry snapshots the active tab and freezes the cache, so cards do not receive terminal output while the mode is open; the card list itself follows the live tab order so keyboard reordering is reflected immediately. The active browser CRT capture is copied into the same cache, giving its card the latest captured frame; browser tabs without a capture remain title/type placeholders. The active card is centered in its row; tabs before it fill rows above and tabs after it fill rows below. Cards retain a 400px target width, with additional odd-numbered columns added only when the window has room. Gallery selection bypasses the normal channel-switch animation. Native browser child WebViews are hidden through the existing `set_active_browser` lifecycle.
+The tab gallery is a temporary DOM overlay owned by `App.tsx`. On entry, terminal and browser frame caches are drawn immediately into their cards; cards without a terminal cache show a placeholder until their first successful live paint. After that paint, React rerenders preserve the live canvas instead of restoring the static cache. While open, `TabGallery` updates terminal cards sequentially through one isolated WebGL compositor and a bounded set of per-tab xterm canvas adapters; `useTerminal.galleryRenderSources()` supplies each live terminal's own CRT settings and image overlays. The compositor asynchronously prepares and caches up to four CRT shader variants, then renders only a ready mask. The renderer never selects/focuses a session or resizes a PTY, clears phosphor persistence between cards, and marks a changed source whenever the tab, CRT settings, raster, terminal drawing, or image overlays change. Its logical source raster follows the saved resolution or derives physical dimensions from that terminal's grid and DPR-adjusted font metrics; each source is capped at 2.1 megapixels and the thumbnail raster at 480 pixels on its long edge. At most eight live terminal adapters are retained. Gallery previews disable persistence and high-voltage breathing. The scheduler starts at one capture per 100 ms, doubles the interval only after two consecutive synchronous captures exceed 16 ms, and halves it after ten consecutive captures at or below 16 ms, up to 500 ms. A synchronous call over 50 ms, shader preparation exceeding five seconds, repeated foreground RAF gaps over 120 ms, a resource-cap violation, context loss, or render error stops updates until Gallery is reopened and leaves cached/static cards. These JavaScript timings are post-hoc breakers and cannot preempt unexpected GPU work. Background or minimized windows skip preparation and captures and reset the lag baseline. Browser cards retain their cached frame or placeholder. The card list follows live tab order; Gallery selection bypasses the normal channel-switch animation. Native browser child WebViews are hidden through the existing `set_active_browser` lifecycle.
 
 The ordinary tab strip is rendered by `ui/TerminalTabs.tsx`. `useTerminal.moveTab()` is the single reorder path: it clamps the destination, moves the tab, and renumbers every tab. Keyboard reordering commits one adjacent move per `Menu+Shift+Arrow` or `Menu+Shift+H/L` press. Pointer reordering is limited to the normal tab strip: the selected tab follows the pointer, sibling tabs make room, and the new order is committed on pointer release. Both surfaces use layout animation for the resulting position changes. Gallery uses the same `moveTab()` path but accepts only keyboard input, including row-aware up/down moves.
 

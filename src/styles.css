@@ -623,9 +623,9 @@ canvas:focus,
 .tab-gallery-card.is-selected { border-color: #9dffbd; box-shadow: 0 0 0 2px #79d89766, 0 0 28px #79d89766, 0 18px 48px #000b; }
 .tab-gallery-card.has-bezel { padding: 10px; border-color: #314238; background: #1d2822; box-shadow: 0 0 0 1px #44574b, 0 18px 48px #000b, inset 0 0 20px #000; }
 .tab-gallery-card.has-bezel.is-selected { border-color: #9dffbd; }
-.tab-gallery-preview { display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 5px; background: #020503; }
+.tab-gallery-preview { position: relative; display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; overflow: hidden; border-radius: 5px; background: #020503; }
 .tab-gallery-preview canvas { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
-.tab-gallery-placeholder { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; gap: 12px; color: #9bc8a6; background: linear-gradient(135deg, #14271b, #08100b); font: 700 clamp(20px, 3vw, 42px)/1 ui-monospace, Consolas, monospace; }
+.tab-gallery-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; color: #9bc8a6; background: linear-gradient(135deg, #14271b, #08100b); font: 700 clamp(20px, 3vw, 42px)/1 ui-monospace, Consolas, monospace; }
 .tab-gallery-placeholder small { color: #6e9a79; font-size: 12px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
 .tab-gallery-title { display: block; flex: 0 0 auto; min-width: 0; padding: 9px 4px 0; overflow: hidden; color: #c7e7ce; font: 600 13px/1.2 ui-monospace, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .tab-gallery-card.has-bezel .tab-gallery-title { padding-bottom: 2px; }

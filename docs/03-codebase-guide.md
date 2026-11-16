@@ -65,6 +65,7 @@ ScanlineTerm/
 │   │   ├── lua-automation.ts              # Frontend snapshots & Caps policy leases
 │   │   ├── lua-preset-request.ts          # Safe preset request validation & rejection
 │   │   ├── ScanlineTerminalRenderer.ts    # SVS host adapter, image overlays & splash screen
+│   │   ├── gallery-renderer.ts            # Isolated sequential live Gallery renderer
 │   │   ├── shells.ts                      # Shell identity, command resolution & catalog
 │   │   ├── terminal-automation.ts         # Shared Codex/MCP observation & input dispatch
 │   │   ├── terminal-input.ts              # Standard VT escape sequence keyboard encoder
@@ -166,6 +167,9 @@ Scanline Term's host adapter over the SVS WebGL compositor:
 * In the browser CRT experiment, places the latest captured WebView2 frame in the SVS overlay list.
 * Displays the fallback mock screen and branded `/icon.png` splash screen when no terminal is connected.
 
+#### [`src/terminal/gallery-renderer.ts`](../src/terminal/gallery-renderer.ts)
+Owns the temporary Gallery rendering path: a bounded set of isolated per-tab terminal adapters and one WebGL compositor asynchronously prepare and cache up to four CRT shader masks, then render live terminal cards sequentially with each tab's CRT settings and image overlays. Cached frames appear immediately until the first successful live paint; cards without a cache show a placeholder. The logical source dimensions follow the saved resolution/grid, capped at 2.1 megapixels; thumbnail rasters are capped at 480 pixels on the long edge, and at most eight terminal adapters are retained. Previews disable persistence and breathing. The scheduler runs at 100 ms by default, backs off only after two consecutive captures exceed 16 ms, and recovers after ten captures at or below 16 ms, capped at 500 ms. Shader preparation timeout, work over 50 ms, repeated foreground RAF lag, resource caps, or rendering failures stop updates for the current Gallery session and preserve static cards. GPU work is not preemptible by the JavaScript timing checks.
+
 #### Specialized Terminal Helpers:
 * **[`terminal-input.ts`](../src/terminal/terminal-input.ts) (62 lines):** Standard VT escape sequence encoder (cursor keys, function keys F1–F24, tilde sequences, modifier bitmasks).
 * **[`win32-input.ts`](../src/win32-input.ts) (99 lines):** Win32 Console Mode (`?9001h`) encoder. Translates browser keyboard events into 7-field `\x1b[vk;sc;uc;kd;cs;1_` sequences with virtual key codes and scan codes.
@@ -183,7 +187,7 @@ Scanline Term's host adapter over the SVS WebGL compositor:
 
 * **[`SettingsPanel.tsx`](../src/ui/SettingsPanel.tsx) (471 lines):** Full configuration drawer combining SVS CRT display parameters with host settings (font family/size, cursor style, audio bell, MCP toggle, shell defaults, and Explorer integration).
 * **[`AiPanel.tsx`](../src/ui/AiPanel.tsx) (339 lines):** Slide-out drawer for the OpenAI Codex terminal assistant. Includes conversation turns, streaming typing indicator, model/effort selector, and shell execution blocks.
-* **[`TabGallery.tsx`](../src/ui/TabGallery.tsx) (268 lines):** Matrix overview (opened via `Menu+Backspace`) displaying live CRT thumbnails of all open tabs with spatial keyboard navigation.
+* **[`TabGallery.tsx`](../src/ui/TabGallery.tsx):** Matrix overview (opened via `Menu+Backspace`) with sequential live terminal previews, static browser cards, and spatial keyboard navigation.
 * **[`HomeDashboard.tsx`](../src/ui/HomeDashboard.tsx) (259 lines):** Start page for blank browser tabs, featuring categorized bookmarks, quick search, and shell launchers.
 * **[`TerminalTabs.tsx`](../src/ui/TerminalTabs.tsx) (234 lines):** Post-it style tab strip with animated drag-and-drop reordering and color badges.
 * **[`ScrollbackScrollbar.tsx`](../src/ui/ScrollbackScrollbar.tsx) (147 lines):** Transient CRT monitor border scrollbar with mouse drag-capture and auto-fade.

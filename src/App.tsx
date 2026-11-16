@@ -1384,6 +1384,7 @@ export default function App() {
         tabs={terminal.tabs}
         activeId={gallerySnapshot.activeId}
         frames={gallerySnapshot.frames}
+        getRenderSources={terminal.galleryRenderSources}
         originRect={gallerySnapshot.originRect}
         closeRequested={galleryCloseRequested}
         onChoose={chooseGalleryTab}

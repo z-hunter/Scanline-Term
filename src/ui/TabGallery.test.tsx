@@ -1,8 +1,25 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalTab } from '../terminal/useTerminal';
-import { buildGalleryLayout, galleryColumns, TabGallery } from './TabGallery';
+import { buildGalleryLayout, galleryCanvasSize, galleryColumns, TabGallery } from './TabGallery';
+
+const preview = vi.hoisted(() => ({
+  prepare: vi.fn(() => false), render: vi.fn(), dispose: vi.fn(), stop: vi.fn(() => false),
+}));
+vi.mock('../terminal/gallery-renderer', () => ({
+  GalleryRenderer: class { prepare = preview.prepare; render = preview.render; retainSources = vi.fn(); dispose = preview.dispose; },
+  GALLERY_FRAME_LAG_MS: 120,
+  GALLERY_RENDER_INTERVAL_MS: 100,
+  GALLERY_RENDER_MAX_INTERVAL_MS: 500,
+  GALLERY_THUMBNAIL_MAX_DIMENSION: 480,
+  galleryFrameLagShouldStop: () => false,
+  galleryInitializationShouldStop: () => false,
+  galleryPreparationShouldStop: () => false,
+  galleryPreparationTimedOut: (duration: number) => duration > 2_000,
+  galleryRenderShouldStop: () => preview.stop(),
+  nextGalleryRenderInterval: (interval: number, duration: number, fastSamples: number, slowSamples: number) => ({ interval: duration > 16 && slowSamples ? Math.min(500, interval * 2) : interval, fastSamples: duration <= 16 ? fastSamples + 1 : 0, slowSamples: duration > 16 ? (slowSamples ? 0 : 1) : 0 }),
+}));
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -16,9 +33,73 @@ const tabs: TerminalTab[] = Array.from({ length: 7 }, (_, index) => ({
 }));
 
 describe('TabGallery', () => {
+  beforeEach(() => vi.clearAllMocks());
   it('adds columns only after a readable 400px card fits', () => {
     expect(galleryColumns(1440, 10)).toBe(3);
     expect(galleryColumns(2560, 10)).toBe(5);
+  });
+
+  it('bounds live preview backing dimensions while preserving source aspect ratio', () => {
+    expect(galleryCanvasSize(1920, 1080)).toEqual({ width: 480, height: 270 });
+    expect(galleryCanvasSize(800, 1200)).toEqual({ width: 320, height: 480 });
+  });
+
+  it('keeps live preview canvas dimensions across rerenders', () => {
+    const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width');
+    const heightDescriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'height');
+    let dimensionWrites = 0;
+    Object.defineProperty(HTMLCanvasElement.prototype, 'width', { configurable: true, get: widthDescriptor?.get, set(value: number) { dimensionWrites++; widthDescriptor?.set?.call(this, value); } });
+    Object.defineProperty(HTMLCanvasElement.prototype, 'height', { configurable: true, get: heightDescriptor?.get, set(value: number) { dimensionWrites++; heightDescriptor?.set?.call(this, value); } });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const source = { id: 'tab-1', terminal: {}, settings: {}, images: [], width: 1920, height: 1080 } as never;
+    const props = { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => [source], onChoose: vi.fn(), onCancel: vi.fn() };
+    try {
+      act(() => root.render(createElement(TabGallery, props)));
+      const canvas = container.querySelector('canvas');
+      expect(canvas && [canvas.width, canvas.height]).toEqual([480, 270]);
+      const writesAfterMount = dimensionWrites;
+      act(() => root.render(createElement(TabGallery, { ...props, tabs: [{ ...tabs[0], title: 'updated' }] })));
+      expect(dimensionWrites).toBe(writesAfterMount);
+      act(() => root.unmount());
+    } finally {
+      container.remove();
+      if (widthDescriptor) Object.defineProperty(HTMLCanvasElement.prototype, 'width', widthDescriptor); else Reflect.deleteProperty(HTMLCanvasElement.prototype, 'width');
+      if (heightDescriptor) Object.defineProperty(HTMLCanvasElement.prototype, 'height', heightDescriptor); else Reflect.deleteProperty(HTMLCanvasElement.prototype, 'height');
+    }
+  });
+
+  it('shows the cached frame until the live renderer replaces it and leaves an empty live canvas when no frame exists', () => {
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    const drawImage = vi.fn();
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: () => ({ clearRect: vi.fn(), drawImage, imageSmoothingEnabled: false }) });
+    const cachedCanvas = document.createElement('canvas');
+    cachedCanvas.width = 640;
+    cachedCanvas.height = 480;
+    const source = { id: 'tab-1', terminal: {}, settings: {}, images: [], width: 1920, height: 1080 } as never;
+    const frames = new Map([['tab-1', { canvas: cachedCanvas, aspectRatio: 4 / 3, showBezel: false }]]);
+    const props = { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames, originRect: null, getRenderSources: () => [source], onChoose: vi.fn(), onCancel: vi.fn() };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => root.render(createElement(TabGallery, props)));
+      const cardCanvas = container.querySelector('canvas');
+      expect(cardCanvas).not.toBeNull();
+      expect(drawImage).toHaveBeenCalledWith(cachedCanvas, 0, 0);
+      act(() => root.render(createElement(TabGallery, { ...props, tabs: [{ ...tabs[0], title: 'updated' }] })));
+      expect(drawImage).toHaveBeenCalledTimes(1);
+
+      const noFrameProps = { ...props, tabs: tabs.slice(1, 2).map((tab) => ({ ...tab, id: 'tab-without-frame' })), activeId: 'tab-without-frame', frames: new Map(), getRenderSources: () => [{ id: 'tab-without-frame', terminal: {}, settings: {}, images: [], width: 1920, height: 1080 } as never] };
+      act(() => root.render(createElement(TabGallery, noFrameProps)));
+      expect(container.querySelector('canvas')).not.toBeNull();
+      expect(container.querySelector('.tab-gallery-placeholder')).not.toBeNull();
+      act(() => root.unmount());
+    } finally {
+      container.remove();
+      Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: originalGetContext });
+    }
   });
 
   it('places the active tab in the center row and overflows in tab order', () => {
@@ -194,5 +275,79 @@ describe('TabGallery', () => {
     act(() => root.unmount());
     container.remove();
     vi.useRealTimers();
+  });
+
+  it('keeps polling an async shader prepare, skips a source that disappears, and disposes on close', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let requestId = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return ++requestId; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: vi.fn() });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let sources: unknown[] = [{ id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 }];
+    const flush = (now: number) => {
+      const current = callbacks.splice(0);
+      act(() => current.forEach((callback) => callback(now)));
+    };
+    try {
+      act(() => root.render(createElement(TabGallery, { tabs, activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => sources as never, onChoose: vi.fn(), onCancel: vi.fn() })));
+      flush(0);
+      flush(100);
+      expect(preview.prepare).toHaveBeenCalledOnce();
+      expect(preview.render).not.toHaveBeenCalled();
+
+      sources = [];
+      flush(116);
+      expect(preview.prepare).toHaveBeenCalledOnce();
+      act(() => root.unmount());
+      expect(preview.dispose).toHaveBeenCalledOnce();
+    } finally {
+      container.remove();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalFocus) Object.defineProperty(document, 'hasFocus', originalFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
+  });
+
+  it('shows static placeholders and disposes when async preparation times out', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let requestId = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return ++requestId; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: vi.fn() });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const flush = (now: number) => {
+      const current = callbacks.splice(0);
+      act(() => current.forEach((callback) => callback(now)));
+    };
+    try {
+      act(() => root.render(createElement(TabGallery, { tabs, activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => [{ id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 }] as never, onChoose: vi.fn(), onCancel: vi.fn() })));
+      flush(0);
+      for (let now = 100; now <= 2200 && !preview.dispose.mock.calls.length; now += 100) flush(now);
+      expect(preview.prepare).toHaveBeenCalled();
+      expect(preview.prepare.mock.calls.length).toBeGreaterThan(10);
+      expect(preview.render).not.toHaveBeenCalled();
+      expect(container.querySelector('.tab-gallery-placeholder')).not.toBeNull();
+      expect(preview.dispose).toHaveBeenCalledOnce();
+      act(() => root.unmount());
+      expect(preview.dispose).toHaveBeenCalledOnce();
+    } finally {
+      container.remove();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalFocus) Object.defineProperty(document, 'hasFocus', originalFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
   });
 });

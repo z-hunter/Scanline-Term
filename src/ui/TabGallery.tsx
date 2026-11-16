@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
+import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, GALLERY_THUMBNAIL_MAX_DIMENSION, galleryFrameLagShouldStop, galleryInitializationShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderShouldStop, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
 
 export type GalleryFrame = {
   canvas: HTMLCanvasElement;
@@ -19,6 +20,11 @@ export function galleryColumns(width: number, tabCount: number): number {
   const possible = Math.max(1, Math.floor((width - padding + 28) / 428));
   const bounded = Math.min(possible, Math.max(1, tabCount * 2 - 1));
   return bounded % 2 === 0 ? Math.max(1, bounded - 1) : bounded;
+}
+
+export function galleryCanvasSize(width: number, height: number): { width: number; height: number } {
+  const scale = GALLERY_THUMBNAIL_MAX_DIMENSION / Math.max(width, height, 1);
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
 function assignChunk(items: WorkspaceTab[], row: number, columns: number, align: 'start' | 'end', output: GalleryLayoutItem[]): void {
@@ -60,10 +66,11 @@ function tabLabel(tab: WorkspaceTab): string {
   return tab.kind === 'browser' ? `${tab.title} — browser tab` : `${tab.title} — terminal tab`;
 }
 
-function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined): void {
+function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined, source?: GalleryRenderSource): void {
   if (!node || !frame) return;
-  node.width = frame.canvas.width;
-  node.height = frame.canvas.height;
+  const size = source ? galleryCanvasSize(source.width, source.height) : { width: frame.canvas.width, height: frame.canvas.height };
+  if (node.width !== size.width) node.width = size.width;
+  if (node.height !== size.height) node.height = size.height;
   const context = node.getContext('2d');
   if (!context) return;
   context.imageSmoothingEnabled = true;
@@ -87,6 +94,7 @@ export function TabGallery({
   tabs,
   activeId,
   frames,
+  getRenderSources,
   originRect,
   onChoose,
   onMove = () => undefined,
@@ -96,6 +104,7 @@ export function TabGallery({
   tabs: WorkspaceTab[];
   activeId: string | null;
   frames: ReadonlyMap<string, GalleryFrame>;
+  getRenderSources?: () => GalleryRenderSource[];
   originRect: DOMRect | null;
   onChoose: (id: string) => void;
   onMove?: (id: string, targetIndex: number) => void;
@@ -112,6 +121,9 @@ export function TabGallery({
   const [visible, setVisible] = useState(false);
   const [selectedId, setSelectedId] = useState(activeId ?? tabs[0]?.id ?? null);
   const [closing, setClosing] = useState(false);
+  const [, setPreviewVersion] = useState(0);
+  const renderedPreviewIds = useRef(new Set<string>());
+  const staticFrameCanvases = useRef(new WeakSet<HTMLCanvasElement>());
   const timer = useRef<number | null>(null);
   const layout = useMemo(() => buildGalleryLayout(tabs, activeId, columns), [tabs, activeId, columns]);
   const layoutRef = useRef(layout);
@@ -180,6 +192,112 @@ export function TabGallery({
 
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
 
+  useEffect(() => {
+    if (!getRenderSources || closing) return;
+    let renderer: GalleryRenderer;
+    let renderInterval = GALLERY_RENDER_INTERVAL_MS;
+    let fastRenderSamples = 0;
+    let slowRenderSamples = 0;
+    const initializationStart = performance.now();
+    try {
+      renderer = new GalleryRenderer();
+      const initializationDuration = performance.now() - initializationStart;
+      if (galleryInitializationShouldStop(initializationDuration)) {
+        renderer.dispose();
+        return;
+      }
+    } catch {
+      return;
+    }
+    let raf = 0;
+    let lastFrame = 0;
+    let lastCapture = 0;
+    let slowFrameStreak = 0;
+    let preparePollAfter = 0;
+    let index = 0;
+    let pendingTabId: string | null = null;
+    let pendingSince = 0;
+    let stopped = false;
+    let disposed = false;
+    const disposeRenderer = () => { if (!disposed) { disposed = true; renderer.dispose(); } };
+    const stopUpdates = () => { stopped = true; disposeRenderer(); };
+    const recordCaptureDuration = (duration: number) => {
+      const next = nextGalleryRenderInterval(renderInterval, duration, fastRenderSamples, slowRenderSamples);
+      renderInterval = next.interval;
+      fastRenderSamples = next.fastSamples;
+      slowRenderSamples = next.slowSamples;
+    };
+    const resetFrameBaseline = () => { lastFrame = 0; slowFrameStreak = 0; preparePollAfter = 0; if (pendingTabId) pendingSince = 0; };
+    window.addEventListener('focus', resetFrameBaseline);
+    window.addEventListener('blur', resetFrameBaseline);
+    document.addEventListener('visibilitychange', resetFrameBaseline);
+    const tick = (now: number) => {
+      if (stopped) return;
+      const visibleWindow = document.visibilityState === 'visible' && document.hasFocus();
+      const frameLag = lastFrame ? now - lastFrame : 0;
+      lastFrame = now;
+      if (visibleWindow && frameLag > GALLERY_FRAME_LAG_MS) {
+        if (galleryFrameLagShouldStop(frameLag, true, slowFrameStreak)) { stopUpdates(); return; }
+        slowFrameStreak += 1;
+        raf = window.requestAnimationFrame(tick);
+        return;
+      }
+      if (visibleWindow) slowFrameStreak = 0;
+      if (visibleWindow) {
+        const sources = getRenderSources();
+        renderer.retainSources(sources);
+        if (pendingTabId && !sources.some(({ id }) => id === pendingTabId)) {
+          pendingTabId = null;
+          preparePollAfter = 0;
+          index += 1;
+        }
+        if (!pendingTabId && now - lastCapture >= renderInterval && sources.length) {
+          pendingTabId = sources[index % sources.length].id;
+          pendingSince = now;
+          preparePollAfter = 0;
+        }
+        const source = pendingTabId ? sources.find(({ id }) => id === pendingTabId) : undefined;
+        if (pendingTabId && !pendingSince) pendingSince = now;
+        const card = source ? cardRefs.current.get(source.id)?.querySelector<HTMLCanvasElement>('.tab-gallery-preview canvas') : null;
+        if (source && pendingTabId && !card) { pendingTabId = null; index += 1; }
+        if (source && pendingTabId && card && now >= preparePollAfter) {
+          try {
+            const prepareStarted = performance.now();
+            const ready = renderer.prepare(source);
+            const afterPrepare = performance.now();
+            const foregroundAfterPrepare = document.visibilityState === 'visible' && document.hasFocus();
+            if (galleryPreparationShouldStop(afterPrepare - prepareStarted, foregroundAfterPrepare)) { stopUpdates(); return; }
+            preparePollAfter = 0;
+            if (ready) {
+              const renderStarted = performance.now();
+              renderer.render(source, card);
+              const renderDuration = performance.now() - renderStarted;
+              if (!renderedPreviewIds.current.has(source.id)) {
+                renderedPreviewIds.current.add(source.id);
+                setPreviewVersion((version) => version + 1);
+              }
+              pendingTabId = null;
+              index += 1;
+              lastCapture = now;
+              const foregroundAfterRender = document.visibilityState === 'visible' && document.hasFocus();
+              if (galleryRenderShouldStop(renderDuration, frameLag, foregroundAfterRender)) { stopUpdates(); return; }
+              if (foregroundAfterRender) recordCaptureDuration(renderDuration);
+            } else if (galleryPreparationTimedOut(now - pendingSince)) {
+              stopUpdates();
+              return;
+            }
+          } catch {
+            stopUpdates();
+            return;
+          }
+        }
+      }
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => { stopped = true; window.cancelAnimationFrame(raf); window.removeEventListener('focus', resetFrameBaseline); window.removeEventListener('blur', resetFrameBaseline); document.removeEventListener('visibilitychange', resetFrameBaseline); disposeRenderer(); };
+  }, [closing, getRenderSources]);
+
   const finish = useCallback((callback: () => void, cardId = resolvedSelectedId) => {
     if (closing) return;
     setClosing(true);
@@ -242,23 +360,32 @@ export function TabGallery({
     return () => { window.removeEventListener('keydown', onKeyDown, true); window.removeEventListener('keyup', onKeyUp, true); window.removeEventListener('blur', onBlur); };
   }, [cancel, closing, finish, layout, onChoose, onMove, resolvedSelectedId, tabs]);
 
+  const renderSources = getRenderSources?.() ?? [];
+  const renderSourceById = new Map(renderSources.map((source) => [source.id, source]));
+
   return <div ref={dialogRef} className={`tab-gallery${visible ? ' is-visible' : ''}${closing ? ' is-closing' : ''}`} role="dialog" aria-modal="true" aria-label="Tab gallery" onClick={(event) => { if (!(event.target as Element).closest('.tab-gallery-card')) cancel(); }}>
     <div className="tab-gallery-grid" style={{ '--gallery-columns': columns } as CSSProperties}>
       {layout.map(({ tab, position }) => {
         const frame = frames.get(tab.id);
+        const renderSource = tab.kind === 'browser' ? undefined : renderSourceById.get(tab.id);
+        const showLivePreview = Boolean(renderSource && renderedPreviewIds.current.has(tab.id));
+        const showFrame = !showLivePreview && Boolean(frame);
+        const showPreviewCanvas = showLivePreview || showFrame || Boolean(renderSource);
+        const showPlaceholder = !showLivePreview && !frame;
         const isSelected = tab.id === resolvedSelectedId;
         return <button
           key={tab.id}
           ref={(node) => { if (node) cardRefs.current.set(tab.id, node); else cardRefs.current.delete(tab.id); }}
           type="button"
-          className={`tab-gallery-card${isSelected ? ' is-selected' : ''}${isBrowser(tab) ? ' is-browser' : ''}${frame?.showBezel ? ' has-bezel' : ''}`}
-          style={{ gridRow: position.row + 1, gridColumn: position.column, '--gallery-ratio': String(frame?.aspectRatio ?? 1.333333) } as CSSProperties}
+          className={`tab-gallery-card${isSelected ? ' is-selected' : ''}${isBrowser(tab) ? ' is-browser' : ''}${(showLivePreview ? Boolean(renderSource?.settings.crtEmulation && renderSource.settings.showBezel) : Boolean(showFrame && frame?.showBezel)) ? ' has-bezel' : ''}`}
+          style={{ gridRow: position.row + 1, gridColumn: position.column, '--gallery-ratio': String(showLivePreview && renderSource ? renderSource.width / renderSource.height : frame?.aspectRatio ?? 1.333333) } as CSSProperties}
           aria-label={tabLabel(tab)}
           aria-selected={isSelected}
           onClick={() => finish(() => onChoose(tab.id), tab.id)}
         >
           <span className="tab-gallery-preview">
-            {frame ? <canvas ref={(node) => frameCanvas(node, frame)} aria-hidden="true" /> : <span className="tab-gallery-placeholder"><span aria-hidden="true">{isBrowser(tab) ? '◎' : '▣'}</span><small>{isBrowser(tab) ? 'Browser tab' : 'No frame yet'}</small></span>}
+            {showPreviewCanvas && <canvas ref={(node) => { if (!node || renderedPreviewIds.current.has(tab.id)) return; if (frame && !staticFrameCanvases.current.has(node)) { frameCanvas(node, frame, renderSource); staticFrameCanvases.current.add(node); } else if (!frame && renderSource) { const size = galleryCanvasSize(renderSource.width, renderSource.height); if (node.width !== size.width) node.width = size.width; if (node.height !== size.height) node.height = size.height; } }} aria-hidden="true" />}
+            {showPlaceholder && <span className="tab-gallery-placeholder"><span aria-hidden="true">{isBrowser(tab) ? '◎' : '▣'}</span><small>{isBrowser(tab) ? 'Browser tab' : 'No frame yet'}</small></span>}
           </span>
           <span className="tab-gallery-title">{tab.title}</span>
         </button>;
