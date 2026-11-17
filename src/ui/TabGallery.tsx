@@ -18,8 +18,7 @@ export type GalleryLayoutItem = {
 export function galleryColumns(width: number, tabCount: number): number {
   const padding = 2 * Math.min(84, Math.max(24, width * 0.05));
   const possible = Math.max(1, Math.floor((width - padding + 28) / 428));
-  const bounded = Math.min(possible, Math.max(1, tabCount * 2 - 1));
-  return bounded % 2 === 0 ? Math.max(1, bounded - 1) : bounded;
+  return Math.min(possible, Math.max(1, tabCount));
 }
 
 export function galleryCanvasSize(width: number, height: number): { width: number; height: number } {
@@ -38,7 +37,7 @@ export function buildGalleryLayout(tabs: WorkspaceTab[], activeId: string | null
   const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.id === activeId));
   const side = Math.floor(columns / 2);
   const currentStart = Math.max(0, activeIndex - side);
-  const currentEnd = Math.min(tabs.length, activeIndex + side + 1);
+  const currentEnd = Math.min(tabs.length, activeIndex + columns - side);
   const leftChunks: WorkspaceTab[][] = [];
   for (let end = currentStart; end > 0;) {
     const start = Math.max(0, end - columns);
