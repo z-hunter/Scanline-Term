@@ -2386,7 +2386,7 @@ fn atomic_replace_managed_config(path: &Path, contents: &[u8]) -> Result<(), Str
 #[cfg(windows)]
 fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
     use std::{os::windows::ffi::OsStrExt, ptr};
-    use windows_sys::Win32::Storage::FileSystem::{REPLACEFILE_WRITE_THROUGH, ReplaceFileW};
+    use windows_sys::Win32::Storage::FileSystem::ReplaceFileW;
     let destination: Vec<u16> = destination
         .as_os_str()
         .encode_wide()
@@ -2398,7 +2398,7 @@ fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
             destination.as_ptr(),
             temp.as_ptr(),
             ptr::null(),
-            REPLACEFILE_WRITE_THROUGH,
+            0,
             ptr::null(),
             ptr::null(),
         )

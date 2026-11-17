@@ -76,8 +76,8 @@ export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError
           restored = effectiveManagedSettings(response, migrated.current ? appGlobalsFromStored(loadStoredSettings(null)) : legacy);
           current.current = { values: restored, revision: response.revision };
           setAuthoritative(response.settings.settingsVersion === 1 || migrated.current);
-          setWritesEnabled(false);
-          writesEnabledRef.current = false;
+          setWritesEnabled(true);
+          writesEnabledRef.current = true;
         } catch { setWritesEnabled(false); writesEnabledRef.current = false; }
         current.current.values = restored;
         setValues(restored);

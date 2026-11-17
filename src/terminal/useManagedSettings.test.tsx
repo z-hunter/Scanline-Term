@@ -95,7 +95,7 @@ describe('useManagedSettings', () => {
       expect(mocked.invoke.mock.calls.filter(([name]) => name === 'save_managed_settings')).toHaveLength(1);
       await act(async () => { failSave(new Error('stale revision')); await Promise.all([first, second]); });
       expect(hook.values).toMatchObject({ tabPlacement: 'left', hideTabsBar: false });
-      expect(hook.writesEnabled).toBe(false);
+      expect(hook.writesEnabled).toBe(true);
       expect(onError).toHaveBeenCalledWith('Could not save managed settings: Error: stale revision');
     } finally {
       await act(async () => { root.unmount(); });
