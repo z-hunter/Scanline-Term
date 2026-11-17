@@ -866,7 +866,7 @@ export default function App() {
   useEffect(() => {
     const canvas = outputRef.current;
     const browser = activeBrowser;
-    if (!canvas || !browser || (!browserCrtEnabled && !presetPickerOpen) || browser.page !== "web" || galleryOpen || !isTauri()) {
+    if (!canvas || !browser || browser.page !== "web" || galleryOpen || !isTauri()) {
       setBrowserFps(0);
       setBrowserCaptureMetrics("");
       terminal.renderer?.setBrowserPreview(null);
@@ -923,8 +923,10 @@ export default function App() {
         frameBytesTotal += Math.floor(event.payload.data!.length * 0.75);
         frameWidth = image.naturalWidth;
         frameHeight = image.naturalHeight;
-        terminal.renderer?.setBrowserPreview(image);
-        browserPreviewTabId.current = browser.id;
+        if (browserCrtEnabled || presetPickerOpen) {
+          terminal.renderer?.setBrowserPreview(image);
+          browserPreviewTabId.current = browser.id;
+        }
         const canvas = browserPreviewFramesRef.current.get(browser.id) ?? document.createElement("canvas");
         const scale = Math.min(1, 800 / image.naturalWidth);
         const width = Math.round(image.naturalWidth * scale);
@@ -964,7 +966,7 @@ export default function App() {
         decodeMsTotal = 0;
         frameBytesTotal = 0;
       }, 1000);
-      dispatch("Page.startScreencast", { format: browserCaptureFormat, quality: 65, everyNthFrame: 1 });
+      dispatch("Page.startScreencast", { format: browserCaptureFormat, quality: 65, everyNthFrame: browserCrtEnabled || presetPickerOpen ? 1 : 60 });
     }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
     const point = (event: globalThis.MouseEvent | globalThis.WheelEvent) => {
       const rect = canvas.getBoundingClientRect();
