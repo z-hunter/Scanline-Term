@@ -125,7 +125,7 @@ export function TabGallery({
   const [closing, setClosing] = useState(false);
   const [, setPreviewVersion] = useState(0);
   const renderedPreviewIds = useRef(new Set<string>());
-  const staticFrameCanvases = useRef(new WeakSet<HTMLCanvasElement>());
+  const staticFrameCanvases = useRef(new WeakMap<HTMLCanvasElement, string>());
   const timer = useRef<number | null>(null);
   const layout = useMemo(() => buildGalleryLayout(tabs, activeId, columns), [tabs, activeId, columns]);
   const layoutRef = useRef(layout);
@@ -387,7 +387,7 @@ export function TabGallery({
           onClick={() => finish(() => onChoose(tab.id), tab.id)}
         >
           <span className="tab-gallery-preview">
-            {showPreviewCanvas && <canvas ref={(node) => { if (!node || renderedPreviewIds.current.has(tab.id)) return; if (frame && !staticFrameCanvases.current.has(node)) { frameCanvas(node, frame, renderSource, cardSize); staticFrameCanvases.current.add(node); } else if (!frame && renderSource) { const size = galleryCanvasSize(renderSource.width, renderSource.height, cardSize); if (node.width !== size.width) node.width = size.width; if (node.height !== size.height) node.height = size.height; } }} aria-hidden="true" />}
+            {showPreviewCanvas && <canvas ref={(node) => { if (!node || renderedPreviewIds.current.has(tab.id)) return; if (frame) { const size = galleryCanvasSize(renderSource?.width ?? frame.canvas.width, renderSource?.height ?? frame.canvas.height, cardSize); const key = `${size.width}x${size.height}`; if (staticFrameCanvases.current.get(node) !== key) { frameCanvas(node, frame, renderSource, cardSize); staticFrameCanvases.current.set(node, key); } } else if (renderSource) { const size = galleryCanvasSize(renderSource.width, renderSource.height, cardSize); if (node.width !== size.width) node.width = size.width; if (node.height !== size.height) node.height = size.height; } }} aria-hidden="true" />}
             {showPlaceholder && <span className="tab-gallery-placeholder"><span aria-hidden="true">{isBrowser(tab) ? '◎' : '▣'}</span><small>{isBrowser(tab) ? 'Browser tab' : 'No frame yet'}</small></span>}
           </span>
           <span className="tab-gallery-title">{tab.title}</span>
