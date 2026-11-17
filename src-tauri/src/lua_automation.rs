@@ -864,6 +864,7 @@ pub struct ManagedSettingsPayload {
     pub slide_from_top: Option<bool>,
     pub auto_update_enabled: Option<bool>,
     pub settings_scale: Option<f64>,
+    pub gallery_card_size: Option<u32>,
     pub show_settings_panel: Option<bool>,
     pub show_ai_panel: Option<bool>,
     pub ai_assistant_disabled: Option<bool>,
@@ -961,7 +962,7 @@ pub fn save_managed_settings(
         || actual_settings.browser_form_factor != settings.browser_form_factor || actual_settings.tab_placement != settings.tab_placement
         || actual_settings.hide_tabs_bar != settings.hide_tabs_bar || actual_settings.hide_tabs_bar_only_if_single_tab != settings.hide_tabs_bar_only_if_single_tab
         || actual_settings.global_hotkey_enabled != settings.global_hotkey_enabled || actual_settings.slide_from_top != settings.slide_from_top
-        || actual_settings.auto_update_enabled != settings.auto_update_enabled || actual_settings.settings_scale != settings.settings_scale
+        || actual_settings.auto_update_enabled != settings.auto_update_enabled || actual_settings.settings_scale != settings.settings_scale || actual_settings.gallery_card_size != settings.gallery_card_size
         || actual_settings.show_settings_panel != settings.show_settings_panel || actual_settings.show_ai_panel != settings.show_ai_panel
         || actual_settings.ai_assistant_disabled != settings.ai_assistant_disabled || actual_settings.last_ai_selection != settings.last_ai_selection
         || actual_settings.mcp_enabled != settings.mcp_enabled || actual_settings.mcp_keep_tabs_open != settings.mcp_keep_tabs_open
@@ -2100,7 +2101,7 @@ fn managed_settings_result(
             browser_form_factor: settings.and_then(|s| s.browser_form_factor.clone()), tab_placement: settings.and_then(|s| s.tab_placement.clone()),
             hide_tabs_bar: settings.and_then(|s| s.hide_tabs_bar), hide_tabs_bar_only_if_single_tab: settings.and_then(|s| s.hide_tabs_bar_only_if_single_tab),
             global_hotkey_enabled: settings.and_then(|s| s.global_hotkey_enabled), slide_from_top: settings.and_then(|s| s.slide_from_top),
-            auto_update_enabled: settings.and_then(|s| s.auto_update_enabled), settings_scale: settings.and_then(|s| s.settings_scale),
+            auto_update_enabled: settings.and_then(|s| s.auto_update_enabled), settings_scale: settings.and_then(|s| s.settings_scale), gallery_card_size: settings.and_then(|s| s.gallery_card_size),
             show_settings_panel: settings.and_then(|s| s.show_settings_panel), show_ai_panel: settings.and_then(|s| s.show_ai_panel),
             ai_assistant_disabled: settings.and_then(|s| s.ai_assistant_disabled), last_ai_selection: settings.and_then(|s| s.last_ai_selection.clone()),
             mcp_enabled: settings.and_then(|s| s.mcp_enabled), mcp_keep_tabs_open: settings.and_then(|s| s.mcp_keep_tabs_open),
@@ -2276,6 +2277,7 @@ fn managed_settings_block(
     push_bool!(ai_assistant_disabled); push_bool!(mcp_enabled); push_bool!(mcp_keep_tabs_open);
     push_bool!(explorer_integration_enabled); push_bool!(smooth_tui_scrolling); push_bool!(rmb_menu_in_term); push_bool!(channel_switch_effect);
     if let Some(value) = settings.settings_scale { fields.push(format!("settings_scale = {value}")); }
+    if let Some(value) = settings.gallery_card_size { fields.push(format!("gallery_card_size = {value}")); }
     if let Some(value) = settings.settings_version { fields.push(format!("settings_version = {value}")); }
     if let Some(value) = &settings.last_ai_selection { fields.push(format!("last_ai_selection = {{ model = {}, effort = {} }}", lua_string_literal(&value.model), lua_string_literal(&value.effort))); }
     let separator = format!(",{newline}    ");
@@ -2348,6 +2350,7 @@ fn validate_managed_settings(settings: &ManagedSettingsPayload) -> Result<(), St
     if settings.browser_form_factor.as_deref().is_some_and(|v| !matches!(v, "physical" | "4:3" | "8:5")) { return Err("browserFormFactor is invalid".into()); }
     if settings.tab_placement.as_deref().is_some_and(|v| !matches!(v, "top" | "left")) { return Err("tabPlacement is invalid".into()); }
     if settings.settings_scale.is_some_and(|v| !v.is_finite() || !(0.75..=1.5).contains(&v)) { return Err("settingsScale must be between 0.75 and 1.5".into()); }
+    if settings.gallery_card_size.is_some_and(|v| !(80..=200).contains(&v)) { return Err("galleryCardSize must be between 80 and 200".into()); }
     if settings.settings_version.is_some_and(|v| v != 1) { return Err("settingsVersion is unsupported".into()); }
     if settings.default_shell.as_ref().is_some_and(|v| v.encode_utf16().count() > 1024 || v.contains('\0')) { return Err("defaultShell is invalid or too long".into()); }
     if settings.last_ai_selection.as_ref().is_some_and(|v| v.model.is_empty() || v.model.encode_utf16().count() > 128 || v.effort.is_empty() || v.effort.encode_utf16().count() > 64) { return Err("lastAiSelection is invalid".into()); }
@@ -3676,7 +3679,7 @@ mod tests {
             default_preset: Some("DEC VT-100".into()), smooth_scrollback: Some(false), restore_window: Some(false),
             browser_form_factor: Some("4:3".into()), tab_placement: Some("left".into()),
             hide_tabs_bar: Some(true), hide_tabs_bar_only_if_single_tab: Some(false), global_hotkey_enabled: Some(false),
-            slide_from_top: Some(false), auto_update_enabled: Some(false), settings_scale: Some(1.0),
+            slide_from_top: Some(false), auto_update_enabled: Some(false), settings_scale: Some(1.0), gallery_card_size: Some(150),
             show_settings_panel: Some(true), show_ai_panel: Some(true), ai_assistant_disabled: Some(true),
             last_ai_selection: Some(LastAiSelection { model: "gpt-\"x\"".into(), effort: "high".into() }),
             mcp_enabled: Some(true), mcp_keep_tabs_open: Some(true), default_shell: Some("pwsh.exe --title \"Dev\" \\safe".into()),
@@ -3698,6 +3701,7 @@ mod tests {
         assert_eq!(actual.slide_from_top, settings.slide_from_top);
         assert_eq!(actual.auto_update_enabled, settings.auto_update_enabled);
         assert_eq!(actual.settings_scale, settings.settings_scale);
+        assert_eq!(actual.gallery_card_size, settings.gallery_card_size);
         assert_eq!(actual.show_settings_panel, settings.show_settings_panel);
         assert_eq!(actual.show_ai_panel, settings.show_ai_panel);
         assert_eq!(actual.ai_assistant_disabled, settings.ai_assistant_disabled);

@@ -1384,6 +1384,7 @@ export default function App() {
       </section>
       {galleryOpen && gallerySnapshot && <TabGallery
         tabs={terminal.tabs}
+        cardSize={stored.galleryCardSize}
         activeId={gallerySnapshot.activeId}
         frames={gallerySnapshot.frames}
         getRenderSources={terminal.galleryRenderSources}

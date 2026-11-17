@@ -13,6 +13,7 @@ vi.mock('../terminal/gallery-renderer', () => ({
   GALLERY_RENDER_INTERVAL_MS: 100,
   GALLERY_RENDER_MAX_INTERVAL_MS: 500,
   GALLERY_THUMBNAIL_MAX_DIMENSION: 480,
+  galleryThumbnailMaxDimension: (cardSize = 100) => Math.round(480 * Math.min(200, Math.max(80, cardSize)) / 100),
   galleryFrameLagShouldStop: () => false,
   galleryInitializationShouldStop: () => false,
   galleryPreparationShouldStop: () => false,
@@ -37,11 +38,33 @@ describe('TabGallery', () => {
   it('adds columns only after a readable 400px card fits', () => {
     expect(galleryColumns(1440, 10)).toBe(3);
     expect(galleryColumns(2560, 10)).toBe(5);
+    expect(galleryColumns(1440, 10, 200)).toBe(1);
+    expect(galleryColumns(1440, 10, 80)).toBe(3);
   });
 
   it('bounds live preview backing dimensions while preserving source aspect ratio', () => {
     expect(galleryCanvasSize(1920, 1080)).toEqual({ width: 480, height: 270 });
     expect(galleryCanvasSize(800, 1200)).toEqual({ width: 320, height: 480 });
+    expect(galleryCanvasSize(1920, 1080, 80)).toEqual({ width: 384, height: 216 });
+    expect(galleryCanvasSize(1920, 1080, 200)).toEqual({ width: 960, height: 540 });
+    expect(galleryCanvasSize(1920, 1080, 500)).toEqual({ width: 960, height: 540 });
+  });
+
+  it('applies one card size to terminal and browser cards', () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    const browserTab = { id: 'browser', kind: 'browser', ordinal: 8, title: 'Web', page: 'home' } as never;
+    const terminalFrame = Object.assign(document.createElement('canvas'), { width: 800, height: 600 });
+    const browserFrame = Object.assign(document.createElement('canvas'), { width: 1920, height: 1080 });
+    const frames = new Map([
+      ['tab-1', { canvas: terminalFrame, aspectRatio: 4 / 3, showBezel: false }],
+      ['browser', { canvas: browserFrame, aspectRatio: 16 / 9, showBezel: false }],
+    ]);
+    act(() => root.render(createElement(TabGallery, { tabs: [tabs[0], browserTab], activeId: 'tab-1', frames, originRect: null, cardSize: 125, onChoose: vi.fn(), onCancel: vi.fn() })));
+    expect(container.querySelector('.tab-gallery-grid')?.getAttribute('style')).toContain('--gallery-card-width: 500px');
+    expect(container.querySelectorAll('.tab-gallery-card')).toHaveLength(2);
+    expect([...container.querySelectorAll('canvas')].map(({ width, height }) => [width, height])).toEqual([[600, 450], [600, 338]]);
+    act(() => root.unmount()); container.remove();
   });
 
   it('keeps live preview canvas dimensions across rerenders', () => {

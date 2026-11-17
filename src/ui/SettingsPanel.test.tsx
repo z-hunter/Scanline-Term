@@ -37,6 +37,23 @@ describe('SettingsPanel font-size editing flow', () => {
     input.dispatchEvent(new Event('blur'));
   };
 
+  it('shows the global gallery size knob with its supported range', async () => {
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    const setStored = vi.fn();
+    await act(async () => { root.render(createElement(SettingsPanel, { ...defaultProps, setStored })); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="4 UI"]')?.click(); });
+    const knob = container.querySelector<HTMLElement>('[role="slider"][aria-label="Gallery card size (%)"]');
+    expect(knob?.getAttribute('aria-valuemin')).toBe('80');
+    expect(knob?.getAttribute('aria-valuemax')).toBe('200');
+    expect(knob?.getAttribute('aria-valuenow')).toBe('100');
+    await act(async () => { knob?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })); });
+    const update = setStored.mock.calls[0][0] as (current: typeof defaultProps.stored) => typeof defaultProps.stored;
+    expect(update(defaultProps.stored).galleryCardSize).toBe(105);
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('marks the cursor style as overridden when the active app controls it', async () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);

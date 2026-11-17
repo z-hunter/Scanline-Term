@@ -14,6 +14,9 @@ export const GALLERY_RENDER_INIT_BUDGET_MS = 50;
 export const GALLERY_PREPARE_TIMEOUT_MS = 5_000;
 export const GALLERY_MAX_SOURCE_PIXELS = 2_100_000;
 export const GALLERY_THUMBNAIL_MAX_DIMENSION = 480;
+export function galleryThumbnailMaxDimension(cardSize = 100): number {
+  return Math.round(GALLERY_THUMBNAIL_MAX_DIMENSION * Math.min(200, Math.max(80, cardSize)) / 100);
+}
 export const GALLERY_MAX_TERMINAL_RENDERERS = 8;
 
 export type GalleryRenderSource = { id: string; terminal: Terminal; settings: CRTSettings; images: TerminalImage[]; width: number; height: number };
@@ -102,12 +105,13 @@ export class GalleryRenderer {
     }
   }
 
-  render(source: GalleryRenderSource, target: HTMLCanvasElement): void {
+  render(source: GalleryRenderSource, target: HTMLCanvasElement, cardSize = 100): void {
     if (this.contextLost) throw new Error('Gallery WebGL context was lost.');
     const settings = this.settings(source.settings);
     const aspectRatio = source.width / source.height;
-    const width = Math.max(1, Math.round(Math.min(GALLERY_THUMBNAIL_MAX_DIMENSION, GALLERY_THUMBNAIL_MAX_DIMENSION * aspectRatio)));
-    const height = Math.max(1, Math.round(Math.min(GALLERY_THUMBNAIL_MAX_DIMENSION, width / aspectRatio)));
+    const maxDimension = galleryThumbnailMaxDimension(cardSize);
+    const width = Math.max(1, Math.round(Math.min(maxDimension, maxDimension * aspectRatio)));
+    const height = Math.max(1, Math.round(Math.min(maxDimension, width / aspectRatio)));
     if (target.width !== width) target.width = width;
     if (target.height !== height) target.height = height;
     if (this.output.width !== width) this.output.width = width;

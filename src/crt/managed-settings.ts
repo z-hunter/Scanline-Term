@@ -58,6 +58,7 @@ export function effectiveManagedSettings(response: ManagedSettingsResponse, lega
     slideFromTop: normalized.slideFromTop,
     autoUpdateEnabled: normalized.autoUpdateEnabled,
     settingsScale: normalized.settingsScale,
+    galleryCardSize: normalized.galleryCardSize,
     showSettingsPanel: normalized.showSettingsPanel,
     showAiPanel: normalized.showAiPanel,
     aiAssistantDisabled: normalized.aiAssistantDisabled,

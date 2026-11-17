@@ -250,6 +250,7 @@ pub struct ManagedSettings {
     pub slide_from_top: Option<bool>,
     pub auto_update_enabled: Option<bool>,
     pub settings_scale: Option<f64>,
+    pub gallery_card_size: Option<u32>,
     pub show_settings_panel: Option<bool>,
     pub show_ai_panel: Option<bool>,
     pub ai_assistant_disabled: Option<bool>,
@@ -1303,7 +1304,7 @@ fn install_registration_api(
                     ));
                 };
                 let key = key.to_str()?.to_owned();
-                if !matches!(key.as_str(), "default_preset" | "smooth_scrollback" | "restore_window" | "browser_form_factor" | "tab_placement" | "hide_tabs_bar" | "hide_tabs_bar_only_if_single_tab" | "global_hotkey_enabled" | "slide_from_top" | "auto_update_enabled" | "settings_scale" | "show_settings_panel" | "show_ai_panel" | "ai_assistant_disabled" | "last_ai_selection" | "mcp_enabled" | "mcp_keep_tabs_open" | "default_shell" | "explorer_integration_enabled" | "smooth_tui_scrolling" | "rmb_menu_in_term" | "channel_switch_effect" | "settings_version") {
+                if !matches!(key.as_str(), "default_preset" | "smooth_scrollback" | "restore_window" | "browser_form_factor" | "tab_placement" | "hide_tabs_bar" | "hide_tabs_bar_only_if_single_tab" | "global_hotkey_enabled" | "slide_from_top" | "auto_update_enabled" | "settings_scale" | "gallery_card_size" | "show_settings_panel" | "show_ai_panel" | "ai_assistant_disabled" | "last_ai_selection" | "mcp_enabled" | "mcp_keep_tabs_open" | "default_shell" | "explorer_integration_enabled" | "smooth_tui_scrolling" | "rmb_menu_in_term" | "channel_switch_effect" | "settings_version") {
                     return Err(mlua::Error::RuntimeError(format!(
                         "unknown sterm.settings field '{key}'"
                     )));
@@ -1351,6 +1352,11 @@ fn install_registration_api(
                 Value::Number(value) if value.is_finite() && (0.75..=1.5).contains(&value) => Some(value),
                 _ => return Err(mlua::Error::RuntimeError("settings_scale must be a finite number from 0.75 to 1.5 or nil".into())),
             };
+            let gallery_card_size = match settings.get::<Value>("gallery_card_size")? {
+                Value::Nil => None,
+                Value::Integer(value) if (80..=200).contains(&value) => Some(value as u32),
+                _ => return Err(mlua::Error::RuntimeError("gallery_card_size must be an integer from 80 to 200 or nil".into())),
+            };
             let default_shell = match settings.get::<Value>("default_shell")? { Value::Nil => None, Value::String(value) => { let value = value.to_str()?.to_owned(); if value.encode_utf16().count() > 1024 || value.contains('\0') { return Err(mlua::Error::RuntimeError("default_shell is invalid or too long".into())); } Some(value) }, _ => return Err(mlua::Error::RuntimeError("default_shell must be a string or nil".into())) };
             let last_ai_selection = match settings.get::<Value>("last_ai_selection")? {
                 Value::Nil => None,
@@ -1377,7 +1383,7 @@ fn install_registration_api(
                 smooth_scrollback,
                 restore_window,
                 browser_form_factor, tab_placement, hide_tabs_bar, hide_tabs_bar_only_if_single_tab,
-                global_hotkey_enabled, slide_from_top, auto_update_enabled, settings_scale,
+                global_hotkey_enabled, slide_from_top, auto_update_enabled, settings_scale, gallery_card_size,
                 show_settings_panel, show_ai_panel, ai_assistant_disabled, last_ai_selection,
                 mcp_enabled, mcp_keep_tabs_open, default_shell, explorer_integration_enabled,
                 smooth_tui_scrolling, rmb_menu_in_term, channel_switch_effect, settings_version,
@@ -2781,13 +2787,18 @@ mod tests {
     fn expanded_settings_and_custom_shells_validate_and_round_trip() {
         let dir = TempDir::new();
         dir.write("config.lua", "");
-        let source = r#"local sterm=require 'sterm'; sterm.settings({settings_scale=1, last_ai_selection={model='gpt-x', effort='high'}, settings_version=1}); sterm.shells({{id='clean', name='Clean', command='pwsh.exe', args={'-NoProfile', 'say "hi" \\done'}}})"#;
+        let source = r#"local sterm=require 'sterm'; sterm.settings({settings_scale=1, gallery_card_size=160, last_ai_selection={model='gpt-x', effort='high'}, settings_version=1}); sterm.shells({{id='clean', name='Clean', command='pwsh.exe', args={'-NoProfile', 'say "hi" \\done'}}})"#;
         let snapshot = RuntimeSnapshot::load_source(&dir.entry(), source).unwrap();
         assert_eq!(snapshot.settings().unwrap().settings_scale, Some(1.0));
+        assert_eq!(snapshot.settings().unwrap().gallery_card_size, Some(160));
         assert_eq!(snapshot.settings().unwrap().settings_version, Some(1));
         assert_eq!(snapshot.custom_shells(), &[CustomShell { id: "lua:clean".into(), name: "Clean".into(), command: "pwsh.exe".into(), args: vec!["-NoProfile".into(), "say \"hi\" \\done".into()] }]);
         for invalid in [
             "require('sterm').settings({settings_scale=1.6})",
+            "require('sterm').settings({gallery_card_size=79})",
+            "require('sterm').settings({gallery_card_size=201})",
+            "require('sterm').settings({gallery_card_size=100.5})",
+            "require('sterm').settings({gallery_card_size='100'})",
             "require('sterm').settings({last_ai_selection={model=7, effort='high'}})",
             "require('sterm').shells({{id=7, name='Clean', command='pwsh.exe', args={}}})",
             "require('sterm').shells({{id='clean', name='Clean', command='pwsh.exe', args='bad'}})",

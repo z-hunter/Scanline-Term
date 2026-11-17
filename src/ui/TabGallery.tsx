@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
-import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, GALLERY_THUMBNAIL_MAX_DIMENSION, galleryFrameLagShouldStop, galleryInitializationShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderShouldStop, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
+import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryInitializationShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderShouldStop, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
 
 export type GalleryFrame = {
   canvas: HTMLCanvasElement;
@@ -15,14 +15,15 @@ export type GalleryLayoutItem = {
   position: GalleryPosition;
 };
 
-export function galleryColumns(width: number, tabCount: number): number {
+export function galleryColumns(width: number, tabCount: number, cardSize = 100): number {
   const padding = 2 * Math.min(84, Math.max(24, width * 0.05));
-  const possible = Math.max(1, Math.floor((width - padding + 28) / 428));
+  const possible = Math.max(1, Math.floor((width - padding + 28) / (400 * cardSize / 100 + 28)));
   return Math.min(possible, Math.max(1, tabCount));
 }
 
-export function galleryCanvasSize(width: number, height: number): { width: number; height: number } {
-  const scale = GALLERY_THUMBNAIL_MAX_DIMENSION / Math.max(width, height, 1);
+export function galleryCanvasSize(width: number, height: number, cardSize = 100): { width: number; height: number } {
+  const maxDimension = galleryThumbnailMaxDimension(cardSize);
+  const scale = maxDimension / Math.max(width, height, 1);
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
@@ -65,9 +66,9 @@ function tabLabel(tab: WorkspaceTab): string {
   return tab.kind === 'browser' ? `${tab.title} — browser tab` : `${tab.title} — terminal tab`;
 }
 
-function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined, source?: GalleryRenderSource): void {
+function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined, source?: GalleryRenderSource, cardSize = 100): void {
   if (!node || !frame) return;
-  const size = source ? galleryCanvasSize(source.width, source.height) : { width: frame.canvas.width, height: frame.canvas.height };
+  const size = source ? galleryCanvasSize(source.width, source.height, cardSize) : galleryCanvasSize(frame.canvas.width, frame.canvas.height, cardSize);
   if (node.width !== size.width) node.width = size.width;
   if (node.height !== size.height) node.height = size.height;
   const context = node.getContext('2d');
@@ -91,6 +92,7 @@ function isBrowser(tab: WorkspaceTab): tab is BrowserTab {
 
 export function TabGallery({
   tabs,
+  cardSize = 100,
   activeId,
   frames,
   getRenderSources,
@@ -101,6 +103,7 @@ export function TabGallery({
   closeRequested = false,
 }: {
   tabs: WorkspaceTab[];
+  cardSize?: number;
   activeId: string | null;
   frames: ReadonlyMap<string, GalleryFrame>;
   getRenderSources?: () => GalleryRenderSource[];
@@ -116,7 +119,7 @@ export function TabGallery({
   const menuHeld = useRef(false);
   const entryAnimation = useRef(false);
   const skipNextLayoutAnimation = useRef(false);
-  const [columns, setColumns] = useState(() => galleryColumns(window.innerWidth, tabs.length));
+  const [columns, setColumns] = useState(() => galleryColumns(window.innerWidth, tabs.length, cardSize));
   const [visible, setVisible] = useState(false);
   const [selectedId, setSelectedId] = useState(activeId ?? tabs[0]?.id ?? null);
   const [closing, setClosing] = useState(false);
@@ -132,10 +135,11 @@ export function TabGallery({
   const resolvedSelectedId = selectedId && tabs.some((tab) => tab.id === selectedId) ? selectedId : activeId ?? tabs[0]?.id ?? null;
 
   useEffect(() => {
-    const resize = () => setColumns(galleryColumns(window.innerWidth, tabs.length));
+    const resize = () => setColumns(galleryColumns(window.innerWidth, tabs.length, cardSize));
+    resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, [tabs.length]);
+  }, [cardSize, tabs.length]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setVisible(true));
@@ -269,7 +273,7 @@ export function TabGallery({
             preparePollAfter = 0;
             if (ready) {
               const renderStarted = performance.now();
-              renderer.render(source, card);
+              renderer.render(source, card, cardSize);
               const renderDuration = performance.now() - renderStarted;
               if (!renderedPreviewIds.current.has(source.id)) {
                 renderedPreviewIds.current.add(source.id);
@@ -295,7 +299,7 @@ export function TabGallery({
     };
     raf = window.requestAnimationFrame(tick);
     return () => { stopped = true; window.cancelAnimationFrame(raf); window.removeEventListener('focus', resetFrameBaseline); window.removeEventListener('blur', resetFrameBaseline); document.removeEventListener('visibilitychange', resetFrameBaseline); disposeRenderer(); };
-  }, [closing, getRenderSources]);
+  }, [cardSize, closing, getRenderSources]);
 
   const finish = useCallback((callback: () => void, cardId = resolvedSelectedId) => {
     if (closing) return;
@@ -363,7 +367,7 @@ export function TabGallery({
   const renderSourceById = new Map(renderSources.map((source) => [source.id, source]));
 
   return <div ref={dialogRef} className={`tab-gallery${visible ? ' is-visible' : ''}${closing ? ' is-closing' : ''}`} role="dialog" aria-modal="true" aria-label="Tab gallery" onClick={(event) => { if (!(event.target as Element).closest('.tab-gallery-card')) cancel(); }}>
-    <div className="tab-gallery-grid" style={{ '--gallery-columns': columns } as CSSProperties}>
+    <div className="tab-gallery-grid" style={{ '--gallery-columns': columns, '--gallery-card-width': `${400 * cardSize / 100}px` } as CSSProperties}>
       {layout.map(({ tab, position }) => {
         const frame = frames.get(tab.id);
         const renderSource = tab.kind === 'browser' ? undefined : renderSourceById.get(tab.id);
@@ -383,7 +387,7 @@ export function TabGallery({
           onClick={() => finish(() => onChoose(tab.id), tab.id)}
         >
           <span className="tab-gallery-preview">
-            {showPreviewCanvas && <canvas ref={(node) => { if (!node || renderedPreviewIds.current.has(tab.id)) return; if (frame && !staticFrameCanvases.current.has(node)) { frameCanvas(node, frame, renderSource); staticFrameCanvases.current.add(node); } else if (!frame && renderSource) { const size = galleryCanvasSize(renderSource.width, renderSource.height); if (node.width !== size.width) node.width = size.width; if (node.height !== size.height) node.height = size.height; } }} aria-hidden="true" />}
+            {showPreviewCanvas && <canvas ref={(node) => { if (!node || renderedPreviewIds.current.has(tab.id)) return; if (frame && !staticFrameCanvases.current.has(node)) { frameCanvas(node, frame, renderSource, cardSize); staticFrameCanvases.current.add(node); } else if (!frame && renderSource) { const size = galleryCanvasSize(renderSource.width, renderSource.height, cardSize); if (node.width !== size.width) node.width = size.width; if (node.height !== size.height) node.height = size.height; } }} aria-hidden="true" />}
             {showPlaceholder && <span className="tab-gallery-placeholder"><span aria-hidden="true">{isBrowser(tab) ? '◎' : '▣'}</span><small>{isBrowser(tab) ? 'Browser tab' : 'No frame yet'}</small></span>}
           </span>
           <span className="tab-gallery-title">{tab.title}</span>

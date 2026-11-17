@@ -60,6 +60,7 @@ export type AppSettings = {
   slideFromTop: boolean;
   autoUpdateEnabled: boolean;
   settingsScale: number;
+  galleryCardSize: number;
   showSettingsPanel: boolean;
   showAiPanel: boolean;
   aiAssistantDisabled: boolean;
@@ -84,6 +85,7 @@ export function appGlobalsFromStored(stored: StoredSettings): Omit<AppSettings, 
     browserFormFactor: stored.browserFormFactor, tabPlacement: stored.tabPlacement, hideTabsBar: stored.hideTabsBar,
     hideTabsBarOnlyIfSingleTab: stored.hideTabsBarOnlyIfSingleTab, globalHotkeyEnabled: stored.globalHotkeyEnabled,
     slideFromTop: stored.slideFromTop, autoUpdateEnabled: stored.autoUpdateEnabled, settingsScale: stored.settingsScale,
+    galleryCardSize: stored.galleryCardSize,
     showSettingsPanel: stored.showSettingsPanel, showAiPanel: stored.showAiPanel, aiAssistantDisabled: stored.aiAssistantDisabled,
     lastAiSelection: stored.lastAiSelection, mcpEnabled: stored.mcpEnabled, mcpKeepTabsOpen: stored.mcpKeepTabsOpen,
     defaultShell: stored.defaultShell, explorerIntegrationEnabled: stored.explorerIntegrationEnabled,
@@ -179,6 +181,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     slideFromTop: true,
     autoUpdateEnabled: true,
     settingsScale: 0.9,
+    galleryCardSize: 100,
     showSettingsPanel: false,
     showAiPanel: false,
     aiAssistantDisabled: false,
@@ -208,6 +211,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
       slideFromTop?: unknown;
       autoUpdateEnabled?: unknown;
       settingsScale?: unknown;
+      galleryCardSize?: unknown;
       showSettingsPanel?: unknown;
       showAiPanel?: unknown;
       aiAssistantDisabled?: unknown;
@@ -232,6 +236,7 @@ export function loadStoredSettings(raw: string | null): StoredSettings {
     if (typeof value.slideFromTop === 'boolean') result.slideFromTop = value.slideFromTop;
     if (typeof value.autoUpdateEnabled === 'boolean') result.autoUpdateEnabled = value.autoUpdateEnabled;
     if (numberInRange(value.settingsScale, 0.75, 1.5)) result.settingsScale = value.settingsScale;
+    if (integerInRange(value.galleryCardSize, 80, 200)) result.galleryCardSize = value.galleryCardSize;
     if (typeof value.showSettingsPanel === 'boolean') result.showSettingsPanel = value.showSettingsPanel;
     if (typeof value.showAiPanel === 'boolean') result.showAiPanel = value.showAiPanel;
     if (typeof value.aiAssistantDisabled === 'boolean') result.aiAssistantDisabled = value.aiAssistantDisabled;

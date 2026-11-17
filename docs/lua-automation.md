@@ -47,7 +47,7 @@ require('sterm').settings({
 })
 ```
 
-The current persisted schema has these 22 user-facing fields. `settings_version` is an internal schema marker and is not a user setting. CRT/display parameters and fonts remain part of named saved presets, not these global fields.
+The current persisted schema has these 23 user-facing fields. `settings_version` is an internal schema marker and is not a user setting. CRT/display parameters and fonts remain part of named saved presets, not these global fields.
 
 | Lua field | Type / accepted values |
 |---|---|
@@ -63,6 +63,7 @@ The current persisted schema has these 22 user-facing fields. `settings_version`
 | `slide_from_top` | boolean |
 | `auto_update_enabled` | boolean |
 | `settings_scale` | number from 0.75 to 1.5 |
+| `gallery_card_size` | integer percentage from 80 to 200; defaults to 100% |
 | `show_settings_panel` | boolean |
 | `show_ai_panel` | boolean |
 | `ai_assistant_disabled` | boolean |

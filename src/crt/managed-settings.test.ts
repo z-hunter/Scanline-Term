@@ -4,7 +4,7 @@ import { loadStoredSettings } from './settings';
 
 const legacy = loadStoredSettings(null);
 const wire = (overrides: Record<string, unknown> = {}) => ({
-  version: null, browserFormFactor: null, tabPlacement: null, hideTabsBar: null, hideTabsBarOnlyIfSingleTab: null,
+  version: null, browserFormFactor: null, tabPlacement: null, hideTabsBar: null, hideTabsBarOnlyIfSingleTab: null, galleryCardSize: null,
   globalHotkeyEnabled: null, slideFromTop: null, autoUpdateEnabled: null, settingsScale: null, showSettingsPanel: null,
   showAiPanel: null, aiAssistantDisabled: null, lastAiSelection: null, mcpEnabled: null, mcpKeepTabsOpen: null,
   defaultShell: null, explorerIntegrationEnabled: null, smoothScrollback: null, smoothTuiScrolling: null,
@@ -21,7 +21,8 @@ describe('managed settings migration', () => {
 
   it('does not resurrect legacy values for omitted fields after marker version 1', () => {
     const old = { ...legacy, browserFormFactor: '4:3' as const, smoothScrollback: false, defaultShell: 'legacy-shell' };
-    expect(effectiveManagedSettings(response(wire({ settingsVersion: 1 })), old)).toMatchObject({ browserFormFactor: 'physical', smoothScrollback: true, defaultShell: '', defaultPreset: 'default', restoreWindow: true });
+    expect(effectiveManagedSettings(response(wire({ settingsVersion: 1 })), old)).toMatchObject({ browserFormFactor: 'physical', smoothScrollback: true, defaultShell: '', defaultPreset: 'default', restoreWindow: true, galleryCardSize: 100 });
+    expect(effectiveManagedSettings(response(wire({ settingsVersion: 1, galleryCardSize: 160 })), old).galleryCardSize).toBe(160);
   });
 
   it('validates native response envelopes and preserves palette and shell snapshots', () => {

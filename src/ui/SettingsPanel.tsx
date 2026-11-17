@@ -5,6 +5,7 @@ import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtu
 import {
   AdvancedCRTSettingsSection,
   DisplaySettingsSection,
+  Knob,
   SegmentedControl,
   Switch,
   TerminalSettingsSection,
@@ -417,6 +418,10 @@ export function SettingsPanel({
             {[0.75, 0.9, 1, 1.1, 1.25, 1.5].map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}
           </select>
         </label>
+        <div className="host-setting-block">
+          <span className="host-setting-label">Gallery card size (%)</span>
+          <Knob label="Gallery card size (%)" value={stored.galleryCardSize} min={80} max={200} step={5} onChange={(galleryCardSize) => setStored((current) => ({ ...current, galleryCardSize }))} />
+        </div>
       </SettingsAccordionSection>
 
       <SettingsAccordionSection id="system" number={browserTabActive ? (browserCrtSettingsEnabled ? 5 : 4) : 5} title="System" icon="system" expanded={Boolean(expandedSections.system)} onToggle={() => toggleSection('system')}>

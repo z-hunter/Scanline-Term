@@ -3,6 +3,13 @@ import { colorProfile } from 'scanline-virtual-screen/core';
 import { clonePresetSettings, DEFAULT_BROWSER_FORM_FACTOR, DEFAULT_CRT_SETTINGS, DEFAULT_PRESET_SETTINGS, DEFAULT_RESOLUTION, loadPresetSettings, loadStoredSettings, replaceLuaColorProfiles, shouldHideTabsBar, warnIfMissingColorProfile } from './settings';
 
 describe('CRT settings', () => {
+  it('defaults gallery card size to 100% and accepts only integer percentages from 80 to 200', () => {
+    expect(loadStoredSettings(null).galleryCardSize).toBe(100);
+    expect(loadStoredSettings(JSON.stringify({ galleryCardSize: 200 })).galleryCardSize).toBe(200);
+    for (const galleryCardSize of [79, 201, 100.5, '120']) {
+      expect(loadStoredSettings(JSON.stringify({ galleryCardSize })).galleryCardSize).toBe(100);
+    }
+  });
   it('rejects corrupt values and falls back to VGA', () => {
     const loaded = loadStoredSettings(
       JSON.stringify({ resolution: 'not-a-resolution', crt: { bloom: 9, persistenceIntensity: 0.35, curvature: 0.25, colorMode: 'invalid', imageBrightness: 9 } }),

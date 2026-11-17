@@ -130,6 +130,10 @@ const unlisten = await listen<PayloadType>('my-event', (event) => {
 - [ ] Characters render correctly (no overlap, no clipping)
 - [ ] `invoke('resize_terminal')` is called with correct dimensions
 
+## Gallery card size
+
+The global **Gallery card size** knob in UI settings uses integer percentages from 80% to 200%, defaults to 100%, and applies evenly to terminal and browser cards. It is stored in `StoredSettings` and the Lua GUI-managed settings block as `gallery_card_size`; omitted Lua values use the 100% application default. Preview raster size follows the selected percentage, from 384px to 960px on the long edge. Larger cards use more rendering work; the existing adaptive refresh backs off when captures slow down and stops live updates after severe stalls.
+
 ---
 
 ## Windows Explorer integration

@@ -38,6 +38,7 @@ vi.mock('scanline-virtual-screen/terminal', () => ({
 
 import {
   galleryInitializationShouldStop,
+  galleryThumbnailMaxDimension,
   fitGalleryRasterSettings,
   galleryFrameLagShouldStop,
   galleryPreparationShouldStop,
@@ -55,6 +56,12 @@ import {
 beforeEach(() => { vi.clearAllMocks(); state.screenCreations = 0; state.terminalRendererCreations = 0; });
 
 describe('gallery renderer budgets', () => {
+  it('scales preview raster resolution with card size within the supported limits', () => {
+    expect(galleryThumbnailMaxDimension(80)).toBe(384);
+    expect(galleryThumbnailMaxDimension(100)).toBe(480);
+    expect(galleryThumbnailMaxDimension(200)).toBe(960);
+    expect(galleryThumbnailMaxDimension(500)).toBe(960);
+  });
   it('stops on slow captures or foreground RAF lag, but not background timing', () => {
     expect(galleryRenderShouldStop(50, 16, true)).toBe(false);
     expect(galleryRenderShouldStop(50.1, 16, true)).toBe(true);
@@ -140,6 +147,13 @@ describe('GalleryRenderer', () => {
     expect(state.render).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ breathing: 0, persistence: 0 }), [expect.objectContaining({ id: 'image', x: 48, y: 72, width: 144, height: 144, zIndex: 1, opacity: 1 })], true);
     expect(state.clearPersistence).toHaveBeenCalledTimes(2);
     expect(state.screenCreations).toBe(1);
+    gallery.dispose();
+  });
+
+  it('renders the live terminal source at the selected card resolution', () => {
+    const gallery = new GalleryRenderer();
+    gallery.render(source('large', {} as never, 640, 480), target(), 200);
+    expect(state.resizeSource).toHaveBeenCalledWith(960, 720);
     gallery.dispose();
   });
 

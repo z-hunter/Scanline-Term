@@ -587,7 +587,7 @@ canvas:focus,
 .tab-gallery.is-visible { opacity: 1; }
 .tab-gallery-grid {
   display: grid;
-  grid-template-columns: repeat(var(--gallery-columns), minmax(0, 400px));
+  grid-template-columns: repeat(var(--gallery-columns), minmax(0, min(var(--gallery-card-width), 100%)));
   grid-auto-rows: minmax(0, auto);
   align-items: center;
   justify-content: center;
@@ -645,7 +645,7 @@ canvas:focus,
 
 @media (max-width: 720px) {
   .tab-gallery { padding: 18px; }
-  .tab-gallery-grid { grid-template-columns: 1fr; width: 100%; gap: 18px; }
+  .tab-gallery-grid { grid-template-columns: minmax(0, min(var(--gallery-card-width), 100%)); width: 100%; gap: 18px; }
   .tab-gallery-title { font-size: 11px; }
 }
 
