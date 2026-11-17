@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import type { ScreenProfile } from 'scanline-virtual-screen/core';
 import { profileFromLegacyPreset, profileToRenderSettings } from 'scanline-virtual-screen/core';
@@ -90,6 +90,8 @@ const settingHelp: Record<string, string> = {
   'Terminal geometry diagnostics': 'Copy measurements used to investigate terminal sizing and layout.',
   'Lua automation: loading': 'Lua automation status and configuration for terminal tabs. Lua scripts can extend terminal functionality.',
 };
+
+const settingsPanelSession = { expandedSections: { display: true, browser: true } as Record<string, boolean>, scrollTop: 0 };
 
 function settingLabelText(label: HTMLElement) {
   const copy = label.cloneNode(true) as HTMLElement;
@@ -183,6 +185,9 @@ export function SettingsPanel({
   const panelScrollTop = useRef<number | null>(null);
   const pointerOverSettings = useRef(false);
   const helpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = settingsPanelSession.scrollTop;
+  }, []);
   const [helpTooltip, setHelpTooltip] = useState<{ text: string; left: number; top: number } | null>(null);
   useEffect(() => () => { if (helpTimer.current) clearTimeout(helpTimer.current); }, []);
   const cancelSettingHelp = () => {
@@ -190,7 +195,8 @@ export function SettingsPanel({
     helpTimer.current = null;
     setHelpTooltip(null);
   };
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ display: true, browser: true });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(settingsPanelSession.expandedSections);
+  useLayoutEffect(() => { settingsPanelSession.expandedSections = expandedSections; }, [expandedSections]);
   const toggleSection = (id: string) => setExpandedSections((current) => ({ ...current, [id]: !current[id] }));
   const releaseKnobsOutsidePointer = (x: number, y: number) => {
     for (const [knob, blockedAt] of wheelBlockedKnobs) {
@@ -317,6 +323,7 @@ export function SettingsPanel({
       onScrollCapture={(event) => {
         cancelSettingHelp();
         const scrollTop = event.currentTarget.scrollTop;
+        settingsPanelSession.scrollTop = scrollTop;
         if (scrollTop === panelScrollTop.current) return;
         panelScrollTop.current = scrollTop;
         const { x, y } = pointerPosition.current;
