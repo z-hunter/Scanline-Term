@@ -104,7 +104,7 @@ The shipped `User's` palette is enabled by default; optional examples show **Vim
 | --- | --- | --- |
 | **`Win + ~`** | Global Show/Hide | Summon or minimize Scanline Term from any Windows application |
 | **`Alt + Enter`** | Fullscreen Toggle | Toggle distraction-free full-screen CRT mode |
-| **`Menu + S`** | Settings Panel | Open / close the real-time CRT shader lab and display controls |
+| **`Menu + S`** / **`Menu + \\`** | Settings Panel | Open / close the real-time CRT shader lab and display controls |
 | **`Menu + Z`** | Toggle Tab Bar | Show or hide the tab bar |
 | **`Menu + -`** / **`Menu + +`** | Terminal Font Size | Decrease / increase the active terminal font size by one point |
 | **`Menu + P`** | Quick Preset Picker | Preview presets immediately; Enter, a second `Menu + P`, or double-click applies; Esc or a click outside cancels and restores the prior preset |
