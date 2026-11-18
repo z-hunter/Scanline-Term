@@ -3,7 +3,7 @@ local sterm = require 'sterm'
 sterm.ansi_palette('users', {
   label = "User's",
   foreground = '#C0C0C0',
-  background = '#000000',
+  background = '#000010',
   cursor = '#FFFFFF',
   colors = {
     '#000000', '#800000', '#008000', '#808000',
