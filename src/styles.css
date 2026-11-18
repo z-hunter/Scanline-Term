@@ -799,6 +799,7 @@ footer,
 }
 
 .settings-panel {
+  --settings-section-surface: #101a14;
   width: calc(100% / var(--settings-scale, 1));
   height: calc((100vh - 18px) / var(--settings-scale, 1));
   max-height: none;
@@ -807,9 +808,9 @@ footer,
   overflow-y: auto;
   overflow-x: hidden;
   padding: 20px;
-  border: 1px solid #263b2d;
+  border: 1px solid #0a120c;
   border-radius: 12px;
-  background: #101a14;
+  background: #0d1711;
 }
 
 .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -931,7 +932,7 @@ fieldset {
   border-bottom-color: #a9f4ca30;
   border-radius: 5px;
   color: #9de8b3;
-  background: var(--section-header-bg, #b4ffd50b);
+  background: linear-gradient(var(--section-header-bg, #b4ffd50b), var(--section-header-bg, #b4ffd50b)), var(--settings-section-surface);
   font: 600 12px/1.2 ui-monospace, Consolas, monospace;
   letter-spacing: .12em;
   text-align: left;
@@ -947,7 +948,7 @@ fieldset {
   border: 1px solid #a9f4ca38;
   border-radius: 3px;
   color: #9de8b3;
-  background: #b4ffd50b;
+  background: linear-gradient(#b4ffd50b, #b4ffd50b), var(--settings-section-surface);
   content: attr(data-section-number);
   font: 11px/1 ui-monospace, Consolas, monospace;
   letter-spacing: 0;
@@ -961,13 +962,13 @@ fieldset {
 .settings-panel .settings-section-icon[data-icon="crt"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/crt.svg') center / contain no-repeat; }
 .settings-panel .settings-section-icon[data-icon="browser"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
 .settings-panel svg.settings-section-icon { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.settings-panel .settings-section-toggle:hover { color: #d7f5df; background: var(--section-header-hover, #b4ffd514); }
+.settings-panel .settings-section-toggle:hover { color: #d7f5df; background: linear-gradient(var(--section-header-hover, #b4ffd514), var(--section-header-hover, #b4ffd514)), var(--settings-section-surface); }
 .settings-panel .settings-section-toggle:focus-visible { outline: 2px solid #9dffb8; outline-offset: 2px; }
 .settings-panel .settings-section-chevron { width: 7px; height: 7px; margin-left: auto; border-right: 1px solid #9ccca9; border-bottom: 1px solid #9ccca9; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
 .settings-panel .settings-section-toggle[aria-expanded="true"] .settings-section-chevron { transform: rotate(225deg) translate(-1px, -1px); }
 .settings-panel .settings-section-toggle[aria-expanded="true"] { border-bottom: 0; border-radius: 5px 5px 0 0; }
-.settings-panel .settings-section-pinned > legend > .settings-section-title { display: flex; min-height: 40px; align-items: center; padding: 3px 10px; border: 1px solid #a9f4ca2b; border-top-color: #a9f4ca55; border-bottom: 0; border-radius: 5px 5px 0 0; color: #9de8b3; background: #b4ffd50b; }
-.settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005); }
+.settings-panel .settings-section-pinned > legend > .settings-section-title { display: flex; min-height: 40px; align-items: center; padding: 3px 10px; border: 1px solid #a9f4ca2b; border-top-color: #a9f4ca55; border-bottom: 0; border-radius: 5px 5px 0 0; color: #9de8b3; background: linear-gradient(#b4ffd50b, #b4ffd50b), var(--settings-section-surface); }
+.settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005), var(--settings-section-surface); }
 .settings-panel .settings-section-content[hidden] { display: none; }
 .settings-panel .settings-section-content .svs-settings-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .settings-panel .browser-crt-settings > .crt-section > .svs-switch { display: none; }

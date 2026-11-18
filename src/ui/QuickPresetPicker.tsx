@@ -65,7 +65,7 @@ export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onC
         {filtered.map((name) => <button key={name} ref={(node) => { if (node) itemRefs.current.set(name, node); else itemRefs.current.delete(name); }} type="button" role="option" aria-selected={name === resolvedSelected} className={name === resolvedSelected ? 'is-selected' : ''} onClick={() => choose(name)} onDoubleClick={() => onCommit(name)}>{name}</button>)}
         {!filtered.length && <p>No matching presets</p>}
       </div>
-      <footer>enter or duble click to apply · esc to cancel</footer>
+      <footer>enter or double click to apply · esc to cancel</footer>
     </section>
   </div>;
 }
