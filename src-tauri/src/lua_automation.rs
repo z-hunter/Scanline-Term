@@ -2396,21 +2396,30 @@ fn replace_managed_file(temp: &Path, destination: &Path) -> io::Result<()> {
         .chain(Some(0))
         .collect();
     let temp: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
-    let replaced = unsafe {
-        ReplaceFileW(
-            destination.as_ptr(),
-            temp.as_ptr(),
-            ptr::null(),
-            0,
-            ptr::null(),
-            ptr::null(),
-        )
-    };
-    if replaced == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
+    for attempt in 0..4 {
+        let replaced = unsafe {
+            ReplaceFileW(
+                destination.as_ptr(),
+                temp.as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                ptr::null(),
+            )
+        };
+        if replaced != 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error()
+            != Some(windows_sys::Win32::Foundation::ERROR_UNABLE_TO_REMOVE_REPLACED as i32)
+            || attempt == 3
+        {
+            return Err(error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
+    unreachable!()
 }
 
 #[cfg(not(windows))]
