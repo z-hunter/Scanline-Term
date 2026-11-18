@@ -13,6 +13,7 @@ Do not skip reading `AGENT_GUIDE.md` as it is essential for preventing regressio
 
 ## Xerj Usage
 
+- Before using Xerj tools, check whether `127.0.0.1:9200` is listening. If not, start the local backend with `xerj --data-dir "$env:USERPROFILE\.xerj\data" --insecure` (Windows: launch it in a hidden background process). Keep it bound to loopback; then retry the Xerj call.
 - For code in this project, use `xerj_search` with a plain-string query first; it returns definition-first code passages from the local project index. Keep results focused and verify relevant files in the checkout before editing.
 - Use `xerj_code_search` for reference coding against its named peer-project corpus, not as a substitute for searching this project's local index. Use it when an unfamiliar implementation pattern would benefit from examples in other repositories; heed its licence warnings.
 - Use `xerj_map` before structured queries to learn actual index fields. Use semantic or hybrid search when the question is phrased by meaning and lexical search is insufficient; use `xerj_plan` for filters expressible in plain language.
