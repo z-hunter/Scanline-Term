@@ -6,19 +6,22 @@ import { buildGalleryLayout, galleryCanvasSize, galleryColumns, TabGallery } fro
 
 const preview = vi.hoisted(() => ({
   prepare: vi.fn(() => false), render: vi.fn(), dispose: vi.fn(), stop: vi.fn(() => false),
+  onConstructor: null as null | (() => void),
 }));
 vi.mock('../terminal/gallery-renderer', () => ({
-  GalleryRenderer: class { prepare = preview.prepare; render = preview.render; retainSources = vi.fn(); dispose = preview.dispose; },
+  GalleryRenderer: class { constructor() { preview.onConstructor?.(); } prepare = preview.prepare; render = preview.render; retainSources = vi.fn(); dispose = preview.dispose; },
   GALLERY_FRAME_LAG_MS: 120,
   GALLERY_RENDER_INTERVAL_MS: 100,
   GALLERY_RENDER_MAX_INTERVAL_MS: 500,
   GALLERY_THUMBNAIL_MAX_DIMENSION: 480,
   galleryThumbnailMaxDimension: (cardSize = 100) => Math.round(480 * Math.min(200, Math.max(80, cardSize)) / 100),
   galleryFrameLagShouldStop: () => false,
-  galleryInitializationShouldStop: () => false,
-  galleryPreparationShouldStop: () => false,
+  galleryPreparationShouldStop: (duration: number, visible: boolean, allowColdOverrun = false) => visible && duration > 50 && !allowColdOverrun,
   galleryPreparationTimedOut: (duration: number) => duration > 2_000,
-  galleryRenderShouldStop: () => preview.stop(),
+  galleryRenderOverrun: (duration: number, foreground: boolean, overrunUsed: boolean) => {
+    const overrun = foreground && duration > 50;
+    return { shouldStop: preview.stop() || (overrun && overrunUsed), overrunUsed: overrunUsed || overrun };
+  },
   nextGalleryRenderInterval: (interval: number, duration: number, fastSamples: number, slowSamples: number) => ({ interval: duration > 16 && slowSamples ? Math.min(500, interval * 2) : interval, fastSamples: duration <= 16 ? fastSamples + 1 : 0, slowSamples: duration > 16 ? (slowSamples ? 0 : 1) : 0 }),
 }));
 
@@ -34,7 +37,13 @@ const tabs: TerminalTab[] = Array.from({ length: 7 }, (_, index) => ({
 }));
 
 describe('TabGallery', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    preview.prepare.mockReset().mockReturnValue(false);
+    preview.render.mockReset();
+    preview.dispose.mockReset();
+    preview.stop.mockReset().mockReturnValue(false);
+    preview.onConstructor = null;
+  });
   it('adds columns only after a readable 400px card fits', () => {
     expect(galleryColumns(1440, 10)).toBe(3);
     expect(galleryColumns(2560, 10)).toBe(5);
@@ -65,6 +74,117 @@ describe('TabGallery', () => {
     expect(container.querySelectorAll('.tab-gallery-card')).toHaveLength(2);
     expect([...container.querySelectorAll('canvas')].map(({ width, height }) => [width, height])).toEqual([[600, 450], [600, 338]]);
     act(() => root.unmount()); container.remove();
+  });
+
+  it('renders after cold compositor, first preparation and first-frame overruns, then stops repeated slow frames', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalHasFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let requestId = 0;
+    let fakeNow = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return ++requestId; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow);
+    const flush = (time: number) => { const current = callbacks.splice(0); act(() => current.forEach((callback) => callback(time))); };
+    const source = { id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 };
+    try {
+      preview.onConstructor = () => { fakeNow += 60; };
+      preview.prepare.mockImplementationOnce(() => { fakeNow += 60; return true; }).mockReturnValue(true);
+      preview.render.mockImplementation(() => { fakeNow += 60; });
+      const container = document.createElement('div'); document.body.appendChild(container);
+      const root = createRoot(container);
+      act(() => root.render(createElement(TabGallery, { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => [source] as never, onChoose: vi.fn(), onCancel: vi.fn() })));
+      flush(0);
+      flush(100);
+      expect(preview.render).toHaveBeenCalledOnce();
+      expect(container.querySelector('.tab-gallery-placeholder')).toBeNull();
+      flush(200);
+      expect(preview.render).toHaveBeenCalledTimes(2);
+      expect(preview.dispose).toHaveBeenCalledOnce();
+      act(() => root.unmount());
+      container.remove();
+    } finally {
+      preview.onConstructor = null;
+      now.mockRestore();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalHasFocus) Object.defineProperty(document, 'hasFocus', originalHasFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
+  });
+
+  it('stops after a second slow preparation in the same Gallery visit', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let fakeNow = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return callbacks.length; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow);
+    const flush = (time: number) => { const current = callbacks.splice(0); act(() => current.forEach((callback) => callback(time))); };
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      preview.prepare.mockImplementation(() => { fakeNow += 60; return false; });
+      act(() => root.render(createElement(TabGallery, { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => [{ id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 }] as never, onChoose: vi.fn(), onCancel: vi.fn() })));
+      flush(0);
+      flush(100);
+      expect(preview.prepare).toHaveBeenCalledOnce();
+      expect(preview.dispose).not.toHaveBeenCalled();
+      flush(200);
+      expect(preview.prepare).toHaveBeenCalledTimes(2);
+      expect(preview.dispose).toHaveBeenCalledOnce();
+      act(() => root.unmount());
+    } finally {
+      now.mockRestore();
+      container.remove();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalFocus) Object.defineProperty(document, 'hasFocus', originalFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
+  });
+
+  it('uses updated terminal sources after a preset change or new tab', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalHasFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let requestId = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return ++requestId; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    const flush = (time: number) => { const current = callbacks.splice(0); act(() => current.forEach((callback) => callback(time))); };
+    const firstTerminal = {};
+    let sources: unknown[] = [{ id: 'tab-1', terminal: firstTerminal, settings: { maskType: 'off' }, images: [], width: 640, height: 480 }];
+    const getRenderSources = () => sources as never;
+    const onChoose = vi.fn();
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      preview.prepare.mockReturnValue(true);
+      act(() => root.render(createElement(TabGallery, { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources, onChoose, onCancel: vi.fn() })));
+      flush(0);
+      flush(100);
+      expect(preview.render.mock.calls[0][0].settings.maskType).toBe('off');
+
+      sources = [
+        { id: 'tab-1', terminal: firstTerminal, settings: { maskType: 'slot' }, images: [], width: 640, height: 480 },
+        { id: 'tab-2', terminal: {}, settings: { maskType: 'shadow' }, images: [], width: 640, height: 480 },
+      ];
+      act(() => root.render(createElement(TabGallery, { tabs: tabs.slice(0, 2), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources, onChoose, onCancel: vi.fn() })));
+      flush(200);
+      flush(300);
+      expect(preview.render.mock.calls.slice(1).map(([source]) => [source.id, source.settings.maskType])).toEqual([['tab-2', 'shadow'], ['tab-1', 'slot']]);
+      act(() => root.unmount());
+    } finally {
+      container.remove();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalHasFocus) Object.defineProperty(document, 'hasFocus', originalHasFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
   });
 
   it('keeps live preview canvas dimensions across rerenders', () => {

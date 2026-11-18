@@ -37,13 +37,12 @@ vi.mock('scanline-virtual-screen/terminal', () => ({
 }));
 
 import {
-  galleryInitializationShouldStop,
   galleryThumbnailMaxDimension,
   fitGalleryRasterSettings,
   galleryFrameLagShouldStop,
   galleryPreparationShouldStop,
   galleryPreparationTimedOut,
-  galleryRenderShouldStop,
+  galleryRenderOverrun,
   GalleryRenderer,
   GALLERY_MAX_SOURCE_PIXELS,
   GALLERY_MAX_TERMINAL_RENDERERS,
@@ -62,11 +61,31 @@ describe('gallery renderer budgets', () => {
     expect(galleryThumbnailMaxDimension(200)).toBe(960);
     expect(galleryThumbnailMaxDimension(500)).toBe(960);
   });
-  it('stops on slow captures or foreground RAF lag, but not background timing', () => {
-    expect(galleryRenderShouldStop(50, 16, true)).toBe(false);
-    expect(galleryRenderShouldStop(50.1, 16, true)).toBe(true);
-    expect(galleryRenderShouldStop(2, 121, true)).toBe(false);
-    expect(galleryRenderShouldStop(30, 1000, false)).toBe(false);
+  it('allows one foreground slow capture even after fast captures, then stops on a later slow capture', () => {
+    let overrunUsed = false;
+    for (const duration of [25.1, 7]) {
+      const result = galleryRenderOverrun(duration, true, overrunUsed);
+      expect(result.shouldStop).toBe(false);
+      overrunUsed = result.overrunUsed;
+    }
+    let result = galleryRenderOverrun(941, true, overrunUsed);
+    expect(result.shouldStop).toBe(false);
+    overrunUsed = result.overrunUsed;
+    result = galleryRenderOverrun(7, true, overrunUsed);
+    expect(result.shouldStop).toBe(false);
+    overrunUsed = result.overrunUsed;
+    expect(galleryRenderOverrun(60, true, overrunUsed).shouldStop).toBe(true);
+  });
+
+  it('does not consume the slow-capture allowance in the background', () => {
+    const result = galleryRenderOverrun(941, false, false);
+    expect(result).toEqual({ shouldStop: false, overrunUsed: false });
+    const firstForegroundOverrun = galleryRenderOverrun(60, true, result.overrunUsed);
+    expect(firstForegroundOverrun).toEqual({ shouldStop: false, overrunUsed: true });
+    expect(galleryRenderOverrun(60, true, firstForegroundOverrun.overrunUsed).shouldStop).toBe(true);
+  });
+
+  it('preserves foreground RAF lag protection independently of the slow-capture allowance', () => {
     expect(galleryFrameLagShouldStop(121, true, 0)).toBe(false);
     expect(galleryFrameLagShouldStop(121, true, 1)).toBe(true);
     expect(galleryFrameLagShouldStop(1000, false, 1)).toBe(false);
@@ -97,8 +116,6 @@ describe('gallery renderer budgets', () => {
     expect(galleryPreparationShouldStop(30, false)).toBe(false);
     expect(galleryPreparationTimedOut(GALLERY_PREPARE_TIMEOUT_MS)).toBe(false);
     expect(galleryPreparationTimedOut(GALLERY_PREPARE_TIMEOUT_MS + 1)).toBe(true);
-    expect(galleryInitializationShouldStop(50)).toBe(false);
-    expect(galleryInitializationShouldStop(50.1)).toBe(true);
   });
 
   it('fits the complete xterm grid into landscape, portrait and DPR-scaled thumbnail rasters', () => {

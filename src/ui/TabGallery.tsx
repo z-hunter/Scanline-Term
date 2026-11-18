@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
-import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryInitializationShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderShouldStop, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
+import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderOverrun, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
 
 export type GalleryFrame = {
   canvas: HTMLCanvasElement;
@@ -201,14 +201,10 @@ export function TabGallery({
     let renderInterval = GALLERY_RENDER_INTERVAL_MS;
     let fastRenderSamples = 0;
     let slowRenderSamples = 0;
-    const initializationStart = performance.now();
+    let coldPreparationOverrunUsed = false;
+    let coldCaptureOverrunUsed = false;
     try {
       renderer = new GalleryRenderer();
-      const initializationDuration = performance.now() - initializationStart;
-      if (galleryInitializationShouldStop(initializationDuration)) {
-        renderer.dispose();
-        return;
-      }
     } catch {
       return;
     }
@@ -223,7 +219,11 @@ export function TabGallery({
     let stopped = false;
     let disposed = false;
     const disposeRenderer = () => { if (!disposed) { disposed = true; renderer.dispose(); } };
-    const stopUpdates = () => { stopped = true; disposeRenderer(); };
+    const stopUpdates = () => {
+      if (stopped) return;
+      stopped = true;
+      disposeRenderer();
+    };
     const recordCaptureDuration = (duration: number) => {
       const next = nextGalleryRenderInterval(renderInterval, duration, fastRenderSamples, slowRenderSamples);
       renderInterval = next.interval;
@@ -267,9 +267,11 @@ export function TabGallery({
           try {
             const prepareStarted = performance.now();
             const ready = renderer.prepare(source);
-            const afterPrepare = performance.now();
+            const prepareDuration = performance.now() - prepareStarted;
             const foregroundAfterPrepare = document.visibilityState === 'visible' && document.hasFocus();
-            if (galleryPreparationShouldStop(afterPrepare - prepareStarted, foregroundAfterPrepare)) { stopUpdates(); return; }
+            const slowPreparation = galleryPreparationShouldStop(prepareDuration, foregroundAfterPrepare);
+            if (slowPreparation && coldPreparationOverrunUsed) { stopUpdates(); return; }
+            coldPreparationOverrunUsed ||= slowPreparation;
             preparePollAfter = 0;
             if (ready) {
               const renderStarted = performance.now();
@@ -283,8 +285,12 @@ export function TabGallery({
               index += 1;
               lastCapture = now;
               const foregroundAfterRender = document.visibilityState === 'visible' && document.hasFocus();
-              if (galleryRenderShouldStop(renderDuration, frameLag, foregroundAfterRender)) { stopUpdates(); return; }
-              if (foregroundAfterRender) recordCaptureDuration(renderDuration);
+              const overrun = galleryRenderOverrun(renderDuration, foregroundAfterRender, coldCaptureOverrunUsed);
+              coldCaptureOverrunUsed = overrun.overrunUsed;
+              if (overrun.shouldStop) { stopUpdates(); return; }
+              if (foregroundAfterRender) {
+                recordCaptureDuration(renderDuration);
+              }
             } else if (galleryPreparationTimedOut(now - pendingSince)) {
               stopUpdates();
               return;

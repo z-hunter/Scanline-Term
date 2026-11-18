@@ -10,7 +10,6 @@ export const GALLERY_RENDER_FAST_SAMPLES = 10;
 export const GALLERY_RENDER_SLOW_SAMPLES = 2;
 export const GALLERY_RENDER_HARD_BUDGET_MS = 50;
 export const GALLERY_FRAME_LAG_MS = 120;
-export const GALLERY_RENDER_INIT_BUDGET_MS = 50;
 export const GALLERY_PREPARE_TIMEOUT_MS = 5_000;
 export const GALLERY_MAX_SOURCE_PIXELS = 2_100_000;
 export const GALLERY_THUMBNAIL_MAX_DIMENSION = 480;
@@ -31,14 +30,17 @@ export function fitGalleryRasterSettings(settings: CRTSettings, cols: number, ro
     const cellHeightAdjustment = (settings.cellHeightAdjustment ?? 0) * adjustmentScale;
     const candidate = { ...settings, consoleFontSize: fontSize, cellWidthAdjustment, cellHeightAdjustment };
     const cell = fontCellSize(fontSize, settings.consoleFont, undefined, cellWidthAdjustment, cellHeightAdjustment, settings.fallbackFont);
-    if (cols * cell.width <= width - padding * 2 && rows * cell.height <= height - padding * 2) return candidate;
+    if (cols * cell.width <= width - padding * 2 && rows * cell.height <= height - padding * 2) {
+      return candidate;
+    }
     if (fontSize === minFontSize) break;
   }
   return null;
 }
 
-export function galleryRenderShouldStop(duration: number, _frameLag: number, visible: boolean): boolean {
-  return visible && duration > GALLERY_RENDER_HARD_BUDGET_MS;
+export function galleryRenderOverrun(duration: number, foreground: boolean, overrunUsed: boolean): { shouldStop: boolean; overrunUsed: boolean } {
+  const overrun = foreground && duration > GALLERY_RENDER_HARD_BUDGET_MS;
+  return { shouldStop: overrun && overrunUsed, overrunUsed: overrunUsed || overrun };
 }
 
 export function galleryFrameLagShouldStop(frameLag: number, visible: boolean, consecutiveSlowFrames: number): boolean {
@@ -56,10 +58,6 @@ export function nextGalleryRenderInterval(interval: number, duration: number, fa
   return nextFastSamples >= GALLERY_RENDER_FAST_SAMPLES
     ? { interval: Math.max(GALLERY_RENDER_INTERVAL_MS, interval / 2), fastSamples: 0, slowSamples: 0 }
     : { interval, fastSamples: nextFastSamples, slowSamples: 0 };
-}
-
-export function galleryInitializationShouldStop(duration: number): boolean {
-  return duration > GALLERY_RENDER_INIT_BUDGET_MS;
 }
 
 export function galleryPreparationShouldStop(duration: number, visible: boolean): boolean {
