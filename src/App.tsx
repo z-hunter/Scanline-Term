@@ -896,7 +896,7 @@ export default function App() {
       if (++consecutiveCaptureFailures === 3) reportError(`Browser screencast failed: ${String(reason)}`);
     };
     const dispatch = (method: string, params: Record<string, unknown>) => {
-      void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => reportError(`Browser experiment input failed: ${String(reason)}`));
+      void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => { if (!disposed && !String(reason).includes("browser is not running")) reportError(`Browser experiment input failed: ${String(reason)}`); });
     };
     const onFrame = (event: { payload: { sessionId: string; screencastSessionId?: number; data?: string; error?: string } }) => {
       if (event.payload.sessionId !== browser.id) return;
