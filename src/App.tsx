@@ -1431,8 +1431,8 @@ export default function App() {
           fps={fps}
           browserFps={browserFps}
           browserCaptureMetrics={browserCaptureMetrics}
-          browserCaptureFormat={import.meta.env.DEV ? browserCaptureFormat : undefined}
-          onBrowserCaptureFormatChange={import.meta.env.DEV ? setBrowserCaptureFormat : undefined}
+          browserCaptureFormat={browserCaptureFormat}
+          onBrowserCaptureFormatChange={setBrowserCaptureFormat}
           appVersion={appVersion}
           presetState={activePresetState}
           cursorStyleOverridden={terminal.cursorStyleOverridden}
