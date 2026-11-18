@@ -125,6 +125,8 @@ export function TabGallery({
   const [closing, setClosing] = useState(false);
   const [, setPreviewVersion] = useState(0);
   const renderedPreviewIds = useRef(new Set<string>());
+  const coldPreparationOverrunUsed = useRef(false);
+  const coldCaptureOverrunUsed = useRef(false);
   const staticFrameCanvases = useRef(new WeakMap<HTMLCanvasElement, string>());
   const timer = useRef<number | null>(null);
   const layout = useMemo(() => buildGalleryLayout(tabs, activeId, columns), [tabs, activeId, columns]);
@@ -201,8 +203,6 @@ export function TabGallery({
     let renderInterval = GALLERY_RENDER_INTERVAL_MS;
     let fastRenderSamples = 0;
     let slowRenderSamples = 0;
-    let coldPreparationOverrunUsed = false;
-    let coldCaptureOverrunUsed = false;
     try {
       renderer = new GalleryRenderer();
     } catch {
@@ -270,8 +270,8 @@ export function TabGallery({
             const prepareDuration = performance.now() - prepareStarted;
             const foregroundAfterPrepare = document.visibilityState === 'visible' && document.hasFocus();
             const slowPreparation = galleryPreparationShouldStop(prepareDuration, foregroundAfterPrepare);
-            if (slowPreparation && coldPreparationOverrunUsed) { stopUpdates(); return; }
-            coldPreparationOverrunUsed ||= slowPreparation;
+            if (slowPreparation && coldPreparationOverrunUsed.current) { stopUpdates(); return; }
+            coldPreparationOverrunUsed.current ||= slowPreparation;
             preparePollAfter = 0;
             if (ready) {
               const renderStarted = performance.now();
@@ -285,8 +285,8 @@ export function TabGallery({
               index += 1;
               lastCapture = now;
               const foregroundAfterRender = document.visibilityState === 'visible' && document.hasFocus();
-              const overrun = galleryRenderOverrun(renderDuration, foregroundAfterRender, coldCaptureOverrunUsed);
-              coldCaptureOverrunUsed = overrun.overrunUsed;
+              const overrun = galleryRenderOverrun(renderDuration, foregroundAfterRender, coldCaptureOverrunUsed.current);
+              coldCaptureOverrunUsed.current = overrun.overrunUsed;
               if (overrun.shouldStop) { stopUpdates(); return; }
               if (foregroundAfterRender) {
                 recordCaptureDuration(renderDuration);

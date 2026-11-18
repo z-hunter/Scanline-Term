@@ -114,7 +114,7 @@ describe('TabGallery', () => {
     }
   });
 
-  it('stops after a second slow preparation in the same Gallery visit', () => {
+  it('keeps the slow-preparation allowance across renderer effect restarts', () => {
     const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
     const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
     const originalFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
@@ -127,16 +127,61 @@ describe('TabGallery', () => {
     const flush = (time: number) => { const current = callbacks.splice(0); act(() => current.forEach((callback) => callback(time))); };
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
+    const source = { id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 };
+    const renderSources = () => [source] as never;
     try {
       preview.prepare.mockImplementation(() => { fakeNow += 60; return false; });
-      act(() => root.render(createElement(TabGallery, { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: () => [{ id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 }] as never, onChoose: vi.fn(), onCancel: vi.fn() })));
+      const props = { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: renderSources, onChoose: vi.fn(), onCancel: vi.fn() };
+      act(() => root.render(createElement(TabGallery, props)));
       flush(0);
       flush(100);
       expect(preview.prepare).toHaveBeenCalledOnce();
       expect(preview.dispose).not.toHaveBeenCalled();
+
+      callbacks.length = 0;
+      act(() => root.render(createElement(TabGallery, { ...props, getRenderSources: () => [source] as never })));
       flush(200);
       expect(preview.prepare).toHaveBeenCalledTimes(2);
-      expect(preview.dispose).toHaveBeenCalledOnce();
+      expect(preview.dispose).toHaveBeenCalledTimes(2);
+      act(() => root.unmount());
+    } finally {
+      now.mockRestore();
+      container.remove();
+      if (originalRaf) Object.defineProperty(window, 'requestAnimationFrame', originalRaf); else Reflect.deleteProperty(window, 'requestAnimationFrame');
+      if (originalCancelRaf) Object.defineProperty(window, 'cancelAnimationFrame', originalCancelRaf); else Reflect.deleteProperty(window, 'cancelAnimationFrame');
+      if (originalFocus) Object.defineProperty(document, 'hasFocus', originalFocus); else Reflect.deleteProperty(document, 'hasFocus');
+    }
+  });
+
+  it('keeps the slow-capture allowance across renderer effect restarts', () => {
+    const originalRaf = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+    const originalCancelRaf = Object.getOwnPropertyDescriptor(window, 'cancelAnimationFrame');
+    const originalFocus = Object.getOwnPropertyDescriptor(document, 'hasFocus');
+    const callbacks: FrameRequestCallback[] = [];
+    let fakeNow = 0;
+    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { callbacks.push(callback); return callbacks.length; } });
+    Object.defineProperty(window, 'cancelAnimationFrame', { configurable: true, value: vi.fn() });
+    Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => true });
+    const now = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow);
+    const flush = (time: number) => { const current = callbacks.splice(0); act(() => current.forEach((callback) => callback(time))); };
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    const source = { id: 'tab-1', terminal: {}, settings: {}, images: [], width: 640, height: 480 };
+    const renderSources = () => [source] as never;
+    try {
+      preview.prepare.mockReturnValue(true);
+      preview.render.mockImplementation(() => { fakeNow += 60; });
+      const props = { tabs: tabs.slice(0, 1), activeId: 'tab-1', frames: new Map(), originRect: null, getRenderSources: renderSources, onChoose: vi.fn(), onCancel: vi.fn() };
+      act(() => root.render(createElement(TabGallery, props)));
+      flush(100);
+      expect(preview.render).toHaveBeenCalledOnce();
+      expect(preview.dispose).not.toHaveBeenCalled();
+
+      callbacks.length = 0;
+      act(() => root.render(createElement(TabGallery, { ...props, getRenderSources: () => [source] as never })));
+      flush(200);
+      expect(preview.render).toHaveBeenCalledTimes(2);
+      expect(preview.dispose).toHaveBeenCalledTimes(2);
       act(() => root.unmount());
     } finally {
       now.mockRestore();
