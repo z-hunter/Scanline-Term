@@ -375,7 +375,7 @@ describe('TabGallery', () => {
       Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
         configurable: true,
         value(this: HTMLElement) {
-          if (this.classList.contains('tab-gallery-card')) return new DOMRect(0, (Number(this.style.gridRow) - 1) * 328 + geometryOffset, 400, 300);
+          if (this.classList.contains('tab-gallery-card')) return new DOMRect((Number(this.style.gridColumn) - 1) * 428, (Number(this.style.gridRow) - 1) * 328 + geometryOffset, 400, 300);
           return originalRect?.value.call(this) ?? new DOMRect();
         },
       });
