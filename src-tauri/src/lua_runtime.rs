@@ -23,6 +23,7 @@ const MAX_MODULES: usize = 64;
 const MAX_CONFIG_INCLUDES: usize = 64;
 const MAX_ANSI_PALETTES: usize = 64;
 const MAX_CUSTOM_SHELLS: usize = 64;
+const MAX_AI_PROMPT_FIELD_BYTES: usize = 8 * 1024;
 const MAX_CONFIG_INCLUDE_DEPTH: usize = 16;
 const MAX_TOTAL_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_INSTANCES: usize = 64;
@@ -207,6 +208,7 @@ struct ConfigRegistrations {
     ansi_palettes: Vec<AnsiPalette>,
     custom_shells: Vec<CustomShell>,
     custom_shells_declared: bool,
+    ai_prompts: Option<AiPrompts>,
     settings: Option<ManagedSettings>,
 }
 
@@ -275,6 +277,15 @@ pub struct CustomShell { pub id: String, pub name: String, pub command: String, 
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AiPrompts {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub developer: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnsiPalette {
     pub id: String,
     pub label: String,
@@ -294,6 +305,7 @@ pub struct RuntimeSnapshot {
     modules: HashMap<String, LuaModule>,
     ansi_palettes: Vec<AnsiPalette>,
     custom_shells: Vec<CustomShell>,
+    ai_prompts: Option<AiPrompts>,
     settings: Option<ManagedSettings>,
     wants_input_language_events: bool,
 }
@@ -591,6 +603,7 @@ impl RuntimeSnapshot {
             modules,
             ansi_palettes: registrations.ansi_palettes,
             custom_shells: registrations.custom_shells,
+            ai_prompts: registrations.ai_prompts,
             settings: registrations.settings,
             wants_input_language_events,
         })
@@ -605,6 +618,8 @@ impl RuntimeSnapshot {
     }
 
     pub fn custom_shells(&self) -> &[CustomShell] { &self.custom_shells }
+
+    pub fn ai_prompts(&self) -> Option<&AiPrompts> { self.ai_prompts.as_ref() }
 
     pub fn config_path(&self) -> &Path {
         &self.config_path
@@ -1423,6 +1438,56 @@ fn install_registration_api(
             if registrations.custom_shells_declared { return Err(mlua::Error::RuntimeError("sterm.shells may only be declared once".into())); }
             registrations.custom_shells_declared = true;
             registrations.custom_shells = parsed;
+            Ok(())
+        })?
+    })?;
+    module.set("ai_prompts", {
+        let registrations = registrations.clone();
+        lua.create_function(move |_, prompts: Table| {
+            let mut base = None;
+            let mut developer = None;
+            for pair in prompts.clone().pairs::<Value, Value>() {
+                let (key, value) = pair?;
+                let Value::String(key) = key else {
+                    return Err(mlua::Error::RuntimeError(
+                        "AI prompt fields must be named".into(),
+                    ));
+                };
+                let key = key.to_str()?.to_owned();
+                let target = match key.as_str() {
+                    "base" => &mut base,
+                    "developer" => &mut developer,
+                    _ => {
+                        return Err(mlua::Error::RuntimeError(format!(
+                            "unknown AI prompt field '{key}'"
+                        )));
+                    }
+                };
+                let Value::String(value) = value else {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "AI prompt '{key}' must be a string"
+                    )));
+                };
+                let value = value.to_str()?.to_owned();
+                if value.trim().is_empty()
+                    || value.contains('\0')
+                    || value.len() > MAX_AI_PROMPT_FIELD_BYTES
+                {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "AI prompt '{key}' must be nonblank, contain no NUL, and be at most {MAX_AI_PROMPT_FIELD_BYTES} UTF-8 bytes"
+                    )));
+                }
+                *target = Some(value);
+            }
+            let mut registrations = registrations.lock().map_err(|_| {
+                mlua::Error::RuntimeError("Lua registration state is unavailable".into())
+            })?;
+            if registrations.ai_prompts.is_some() {
+                return Err(mlua::Error::RuntimeError(
+                    "sterm.ai_prompts may only be declared once".into(),
+                ));
+            }
+            registrations.ai_prompts = Some(AiPrompts { base, developer });
             Ok(())
         })?
     })?;
@@ -2807,6 +2872,34 @@ mod tests {
         ] {
             assert!(RuntimeSnapshot::load_source(&dir.entry(), invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn ai_prompts_are_captured_from_confined_includes_and_validated() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "require('sterm').include('ai-prompts.lua')");
+        dir.write("ai-prompts.lua", "require('sterm').ai_prompts({base='base prompt', developer='developer prompt'})");
+        let snapshot = RuntimeSnapshot::load(&dir.entry()).unwrap();
+        assert_eq!(snapshot.ai_prompts(), Some(&AiPrompts {
+            base: Some("base prompt".into()),
+            developer: Some("developer prompt".into()),
+        }));
+
+        for source in [
+            "require('sterm').ai_prompts({unknown='prompt'})",
+            "require('sterm').ai_prompts({base=true})",
+            "require('sterm').ai_prompts({base='   '})",
+            r#"require('sterm').ai_prompts({base='a\0b'})"#,
+            "require('sterm').ai_prompts({base='one'}); require('sterm').ai_prompts({developer='two'})",
+        ] {
+            assert!(RuntimeSnapshot::load_source(&dir.entry(), source).is_err(), "{source}");
+        }
+        let empty = RuntimeSnapshot::load_source(&dir.entry(), "require('sterm').ai_prompts({})").unwrap();
+        assert_eq!(empty.ai_prompts(), Some(&AiPrompts { base: None, developer: None }));
+        assert!(RuntimeSnapshot::load_source(
+            &dir.entry(),
+            &format!("require('sterm').ai_prompts({{base='{}'}})", "x".repeat(MAX_AI_PROMPT_FIELD_BYTES + 1)),
+        ).is_err());
     }
 
     #[test]

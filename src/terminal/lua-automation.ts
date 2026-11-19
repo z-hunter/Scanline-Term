@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { ApplicationCursorState } from './TerminalSession';
 import type { TerminalColorProfile } from 'scanline-virtual-screen/core';
 import type { ShellInfo } from './shells';
+import type { LuaPromptOverrides } from '../ai/luaPromptOverrides';
 
 export type LuaAutomationTab = {
   id: string;
@@ -32,6 +33,7 @@ export type LuaReloadPreparation = {
   error: string | null;
   palettes: TerminalColorProfile[] | null;
   shells: ShellInfo[] | null;
+  aiPrompts?: LuaPromptOverrides | null;
 };
 
 export type LuaAutomationStatus = {

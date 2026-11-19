@@ -9,6 +9,10 @@ local sterm = require 'sterm'
 -- Register this user-authored ANSI palette without changing the active preset.
 sterm.include('palettes/users.lua')
 
+-- Uncomment to override the built-in Codex assistant prompts from Lua.
+-- The sibling file is inert until this include is enabled.
+-- sterm.include('ai-prompts.lua')
+
 -- Declare launch profiles for the app's shared new-tab menus. IDs stay stable
 -- across renames; the GUI-managed default_shell setting references `lua:<id>`.
 -- This catalog does not launch or probe commands while the config is loaded.

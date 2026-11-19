@@ -50,6 +50,7 @@ ScanlineTerm/
 │   │   ├── chatMessages.ts                # Chat message models & delta aggregation
 │   │   ├── CodexClient.ts                 # JSON-RPC process client and event routing
 │   │   ├── modelSelection.ts              # Model tier & reasoning effort resolution
+│   │   ├── luaPromptOverrides.ts           # Lua prompt override type and response validation
 │   │   ├── protocol.ts                    # Minimal JSON-RPC protocol types
 │   │   └── useCodexAssistant.ts           # Per-session assistant state and turn lifecycle
 │   ├── assets/
@@ -208,6 +209,7 @@ Owns the temporary Gallery rendering path: a bounded set of isolated per-tab ter
 
 * **[`CodexClient.ts`](../src/ai/CodexClient.ts) (210 lines):** JSON-RPC client for the local `codex app-server` process via Tauri IPC; resolves responses and forwards server notifications.
 * **[`useCodexAssistant.ts`](../src/ai/useCodexAssistant.ts):** Owns per-session assistant conversations, model selection, event handling, and turn lifecycle; `App.tsx` supplies active-tab context and renders the panel.
+* **[`luaPromptOverrides.ts`](../src/ai/luaPromptOverrides.ts):** Validates the optional prompt override shape returned by the Lua config loader.
 * **[`modelSelection.ts`](../src/ai/modelSelection.ts) (43 lines):** Helper logic determining supported model tiers and reasoning effort settings.
 * **[`chatMessages.ts`](../src/ai/chatMessages.ts) (25 lines):** Chat history model and delta text aggregator.
 * **[`protocol.ts`](../src/ai/protocol.ts) (20 lines):** Type definitions for JSON-RPC payloads and Codex lifecycle events.

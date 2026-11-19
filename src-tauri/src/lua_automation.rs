@@ -21,7 +21,7 @@ use tauri::{Emitter, Manager, State, WebviewWindow};
 use crate::{
     TerminalState,
     lua_runtime::{
-        Action, AnsiPalette, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState,
+        Action, AiPrompts, AnsiPalette, CursorShape, CursorStyle, Diagnostic, DispatchResult, InputState,
         CustomShell, LastAiSelection, LuaRuntime, MAX_CONFIG_BYTES, ManagedSettings, RuntimeEvent, RuntimeSnapshot,
         ScenarioStateStore, TabState,
     },
@@ -155,6 +155,7 @@ pub(crate) struct ReloadPreparation {
     cleanup: Vec<ReloadCleanupRequest>,
     palettes: Option<Vec<AnsiPalette>>,
     shells: Option<Vec<CustomShell>>,
+    ai_prompts: Option<AiPrompts>,
     candidate_status: &'static str,
     error: Option<String>,
 }
@@ -888,6 +889,7 @@ pub struct ManagedSettingsResult {
     pub has_settings: bool,
     pub palettes: Vec<AnsiPalette>,
     pub shells: Vec<CustomShell>,
+    pub ai_prompts: Option<AiPrompts>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -922,6 +924,7 @@ pub fn load_managed_settings(
         snapshot.settings(),
         snapshot.ansi_palettes(),
         snapshot.custom_shells(),
+        snapshot.ai_prompts(),
     ))
 }
 
@@ -980,6 +983,7 @@ pub fn save_managed_settings(
         snapshot.settings(),
         snapshot.ansi_palettes(),
         snapshot.custom_shells(),
+        snapshot.ai_prompts(),
     ))
 }
 
@@ -1443,6 +1447,7 @@ fn worker_loop(
                         .as_ref()
                         .map(|snapshot| snapshot.ansi_palettes().to_vec()),
                     shells: candidate.as_ref().map(|snapshot| snapshot.custom_shells().to_vec()),
+                    ai_prompts: candidate.as_ref().and_then(|snapshot| snapshot.ai_prompts().cloned()),
                     candidate_status,
                     error,
                 };
@@ -1903,6 +1908,7 @@ const LUA_STARTER_FILES: &[(&str, &str)] = &[
     ("modules/modal_editor.lua", "modules/modal_editor.lua"),
     ("scripts/far_preset.lua", "scripts/far_preset.lua"),
     ("palettes/users.lua", "palettes/users.lua"),
+    ("ai-prompts.lua", "ai-prompts.lua"),
     ("sterm.lua", "config.lua"),
 ];
 
@@ -1944,7 +1950,7 @@ fn seed_lua_config(
 
     let mut files = Vec::with_capacity(LUA_STARTER_FILES.len());
     for (source_relative, destination_relative) in LUA_STARTER_FILES {
-        if entry_exists && *destination_relative == "config.lua" {
+        if entry_exists && matches!(*destination_relative, "config.lua" | "ai-prompts.lua") {
             continue;
         }
         let source = examples_dir.join(source_relative);
@@ -2092,6 +2098,7 @@ fn managed_settings_result(
     settings: Option<&ManagedSettings>,
     palettes: &[AnsiPalette],
     shells: &[CustomShell],
+    ai_prompts: Option<&AiPrompts>,
 ) -> ManagedSettingsResult {
     ManagedSettingsResult {
         settings: ManagedSettingsPayload {
@@ -2114,6 +2121,7 @@ fn managed_settings_result(
         has_settings: settings.is_some(),
         palettes: palettes.to_vec(),
         shells: shells.to_vec(),
+        ai_prompts: ai_prompts.cloned(),
     }
 }
 
@@ -3343,6 +3351,11 @@ mod tests {
             include_str!("../../examples/lua/palettes/users.lua"),
         )
         .unwrap();
+        fs::write(
+            root.join("ai-prompts.lua"),
+            include_str!("../../examples/lua/ai-prompts.lua"),
+        )
+        .unwrap();
         let template_snapshot = RuntimeSnapshot::load(&root.join("config.lua")).unwrap();
         assert!(!template_snapshot.wants_input_language_events());
         let mut template_runtime = LuaRuntime::new(template_snapshot);
@@ -3652,6 +3665,7 @@ mod tests {
             original_snapshot.settings(),
             original_snapshot.ansi_palettes(),
             original_snapshot.custom_shells(),
+            original_snapshot.ai_prompts(),
         );
         assert!(!result.has_settings);
         assert_eq!(result.palettes[0].id, "lua:users");
@@ -3824,6 +3838,11 @@ mod tests {
             include_str!("../../examples/lua/palettes/users.lua"),
         )
         .unwrap();
+        fs::write(
+            directory.join("ai-prompts.lua"),
+            include_str!("../../examples/lua/ai-prompts.lua"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -3849,6 +3868,7 @@ mod tests {
             "modules/modal_editor.lua",
             "scripts/far_preset.lua",
             "palettes/users.lua",
+            "ai-prompts.lua",
         ] {
             assert_eq!(
                 fs::read(config.join(relative)).unwrap(),
@@ -3867,6 +3887,7 @@ mod tests {
         let config = root.join("profile");
         write_lua_seed_sources(&source);
         fs::create_dir_all(config.join("editors")).unwrap();
+        fs::create_dir_all(config.join("ai-prompts.lua")).unwrap();
         let custom_config = b"-- existing user config\n";
         fs::write(config.join("config.lua"), custom_config).unwrap();
         let custom_dependency = b"-- user's editor script\n";
@@ -3889,6 +3910,7 @@ mod tests {
                 fs::read(source.join(relative)).unwrap()
             );
         }
+        assert!(config.join("ai-prompts.lua").is_dir());
 
         seed_lua_config(None, Some(&config), Some(&source)).unwrap();
         assert_eq!(fs::read(config.join("config.lua")).unwrap(), custom_config);
@@ -3976,6 +3998,7 @@ mod tests {
             cleanup: Vec::new(),
             palettes: Some(Vec::new()),
             shells: Some(Vec::new()),
+            ai_prompts: None,
             candidate_status: "ready",
             error: None,
         };

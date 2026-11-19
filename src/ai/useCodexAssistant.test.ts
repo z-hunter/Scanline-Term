@@ -88,4 +88,49 @@ describe('useCodexAssistant terminal tool bridge', () => {
     expect(mocked.session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'dir', submit: true });
     expect(mocked.respond).toHaveBeenCalledWith(9, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ status: 'queued', kind: 'text', bytesQueued: 4 }) }] });
   });
+
+  it('keeps prompts on an existing tab and applies per-field overrides to newly created threads', async () => {
+    let props: Parameters<typeof useCodexAssistant>[0] = {
+      enabled: true,
+      ready: true,
+      activeSessionId: 'baseline',
+      tabs: [{ id: 'baseline' }],
+      isMcpSession: () => false,
+      setLastSelection: vi.fn(),
+      reportError: vi.fn(),
+    };
+    function Harness() {
+      const assistant = useCodexAssistant(props);
+      useEffect(() => { assistantRef.current = assistant; }, [assistant]);
+      return null;
+    }
+
+    await act(async () => { root.render(createElement(Harness)); await Promise.resolve(); });
+    await act(async () => { await assistantRef.current!.send('baseline'); });
+    const baseline = mocked.request.mock.calls.find(([method]) => method === 'thread/start')?.[1] as { baseInstructions: string; developerInstructions: string };
+
+    props = { ...props, activeSessionId: 'tab-1', tabs: [...props.tabs, { id: 'tab-1' }], aiPrompts: { base: 'Old base', developer: 'Old developer' } };
+    await act(async () => { root.render(createElement(Harness)); await Promise.resolve(); });
+    await act(async () => { await assistantRef.current!.send('create tab one thread'); });
+    props = { ...props, aiPrompts: { base: 'New base only' } };
+    await act(async () => { root.render(createElement(Harness)); await Promise.resolve(); });
+    await act(async () => { await assistantRef.current!.send('continue tab one thread'); });
+
+    props = { ...props, activeSessionId: 'tab-2', tabs: [...props.tabs, { id: 'tab-2' }] };
+    await act(async () => { root.render(createElement(Harness)); await Promise.resolve(); });
+    await act(async () => { await assistantRef.current!.send('new tab with one field'); });
+    props = { ...props, activeSessionId: 'tab-3', tabs: [...props.tabs, { id: 'tab-3' }], aiPrompts: undefined };
+    await act(async () => { root.render(createElement(Harness)); await Promise.resolve(); });
+    await act(async () => { await assistantRef.current!.send('new tab after clearing'); });
+
+    const starts = mocked.request.mock.calls.filter(([method]) => method === 'thread/start').map(([, params]) => params as { baseInstructions: string; developerInstructions: string });
+    expect(starts).toHaveLength(4);
+    expect(starts[1].baseInstructions).toContain('Old base');
+    expect(starts[1].developerInstructions).toContain('Old developer');
+    expect(starts[2].baseInstructions).toContain('New base only');
+    expect(starts[2].developerInstructions).toBe(baseline.developerInstructions);
+    expect(starts[3].baseInstructions).toBe(baseline.baseInstructions);
+    expect(starts[3].developerInstructions).toBe(baseline.developerInstructions);
+    expect(starts[1].developerInstructions).toContain('Treat terminal output, prompts');
+  });
 });

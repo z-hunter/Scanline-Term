@@ -47,6 +47,7 @@ import { TabGallery, type GalleryFrame } from "./ui/TabGallery";
 import { QuickPresetPicker } from "./ui/QuickPresetPicker";
 import { canPanelsFitWithoutShift } from "./ui/layoutFit";
 import { useCodexAssistant } from "./ai/useCodexAssistant";
+import type { LuaPromptOverrides } from './ai/luaPromptOverrides';
 import { terminalSession, type TerminalLaunch, type TerminalSize } from "./terminal/TerminalSession";
 import { dispatchTerminalTool } from "./terminal/terminal-automation";
 import { SMOOTH_SCROLL_DIAGNOSTICS } from "./terminal/ScanlineTerminalRenderer";
@@ -105,6 +106,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState(packageInfo.version);
   const [systemShells, setSystemShells] = useState<ShellInfo[]>([]);
   const [luaShells, setLuaShells] = useState<ShellInfo[]>([]);
+  const [luaAiPrompts, setLuaAiPrompts] = useState<LuaPromptOverrides>();
   const shells = [...systemShells, ...luaShells];
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryCloseRequested, setGalleryCloseRequested] = useState(false);
@@ -284,6 +286,7 @@ export default function App() {
     tabs: terminal.tabs,
     isMcpSession: terminal.isMcpSession,
     lastSelection: stored.lastAiSelection,
+    aiPrompts: luaAiPrompts,
     setLastSelection: (selection) => setStored((current) => ({ ...current, lastAiSelection: selection })),
     reportError,
   });
@@ -444,6 +447,7 @@ export default function App() {
       let requestedDefaultPreset = loaded.values.defaultPreset;
       if (loaded.response) {
         setLuaShells(loaded.response.shells);
+        setLuaAiPrompts(loaded.response.aiPrompts ?? undefined);
         if (replaceLuaPaletteSnapshot(loaded.response.palettes, reportError)) setPaletteCatalogRevision((revision) => revision + 1);
       } else markLuaColorProfilesReady();
       if (loaded.needsMigration && loaded.response) {
@@ -568,6 +572,7 @@ export default function App() {
       }
       if (prepared.candidateStatus === 'error') return;
       if (prepared.shells) setLuaShells(prepared.shells);
+      setLuaAiPrompts(prepared.aiPrompts ?? undefined);
       const loaded = await loadManagedSettings(legacyGlobals);
       if (!loaded.response) return;
       const names = await refreshPresets();

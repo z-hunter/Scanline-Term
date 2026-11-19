@@ -31,6 +31,13 @@ describe('managed settings migration', () => {
     expect(normalizeManagedSettings({ settings: wire(), revision: 'r1', path: 'sterm.lua', hasSettings: false, palettes, shells })).toMatchObject({ palettes, shells });
     expect(() => normalizeManagedSettings({ settings: {}, revision: 3, path: '', hasSettings: false, palettes: [], shells: [] })).toThrow('invalid managed settings response');
   });
+
+  it('validates optional Lua prompt overrides and accepts an empty override table', () => {
+    const base = { settings: wire(), revision: 'r1', path: 'sterm.lua', hasSettings: true, palettes: [], shells: [] };
+    expect(normalizeManagedSettings({ ...base, aiPrompts: { base: 'Use concise answers' } }).aiPrompts).toEqual({ base: 'Use concise answers' });
+    expect(normalizeManagedSettings({ ...base, aiPrompts: {} }).aiPrompts).toEqual({});
+    expect(() => normalizeManagedSettings({ ...base, aiPrompts: { developer: true } })).toThrow('invalid Lua AI prompt overrides');
+  });
 });
 
 describe('managed setting request invalidation', () => {

@@ -75,6 +75,17 @@ The current persisted schema has these 23 user-facing fields. `settings_version`
 | `rmb_menu_in_term` | boolean |
 | `channel_switch_effect` | boolean |
 
+AI prompt overrides are declared separately from GUI-managed settings and are never written into the managed block. Copy `examples/lua/ai-prompts.lua` beside the active `sterm.lua` or `config.lua`, then enable or add `sterm.include('ai-prompts.lua')`. A newly seeded config has the sample beside it and the include commented out.
+
+```lua
+require('sterm').ai_prompts({
+  base = [[Work as a concise command-line helper for Rust projects.]],
+  developer = [[When building, report the relevant compiler output and the final result.]],
+})
+```
+
+`base` and `developer` independently replace their built-in thread instructions; omitted fields keep the built-in value, and `{}` means no override. Each value must be nonblank, contain no NUL, and fit within 8 KiB in UTF-8. The host appends fixed session ownership, tool-only access, untrusted terminal data, clipboard-only-on-request, verification, and destructive-action permission rules to each replaced field. These strings affect only threads created after the change; a thread already associated with a tab keeps its original instructions. A valid startup or reload with no declaration clears the overrides. Failed candidate loads retain the committed prompts, and reload publishes prompt configuration only after commit.
+
 Custom shell profiles are declared separately in user-authored Lua and stay outside the GUI-managed block:
 
 ```lua
@@ -87,7 +98,7 @@ IDs are unique ASCII letters, digits, `_`, or `-` (1–64 bytes); the app expose
 
 The bundled entry contains a GUI-owned block between `scanline-term:managed-settings:begin` and `scanline-term:managed-settings:end`. Settings saves splice that block into the full Lua source and evaluate the resulting file in the existing bounded registration VM; Scanline Term does not parse Lua syntax itself. `hasSettings` is true only when an actual `sterm.settings(...)` call ran, so the inert template and commented-out examples do not count as a declaration. Portable `sterm.lua` still takes precedence over the profile config. Saves check the loaded source revision, reject malformed or duplicate markers, and atomically replace the file; bytes outside the block, including a BOM, line endings, and a shebang, are retained.
 
-`load_managed_settings` and `save_managed_settings` return the settings object, `hasSettings`, `revision`, `path`, and the independently evaluated `palettes` and `shells` arrays (the save result returns the catalogs too). GUI saves write only the marked settings block; palette and shell declarations remain user-authored Lua. Reload prepares both catalogs from the frozen candidate config and publishes them only after that reload commits; a failed candidate retains the previous catalogs. The GUI selects a saved preset and shell ID as defaults for future implicit tabs. Explicit launch options take precedence. Lua has no font field or arbitrary font override; choose a saved preset to select its saved font and display settings.
+`load_managed_settings` and `save_managed_settings` return the settings object, `hasSettings`, `revision`, `path`, and the independently evaluated `palettes`, `shells`, and `aiPrompts` values. GUI saves write only the marked settings block; palette, shell, and prompt declarations remain user-authored Lua. Reload prepares these values from the frozen candidate config and publishes them only after that reload commits; a failed candidate retains the previous values. The GUI selects a saved preset and shell ID as defaults for future implicit tabs. Explicit launch options take precedence. Lua has no font field or arbitrary font override; choose a saved preset to select its saved font and display settings.
 
 An event script may request a saved preset for its active tab with `ctx.tab:apply_preset(name)`. In `context-updated`, a process-matched attachment can request a preset while its tab is active even when the terminal canvas is not focused; other callbacks still require the active, focused context. The host checks that the tab remains live and active and the action generation is current. It rejects a dirty preset state so unsaved edits are not lost, checking again after the preset file loads. Reload and context changes invalidate queued requests. This action selects an existing saved preset; it does not persist edits or expose individual font properties.
 
