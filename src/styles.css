@@ -805,6 +805,7 @@ footer,
   max-height: none;
   transform: scale(var(--settings-scale, 1));
   transform-origin: top left;
+  scrollbar-gutter: stable;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 20px;
