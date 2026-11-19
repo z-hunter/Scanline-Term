@@ -65,7 +65,7 @@ export type TerminalObservation = {
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
 type PendingOutput = { data: Uint8Array; acknowledge: () => void };
-type PendingInput = { input: string; resolve?: () => void; reject?: (reason: unknown) => void };
+type PendingInput = { input: string; resolve?: () => void; reject?: (reason: unknown) => void; validate?: () => void };
 export type TerminalOutputScroll = { fromViewportY: number; toViewportY: number; autoScroll: boolean };
 export type ApplicationCursorShape = CursorStyle | 'unknown' | null;
 export type ApplicationCursorState = { shape: ApplicationCursorShape; blink: boolean | null; visible: boolean };
@@ -394,15 +394,16 @@ export class TerminalSession {
     return invoke("write_terminal", { sessionId: this.id, input }).then(() => undefined);
   }
 
-  private enqueueInput(input: string): Promise<void> {
+  private enqueueInput(input: string, validate?: () => void): Promise<void> {
     if (!this.resizeTask && !this.pendingResize) return this.writeInput(input);
-    return new Promise((resolve, reject) => this.pendingInput.push({ input, resolve, reject }));
+    return new Promise((resolve, reject) => this.pendingInput.push({ input, resolve, reject, validate }));
   }
 
   private async flushPendingInput(): Promise<void> {
     const pending = this.pendingInput.shift();
     if (!pending) return;
     try {
+      pending.validate?.();
       await this.writeInput(pending.input);
       pending.resolve?.();
     } catch (reason) {
@@ -561,7 +562,12 @@ export class TerminalSession {
       input = input?.repeat(repeat) ?? null;
     }
     if (!input) return { status: 'no_input', kind: action.kind, bytesQueued: 0 };
-    await this.enqueueInput(input);
+    await this.enqueueInput(input, action.kind === "paste"
+      ? () => {
+          if (!this.live || !this.terminal?.modes.bracketedPasteMode)
+            throw new Error("terminal bracketed paste mode was disabled before input was queued");
+        }
+      : undefined);
     return { status: 'queued', kind: action.kind, bytesQueued: new TextEncoder().encode(input).length };
   }
 

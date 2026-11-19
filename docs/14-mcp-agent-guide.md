@@ -213,7 +213,7 @@ Send either text or a key action:
 
 Text is limited to 64 KiB. `submit: true` appends Enter in the same queued write; use it for ordinary shell commands instead of typing and pressing Enter in separate calls. Named keys include `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause` and `F1`–`F24`. One-character keys are accepted too. `ctrl`, `alt` and `shift` are supported. `repeat` must be an integer from 1 to 100.
 
-Use `kind: "text"` for strings in shells, prompts, and TUI text fields. Scanline Term sends the characters independently of the active keyboard layout, including in Win32 Input Mode. Use key actions for navigation and shortcuts. After a key sequence, observe the screen before continuing.
+Use `kind: "text"` for strings in shells, prompts, and TUI text fields. In Win32 Input Mode, Scanline Term sends Unicode character records rather than layout-dependent virtual-key presses; the requested character is preserved by the console input path (verified with `é` read by PowerShell). Applications may still apply their own character or encoding rules. Use key actions for navigation and shortcuts. After a key sequence, observe the screen before continuing.
 
 ### `paste_terminal_clipboard`
 

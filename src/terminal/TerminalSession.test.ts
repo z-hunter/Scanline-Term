@@ -72,19 +72,39 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('rejects a queued multiline paste if bracketed paste is disabled during resize', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b[?2004h', resolve));
+    mocked.invoke.mockClear();
+    let finishResize!: () => void;
+    mocked.invoke.mockImplementation((command: string) => command === 'resize_terminal'
+      ? new Promise<void>((resolve) => { finishResize = resolve; })
+      : Promise.resolve('cmd.exe'));
+
+    session.resize({ cols: 100, rows: 24 });
+    const paste = session.sendAutomationInput({ kind: 'paste', text: 'first\rsecond' });
+    await new Promise<void>((resolve) => session.terminal!.write('\x1b[?2004l', resolve));
+    finishResize();
+
+    await expect(paste).rejects.toThrow('bracketed paste mode was disabled before input was queued');
+    expect(mocked.invoke).not.toHaveBeenCalledWith('write_terminal', expect.anything());
+    session.dispose();
+  });
+
   it('sends automation text without layout-dependent virtual keys in Win32 mode', async () => {
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
     session.win32InputMode = true;
     mocked.invoke.mockClear();
 
-    const result = await session.sendAutomationInput({ kind: 'text', text: 'dir Я🙂', submit: true });
+    const result = await session.sendAutomationInput({ kind: 'text', text: 'dir é Я🙂', submit: true });
 
     expect(mocked.invoke).toHaveBeenCalledExactlyOnceWith('write_terminal', {
       sessionId: session.id,
-      input: '\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r',
+      input: '\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r',
     });
-    expect(result).toEqual({ status: 'queued', kind: 'text', bytesQueued: new TextEncoder().encode('\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r').length });
+    expect(result).toEqual({ status: 'queued', kind: 'text', bytesQueued: new TextEncoder().encode('\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r').length });
     session.dispose();
   });
 
