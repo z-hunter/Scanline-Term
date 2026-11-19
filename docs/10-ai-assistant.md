@@ -101,7 +101,11 @@ Agent-message deltas are accumulated only while they belong to the same app-serv
 
 ## Dynamic terminal tools
 
-The current app-server version accepts a flat `dynamicTools` array. The model-facing names include `observe_terminal`, `send_terminal_input`, `paste_terminal_clipboard` and `send_terminal_mouse`; the assistant policy refers to them as the Scanline terminal tools. Calls that use an unexpected namespace or name are rejected.
+The current app-server version accepts a flat `dynamicTools` array. The built-in assistant gets `observe_terminal`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard` and `send_terminal_mouse`; session identity is bound to its thread, so these tools omit a handle. The sidecar MCP tools use explicit opaque handles. Legacy `send_terminal_input` remains available for compatibility. Calls that use an unexpected namespace or name are rejected.
+
+Input tools return `{ status: "queued" | "no_input", kind: "text" | "key" | "paste", bytesQueued: number }`; byte count covers encoded bytes actually queued, including paste delimiters and mode-specific encoding. A queued result does not prove that the terminal application processed them. Observe before retrying an uncertain send. `paste_text` sends supplied text using bracketed paste and fails unless bracketed paste is enabled; it does not read the system clipboard. Observation status distinguishes an immediate `snapshot`, changed output (`updated`), bounded `timeout`, and process `exited`; a timeout includes the latest snapshot and does not prove the process remains running.
+
+The legacy `send_terminal_input` tool remains registered, but successful calls now return the structured receipt above instead of the former confirmation string. Its action argument format remains supported.
 
 ### `observe_terminal`
 
@@ -114,7 +118,7 @@ Arguments:
 | `quietMs` | Required silence before completing a wait; clamped to 0–5,000 ms, default 400 ms. |
 | `timeoutMs` | Total wait timeout; clamped to 1–60,000 ms, default 60,000 ms. |
 
-`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, a plain-text current screen, per-cell style runs (foreground/background and bold/italic/underline/etc.), and optional full plain-text scrollback. Right-side whitespace is removed; left indentation is preserved. When the tab exits while waiting, the call fails rather than claiming a timeout.
+`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, a plain-text current screen, per-cell style runs (foreground/background and bold/italic/underline/etc.), and optional full plain-text scrollback. Right-side whitespace is removed; left indentation is preserved. When the tab exits while waiting, the result has status `exited` and includes the latest snapshot.
 
 ### `send_terminal_input`
 
@@ -139,7 +143,7 @@ Accepts `primary` and `secondary` buttons, `click`/`press`/`release`, `move`, an
 
 Enabling **MCP terminal mode** in Settings starts a per-user Windows named-pipe listener in the Tauri process. The standalone `scanline-term-mcp` binary speaks MCP JSON-RPC over stdin/stdout and forwards tool calls through that pipe. Each pipe connection receives an opaque owner ID; it can list and control only sessions it created, and disconnecting closes those sessions. Handles never expose internal xterm/session IDs. MCP sessions use a blue screen-frame glow and the Codex panel is unavailable; ordinary Codex automation uses a green glow while active.
 
-The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_terminal_input`, `paste_terminal_clipboard`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
+The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
 
 For the agent-facing setup, tool contracts, snapshot schema, observation loop, TUI mouse semantics and safety guidance, see the dedicated [MCP Agent Guide](./14-mcp-agent-guide.md).
 

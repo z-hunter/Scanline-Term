@@ -118,12 +118,13 @@ Reads the session without changing it.
 }
 ```
 
-Without `afterSequence`, the snapshot is returned immediately. With it, the call waits until output newer than that sequence becomes quiet, or until the bounded timeout expires. `quietMs` is clamped to 0–5,000 ms; `timeoutMs` is clamped to 1–60,000 ms. A timeout returns the latest snapshot with `timedOut: true`; it does not mean that the process failed.
+Without `afterSequence`, the snapshot is returned immediately with status `snapshot`. With it, the call waits until output newer than that sequence becomes quiet (`updated`), the timeout expires (`timeout`), or the process exits (`exited`). A timeout includes the latest snapshot and does not prove the process is still running. `quietMs` is clamped to 0–5,000 ms; `timeoutMs` is clamped to 1–60,000 ms.
 
 The result is:
 
 ```ts
 type TerminalObservation = {
+  status: "snapshot" | "updated" | "timeout" | "exited";
   timedOut: boolean;
   snapshot: {
     status: "running" | "exited";
@@ -192,7 +193,13 @@ Recommended observation loop:
 3. Observe with `afterSequence` set to the previous sequence and a bounded timeout.
 4. Inspect the returned screen before deciding the next action.
 
-### `send_terminal_input`
+### `send_text`, `press_key`, and `paste_text`
+
+The flat tools take the handle directly. For example: `{ "handle": "terminal-0", "text": "dir", "submit": true }` for `send_text`, `{ "handle": "terminal-0", "key": "ArrowDown", "repeat": 2 }` for `press_key`, and `{ "handle": "terminal-0", "text": "pasted value" }` for `paste_text`.
+
+Input results are `{ status: "queued" | "no_input", kind: "text" | "key" | "paste", bytesQueued: number }`. `bytesQueued` counts the UTF-8 bytes of the encoded input, including submit Enter, bracketed-paste delimiters, and terminal-specific encoding. `queued` confirms that input was queued; it does not prove the terminal application processed it. If delivery is uncertain, observe before retrying to avoid duplicate actions. Empty text without `submit` and empty paste return `no_input` with zero bytes. `paste_text` uses bracketed paste and fails when that mode is disabled. It never reads the system clipboard. The legacy `send_terminal_input` argument format remains available, though its success result is now the structured receipt instead of the former confirmation string.
+
+### `send_terminal_input` (legacy)
 
 Send either text or a key action:
 
@@ -206,7 +213,7 @@ Send either text or a key action:
 
 Text is limited to 64 KiB. `submit: true` appends Enter in the same queued write; use it for ordinary shell commands instead of typing and pressing Enter in separate calls. Named keys include `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause` and `F1`–`F24`. One-character keys are accepted too. `ctrl`, `alt` and `shift` are supported. `repeat` must be an integer from 1 to 100.
 
-Use separate key calls for TUI navigation, prompts and line editing. After a key sequence, observe the screen before continuing.
+Use `kind: "text"` for strings in shells, prompts, and TUI text fields. Scanline Term sends the characters independently of the active keyboard layout, including in Win32 Input Mode. Use key actions for navigation and shortcuts. After a key sequence, observe the screen before continuing.
 
 ### `paste_terminal_clipboard`
 

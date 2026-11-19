@@ -97,3 +97,8 @@ export function win32InputKey(event: KeyEvent, keyDown: boolean): string {
   }
   return input;
 }
+
+export function win32InputText(text: string): string {
+  // The protocol carries UTF-16 code units. Zero VK and scan codes keep ConPTY from mapping text through a keyboard layout.
+  return text.replace(/[\s\S]/g, (unit) => `\x1b[0;0;${unit.charCodeAt(0)};1;0;1_`);
+}

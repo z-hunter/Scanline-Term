@@ -241,7 +241,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "observe_terminal",
-            "Read the current screen and optionally the complete plain-text scrollback.",
+            "Read the current screen and optionally the complete plain-text scrollback. Reports snapshot, updated, timeout, or exited; timeout includes the latest snapshot and does not prove the process is still running.",
             json!({
                 "type": "object", "properties": {
                     "handle": { "type": "string" }, "includeScrollback": { "type": "boolean" },
@@ -259,11 +259,26 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "send_terminal_input",
-            "Send text or a canonical key to a console TUI.",
+            "Legacy compatibility tool: queue text or a key. Prefer send_text or press_key. A queued acknowledgement does not mean the application processed the input; observe before retrying uncertain sends.",
             json!({
                 "type": "object", "properties": { "handle": { "type": "string" }, "action": input_action_schema() },
                 "required": ["handle", "action"], "additionalProperties": false
             }),
+        ),
+        tool(
+            "send_text",
+            "Queue text for an owned terminal. A queued acknowledgement does not mean the application processed it; observe before retrying uncertain sends.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 }, "submit": { "type": "boolean" } }, "required": ["handle", "text"], "additionalProperties": false }),
+        ),
+        tool(
+            "press_key",
+            "Queue a key press for an owned terminal. Observe before retrying uncertain sends.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "key": { "type": "string", "minLength": 1 }, "repeat": { "type": "integer", "minimum": 1, "maximum": 100 }, "ctrl": { "type": "boolean" }, "alt": { "type": "boolean" }, "shift": { "type": "boolean" } }, "required": ["handle", "key"], "additionalProperties": false }),
+        ),
+        tool(
+            "paste_text",
+            "Queue text using bracketed paste when enabled. Fails when bracketed paste mode is disabled and never reads the system clipboard.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 } }, "required": ["handle", "text"], "additionalProperties": false }),
         ),
         tool(
             "paste_terminal_clipboard",
@@ -373,7 +388,15 @@ mod tests {
         assert!(names.contains(&"observe_terminal"));
         assert!(names.contains(&"apply_terminal_preset"));
         assert!(names.contains(&"send_terminal_mouse"));
+        assert!(names.contains(&"send_text"));
+        assert!(names.contains(&"press_key"));
+        assert!(names.contains(&"paste_text"));
         assert!(names.contains(&"paste_terminal_clipboard"));
+        for name in ["send_text", "press_key", "paste_text"] {
+            let definition = response["result"]["tools"]
+                .as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap();
+            assert!(definition["inputSchema"]["required"].is_array());
+        }
         let paste = response["result"]["tools"]
             .as_array()
             .unwrap()

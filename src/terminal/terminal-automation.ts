@@ -67,17 +67,26 @@ export async function dispatchTerminalTool(session: TerminalSession, tool: strin
     const includeScrollback = args.includeScrollback === true || args.history === 'full';
     return typeof afterSequence === 'number'
       ? session.waitForOutput(afterSequence, number(args.quietMs, 'quietMs'), number(args.timeoutMs, 'timeoutMs'), includeScrollback)
-      : { snapshot: session.snapshot(includeScrollback), timedOut: false } satisfies TerminalObservation;
+      : { snapshot: session.snapshot(includeScrollback), status: 'snapshot', timedOut: false } satisfies TerminalObservation;
   }
   if (tool === 'send_terminal_input') {
     const action = args.action ?? args;
-    await session.sendAutomationInput(inputAction(action));
-    return 'Input encoded and queued.';
+    return session.sendAutomationInput(inputAction(action));
+  }
+  if (tool === 'send_text') return session.sendAutomationInput({ kind: 'text', text: string(args.text, 'text'), submit: boolean(args.submit) });
+  if (tool === 'press_key') return session.sendAutomationInput(inputAction({ ...args, kind: 'key' }));
+  if (tool === 'paste_text') {
+    if (!session.terminal?.modes.bracketedPasteMode) throw new Error('terminal bracketed paste mode is disabled');
+    const text = string(args.text, 'text');
+    // eslint-disable-next-line no-control-regex -- Reject terminal control bytes before bracketed paste.
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(text)) throw new Error('text contains unsupported control characters');
+    if (!text) return { status: 'no_input', kind: 'paste', bytesQueued: 0 };
+    return session.sendAutomationInput({ kind: 'paste', text: text.replace(/\r\n|\r|\n/g, '\r') });
   }
   if (tool === 'paste_terminal_clipboard') {
     const text = await navigator.clipboard.readText();
-    await session.sendAutomationInput({ kind: 'text', text });
-    return text ? 'Clipboard text pasted.' : 'Clipboard was empty; nothing pasted.';
+    const result = await session.sendAutomationInput({ kind: 'text', text });
+    return result.status === 'no_input' ? 'Clipboard was empty; nothing pasted.' : 'Clipboard text pasted.';
   }
   if (tool === 'send_terminal_mouse') {
     await session.sendAutomationMouse(mouseAction(args.action ?? args));

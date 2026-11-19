@@ -275,7 +275,7 @@ export function useCodexAssistant({
           dynamicTools: [
             {
               name: "observe_terminal",
-              description: "Read terminal output and scrollback. With afterSequence, wait for new output to become quiet; timeout is capped at 60 seconds.",
+              description: "Read terminal output and scrollback. Returns status snapshot, updated, timeout, or exited. A timeout returns the latest snapshot and does not prove the process is still running.",
               inputSchema: { type: "object", properties: { includeScrollback: { type: "boolean" }, history: { enum: ["recent", "full"] }, afterSequence: { type: "number" }, quietMs: { type: "number" }, timeoutMs: { type: "number" } } },
             },
             {
@@ -286,6 +286,9 @@ export function useCodexAssistant({
                 { type: "object", properties: { kind: { enum: ["key"] }, key: { oneOf: [{ type: "string", minLength: 1, maxLength: 1 }, { enum: ["Escape", "Tab", "Enter", "Backspace", "Space", "Insert", "Delete", "Home", "End", "PageUp", "PageDown", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Pause", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"] }] }, ctrl: { type: "boolean" }, alt: { type: "boolean" }, shift: { type: "boolean" }, repeat: { type: "integer", minimum: 1, maximum: 100 } }, required: ["kind", "key"], additionalProperties: false },
               ] } }, required: ["action"] },
             },
+            { name: "send_text", description: "Queue text for this terminal session. The response confirms input was queued, not that the application processed it; observe before retrying uncertain sends.", inputSchema: { type: "object", properties: { text: { type: "string", maxLength: 65536 }, submit: { type: "boolean" } }, required: ["text"], additionalProperties: false } },
+            { name: "press_key", description: "Queue a key press for this terminal session. The response confirms input was queued, not processed; observe before retrying uncertain sends.", inputSchema: { type: "object", properties: { key: { type: "string", minLength: 1 }, repeat: { type: "integer", minimum: 1, maximum: 100 }, ctrl: { type: "boolean" }, alt: { type: "boolean" }, shift: { type: "boolean" } }, required: ["key"], additionalProperties: false } },
+            { name: "paste_text", description: "Queue text using bracketed paste when enabled in this terminal. Fails if bracketed paste is disabled; does not read or use the system clipboard.", inputSchema: { type: "object", properties: { text: { type: "string", maxLength: 65536 } }, required: ["text"], additionalProperties: false } },
             { name: "paste_terminal_clipboard", description: "In response to a user request, paste the current system clipboard text into this terminal. The result excludes clipboard text, though later observe_terminal calls may reveal text echoed by the terminal.", inputSchema: { type: "object", properties: {}, additionalProperties: false } },
             {
               name: "send_terminal_mouse",
@@ -391,7 +394,8 @@ Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
 - Alt+Enter: toggle fullscreen in the desktop application.
 - Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.
 
-Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. For an ordinary shell command, send the complete command with submit: true in one send_terminal_input call; do not type the command and press Enter in separate calls. Use separate key calls only when interacting with a TUI, an interactive prompt, or terminal line editing. For repeated identical navigation keys, use one key action with repeat (1 through 100), then observe; do not issue a linear series of identical calls.
+Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Before acting, inspect the terminal when its current state may affect the task. After entering a command or key sequence, observe the terminal output before deciding what to do next. Use send_text with submit: true for ordinary shell commands; press_key for navigation and shortcuts. A successful send only confirms the input was queued, not that the application processed it. If a send result is uncertain, observe before retrying to avoid duplicate actions. Use paste_text only for text the user asks to paste; it requires bracketed paste mode and does not access the system clipboard.
+Use kind: "text" to enter strings, including in interactive prompts and TUI text fields. Text actions preserve the supplied characters independently of the keyboard layout.
 The current live screen is always returned as readable plain text; request includeScrollback: true only when the full active text buffer is needed. Use send_terminal_mouse for TUI primary/secondary buttons or wheel; coordinates are 1-based cells and middle-click remains Scanline Term's text-selection gesture. Use paste_terminal_clipboard only when the user asks you to paste the current system clipboard into this terminal. Its result excludes clipboard text, though later observe_terminal calls may reveal text echoed by the terminal.
 
 Work carefully and communicate clearly:

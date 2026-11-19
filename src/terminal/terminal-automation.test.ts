@@ -17,12 +17,13 @@ describe('terminal automation dispatcher', () => {
   it('routes observe, keyboard and mouse calls through one session', async () => {
     const session = {
       snapshot: vi.fn(() => ({ sequence: 4 })),
-      waitForOutput: vi.fn(async () => ({ snapshot: { sequence: 5 }, timedOut: false })),
-      sendAutomationInput: vi.fn(async () => undefined),
+      waitForOutput: vi.fn(async () => ({ snapshot: { sequence: 5 }, status: 'updated', timedOut: false })),
+      sendAutomationInput: vi.fn(async () => ({ status: 'queued', kind: 'text', bytesQueued: 4 })),
       sendAutomationMouse: vi.fn(async () => undefined),
     };
     await dispatchTerminalTool(session as never, 'observe_terminal', { includeScrollback: true });
-    await dispatchTerminalTool(session as never, 'send_terminal_input', { action: { kind: 'text', text: 'dir', submit: true } });
+    expect(await dispatchTerminalTool(session as never, 'observe_terminal', { includeScrollback: true })).toMatchObject({ status: 'snapshot', timedOut: false });
+    expect(await dispatchTerminalTool(session as never, 'send_terminal_input', { action: { kind: 'text', text: 'dir', submit: true } })).toEqual({ status: 'queued', kind: 'text', bytesQueued: 4 });
     await dispatchTerminalTool(session as never, 'send_terminal_mouse', { action: { action: 'click', button: 'primary', col: 2, row: 3 } });
     expect(session.snapshot).toHaveBeenCalledWith(true);
     expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'dir', submit: true });
@@ -31,11 +32,36 @@ describe('terminal automation dispatcher', () => {
 
   it('pastes clipboard text into only the routed session without returning it', async () => {
     vi.stubGlobal('navigator', { clipboard: { readText: vi.fn(async () => 'first line\r\nsecond line\n') } });
-    const session = { sendAutomationInput: vi.fn(async () => undefined) };
+    const session = { sendAutomationInput: vi.fn(async () => ({ status: 'queued', kind: 'text', bytesQueued: 6 })) };
 
     const result = await dispatchTerminalTool(session as never, 'paste_terminal_clipboard', {});
 
     expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'first line\r\nsecond line\n' });
     expect(result).toBe('Clipboard text pasted.');
+  });
+
+  it('routes text and key aliases through structured input receipts', async () => {
+    const session = { sendAutomationInput: vi.fn(async (action) => ({ status: action.kind === 'text' && !action.text ? 'no_input' : 'queued', kind: action.kind, bytesQueued: action.text?.length ?? 3 })) };
+    expect(await dispatchTerminalTool(session as never, 'send_text', { text: 'hi', submit: true })).toEqual({ status: 'queued', kind: 'text', bytesQueued: 2 });
+    expect(await dispatchTerminalTool(session as never, 'press_key', { key: 'ENTER' })).toEqual({ status: 'queued', kind: 'key', bytesQueued: 3 });
+  });
+
+  it('uses bracketed paste only when the terminal mode is active', async () => {
+    const session = {
+      terminal: { modes: { bracketedPasteMode: true } },
+      win32InputMode: false,
+      sendAutomationInput: vi.fn(async () => ({ status: 'queued', kind: 'paste', bytesQueued: 11 })),
+    };
+    const result = await dispatchTerminalTool(session as never, 'paste_text', { text: 'hello' });
+    expect(session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'paste', text: 'hello' });
+    expect(result).toEqual({ status: 'queued', kind: 'paste', bytesQueued: 11 });
+    expect(await dispatchTerminalTool(session as never, 'paste_text', { text: '' })).toEqual({ status: 'no_input', kind: 'paste', bytesQueued: 0 });
+    for (const text of ['x\x1b[201~', 'x\x9b201~', 'x\x00']) {
+      await expect(dispatchTerminalTool(session as never, 'paste_text', { text })).rejects.toThrow('unsupported control characters');
+    }
+    expect(await dispatchTerminalTool(session as never, 'paste_text', { text: 'first\r\nsecond\nthird' })).toEqual({ status: 'queued', kind: 'paste', bytesQueued: 11 });
+    expect(session.sendAutomationInput).toHaveBeenLastCalledWith({ kind: 'paste', text: 'first\rsecond\rthird' });
+    session.terminal.modes.bracketedPasteMode = false;
+    await expect(dispatchTerminalTool(session as never, 'paste_text', { text: 'hello' })).rejects.toThrow('bracketed paste mode is disabled');
   });
 });

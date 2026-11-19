@@ -733,7 +733,7 @@ export default function App() {
           respond(payload.requestId, { name: params.name, status: "applied" });
           return;
         }
-        if (payload.method === "observe_terminal" || payload.method === "send_terminal_input" || payload.method === "paste_terminal_clipboard" || payload.method === "send_terminal_mouse") {
+        if (["observe_terminal", "send_terminal_input", "send_text", "press_key", "paste_text", "paste_terminal_clipboard", "send_terminal_mouse"].includes(payload.method)) {
           const session = terminalSession(sessionId);
           if (!session) throw new Error("terminal session is unavailable");
           const result = await dispatchTerminalTool(session, payload.method, params);
@@ -1273,9 +1273,9 @@ export default function App() {
   canFitWithoutShiftRef.current = canFitWithoutShift;
   const totalPanelsWidth =
     aiVisible && settingsVisible
-      ? 360 + 18 + 320 * stored.settingsScale
+      ? (360 + 320) * stored.settingsScale + 18
       : aiVisible
-        ? 360
+        ? 360 * stored.settingsScale
         : 320 * stored.settingsScale;
   const freeSpaceRight = Math.max(
     0,
@@ -1290,7 +1290,7 @@ export default function App() {
     <main
       style={
         {
-          "--settings-scale": String(stored.settingsScale),
+          "--ui-scale": String(stored.settingsScale),
           "--panels-fit-margin-right": `${panelsFitMarginRight}px`,
         } as CSSProperties
       }

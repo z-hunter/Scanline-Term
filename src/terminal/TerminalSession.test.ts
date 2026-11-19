@@ -72,6 +72,22 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
+  it('sends automation text without layout-dependent virtual keys in Win32 mode', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    session.win32InputMode = true;
+    mocked.invoke.mockClear();
+
+    const result = await session.sendAutomationInput({ kind: 'text', text: 'dir Я🙂', submit: true });
+
+    expect(mocked.invoke).toHaveBeenCalledExactlyOnceWith('write_terminal', {
+      sessionId: session.id,
+      input: '\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r',
+    });
+    expect(result).toEqual({ status: 'queued', kind: 'text', bytesQueued: new TextEncoder().encode('\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r').length });
+    session.dispose();
+  });
+
   it('normalizes automation key aliases and rejects unsupported names', async () => {
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
     await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
@@ -83,11 +99,13 @@ describe('TerminalSession', () => {
     expect(mocked.invoke).toHaveBeenNthCalledWith(2, 'write_terminal', { sessionId: session.id, input: '\x1b[A' });
 
     session.win32InputMode = true;
-    await session.sendAutomationInput({ kind: 'key', key: 'ARROW_UP' });
+    const win32Arrow = '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_';
+    expect(await session.sendAutomationInput({ kind: 'key', key: 'ARROW_UP' })).toEqual({ status: 'queued', kind: 'key', bytesQueued: new TextEncoder().encode(win32Arrow).length });
     expect(mocked.invoke).toHaveBeenNthCalledWith(3, 'write_terminal', { sessionId: session.id, input: '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_' });
 
     await expect(session.sendAutomationInput({ kind: 'key', key: 'F25' })).rejects.toThrow('unsupported terminal key: F25');
     expect(mocked.invoke).toHaveBeenCalledTimes(3);
+    await expect(session.sendAutomationInput({ kind: 'key', key: 'Meta' })).rejects.toThrow('unsupported terminal key: Meta');
     session.dispose();
   });
 
@@ -426,6 +444,42 @@ describe('TerminalSession', () => {
       await vi.advanceTimersByTimeAsync(60_000);
       const result = await waitPromise;
       expect(result.timedOut).toBe(true);
+      expect(result.status).toBe('timeout');
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for output strictly newer than afterSequence', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+      const newerWait = session.waitForOutput(0, 0, 50);
+      const futureWait = session.waitForOutput(1, 0, 50);
+      mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode('x')) } });
+
+      await vi.advanceTimersByTimeAsync(50);
+      expect(await newerWait).toMatchObject({ status: 'updated', snapshot: { sequence: 1 } });
+      expect(await futureWait).toMatchObject({ status: 'timeout', snapshot: { sequence: 1 } });
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('returns the latest snapshot when a process exits during an observation wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), (live) => { if (!live && session.terminal) session.dispose(); }, vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+      mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode('latest output')) } });
+      await vi.advanceTimersByTimeAsync(0);
+      const wait = session.waitForOutput(0, 400, 1000);
+      mocked.handlers.get('terminal-exit')!({ payload: { sessionId: session.id } });
+      await vi.advanceTimersByTimeAsync(25);
+      expect(await wait).toMatchObject({ status: 'exited', timedOut: false, snapshot: { status: 'exited', sequence: 1, screen: { lines: expect.arrayContaining(['latest output']) } } });
       session.dispose();
     } finally {
       vi.useRealTimers();
@@ -453,7 +507,7 @@ describe('TerminalSession', () => {
       payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode('new background line\r\n')) },
     });
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(onOutput).toHaveBeenCalled(), { timeout: 1000 });
 
     expect(scrollToBottomSpy).not.toHaveBeenCalled();
     expect(terminal.buffer.active.viewportY).toBe(0);
@@ -480,7 +534,7 @@ describe('TerminalSession', () => {
       payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode(Array.from({ length: 30 }, (_, i) => `line ${i}\r\n`).join(''))) },
     });
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(onOutput).toHaveBeenCalled(), { timeout: 1000 });
 
     expect(onOutput).toHaveBeenCalledWith({
       fromViewportY,

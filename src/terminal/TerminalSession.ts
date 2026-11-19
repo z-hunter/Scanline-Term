@@ -5,13 +5,14 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { colorProfile, type CursorStyle, type TerminalColorProfile } from "scanline-virtual-screen/core";
 import { terminalKey } from "./terminal-input";
 import { terminalMouse, type MouseTrackingMode } from "./terminal-mouse";
-import { win32InputKey } from "../win32-input";
+import { win32InputKey, win32InputText } from "../win32-input";
 
 export type TerminalSize = { cols: number; rows: number };
 type ActiveTerminalProcess = { processName: string | null; processNames: string[] };
 export type TerminalLaunch = { command?: string | null; args?: string[] | null; cwd?: string | null; preset?: string | null };
 export type TerminalInputAction =
   | { kind: "text"; text: string; submit?: boolean }
+  | { kind: "paste"; text: string }
   | {
       kind: "key";
       key: string;
@@ -58,6 +59,7 @@ export type TerminalSnapshot = {
 };
 export type TerminalObservation = {
   snapshot: TerminalSnapshot;
+  status: "snapshot" | "updated" | "timeout" | "exited";
   timedOut: boolean;
 };
 type TerminalOutput = { sessionId: string; data: number[] };
@@ -205,6 +207,7 @@ export class TerminalSession {
   private disposed = false;
   private exited = false;
   private sequence = 0;
+  private outputWaiters = new Set<() => void>();
   private pendingOutput: PendingOutput[] = [];
   private pendingInput: PendingInput[] = [];
   private pendingResize: TerminalSize | null = null;
@@ -532,19 +535,21 @@ export class TerminalSession {
     if (this.processInterval !== null) window.clearInterval(this.processInterval);
     this.processInterval = null;
     this.processName = null;
+    this.outputWaiters.forEach((resolve) => resolve());
     this.onAutomationStateChange();
     for (const pending of this.pendingInput.splice(0)) pending.reject?.(new Error("terminal exited"));
     this.onState(false, this.size);
     this.onExit();
   }
 
-  async sendAutomationInput(action: TerminalInputAction): Promise<void> {
+  async sendAutomationInput(action: TerminalInputAction): Promise<{ status: 'queued' | 'no_input'; kind: 'text' | 'key' | 'paste'; bytesQueued: number }> {
     if (!this.live) throw new Error("terminal is not running");
     let input: string | null;
-    if (action.kind === "text") {
+    if (action.kind === "text" || action.kind === "paste") {
       if (action.text.length > 64 * 1024)
         throw new Error("terminal text input exceeds 64 KiB");
-      input = action.text + (action.submit ? "\r" : "");
+      const text = this.win32InputMode ? win32InputText(action.text) : action.text;
+      input = action.kind === "paste" ? `\x1b[200~${text}\x1b[201~` : text + (action.submit ? "\r" : "");
     } else {
       const repeat = action.repeat ?? 1;
       if (!Number.isInteger(repeat) || repeat < 1 || repeat > 100)
@@ -555,7 +560,9 @@ export class TerminalSession {
         : terminalKey(event, this.terminal!.modes);
       input = input?.repeat(repeat) ?? null;
     }
-    if (input) await this.enqueueInput(input);
+    if (!input) return { status: 'no_input', kind: action.kind, bytesQueued: 0 };
+    await this.enqueueInput(input);
+    return { status: 'queued', kind: action.kind, bytesQueued: new TextEncoder().encode(input).length };
   }
 
   async sendAutomationMouse(action: TerminalMouseAction): Promise<void> {
@@ -667,31 +674,36 @@ export class TerminalSession {
     timeoutMs = 60_000,
     includeScrollback: boolean | "recent" | "full" = false,
   ): Promise<TerminalObservation> {
-    if (!this.live) return Promise.reject(new Error("terminal is not running"));
+    if (!this.live) return Promise.resolve({ snapshot: this.snapshot(includeScrollback), status: "exited", timedOut: false });
     const quiet = Math.max(0, Math.min(5_000, Number.isFinite(quietMs) ? quietMs : 400));
     const timeout = Math.max(1, Math.min(60_000, Number.isFinite(timeoutMs) ? timeoutMs : 60_000));
     const started = Date.now();
     let changedAt: number | null =
       this.sequence > afterSequence ? Date.now() : null;
     let seen = this.sequence;
-    return new Promise((resolve, reject) => {
-      const timer = window.setInterval(() => {
+    return new Promise((resolve) => {
+      let timer: number | null = null;
+      const finish = (status: TerminalObservation["status"]) => {
+        if (timer !== null) window.clearInterval(timer);
+        this.outputWaiters.delete(onExit);
+        resolve({ snapshot: this.snapshot(includeScrollback), status, timedOut: status === "timeout" });
+      };
+      const onExit = () => finish("exited");
+      this.outputWaiters.add(onExit);
+      timer = window.setInterval(() => {
         if (!this.live) {
-          window.clearInterval(timer);
-          reject(new Error("terminal exited while waiting for output"));
+          finish("exited");
           return;
         }
         if (this.sequence !== seen) {
           seen = this.sequence;
-          changedAt = Date.now();
+          if (this.sequence > afterSequence) changedAt = Date.now();
         }
         const now = Date.now();
         if (changedAt !== null && now - changedAt >= quiet) {
-          window.clearInterval(timer);
-          resolve({ snapshot: this.snapshot(includeScrollback), timedOut: false });
+          finish("updated");
         } else if (now - started >= timeout) {
-          window.clearInterval(timer);
-          resolve({ snapshot: this.snapshot(includeScrollback), timedOut: true });
+          finish("timeout");
         }
       }, 25);
     });
@@ -784,6 +796,8 @@ export class TerminalSession {
   dispose(): void {
     sessions.delete(this.id);
     this.disposed = true;
+    this.live = false;
+    this.outputWaiters.forEach((resolve) => resolve());
     this.unlisten.forEach((unlisten) => unlisten());
     this.unlisten = [];
     this.disposables.forEach((item) => item.dispose());
