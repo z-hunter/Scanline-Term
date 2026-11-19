@@ -19,12 +19,6 @@
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://**" }]
     },
-    {
-      "identifier": "opener:allow-open-path",
-      "allow": [
-        { "path": "$RESOURCE/sterm.lua" },
-        { "path": "$APPCONFIG/config.lua" }
-      ]
-    }
+    "opener:allow-reveal-item-in-dir"
   ]
 }

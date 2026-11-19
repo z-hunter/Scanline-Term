@@ -80,7 +80,7 @@ const settingHelp: Record<string, string> = {
   '...only if single tab': 'Hide the tab bar only while there is one tab open.',
   'Global hotkey: Win+~': 'Allow Win+tilde to show or hide Scanline Term from other apps.',
   'Slide from top': 'Animate the app sliding down from the top when shown by its hotkey.',
-  'Settings scale': 'Change the size of the settings panel controls and text.',
+  'UI Scale': 'Change the size of text and controls in the Settings and AI panels and the preset picker.',
   'Default shell': 'Choose the shell started in new terminal tabs.',
   'Check for updates automatically': 'Check for new Scanline Term versions automatically.',
   'Windows Explorer: Open with ScanlineTerm here': 'Add a Windows Explorer menu action that opens the selected folder in Scanline Term.',
@@ -419,7 +419,7 @@ export function SettingsPanel({
         <Switch label="Global hotkey: Win+~" checked={stored.globalHotkeyEnabled} onChange={(globalHotkeyEnabled) => setStored((current) => ({ ...current, globalHotkeyEnabled }))} />
         {stored.globalHotkeyEnabled && <Switch label="Slide from top" checked={stored.slideFromTop} onChange={(slideFromTop) => setStored((current) => ({ ...current, slideFromTop }))} />}
         <label className="host-select-control">
-          Settings scale
+          UI Scale
           <select value={stored.settingsScale} onChange={(event) => setStored((current) => ({ ...current, settingsScale: Number(event.target.value) }))}>
             {[0.75, 0.9, 1, 1.1, 1.25, 1.5].map((scale) => <option key={scale} value={scale}>{Math.round(scale * 100)}%</option>)}
           </select>

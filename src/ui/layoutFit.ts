@@ -47,9 +47,9 @@ export function canPanelsFitWithoutShift({
   let totalPanelsWidth = 0;
   if (aiVisible && settingsVisible) {
     totalPanelsWidth =
-      AI_PANEL_WIDTH + APP_SHELL_GAP + SETTINGS_PANEL_BASE_WIDTH * settingsScale;
+      (AI_PANEL_WIDTH + SETTINGS_PANEL_BASE_WIDTH) * settingsScale + APP_SHELL_GAP;
   } else if (aiVisible) {
-    totalPanelsWidth = AI_PANEL_WIDTH;
+    totalPanelsWidth = AI_PANEL_WIDTH * settingsScale;
   } else if (settingsVisible) {
     totalPanelsWidth = SETTINGS_PANEL_BASE_WIDTH * settingsScale;
   }

@@ -2,7 +2,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
-const mocked = vi.hoisted(() => ({ openPath: vi.fn() }));
+const mocked = vi.hoisted(() => ({ revealItemInDir: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => mocked);
 
 import { LuaAutomationPanel } from './LuaAutomationPanel';
@@ -28,22 +28,23 @@ describe('LuaAutomationPanel', () => {
       expect(container.textContent).not.toContain(status.diagnostics[0].message);
       const actions = container.querySelector('.lua-automation-actions')!;
       expect(actions.querySelectorAll('button')).toHaveLength(2);
-      expect([...actions.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Reload config', 'Edit config']);
+      expect([...actions.querySelectorAll('button')].map((button) => button.textContent?.trim())).toEqual(['Reload config', '']);
+      expect(actions.querySelectorAll<HTMLButtonElement>('button')[1].getAttribute('aria-label')).toBe('Open Lua config folder');
 
       await act(async () => { actions.querySelector<HTMLButtonElement>('button')!.click(); });
       expect(reload).toHaveBeenCalledOnce();
       await act(async () => { actions.querySelectorAll<HTMLButtonElement>('button')[1].click(); });
-      expect(mocked.openPath).toHaveBeenCalledWith(status.configPath);
+      expect(mocked.revealItemInDir).toHaveBeenCalledWith(status.configPath);
       expect(onError).not.toHaveBeenCalled();
     } finally {
       await act(async () => { root.unmount(); });
       container.remove();
-      mocked.openPath.mockReset();
+      mocked.revealItemInDir.mockReset();
     }
   });
 
   it('routes opener failures through the existing error callback', async () => {
-    mocked.openPath.mockRejectedValueOnce(new Error('editor unavailable'));
+    mocked.revealItemInDir.mockRejectedValueOnce(new Error('Explorer unavailable'));
     const onError = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -56,15 +57,15 @@ describe('LuaAutomationPanel', () => {
         }));
       });
       await act(async () => { container.querySelectorAll<HTMLButtonElement>('button')[1].click(); });
-      expect(onError).toHaveBeenCalledWith('Could not open Lua configuration: Error: editor unavailable');
+      expect(onError).toHaveBeenCalledWith('Could not open Lua configuration folder: Error: Explorer unavailable');
     } finally {
       await act(async () => { root.unmount(); });
       container.remove();
-      mocked.openPath.mockReset();
+      mocked.revealItemInDir.mockReset();
     }
   });
 
-  it('explains browser preview availability and reports a missing config when Edit is used', async () => {
+  it('explains browser preview availability and reports a missing config when the folder button is used', async () => {
     const onError = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -80,7 +81,7 @@ describe('LuaAutomationPanel', () => {
       expect(container.querySelector<HTMLButtonElement>('button')!.disabled).toBe(true);
       await act(async () => { container.querySelectorAll<HTMLButtonElement>('button')[1].click(); });
       expect(onError).toHaveBeenCalledWith('No Lua configuration file is loaded.');
-      expect(mocked.openPath).not.toHaveBeenCalled();
+      expect(mocked.revealItemInDir).not.toHaveBeenCalled();
     } finally {
       await act(async () => { root.unmount(); });
       container.remove();
