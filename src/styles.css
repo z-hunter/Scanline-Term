@@ -811,13 +811,22 @@ footer,
   border: 1px solid #0a120c;
   border-radius: 12px;
   background: #0d1711;
+  scrollbar-color: #355840 #0d1711;
+  scrollbar-width: thin;
 }
+
+.settings-panel::-webkit-scrollbar { width: 7px; }
+.settings-panel::-webkit-scrollbar-track { background: #0d1711; }
+.settings-panel::-webkit-scrollbar-thumb { border: 2px solid #0d1711; border-radius: 6px; background: #355840; }
+.settings-panel::-webkit-scrollbar-thumb:hover { background: #4a8057; }
+.settings-panel::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 
 .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .settings-panel > header { margin: 0 0 14px; }
 .settings-panel .settings-heading { padding-bottom: 8px; margin-bottom: 7px; background: linear-gradient(90deg, #a9f4ca55, #a9f4ca18) left bottom / 100% 1px no-repeat; }
-.settings-panel .settings-heading .eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; color: #9de8b3; font: 600 14px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .18em; }
+.settings-panel .settings-heading .eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; border: 0; color: #9de8b3; background: transparent; font: 600 14px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .18em; text-align: left; cursor: pointer; }
 .settings-heading .eyebrow::before { width: 7px; height: 7px; border-radius: 50%; background: #83ffa2; box-shadow: 0 0 10px #63fa8b9c; content: ''; }
+.settings-panel .settings-heading .eyebrow:focus-visible { outline: 2px solid #9dffb8; outline-offset: 4px; }
 .settings-panel > header .display-status { margin: 7px 0 0; color: #809b87; font: 10px/1.4 ui-monospace, Consolas, monospace; letter-spacing: .08em; }
 .settings-home-button { width: 24px; height: 24px; padding: 0; border: 1px solid #355840; border-radius: 50%; color: #b9d7c1; background: #163321; font: 700 14px/20px ui-monospace, Consolas, monospace; cursor: pointer; }
 .settings-home-button:hover, .settings-home-button:focus-visible { color: #d7f5df; background: #204b2d; }
@@ -955,7 +964,7 @@ fieldset {
 }
 
 .settings-panel .settings-section-title { display: flex; flex: 1; align-items: center; gap: 8px; font: 600 12px/1.2 ui-monospace, Consolas, monospace; letter-spacing: .12em; }
-.settings-panel .settings-section-icon { display: block; width: 18px; height: 18px; flex: 0 0 18px; color: currentColor; }
+.settings-panel .settings-section-icon { display: block; width: 24px; height: 24px; flex: 0 0 24px; color: currentColor; }
 .settings-panel .settings-section-icon[data-icon="presets"] { background: currentColor; mask: url('../src-tauri/resources/icons/presets.svg') center / contain no-repeat; }
 .settings-panel .settings-section-icon[data-icon="display"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/display.svg') center / contain no-repeat; }
 .settings-panel .settings-section-icon[data-icon="terminal"] { background: currentColor; mask: url('../node_modules/scanline-virtual-screen/dist/react/icons/terminal.svg') center / contain no-repeat; }
@@ -967,10 +976,12 @@ fieldset {
 .settings-panel .settings-section-chevron { width: 7px; height: 7px; margin-left: auto; border-right: 1px solid #9ccca9; border-bottom: 1px solid #9ccca9; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
 .settings-panel .settings-section-toggle[aria-expanded="true"] .settings-section-chevron { transform: rotate(225deg) translate(-1px, -1px); }
 .settings-panel .settings-section-toggle[aria-expanded="true"] { border-bottom: 0; border-radius: 5px 5px 0 0; }
+.settings-panel .settings-section-toggle[aria-expanded="false"] { box-shadow: 1px 2px 3px #0005; }
 .settings-panel .settings-section-pinned > legend > .settings-section-title { display: flex; min-height: 40px; align-items: center; padding: 3px 10px; border: 1px solid #a9f4ca2b; border-top-color: #a9f4ca55; border-bottom: 0; border-radius: 5px 5px 0 0; color: #9de8b3; background: linear-gradient(#b4ffd50b, #b4ffd50b), var(--settings-section-surface); }
-.settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005), var(--settings-section-surface); }
+.settings-panel .settings-section-content { min-width: 0; padding: 10px; border: 1px solid #a9f4ca2b; border-top: 0; border-radius: 0 0 5px 5px; background: linear-gradient(145deg, #b4ffd508, #61d99204 48%, #d2fff005), var(--settings-section-surface); box-shadow: 1px 2px 3px #0005; }
 .settings-panel .settings-section-content[hidden] { display: none; }
 .settings-panel .settings-section-content .svs-settings-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.settings-panel .crt-section .svs-knob-group > legend .svs-section-icon { width: 18px; height: 18px; }
 .settings-panel .browser-crt-settings > .crt-section > .svs-switch { display: none; }
 .settings-panel .settings-section[data-section-id="display"] .display-section > legend,
 .settings-panel .settings-section[data-section-id="terminal"] .terminal-section > legend,

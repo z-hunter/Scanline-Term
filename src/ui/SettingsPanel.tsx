@@ -199,6 +199,12 @@ export function SettingsPanel({
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(settingsPanelSession.expandedSections);
   useLayoutEffect(() => { settingsPanelSession.expandedSections = expandedSections; }, [expandedSections]);
   const toggleSection = (id: string) => setExpandedSections((current) => ({ ...current, [id]: !current[id] }));
+  const collapsibleSectionIds = browserTabActive ? ['browser', 'crt', 'ui', 'system'] : ['display', 'terminal', 'crt', 'ui', 'system'];
+  const allSectionsCollapsed = collapsibleSectionIds.every((id) => !expandedSections[id]);
+  const toggleAllSections = () => setExpandedSections((current) => {
+    const expand = collapsibleSectionIds.every((id) => !current[id]);
+    return { ...current, ...Object.fromEntries(collapsibleSectionIds.map((id) => [id, expand])) };
+  });
   const releaseKnobsOutsidePointer = (x: number, y: number) => {
     for (const [knob, blockedAt] of wheelBlockedKnobs) {
       const bounds = knob.getBoundingClientRect();
@@ -338,7 +344,7 @@ export function SettingsPanel({
     >
       <header>
         <div className="settings-heading">
-          <p className="eyebrow">SETTINGS</p>
+          <button type="button" className="eyebrow" aria-label={`${allSectionsCollapsed ? 'Expand' : 'Collapse'} all settings sections`} title={`${allSectionsCollapsed ? 'Expand' : 'Collapse'} all settings sections`} onClick={toggleAllSections}>SETTINGS</button>
           <button type="button" className="settings-home-button" data-testid="settings-home" aria-label="Open Scanline Term home" title="Open Scanline Term home" onClick={onOpenHome}>?</button>
         </div>
         <p className="display-status">{browserTabActive ? `BROWSER TAB · FPS: ${browserFps}` : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
