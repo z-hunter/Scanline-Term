@@ -800,6 +800,8 @@ footer,
 
 .settings-panel {
   --settings-section-surface: #101a14;
+  display: flex;
+  flex-direction: column;
   width: calc(100% / var(--settings-scale, 1));
   height: calc((100vh - 18px) / var(--settings-scale, 1));
   max-height: none;
@@ -1066,6 +1068,8 @@ footer {
   margin-top: 18px;
   text-align: center;
 }
+
+.settings-panel > footer { margin-top: auto; }
 
 @media (max-width: 850px) {
   .app-shell {
