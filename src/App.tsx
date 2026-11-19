@@ -718,7 +718,8 @@ export default function App() {
           if (Number.isInteger(params.cols) && Number.isInteger(params.rows)) {
             current.resizeSession(sessionId, { cols: params.cols as number, rows: params.rows as number });
           }
-          respond(payload.requestId, current.ownedSessionInfo(payload.ownerId).find((item) => item.sessionId === sessionId) ?? createdInfo);
+          const session = terminalSession(sessionId);
+          respond(payload.requestId, { ...(current.ownedSessionInfo(payload.ownerId).find((item) => item.sessionId === sessionId) ?? createdInfo), observation: session ? { status: "snapshot", timedOut: false, snapshot: session.snapshot() } : null });
           return;
         }
         if (payload.method === "list_terminals") {
@@ -735,10 +736,11 @@ export default function App() {
           if (current.sessionOwner(sessionId) !== payload.ownerId) throw new Error("terminal session is unavailable");
           current.selectSession(sessionId, false, false);
           current.replaceActivePreset(loaded, params.name, sessionId);
-          respond(payload.requestId, { name: params.name, status: "applied" });
+          const session = terminalSession(sessionId);
+          respond(payload.requestId, { result: { name: params.name, status: "applied" }, observation: session ? { status: "snapshot", timedOut: false, snapshot: session.snapshot() } : null });
           return;
         }
-        if (["observe_terminal", "send_terminal_input", "send_text", "press_key", "paste_text", "paste_terminal_clipboard", "send_terminal_mouse"].includes(payload.method)) {
+        if (["observe_terminal", "read_scrollback", "capture_terminal_frames", "send_terminal_input", "send_text", "press_key", "paste_text", "paste_terminal_clipboard", "send_terminal_mouse"].includes(payload.method)) {
           const session = terminalSession(sessionId);
           if (!session) throw new Error("terminal session is unavailable");
           const result = await dispatchTerminalTool(session, payload.method, params);
@@ -748,11 +750,13 @@ export default function App() {
           const rows = params.rows;
           if (!Number.isInteger(cols) || !Number.isInteger(rows) || (cols as number) < 20 || (cols as number) > 300 || (rows as number) < 8 || (rows as number) > 150) throw new Error("terminal size must be cols 20-300 and rows 8-150");
           current.resizeSession(sessionId, { cols, rows } as TerminalSize);
-          respond(payload.requestId, current.ownedSessionInfo(payload.ownerId).find((item) => item.sessionId === sessionId) ?? null);
+          const session = terminalSession(sessionId);
+          const { sessionId: _sessionId, ...sessionInfo } = current.ownedSessionInfo(payload.ownerId).find((item) => item.sessionId === sessionId) ?? { sessionId: "" };
+          respond(payload.requestId, { result: sessionInfo, observation: session ? { status: "snapshot", timedOut: false, snapshot: session.snapshot() } : null });
         } else if (payload.method === "close_terminal") {
           await current.closeSession(sessionId, true, true);
           if (current.sessionOwner(sessionId) === payload.ownerId) throw new Error("terminal session could not be closed");
-          respond(payload.requestId, "Terminal session closed.");
+          respond(payload.requestId, { status: "closed" });
         } else throw new Error(`unknown MCP method: ${payload.method}`);
       } catch (reason) {
         respond(payload.requestId, undefined, String(reason));

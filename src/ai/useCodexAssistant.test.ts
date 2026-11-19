@@ -8,7 +8,8 @@ const mocked = vi.hoisted(() => ({
   request: vi.fn(),
   respond: vi.fn(),
   session: {
-    snapshot: vi.fn(() => ({ screen: { lines: ['prompt'] } })),
+    snapshot: vi.fn(() => ({ sequence: 0, screen: { lines: ['prompt'] } })),
+    waitForOutput: vi.fn(async () => ({ snapshot: { screen: { lines: ['prompt'] } }, status: 'timeout', timedOut: true })),
     sendAutomationInput: vi.fn(async () => ({ status: 'queued', kind: 'text', bytesQueued: 4 })),
   },
 }));
@@ -86,7 +87,7 @@ describe('useCodexAssistant terminal tool bridge', () => {
     });
 
     expect(mocked.session.sendAutomationInput).toHaveBeenCalledWith({ kind: 'text', text: 'dir', submit: true });
-    expect(mocked.respond).toHaveBeenCalledWith(9, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ status: 'queued', kind: 'text', bytesQueued: 4 }) }] });
+    expect(mocked.respond).toHaveBeenCalledWith(9, { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify({ result: { status: 'queued', kind: 'text', bytesQueued: 4 }, observation: { snapshot: { screen: { lines: ['prompt'] } }, status: 'timeout', timedOut: true } }) }] });
   });
 
   it('keeps prompts on an existing tab and applies per-field overrides to newly created threads', async () => {

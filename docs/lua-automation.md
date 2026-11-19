@@ -84,7 +84,7 @@ require('sterm').ai_prompts({
 })
 ```
 
-`base` and `developer` independently replace their built-in thread instructions; omitted fields keep the built-in value, and `{}` means no override. Each value must be nonblank, contain no NUL, and fit within 8 KiB in UTF-8. The host appends fixed session ownership, tool-only access, untrusted terminal data, clipboard-only-on-request, verification, and destructive-action permission rules to each replaced field. These strings affect only threads created after the change; a thread already associated with a tab keeps its original instructions. A valid startup or reload with no declaration clears the overrides. Failed candidate loads retain the committed prompts, and reload publishes prompt configuration only after commit.
+`base` and `developer` independently replace their built-in thread instructions; omitted fields keep the built-in value, and `{}` means no override. Each value must be nonblank, contain no NUL, and fit within 16 KiB in UTF-8. The host appends fixed session ownership, tool-only access, untrusted terminal data, clipboard-only-on-request, verification, and destructive-action permission rules to each replaced field. These strings affect only threads created after the change; a thread already associated with a tab keeps its original instructions. A valid startup or reload with no declaration clears the overrides. Failed candidate loads retain the committed prompts, and reload publishes prompt configuration only after commit.
 
 Custom shell profiles are declared separately in user-authored Lua and stay outside the GUI-managed block:
 

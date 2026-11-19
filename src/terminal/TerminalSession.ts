@@ -16,6 +16,7 @@ export type TerminalInputAction =
   | {
       kind: "key";
       key: string;
+      code?: string;
       ctrl?: boolean;
       alt?: boolean;
       shift?: boolean;
@@ -54,13 +55,15 @@ export type TerminalSnapshot = {
   sequence: number;
   cursor: { x: number; y: number };
   viewportY: number;
-  screen: { firstLine: number; lines: string[]; styles: TerminalStyleRun[] };
-  scrollback?: { firstLine: 0; lines: string[] };
+  modes: { bracketedPaste: boolean; inputMode: "vt" | "win32" };
+  scrollback: { totalLines: number; revision: number };
+  screen: { firstLine: number; lines: string[]; styles?: TerminalStyleRun[]; wrapped?: boolean[] };
 };
 export type TerminalObservation = {
   snapshot: TerminalSnapshot;
-  status: "snapshot" | "updated" | "timeout" | "exited";
+  status: "snapshot" | "updated" | "matched" | "timeout" | "exited" | "unavailable";
   timedOut: boolean;
+  matched?: boolean;
 };
 type TerminalOutput = { sessionId: string; data: number[] };
 type TerminalExit = { sessionId: string };
@@ -125,13 +128,20 @@ function automationKeyEvent(action: Extract<TerminalInputAction, { kind: "key" }
   )
     throw new Error(`unsupported terminal key: ${action.key}`);
   return {
-    key: name === "Space" ? " " : name,
-    code: name === "Space" ? "Space" : name.length === 1 ? `Key${name.toUpperCase()}` : name,
+    key: action.code && /^Key[A-Z]$/.test(action.code)
+      ? (action.shift ? action.code.slice(3).toUpperCase() : action.code.slice(3).toLowerCase())
+      : name === "Space" ? " " : name,
+    code: action.code ?? (name === "Space" ? "Space" : name.length === 1 ? `Key${name.toUpperCase()}` : name),
     ctrlKey: !!action.ctrl,
     altKey: !!action.alt,
     shiftKey: !!action.shift,
     metaKey: false,
   } as KeyboardEvent;
+}
+
+function normalizedKey(action: Extract<TerminalInputAction, { kind: "key" }>) {
+  const event = automationKeyEvent(action);
+  return { key: event.key, code: event.code, ctrl: !!action.ctrl, alt: !!action.alt, shift: !!action.shift, repeat: action.repeat ?? 1 };
 }
 
 function tabTitle(title: string): string {
@@ -207,7 +217,9 @@ export class TerminalSession {
   private disposed = false;
   private exited = false;
   private sequence = 0;
+  private scrollbackRevision = 0;
   private outputWaiters = new Set<() => void>();
+  private outputChangeWaiters = new Set<() => void>();
   private pendingOutput: PendingOutput[] = [];
   private pendingInput: PendingInput[] = [];
   private pendingResize: TerminalSize | null = null;
@@ -511,7 +523,9 @@ export class TerminalSession {
       const toViewportY = buffer.viewportY;
       const autoScroll = normalBuffer && wasAtBottom && toViewportY > fromViewportY;
       this.sequence++;
+      this.scrollbackRevision++;
       this.onOutput({ fromViewportY, toViewportY: autoScroll ? toViewportY : fromViewportY, autoScroll });
+      this.outputChangeWaiters.forEach((wake) => wake());
       acknowledgements.forEach((acknowledge) => acknowledge());
       this.scheduleOutputFlush();
     });
@@ -543,14 +557,19 @@ export class TerminalSession {
     this.onExit();
   }
 
-  async sendAutomationInput(action: TerminalInputAction): Promise<{ status: 'queued' | 'no_input'; kind: 'text' | 'key' | 'paste'; bytesQueued: number }> {
+  async sendAutomationInput(action: TerminalInputAction): Promise<{ status: 'queued' | 'no_input'; kind: 'text' | 'key' | 'paste'; bytesQueued: number; normalized?: { key: string; code: string; ctrl: boolean; alt: boolean; shift: boolean; repeat: number } }> {
     if (!this.live) throw new Error("terminal is not running");
     let input: string | null;
     if (action.kind === "text" || action.kind === "paste") {
       if (action.text.length > 64 * 1024)
         throw new Error("terminal text input exceeds 64 KiB");
       const text = this.win32InputMode ? win32InputText(action.text) : action.text;
-      input = action.kind === "paste" ? `\x1b[200~${text}\x1b[201~` : text + (action.submit ? "\r" : "");
+      const submit = action.kind === "text" && action.submit
+        ? this.win32InputMode
+          ? `${win32InputKey(automationKeyEvent({ kind: "key", key: "Enter" }), true)}${win32InputKey(automationKeyEvent({ kind: "key", key: "Enter" }), false)}`
+          : "\r"
+        : "";
+      input = action.kind === "paste" ? `\x1b[200~${text}\x1b[201~` : text + submit;
     } else {
       const repeat = action.repeat ?? 1;
       if (!Number.isInteger(repeat) || repeat < 1 || repeat > 100)
@@ -561,14 +580,14 @@ export class TerminalSession {
         : terminalKey(event, this.terminal!.modes);
       input = input?.repeat(repeat) ?? null;
     }
-    if (!input) return { status: 'no_input', kind: action.kind, bytesQueued: 0 };
+    if (!input) return { status: 'no_input', kind: action.kind, bytesQueued: 0, ...(action.kind === 'key' ? { normalized: normalizedKey(action) } : {}) };
     await this.enqueueInput(input, action.kind === "paste"
       ? () => {
           if (!this.live || !this.terminal?.modes.bracketedPasteMode)
             throw new Error("terminal bracketed paste mode was disabled before input was queued");
         }
       : undefined);
-    return { status: 'queued', kind: action.kind, bytesQueued: new TextEncoder().encode(input).length };
+    return { status: 'queued', kind: action.kind, bytesQueued: new TextEncoder().encode(input).length, ...(action.kind === 'key' ? { normalized: normalizedKey(action) } : {}) };
   }
 
   async sendAutomationMouse(action: TerminalMouseAction): Promise<void> {
@@ -616,13 +635,13 @@ export class TerminalSession {
     for (let index = 0; index < steps; index += 1) await emit(wheel.direction === "up" ? "wheel-up" : "wheel-down", undefined);
   }
 
-  snapshot(includeScrollback: boolean | "recent" | "full" = false): TerminalSnapshot {
+  snapshot(options: { includeStyles?: boolean; includeWraps?: boolean } = {}): TerminalSnapshot {
     const terminal = this.terminal;
     if (!terminal) throw new Error("terminal is unavailable");
     const buffer = terminal.buffer.active;
     const screenStart = buffer.baseY;
-    const screen = this.readLines(buffer, screenStart, Math.min(buffer.length, screenStart + terminal.rows), true);
-    const full = includeScrollback === true || includeScrollback === "full";
+    const screen = this.readLines(buffer, screenStart, Math.min(buffer.length, screenStart + terminal.rows), options.includeStyles === true, options.includeWraps === true);
+    const totalLines = buffer === terminal.buffer.normal ? buffer.baseY : 0;
     return {
       status: this.live ? "running" : "exited",
       title: this.title,
@@ -630,27 +649,44 @@ export class TerminalSession {
       size: this.size,
       buffer: buffer === terminal.buffer.normal ? "normal" : "alternate",
       sequence: this.sequence,
+      modes: { bracketedPaste: terminal.modes.bracketedPasteMode, inputMode: this.win32InputMode ? "win32" : "vt" },
+      scrollback: { totalLines, revision: this.scrollbackRevision },
       cursor: { x: buffer.cursorX, y: buffer.cursorY },
       viewportY: buffer.viewportY,
-      screen: { firstLine: screenStart, lines: screen.lines, styles: screen.styles },
-      ...(full ? { scrollback: { firstLine: 0 as const, lines: this.readLines(buffer, 0, buffer.length, false).lines } } : {}),
+      screen: { firstLine: screenStart, lines: screen.lines, ...(options.includeStyles ? { styles: screen.styles } : {}), ...(options.includeWraps ? { wrapped: screen.wrapped } : {}) },
     };
   }
 
-  private readLines(buffer: NonNullable<Terminal["buffer"]>["active"], start: number, end: number, styles: boolean): { lines: string[]; styles: TerminalStyleRun[] } {
+  readScrollback(count: number, offsetFromEnd = 0, revision?: number, includeWraps = false) {
+    const buffer = this.terminal?.buffer.active;
+    if (!buffer) throw new Error("terminal is unavailable");
+    const totalLines = buffer === this.terminal!.buffer.normal ? buffer.baseY : 0;
+    if (!Number.isSafeInteger(count) || count < 1) throw new Error("count must be a positive safe integer");
+    if (!Number.isSafeInteger(offsetFromEnd) || offsetFromEnd < 0) throw new Error("offsetFromEnd must be a non-negative safe integer");
+    if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 0)) throw new Error("revision must be a non-negative safe integer");
+    if (revision !== undefined && revision !== this.scrollbackRevision) return { status: "stale" as const, totalLines, revision: this.scrollbackRevision, firstLine: totalLines, lines: [] as string[] };
+    const end = Math.max(0, totalLines - offsetFromEnd);
+    const start = Math.max(0, end - count);
+    const result = this.readLines(buffer, start, end, false, includeWraps);
+    return { status: "ok" as const, totalLines, revision: this.scrollbackRevision, firstLine: start, lines: result.lines, ...(includeWraps ? { wrapped: result.wrapped } : {}), nextOffsetFromEnd: start > 0 ? totalLines - start : null };
+  }
+
+  private readLines(buffer: NonNullable<Terminal["buffer"]>["active"], start: number, end: number, styles: boolean, wraps = false): { lines: string[]; styles: TerminalStyleRun[]; wrapped: boolean[] } {
     const lines: string[] = [];
     const styleRuns: TerminalStyleRun[] = [];
+    const wrapped: boolean[] = [];
     for (let lineIndex = start; lineIndex < end; lineIndex += 1) {
       const line = buffer.getLine(lineIndex);
-      if (!line) { lines.push(""); continue; }
+      if (!line) { lines.push(""); if (wraps) wrapped.push(false); continue; }
+      wrapped.push(line.isWrapped);
       const limit = Math.min(line.length, this.size.cols || 0);
       let lastMeaningful = 0;
       for (let column = 0; column < limit; column += 1) {
         const cell = line.getCell(column);
         if (!cell) continue;
-        if (cell.getChars() || !cell.isAttributeDefault()) lastMeaningful = Math.max(lastMeaningful, column + Math.max(1, cell.getWidth()));
+        if (cell.getChars().trim() || !cell.isAttributeDefault()) lastMeaningful = Math.max(lastMeaningful, column + Math.max(1, cell.getWidth()));
       }
-      lines.push(line.translateToString(false, 0, Math.min(limit, lastMeaningful)));
+      lines.push(line.translateToString(true, 0, Math.min(limit, lastMeaningful)));
       if (!styles) continue;
       let previousKey: string | null = null;
       let runStart = 0;
@@ -671,18 +707,25 @@ export class TerminalSession {
       }
       flush(limit);
     }
-    return { lines, styles: styleRuns };
+    return { lines, styles: styleRuns, wrapped };
   }
 
   waitForOutput(
     afterSequence: number,
     quietMs = 400,
-    timeoutMs = 60_000,
-    includeScrollback: boolean | "recent" | "full" = false,
+    timeoutMs = 1_000,
+    options: { includeStyles?: boolean; includeWraps?: boolean; waitFor?: { text: string; match: "present" | "absent" } } = {},
   ): Promise<TerminalObservation> {
-    if (!this.live) return Promise.resolve({ snapshot: this.snapshot(includeScrollback), status: "exited", timedOut: false });
+    const current = this.snapshot(options);
+    const matched = (snapshot: TerminalSnapshot) => options.waitFor ? snapshot.screen.lines.join("\n").includes(options.waitFor.text) === (options.waitFor.match === "present") : false;
+    if (!this.live) return Promise.resolve({ snapshot: current, status: "exited", timedOut: false, ...(options.waitFor ? { matched: matched(current) } : {}) });
     const quiet = Math.max(0, Math.min(5_000, Number.isFinite(quietMs) ? quietMs : 400));
     const timeout = Math.max(1, Math.min(60_000, Number.isFinite(timeoutMs) ? timeoutMs : 60_000));
+    const predicate = options.waitFor;
+    if (predicate && (predicate.text.length === 0 || predicate.text.length > 1024 || !["present", "absent"].includes(predicate.match)))
+      return Promise.reject(new Error("waitFor requires 1-1024 characters and match present or absent"));
+    if (predicate && this.sequence > afterSequence && matched(current))
+      return Promise.resolve({ snapshot: current, status: "matched", timedOut: false, matched: true });
     const started = Date.now();
     let changedAt: number | null =
       this.sequence > afterSequence ? Date.now() : null;
@@ -692,21 +735,30 @@ export class TerminalSession {
       const finish = (status: TerminalObservation["status"]) => {
         if (timer !== null) window.clearInterval(timer);
         this.outputWaiters.delete(onExit);
-        resolve({ snapshot: this.snapshot(includeScrollback), status, timedOut: status === "timeout" });
+        this.outputChangeWaiters.delete(checkOutput);
+        const snapshot = this.snapshot(options);
+        resolve({ snapshot, status, timedOut: status === "timeout", ...(predicate ? { matched: status === "matched" } : {}) });
       };
       const onExit = () => finish("exited");
+      const checkOutput = () => {
+        if (!this.live) { finish("exited"); return; }
+        if (this.sequence === seen) return;
+        seen = this.sequence;
+        if (this.sequence <= afterSequence) return;
+        changedAt = Date.now();
+        if (predicate && matched(this.snapshot(options))) finish("matched");
+      };
       this.outputWaiters.add(onExit);
+      this.outputChangeWaiters.add(checkOutput);
       timer = window.setInterval(() => {
         if (!this.live) {
           finish("exited");
           return;
         }
-        if (this.sequence !== seen) {
-          seen = this.sequence;
-          if (this.sequence > afterSequence) changedAt = Date.now();
-        }
+        checkOutput();
+        if (timer === null) return;
         const now = Date.now();
-        if (changedAt !== null && now - changedAt >= quiet) {
+        if (!predicate && changedAt !== null && now - changedAt >= quiet) {
           finish("updated");
         } else if (now - started >= timeout) {
           finish("timeout");
@@ -772,6 +824,7 @@ export class TerminalSession {
         const previous = this.size;
         const terminal = this.terminal;
         terminal.resize(next.cols, next.rows);
+        this.scrollbackRevision++;
         this.size = next;
         this.onState(true, next);
         try {
@@ -779,6 +832,7 @@ export class TerminalSession {
         } catch (reason) {
           if (!this.disposed && !this.exited && this.terminal === terminal) {
             terminal.resize(previous.cols, previous.rows);
+            this.scrollbackRevision++;
             this.size = previous;
             this.onState(true, previous);
             this.onError(`Terminal resize failed: ${String(reason)}`);

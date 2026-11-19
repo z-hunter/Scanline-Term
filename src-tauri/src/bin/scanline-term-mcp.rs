@@ -241,13 +241,33 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "observe_terminal",
-            "Read the current screen and optionally the complete plain-text scrollback. Reports snapshot, updated, timeout, or exited; timeout includes the latest snapshot and does not prove the process is still running.",
+            "Read the compact current screen. Optionally include styles and wrap flags or wait for literal text, newer output, or timeout.",
             json!({
                 "type": "object", "properties": {
-                    "handle": { "type": "string" }, "includeScrollback": { "type": "boolean" },
-                    "afterSequence": { "type": "integer" }, "quietMs": { "type": "integer" }, "timeoutMs": { "type": "integer" }
+                    "handle": { "type": "string" }, "includeStyles": { "type": "boolean" }, "includeWraps": { "type": "boolean" },
+                    "afterSequence": { "type": "integer", "minimum": 0 }, "quietMs": { "type": "integer", "minimum": 0 }, "timeoutMs": { "type": "integer", "minimum": 1 },
+                    "waitFor": wait_for_schema()
                 }, "required": ["handle"], "additionalProperties": false
             }),
+        ),
+        tool(
+            "capture_terminal_frames",
+            "Sample compact terminal screens at a bounded interval. Each frame includes its timestamp and output sequence; this samples terminal state, not a video recording.",
+            json!({ "type": "object", "properties": {
+                "handle": { "type": "string" }, "count": { "type": "integer", "minimum": 1, "maximum": 20 },
+                "intervalMs": { "type": "integer", "minimum": 50, "maximum": 5000 },
+                "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+                "includeStyles": { "type": "boolean" }, "includeWraps": { "type": "boolean" }
+            }, "required": ["handle", "count", "intervalMs", "timeoutMs"], "additionalProperties": false }),
+        ),
+        tool(
+            "read_scrollback",
+            "Read a page of terminal scrollback, from oldest to newest, using a revision to detect changes between pages.",
+            json!({ "type": "object", "properties": {
+                "handle": { "type": "string" }, "count": { "type": "integer", "minimum": 1 },
+                "offsetFromEnd": { "type": "integer", "minimum": 0 }, "revision": { "type": "integer", "minimum": 0 },
+                "includeWraps": { "type": "boolean" }
+            }, "required": ["handle", "count"], "additionalProperties": false }),
         ),
         tool(
             "apply_terminal_preset",
@@ -259,32 +279,32 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "send_terminal_input",
-            "Legacy compatibility tool: queue text or a key. Prefer send_text or press_key. A queued acknowledgement does not mean the application processed the input; observe before retrying uncertain sends.",
+            "Legacy compatibility tool: queue text or a key and return an input receipt with an automatic observation. Prefer send_text or press_key. Queued does not mean the application processed the input; inspect the returned screen before retrying uncertain sends.",
             json!({
-                "type": "object", "properties": { "handle": { "type": "string" }, "action": input_action_schema() },
+                "type": "object", "properties": { "handle": { "type": "string" }, "action": input_action_schema(), "observe": observation_schema() },
                 "required": ["handle", "action"], "additionalProperties": false
             }),
         ),
         tool(
             "send_text",
-            "Queue text for an owned terminal. A queued acknowledgement does not mean the application processed it; observe before retrying uncertain sends.",
-            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 }, "submit": { "type": "boolean" } }, "required": ["handle", "text"], "additionalProperties": false }),
+            "Queue text and return an automatic observation. Queued does not confirm application processing.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 }, "submit": { "type": "boolean" }, "observe": observation_schema() }, "required": ["handle", "text"], "additionalProperties": false }),
         ),
         tool(
             "press_key",
-            "Queue a key press for an owned terminal. Observe before retrying uncertain sends.",
-            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "key": { "type": "string", "minLength": 1 }, "repeat": { "type": "integer", "minimum": 1, "maximum": 100 }, "ctrl": { "type": "boolean" }, "alt": { "type": "boolean" }, "shift": { "type": "boolean" } }, "required": ["handle", "key"], "additionalProperties": false }),
+            "Queue a key press and return an automatic observation. Queued does not confirm application processing.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "key": { "type": "string", "minLength": 1 }, "code": { "type": "string" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 100 }, "ctrl": { "type": "boolean" }, "alt": { "type": "boolean" }, "shift": { "type": "boolean" }, "observe": observation_schema() }, "required": ["handle", "key"], "additionalProperties": false }),
         ),
         tool(
             "paste_text",
-            "Queue text using bracketed paste when enabled. Fails when bracketed paste mode is disabled and never reads the system clipboard.",
-            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 } }, "required": ["handle", "text"], "additionalProperties": false }),
+            "Queue bracketed paste and return an input receipt with an automatic observation. Fails when bracketed paste mode is disabled; never reads the system clipboard. The receiving application handles the text in its current mode; this does not force Vim insert mode or guarantee file insertion.",
+            json!({ "type": "object", "properties": { "handle": { "type": "string" }, "text": { "type": "string", "maxLength": 65536 }, "observe": observation_schema() }, "required": ["handle", "text"], "additionalProperties": false }),
         ),
         tool(
             "paste_terminal_clipboard",
             "In response to a user request, paste the current system clipboard text into an owned terminal tab. Clipboard contents are sent to the tab and are not returned.",
             json!({
-                "type": "object", "properties": { "handle": { "type": "string" } },
+                "type": "object", "properties": { "handle": { "type": "string" }, "observe": observation_schema() },
                 "required": ["handle"], "additionalProperties": false
             }),
         ),
@@ -292,7 +312,7 @@ fn tool_definitions() -> Vec<Value> {
             "send_terminal_mouse",
             "Send primary/secondary TUI mouse input or wheel; middle click is reserved by Scanline Term.",
             json!({
-                "type": "object", "properties": { "handle": { "type": "string" }, "action": mouse_action_schema() },
+                "type": "object", "properties": { "handle": { "type": "string" }, "action": mouse_action_schema(), "observe": observation_schema() },
                 "required": ["handle", "action"], "additionalProperties": false
             }),
         ),
@@ -322,11 +342,26 @@ fn object_schema() -> Value {
     json!({ "type": "object", "additionalProperties": false })
 }
 
+fn wait_for_schema() -> Value {
+    json!({ "type": "object", "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "match": { "enum": ["present", "absent"] }
+    }, "required": ["text", "match"], "additionalProperties": false })
+}
+
+fn observation_schema() -> Value {
+    json!({ "type": "object", "properties": {
+        "includeStyles": { "type": "boolean" }, "includeWraps": { "type": "boolean" },
+        "quietMs": { "type": "integer", "minimum": 0 }, "timeoutMs": { "type": "integer", "minimum": 1 },
+        "waitFor": wait_for_schema()
+    }, "additionalProperties": false })
+}
+
 fn input_action_schema() -> Value {
     json!({
         "oneOf": [
             { "type": "object", "properties": { "kind": { "const": "text" }, "text": { "type": "string", "maxLength": 65536 }, "submit": { "type": "boolean" } }, "required": ["kind", "text"], "additionalProperties": false },
-            { "type": "object", "properties": { "kind": { "const": "key" }, "key": { "type": "string", "minLength": 1 }, "ctrl": { "type": "boolean" }, "alt": { "type": "boolean" }, "shift": { "type": "boolean" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["kind", "key"], "additionalProperties": false }
+            { "type": "object", "properties": { "kind": { "const": "key" }, "key": { "type": "string", "minLength": 1 }, "code": { "type": "string" }, "ctrl": { "type": "boolean" }, "alt": { "type": "boolean" }, "shift": { "type": "boolean" }, "repeat": { "type": "integer", "minimum": 1, "maximum": 100 } }, "required": ["kind", "key"], "additionalProperties": false }
         ]
     })
 }
@@ -386,6 +421,8 @@ mod tests {
             .filter_map(|tool| tool["name"].as_str())
             .collect::<Vec<_>>();
         assert!(names.contains(&"observe_terminal"));
+        assert!(names.contains(&"capture_terminal_frames"));
+        assert!(names.contains(&"read_scrollback"));
         assert!(names.contains(&"apply_terminal_preset"));
         assert!(names.contains(&"send_terminal_mouse"));
         assert!(names.contains(&"send_text"));
@@ -406,6 +443,31 @@ mod tests {
         let description = paste["description"].as_str().unwrap();
         assert!(description.contains("In response to a user request"));
         assert!(description.contains("not returned"));
+    }
+
+    #[test]
+    fn frame_capture_schema_requires_bounded_sampling_arguments() {
+        let definitions = tool_definitions();
+        let capture = definitions
+            .iter()
+            .find(|tool| tool["name"] == "capture_terminal_frames")
+            .unwrap();
+        let schema = &capture["inputSchema"];
+        assert_eq!(
+            schema["required"],
+            json!(["handle", "count", "intervalMs", "timeoutMs"])
+        );
+        for (name, minimum, maximum) in [
+            ("count", 1, 20),
+            ("intervalMs", 50, 5000),
+            ("timeoutMs", 1, 60000),
+        ] {
+            assert_eq!(
+                schema["properties"][name],
+                json!({ "type": "integer", "minimum": minimum, "maximum": maximum })
+            );
+        }
+        assert_eq!(schema["additionalProperties"], false);
     }
 
     #[test]

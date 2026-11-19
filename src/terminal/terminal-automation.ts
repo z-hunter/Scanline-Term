@@ -1,6 +1,7 @@
 import type { TerminalInputAction, TerminalMouseAction, TerminalObservation, TerminalSession } from './TerminalSession';
 
 type Arguments = Record<string, unknown>;
+type ObservationOptions = { includeStyles?: boolean; includeWraps?: boolean; quietMs?: number; timeoutMs?: number; waitFor?: { text: string; match: 'present' | 'absent' } };
 
 function object(value: unknown): Arguments {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Arguments : {};
@@ -21,6 +22,31 @@ function number(value: unknown, name: string): number | undefined {
   return value;
 }
 
+function observationOptions(value: unknown): ObservationOptions {
+  const options = object(value);
+  if (options.includeStyles !== undefined && typeof options.includeStyles !== 'boolean') throw new Error('includeStyles must be a boolean');
+  if (options.includeWraps !== undefined && typeof options.includeWraps !== 'boolean') throw new Error('includeWraps must be a boolean');
+  const wait = options.waitFor === undefined ? undefined : object(options.waitFor);
+  if (wait && (typeof wait.text !== 'string' || !wait.text.length || wait.text.length > 1024 || !['present', 'absent'].includes(String(wait.match))))
+    throw new Error('waitFor requires 1-1024 characters and match present or absent');
+  return {
+    includeStyles: boolean(options.includeStyles), includeWraps: boolean(options.includeWraps),
+    quietMs: number(options.quietMs, 'quietMs'), timeoutMs: number(options.timeoutMs, 'timeoutMs'),
+    ...(wait ? { waitFor: { text: wait.text as string, match: wait.match as 'present' | 'absent' } } : {}),
+  };
+}
+
+async function observed(session: TerminalSession, result: unknown, before: ReturnType<TerminalSession['snapshot']>, options: ObservationOptions = {}) {
+  const receipt = object(result);
+  if (receipt.status === 'no_input') return { result, observation: { snapshot: session.snapshot(options), status: 'snapshot', timedOut: false } };
+  try {
+    const observation = await session.waitForOutput(before.sequence, options.quietMs ?? 100, options.timeoutMs ?? 750, options);
+    return { result, observation };
+  } catch (error) {
+    return { result, observation: { snapshot: before, status: 'unavailable', timedOut: false, error: String(error) } };
+  }
+}
+
 function inputAction(value: unknown): TerminalInputAction {
   const action = object(value);
   const kind = action.kind ?? action.type;
@@ -31,6 +57,7 @@ function inputAction(value: unknown): TerminalInputAction {
   return {
     kind: 'key',
     key: string(action.key, 'key'),
+    code: action.code === undefined ? undefined : string(action.code, 'code'),
     ctrl: boolean(action.ctrl),
     alt: boolean(action.alt),
     shift: boolean(action.shift),
@@ -64,33 +91,72 @@ export async function dispatchTerminalTool(session: TerminalSession, tool: strin
   const args = object(rawArguments);
   if (tool === 'observe_terminal') {
     const afterSequence = number(args.afterSequence, 'afterSequence');
-    const includeScrollback = args.includeScrollback === true || args.history === 'full';
+    if (afterSequence !== undefined && (!Number.isSafeInteger(afterSequence) || afterSequence < 0)) throw new Error('afterSequence must be a non-negative safe integer');
+    const options = observationOptions(args);
+    if (afterSequence === undefined && options.waitFor === undefined && (options.quietMs !== undefined || options.timeoutMs !== undefined))
+      throw new Error('quietMs and timeoutMs require afterSequence or waitFor');
+    if (options.waitFor && afterSequence === undefined) {
+      const currentSequence = session.snapshot().sequence;
+      return session.waitForOutput(currentSequence - 1, options.quietMs, options.timeoutMs ?? 5_000, options);
+    }
     return typeof afterSequence === 'number'
-      ? session.waitForOutput(afterSequence, number(args.quietMs, 'quietMs'), number(args.timeoutMs, 'timeoutMs'), includeScrollback)
-      : { snapshot: session.snapshot(includeScrollback), status: 'snapshot', timedOut: false } satisfies TerminalObservation;
+      ? session.waitForOutput(afterSequence, options.quietMs, options.timeoutMs ?? 60_000, options)
+      : { snapshot: session.snapshot(options), status: 'snapshot', timedOut: false } satisfies TerminalObservation;
   }
+  if (tool === 'read_scrollback') return session.readScrollback(number(args.count, 'count')!, number(args.offsetFromEnd, 'offsetFromEnd') ?? 0, number(args.revision, 'revision'), args.includeWraps === true);
+  if (tool === 'capture_terminal_frames') {
+    const count = number(args.count, 'count');
+    const intervalMs = number(args.intervalMs, 'intervalMs');
+    const timeoutMs = number(args.timeoutMs, 'timeoutMs');
+    if (!Number.isInteger(count) || count! < 1 || count! > 20) throw new Error('count must be an integer from 1 to 20');
+    if (!Number.isInteger(intervalMs) || intervalMs! < 50 || intervalMs! > 5000) throw new Error('intervalMs must be an integer from 50 to 5000');
+    if (!Number.isInteger(timeoutMs) || timeoutMs! < 1 || timeoutMs! > 60000) throw new Error('timeoutMs must be an integer from 1 to 60000');
+    const options = observationOptions(args);
+    const started = performance.now();
+    const frames: { capturedAtMs: number; snapshot: ReturnType<TerminalSession['snapshot']> }[] = [];
+    let status: 'completed' | 'timeout' | 'exited' | 'unavailable' = 'completed';
+    for (let index = 0; index < count!; index += 1) {
+      if (index > 0) {
+        const remaining = timeoutMs! - (performance.now() - started);
+        if (remaining <= 0) { status = 'timeout'; break; }
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(intervalMs!, remaining)));
+        if (performance.now() - started >= timeoutMs!) { status = 'timeout'; break; }
+      }
+      try {
+        const snapshot = session.snapshot(options);
+        frames.push({ capturedAtMs: Date.now(), snapshot });
+        if (snapshot.status === 'exited') { status = 'exited'; break; }
+      } catch {
+        status = 'unavailable';
+        break;
+      }
+    }
+    return { status, collected: frames.length, frames };
+  }
+  const options = observationOptions(args.observe);
+  const before = session.snapshot();
   if (tool === 'send_terminal_input') {
     const action = args.action ?? args;
-    return session.sendAutomationInput(inputAction(action));
+    return observed(session, await session.sendAutomationInput(inputAction(action)), before, options);
   }
-  if (tool === 'send_text') return session.sendAutomationInput({ kind: 'text', text: string(args.text, 'text'), submit: boolean(args.submit) });
-  if (tool === 'press_key') return session.sendAutomationInput(inputAction({ ...args, kind: 'key' }));
+  if (tool === 'send_text') return observed(session, await session.sendAutomationInput({ kind: 'text', text: string(args.text, 'text'), submit: boolean(args.submit) }), before, options);
+  if (tool === 'press_key') return observed(session, await session.sendAutomationInput(inputAction({ ...args, kind: 'key' })), before, options);
   if (tool === 'paste_text') {
     if (!session.terminal?.modes.bracketedPasteMode) throw new Error('terminal bracketed paste mode is disabled');
     const text = string(args.text, 'text');
     // eslint-disable-next-line no-control-regex -- Reject terminal control bytes before bracketed paste.
     if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(text)) throw new Error('text contains unsupported control characters');
-    if (!text) return { status: 'no_input', kind: 'paste', bytesQueued: 0 };
-    return session.sendAutomationInput({ kind: 'paste', text: text.replace(/\r\n|\r|\n/g, '\r') });
+    if (!text) return { result: { status: 'no_input', kind: 'paste', bytesQueued: 0 }, observation: { snapshot: session.snapshot(options), status: 'snapshot', timedOut: false } };
+    return observed(session, await session.sendAutomationInput({ kind: 'paste', text: text.replace(/\r\n|\r|\n/g, '\r') }), before, options);
   }
   if (tool === 'paste_terminal_clipboard') {
     const text = await navigator.clipboard.readText();
     const result = await session.sendAutomationInput({ kind: 'text', text });
-    return result.status === 'no_input' ? 'Clipboard was empty; nothing pasted.' : 'Clipboard text pasted.';
+    return observed(session, result.status === 'no_input' ? 'Clipboard was empty; nothing pasted.' : 'Clipboard text pasted.', before, options);
   }
   if (tool === 'send_terminal_mouse') {
     await session.sendAutomationMouse(mouseAction(args.action ?? args));
-    return 'Mouse input encoded and queued.';
+    return observed(session, { status: 'queued', kind: 'mouse' }, before, options);
   }
   throw new Error(`Unknown terminal tool: ${tool}`);
 }

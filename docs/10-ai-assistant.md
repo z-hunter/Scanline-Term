@@ -8,7 +8,7 @@
 
 The Codex terminal assistant is an experimental, Codex-only feature. It gives an agent a conversation and session-bound terminal tools: it can inspect xterm's parsed screen/scrollback and enqueue keyboard or TUI mouse input into the ConPTY session associated with that conversation. MCP-owned sessions deliberately do not expose this panel or Codex thread.
 
-The assistant does **not** execute the user's requested task in Codex's own shell. Its own Codex sandbox is read-only; the requested command runs only in the selected terminal tab. A thread-to-session map remains in the WebView, so no `sessionId` is ever exposed in model tool arguments.
+The assistant's own Codex sandbox is read-only. It must not write, edit, create, or delete user files through that sandbox or direct filesystem tools. The assistant performs requested file and shell operations through the selected interactive terminal, within the permissions and policy of that terminal session and the user's request. Terminal access does not grant broader permission or authorize bypassing a denial. A thread-to-session map remains in the WebView, so no `sessionId` is ever exposed in model tool arguments.
 
 This document describes the implementation as it exists now. It intentionally distinguishes implemented behaviour from future work in [Current limitations](#current-limitations).
 
@@ -82,7 +82,7 @@ Thread configuration is:
 
 Lua may replace either instruction field with `sterm.ai_prompts({ base = ..., developer = ... })`; copy `examples/lua/ai-prompts.lua` beside the active entry file and enable or add its include (newly seeded configs already have the sibling sample and commented include). The other field keeps its built-in text. For each replaced field the host appends fixed rules for thread-to-session ownership, supplied terminal tools only, untrusted terminal data, explicit clipboard-paste requests, verification, and user permission before destructive actions. No Tauri capability or tool permission changes. Prompt overrides are user-authored config, are applied only at `thread/start`, and do not affect a thread already created for a tab. Successful reload publishes them with the prepared Lua configuration; failed candidates keep the prior values, while a successful config with an omitted declaration clears them. With no override, the existing request payload is unchanged.
 
-Every turn starts with the current screen as plain text plus separate style runs. Full preserved scrollback remains available only through `observe_terminal` with `includeScrollback: true`, so large buffers do not inflate every prompt. Terminal data is explicitly untrusted. The debug console is opened by clicking its `Debug console` summary and retains the latest 1,000 JSON-RPC lines; `Copy all` copies them without opening or closing the log.
+Every turn starts with a compact plain-text snapshot. Optional styles and wrap flags are requested explicitly, and `read_scrollback` pages older rows using the snapshot's line count and revision. Terminal data is explicitly untrusted. The debug console is opened by clicking its `Debug console` summary and retains the latest 1,000 JSON-RPC lines; `Copy all` copies them without opening or closing the log.
 
 The selected `model` is supplied when the thread is created and both `model` and `effort` are supplied on every `turn/start`. A selection change therefore affects the next turn in that tab without recreating the ephemeral thread. The active turn is never modified.
 
@@ -103,9 +103,9 @@ Agent-message deltas are accumulated only while they belong to the same app-serv
 
 ## Dynamic terminal tools
 
-The current app-server version accepts a flat `dynamicTools` array. The built-in assistant gets `observe_terminal`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard` and `send_terminal_mouse`; session identity is bound to its thread, so these tools omit a handle. The sidecar MCP tools use explicit opaque handles. Legacy `send_terminal_input` remains available for compatibility. Calls that use an unexpected namespace or name are rejected.
+The current app-server version accepts a flat `dynamicTools` array. The built-in assistant gets `observe_terminal`, `capture_terminal_frames`, `read_scrollback`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard` and `send_terminal_mouse`; session identity is bound to its thread, so these tools omit a handle. The sidecar MCP tools use explicit opaque handles. Legacy `send_terminal_input` remains available for compatibility. Calls that use an unexpected namespace or name are rejected.
 
-Input tools return `{ status: "queued" | "no_input", kind: "text" | "key" | "paste", bytesQueued: number }`; byte count covers encoded bytes actually queued, including paste delimiters and mode-specific encoding. A queued result does not prove that the terminal application processed them. Observe before retrying an uncertain send. `paste_text` sends supplied text using bracketed paste and fails unless bracketed paste is enabled; it does not read the system clipboard. Observation status distinguishes an immediate `snapshot`, changed output (`updated`), bounded `timeout`, and process `exited`; a timeout includes the latest snapshot and does not prove the process remains running.
+Input tools return an input receipt together with an automatic observation. `queued` confirms queueing only; it does not prove that the terminal application processed the input. `send_text` sends literal text using the active terminal input mode, with `submit: true` appending Enter. `press_key` sends a key event. `paste_text` sends bracketed-paste text when enabled; the receiving application handles it according to its current mode. It does not force Vim into insert mode or guarantee insertion into a file, and it does not read the system clipboard. Observation status distinguishes an immediate `snapshot`, newer output (`updated`), a text match (`matched`), bounded `timeout`, and process `exited`; a timeout includes the latest snapshot and does not prove the process remains running.
 
 The legacy `send_terminal_input` tool remains registered, but successful calls now return the structured receipt above instead of the former confirmation string. Its action argument format remains supported.
 
@@ -115,12 +115,16 @@ Arguments:
 
 | Argument | Meaning |
 |---|---|
-| `includeScrollback` | `true` requests the complete plain-text active buffer; the current screen and styles are always returned. `history` remains accepted as a compatibility alias. |
-| `afterSequence` | If absent, return a snapshot immediately. If supplied, wait for output newer than this sequence. |
-| `quietMs` | Required silence before completing a wait; clamped to 0–5,000 ms, default 400 ms. |
-| `timeoutMs` | Total wait timeout; clamped to 1–60,000 ms, default 60,000 ms. |
+| `includeStyles` / `includeWraps` | Opt into per-cell style runs or row-wrap flags. |
+| `afterSequence` | If absent, return a snapshot immediately unless `waitFor` is supplied. If supplied, wait for newer output. |
+| `waitFor` | Wait for literal text to be present or absent; with no `afterSequence`, check the current screen first. |
+| `quietMs` / `timeoutMs` | Silence interval and total wait bound. Supply a wait condition; otherwise a plain request returns immediately. |
 
-`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, a plain-text current screen, per-cell style runs (foreground/background and bold/italic/underline/etc.), and optional full plain-text scrollback. Right-side whitespace is removed; left indentation is preserved. When the tab exits while waiting, the result has status `exited` and includes the latest snapshot.
+`TerminalSnapshot` contains terminal status, title, direct-child process name, columns/rows, active normal/alternate buffer, monotonic xterm-output sequence, cursor coordinates, viewport position, input modes, scrollback count/revision and compact screen text. Style runs and wrap flags are optional. Text represents terminal cells, not source-file bytes; it cannot establish whether a file contains trailing spaces or particular newline bytes. When the tab exits while waiting, the result has status `exited` and includes the latest snapshot.
+
+### `capture_terminal_frames`
+
+Collects the first snapshot immediately, then up to 19 more at the requested interval. `count` is 1–20, `intervalMs` 50–5,000, and `timeoutMs` 1–60,000. Each frame contains its capture time and snapshot sequence; identical frames are retained. The result reports `completed`, `timeout`, `exited` or `unavailable` and includes any frames collected before stopping. This samples terminal state; it is not a video recording.
 
 ### `send_terminal_input`
 
@@ -131,11 +135,11 @@ Accepted action forms:
 { kind: "key", key: KeyName | string, ctrl?: boolean, alt?: boolean, shift?: boolean, repeat?: number }
 ```
 
-Text is limited to 64 KiB. `submit: true` appends `\r` in the same queued write. A named key uses canonical DOM names: `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause`, or `F1` through `F24`; a one-character key is also accepted for modified shortcuts. Common model aliases such as `ESC`, `UP`, and `ARROW_UP` are normalized. `repeat` is an integer from 1 to 100 and queues that many complete keypresses in one write; use it for TUI navigation, then observe the result. An unsupported named key or invalid repeat fails the tool call rather than reporting a queued input. A valid key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
+Text is limited to 64 KiB. `submit: true` appends Enter in the same queued write (CR in VT mode and Enter key records in Win32 mode). A named key uses canonical DOM names: `Escape`, `Tab`, `Enter`, `Backspace`, `Space`, `Insert`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Pause`, or `F1` through `F24`; a one-character key is also accepted for modified shortcuts. Common model aliases such as `ESC`, `UP`, and `ARROW_UP` are normalized. `repeat` is an integer from 1 to 100 and queues that many complete keypresses in one write; use it for TUI navigation, then observe the result. An unsupported named key or invalid repeat fails the tool call rather than reporting a queued input. A valid key is encoded using the tab's active mode: existing VT encoding for standard terminals, or Win32 key-down plus key-up records when ConPTY has enabled Win32 Input Mode (`?9001h`). The frontend uses the existing `write_terminal` command, whose Rust-side sender queues input before the invoke resolves.
 
 ### `paste_terminal_clipboard`
 
-Takes an empty object and pastes the current system clipboard text into the terminal session attached to this AI thread. Use only when the user asks to paste their clipboard. The tool result excludes clipboard text, though subsequent `observe_terminal` calls may reveal text echoed by the terminal.
+Takes an empty object and pastes the current system clipboard text into the terminal session attached to this AI thread. Use only when the user asks to paste their clipboard. The tool result excludes clipboard text, though the automatic observation may reveal text echoed by the terminal.
 
 ### `send_terminal_mouse`
 
@@ -145,7 +149,7 @@ Accepts `primary` and `secondary` buttons, `click`/`press`/`release`, `move`, an
 
 Enabling **MCP terminal mode** in Settings starts a per-user Windows named-pipe listener in the Tauri process. The standalone `scanline-term-mcp` binary speaks MCP JSON-RPC over stdin/stdout and forwards tool calls through that pipe. Each pipe connection receives an opaque owner ID; it can list and control only sessions it created, and disconnecting closes those sessions. Handles never expose internal xterm/session IDs. MCP sessions use a blue screen-frame glow and the Codex panel is unavailable; ordinary Codex automation uses a green glow while active.
 
-The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
+The sidecar implements `initialize`, `ping`, `tools/list` and `tools/call` for `create_terminal`, `list_terminals`, `observe_terminal`, `capture_terminal_frames`, `read_scrollback`, `send_text`, `press_key`, `paste_text`, `send_terminal_input`, `paste_terminal_clipboard`, `send_terminal_mouse`, `resize_terminal`, and `close_terminal`. Build it with `cargo build --release --bin scanline-term-mcp`; `npm run tauri:build` builds it before bundling, while the portable script copies it beside `sterm.exe`.
 
 For the agent-facing setup, tool contracts, snapshot schema, observation loop, TUI mouse semantics and safety guidance, see the dedicated [MCP Agent Guide](./14-mcp-agent-guide.md).
 

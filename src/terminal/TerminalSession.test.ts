@@ -102,9 +102,22 @@ describe('TerminalSession', () => {
 
     expect(mocked.invoke).toHaveBeenCalledExactlyOnceWith('write_terminal', {
       sessionId: session.id,
-      input: '\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r',
+      input: '\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_',
     });
-    expect(result).toEqual({ status: 'queued', kind: 'text', bytesQueued: new TextEncoder().encode('\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\r').length });
+    expect(result).toEqual({ status: 'queued', kind: 'text', bytesQueued: new TextEncoder().encode('\x1b[0;0;100;1;0;1_\x1b[0;0;105;1;0;1_\x1b[0;0;114;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;233;1;0;1_\x1b[0;0;32;1;0;1_\x1b[0;0;1071;1;0;1_\x1b[0;0;55357;1;0;1_\x1b[0;0;56898;1;0;1_\x1b[13;28;13;1;0;1_\x1b[13;28;13;0;0;1_').length });
+    session.dispose();
+  });
+
+  it('distinguishes a physical key code from literal character input', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+    session.win32InputMode = true;
+    mocked.invoke.mockClear();
+
+    const result = await session.sendAutomationInput({ kind: 'key', key: 'u', code: 'KeyU', shift: true });
+
+    expect(result.normalized).toEqual({ key: 'U', code: 'KeyU', ctrl: false, alt: false, shift: true, repeat: 1 });
+    expect(mocked.invoke).toHaveBeenCalledWith('write_terminal', { sessionId: session.id, input: '\x1b[85;22;85;1;16;1_\x1b[85;22;85;0;16;1_' });
     session.dispose();
   });
 
@@ -120,7 +133,7 @@ describe('TerminalSession', () => {
 
     session.win32InputMode = true;
     const win32Arrow = '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_';
-    expect(await session.sendAutomationInput({ kind: 'key', key: 'ARROW_UP' })).toEqual({ status: 'queued', kind: 'key', bytesQueued: new TextEncoder().encode(win32Arrow).length });
+    expect(await session.sendAutomationInput({ kind: 'key', key: 'ARROW_UP' })).toMatchObject({ status: 'queued', kind: 'key', bytesQueued: new TextEncoder().encode(win32Arrow).length, normalized: { code: 'ArrowUp', repeat: 1 } });
     expect(mocked.invoke).toHaveBeenNthCalledWith(3, 'write_terminal', { sessionId: session.id, input: '\x1b[38;72;0;1;0;1_\x1b[38;72;0;0;0;1_' });
 
     await expect(session.sendAutomationInput({ kind: 'key', key: 'F25' })).rejects.toThrow('unsupported terminal key: F25');
@@ -145,23 +158,45 @@ describe('TerminalSession', () => {
     session.dispose();
   });
 
-  it('returns a readable live screen with separate style runs and opt-in scrollback', async () => {
+  it('returns compact screen text and opt-in styles with paged scrollback', async () => {
     const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
     await session.start({ cols: 12, rows: 3 }, initialProfile('dos-vga'));
     await new Promise<void>((resolve) => session.terminal!.write('\x1b[1;31mRed\x1b[0m\r\nplain\r\nlast', resolve));
 
-    const current = session.snapshot();
-    expect(current.scrollback).toBeUndefined();
-    expect(current.screen.lines.slice(0, 3)).toEqual(['Red', 'plain', 'last']);
-    expect(current.screen.styles).toEqual(expect.arrayContaining([
+    const compact = session.snapshot();
+    expect(compact.screen.styles).toBeUndefined();
+    expect(compact.scrollback.totalLines).toBe(0);
+    expect(compact.screen.lines.slice(0, 3)).toEqual(['Red', 'plain', 'last']);
+    const styled = session.snapshot({ includeStyles: true });
+    expect(styled.screen.styles).toEqual(expect.arrayContaining([
       expect.objectContaining({ row: 0, startColumn: 0, endColumn: 3, bold: true, foreground: { mode: 'palette', index: 1 } }),
     ]));
 
     await new Promise<void>((resolve) => session.terminal!.write('\r\nolder\r\noldest\r\nnewest', resolve));
-    const full = session.snapshot(true);
-    expect(full.scrollback?.lines).toContain('oldest');
-    expect(full.scrollback?.lines.slice(-3)).toEqual(['older', 'oldest', 'newest']);
-    expect(full.screen.lines).toHaveLength(3);
+    const history = session.readScrollback(50);
+    expect(history.lines).toContain('Red');
+    expect(history.totalLines).toBeGreaterThan(0);
+    expect(session.snapshot().screen.lines).toHaveLength(3);
+    session.dispose();
+  });
+
+  it('reads scrollback pages against a revision and rejects stale pages', async () => {
+    const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+    await session.start({ cols: 12, rows: 2 }, initialProfile('dos-vga'));
+    const output = (text: string) => mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode(text)) } });
+    output('one\r\ntwo\r\nthree\r\nfour');
+    await vi.waitFor(() => expect(session.snapshot().scrollback.totalLines).toBeGreaterThan(0));
+
+    const firstPage = session.readScrollback(1);
+    if (firstPage.status !== 'ok') throw new Error('expected first scrollback page');
+    const olderPage = session.readScrollback(20, firstPage.nextOffsetFromEnd ?? 0, firstPage.revision);
+    expect(firstPage.lines).toHaveLength(1);
+    expect(olderPage.status).toBe('ok');
+    expect(olderPage.status).toBe('ok');
+    if (olderPage.status === 'ok') expect(olderPage.nextOffsetFromEnd).toBeNull();
+    output('\r\nfive');
+    await vi.waitFor(() => expect(session.snapshot().sequence).toBeGreaterThan(firstPage.revision));
+    expect(session.readScrollback(1, 0, firstPage.revision).status).toBe('stale');
     session.dispose();
   });
 
@@ -483,6 +518,22 @@ describe('TerminalSession', () => {
       await vi.advanceTimersByTimeAsync(50);
       expect(await newerWait).toMatchObject({ status: 'updated', snapshot: { sequence: 1 } });
       expect(await futureWait).toMatchObject({ status: 'timeout', snapshot: { sequence: 1 } });
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report an old waitFor match as matched after timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new TerminalSession('5ed6dbb8-3ed9-459a-8aa3-3c7a9e6cb064', vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      await session.start({ cols: 80, rows: 24 }, initialProfile('dos-vga'));
+      mocked.handlers.get('terminal-output')!({ payload: { sessionId: session.id, data: Array.from(new TextEncoder().encode('old prompt')) } });
+      await vi.advanceTimersByTimeAsync(0);
+      const wait = session.waitForOutput(1, 0, 25, { waitFor: { text: 'old prompt', match: 'present' } });
+      await vi.advanceTimersByTimeAsync(25);
+      expect(await wait).toMatchObject({ status: 'timeout', matched: false, snapshot: { sequence: 1 } });
       session.dispose();
     } finally {
       vi.useRealTimers();
