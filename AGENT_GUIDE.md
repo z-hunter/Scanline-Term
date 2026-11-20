@@ -46,6 +46,8 @@ These files are complex, tightly coupled, and easy to break:
 
 ### Preserve Unrelated Changes
 
+- The [Windows TextureStream benchmark](./docs/browser-texture-stream-experiment.md) uses an isolated SVS worktree and a native debug bridge. Keep the source URL restricted to the loopback fixture, native COM operations on the UI thread, and published textures owned by TextureStream until reclaimed.
+- The [browser-tab TextureStream launcher](./scripts/browser-texture-stream/README.md) uses the tab's existing CompositionController for both capture modes. Preserve source identity, offscreen active rendering, hidden inactive tabs, the browser navigation and DevTools allowlists, and fallback without navigation.
 - **Never** reformat or restructure files you're not actively modifying.
 - `App.tsx` is composition only; keep terminal, CRT lifecycle and settings UI in their dedicated modules.
 - Keep TUI scroll detection and its diagnostics in `src/terminal/terminal-scroll-heuristic.ts`; SVS only receives explicit buffer/region scroll commands.

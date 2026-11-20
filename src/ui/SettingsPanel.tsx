@@ -112,6 +112,10 @@ export function SettingsPanel({
   fps,
   browserFps = 0,
   browserCaptureMetrics = '',
+  browserCaptureMode = 'screencast',
+  browserTextureStreamAvailable = false,
+  browserTextureStreamStatus,
+  onBrowserCaptureModeChange,
   browserCaptureFormat,
   onBrowserCaptureFormatChange,
   appVersion,
@@ -150,6 +154,10 @@ export function SettingsPanel({
   fps: number;
   browserFps?: number;
   browserCaptureMetrics?: string;
+  browserCaptureMode?: 'screencast' | 'texture';
+  browserTextureStreamAvailable?: boolean;
+  browserTextureStreamStatus?: string;
+  onBrowserCaptureModeChange?: (mode: 'screencast' | 'texture') => void;
   browserCaptureFormat?: 'jpeg' | 'png';
   onBrowserCaptureFormatChange?: (format: 'jpeg' | 'png') => void;
   appVersion: string;
@@ -396,7 +404,21 @@ export function SettingsPanel({
           {browserCaptureFormat && onBrowserCaptureFormatChange
             ? <div className="browser-crt-settings">
               <Switch label="CRT Emulation" checked={screenProfile.crt.crtEmulation} className="browser-crt-emulation" onChange={(crtEmulation) => updateProfile({ ...screenProfile, crt: { ...screenProfile.crt, crtEmulation } })} />
-              {screenProfile.crt.crtEmulation && <Switch label="Lossless capture (slow)" checked={browserCaptureFormat === 'png'} onChange={(enabled) => onBrowserCaptureFormatChange(enabled ? 'png' : 'jpeg')} />}
+              {screenProfile.crt.crtEmulation && onBrowserCaptureModeChange && (
+                <label className="host-select-control">
+                  Frame capture
+                  <select
+                    aria-label="Browser frame capture"
+                    value={browserCaptureMode}
+                    onChange={(event) => onBrowserCaptureModeChange(event.target.value === 'texture' ? 'texture' : 'screencast')}
+                  >
+                    <option value="screencast">CDP screencast</option>
+                    <option value="texture" disabled={!browserTextureStreamAvailable}>TextureStream (experimental)</option>
+                  </select>
+                </label>
+              )}
+              {screenProfile.crt.crtEmulation && browserTextureStreamStatus && <p className="display-status" role="status">{browserTextureStreamStatus}</p>}
+              {screenProfile.crt.crtEmulation && browserCaptureMode === 'screencast' && <Switch label="Lossless capture (slow)" checked={browserCaptureFormat === 'png'} onChange={(enabled) => onBrowserCaptureFormatChange(enabled ? 'png' : 'jpeg')} />}
               <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
             </div>
             : <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />}

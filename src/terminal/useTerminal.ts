@@ -484,12 +484,21 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     );
     return creation;
   }, []);
-  const openBrowser = useCallback((url?: string) => {
+  const openBrowser = useCallback((url?: string, benchmark?: { id: string; settings: PresetSettings; virtual: boolean }) => {
     if (!isTauri()) return;
-    const id = crypto.randomUUID(); const ordinal = nextOrdinal.current++; const settings = clonePresetSettings(defaultPresetRef.current); settings.crt.crtEmulation = false; const preset: TabPresetState = { name: defaultPresetNameRef.current, draftName: defaultPresetNameRef.current, settings, dirty: false }; const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
+    const id = benchmark?.id ?? crypto.randomUUID();
+    const ordinal = nextOrdinal.current++;
+    const settings = clonePresetSettings(benchmark?.settings ?? defaultPresetRef.current);
+    if (!benchmark) settings.crt.crtEmulation = false;
+    const name = benchmark ? 'benchmark-default' : defaultPresetNameRef.current;
+    const preset: TabPresetState = { name, draftName: name, settings, dirty: false };
+    const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: url && !benchmark?.virtual ? 'starting' : 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
     setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
-    void createBrowser(id, url).promise.catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
+    if (benchmark?.virtual) return;
+    void createBrowser(id, url).promise.then(() => {
+      updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'running' } : current);
+    }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });
   }, [createBrowser, onError, selectSession, updateTab]);
   const navigateBrowser = useCallback((id: string, value: string) => {
     const url = /^(?:https?:\/\/|file:\/)/i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
@@ -503,7 +512,34 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
   }, [createBrowser, onError, updateTab]);
   const closeSession = useCallback(async (id: string, skipConfirmation = false, preserveWindow = false) => {
     const tab = tabsRef.current.find((item) => item.id === id); const record = sessions.current.get(id);
-    if (tab?.kind === 'browser') { const nativeBrowser = browsers.current.delete(id); recentTabs.current = recentTabs.current.filter((item) => item !== id); const next = adjacentTabId(tabsRef.current, id); const remaining = renumberTabs(tabsRef.current.filter((item) => item.id !== id)); let focusTerminal = false; setAddressTabId((current) => current === id ? null : current); nextOrdinal.current = remaining.length + 1; tabsRef.current = remaining; setTabs((current) => renumberTabs(current.filter((item) => item.id !== id))); if (activeRef.current === id) { const targetId = next ?? remaining[0]?.id; if (targetId) { focusTerminal = sessions.current.has(targetId); selectSession(targetId); } else try { await getCurrentWindow().close(); } catch (reason) { onError(`Could not close application: ${String(reason)}`); } } const restoreTerminalFocus = () => { if (focusTerminal) window.requestAnimationFrame(() => outputRef.current?.focus()); }; if (nativeBrowser) void invoke('close_browser', { sessionId: id }).catch((reason) => onError(`Browser close failed: ${String(reason)}`)).finally(restoreTerminalFocus); else restoreTerminalFocus(); return; }
+    if (tab?.kind === 'browser') {
+      const pending = browserCreations.current.get(id)?.promise;
+      let nativeBrowser = browsers.current.delete(id);
+      recentTabs.current = recentTabs.current.filter((item) => item !== id);
+      const next = adjacentTabId(tabsRef.current, id);
+      const remaining = renumberTabs(tabsRef.current.filter((item) => item.id !== id));
+      setAddressTabId((current) => current === id ? null : current);
+      nextOrdinal.current = remaining.length + 1;
+      tabsRef.current = remaining;
+      setTabs((current) => renumberTabs(current.filter((item) => item.id !== id)));
+      let focusTerminal = false;
+      let closeWindow = false;
+      if (activeRef.current === id) {
+        const targetId = next ?? remaining[0]?.id;
+        if (targetId) {
+          focusTerminal = sessions.current.has(targetId);
+          selectSession(targetId);
+        } else closeWindow = !preserveWindow;
+      }
+      if (pending) {
+        await pending.catch(() => {});
+        nativeBrowser = browsers.current.delete(id) || nativeBrowser;
+      }
+      if (nativeBrowser) await invoke('close_browser', { sessionId: id }).catch(reason => onError(`Browser close failed: ${String(reason)}`));
+      if (focusTerminal) window.requestAnimationFrame(() => outputRef.current?.focus());
+      if (closeWindow) await getCurrentWindow().close().catch(reason => onError(`Could not close application: ${String(reason)}`));
+      return;
+    }
     if (!record || (tab?.status === 'starting' && record.session.live) || closing.current.has(id)) return;
     if (!skipConfirmation && record.preset.dirty && !window.confirm(`Close tab with unsaved preset changes?`)) return;
     closing.current.add(id);

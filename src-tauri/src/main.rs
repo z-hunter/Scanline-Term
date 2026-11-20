@@ -32,6 +32,8 @@ use conpty_oxide::{
 use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
 mod codex;
 mod browser;
+#[cfg(all(windows, debug_assertions))]
+mod browser_texture_stream;
 mod caps_hook;
 mod explorer;
 mod home;
@@ -1061,6 +1063,15 @@ fn main() {
             let icon = Image::from_bytes(include_bytes!("../icons/32x32 - Copy.png"))?;
             let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
             window.set_icon(icon)?;
+            #[cfg(all(windows, debug_assertions))]
+            {
+                let app_handle = app.handle().clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)) {
+                        browser::refresh_native_browser_bounds(&app_handle);
+                    }
+                });
+            }
             #[cfg(windows)]
             setup_window_restore_listener(&window);
             window_state::WindowState::setup(app.handle())?;
@@ -1082,11 +1093,17 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, explorer::set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::browser_devtools, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond])
+        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, explorer::set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::browser_devtools, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond,
+            #[cfg(all(windows, debug_assertions))] browser_texture_stream::start_browser_texture_stream,
+            #[cfg(all(windows, debug_assertions))] browser_texture_stream::stop_browser_texture_stream,
+            #[cfg(all(windows, debug_assertions))] browser::browser_texture_stream_available,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building Scanline Term")
         .run(|_app_handle, _event| {
             if matches!(_event, tauri::RunEvent::Exit) {
+                #[cfg(all(windows, debug_assertions))]
+                browser_texture_stream::stop_all_browser_texture_streams();
                 if let (Some(state), Some(window)) = (_app_handle.try_state::<std::sync::Arc<window_state::WindowState>>(), _app_handle.get_webview_window("main")) {
                     state.save_current(&window);
                 }

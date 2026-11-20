@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Texture stream benchmark</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #090d16; }
+    canvas { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <canvas id="scene" width="1280" height="720" aria-label="Animated benchmark scene"></canvas>
+  <script>
+    const canvas = document.querySelector('#scene');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const width = canvas.width;
+    const height = canvas.height;
+    let frames = 0;
+
+    function draw(now) {
+      const t = now / 1000;
+      frames++;
+      const bg = ctx.createLinearGradient(0, 0, width, height);
+      bg.addColorStop(0, '#101b32');
+      bg.addColorStop(1, '#30153a');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.strokeStyle = 'rgba(128,190,255,.18)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= width; x += 48) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+      }
+      for (let y = 0; y <= height; y += 48) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+      }
+
+      for (let i = 0; i < 12; i++) {
+        const x = ((i * 113 + t * (60 + i * 3)) % (width + 120)) - 60;
+        const y = 90 + (i * 47) % 540 + Math.sin(t * 1.4 + i) * 16;
+        ctx.fillStyle = `hsla(${195 + i * 8},85%,${52 + (i % 3) * 8}%,.82)`;
+        ctx.fillRect(x, y, 42 + (i % 4) * 12, 14 + (i % 3) * 5);
+      }
+
+      const sweep = (t * 220) % (width + 220) - 110;
+      const glow = ctx.createRadialGradient(sweep, 360, 8, sweep, 360, 190);
+      glow.addColorStop(0, 'rgba(255,241,170,.9)');
+      glow.addColorStop(.25, 'rgba(255,90,120,.5)');
+      glow.addColorStop(1, 'rgba(255,90,120,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(Math.max(0, sweep - 190), 170, 380, 380);
+
+      ctx.fillStyle = '#f4f7ff';
+      ctx.font = '600 28px system-ui, sans-serif';
+      ctx.fillText('SCANLINE · TEXTURE STREAM', 50, 72);
+      ctx.font = '16px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(230,239,255,.8)';
+      ctx.fillText(`FRAME ${String(frames).padStart(8, '0')}   ${t.toFixed(2)} s`, 52, 104);
+      ctx.fillStyle = '#121524';
+      ctx.fillRect(51, 122, 310, 57);
+      ctx.font = '12px ui-monospace, monospace';
+      ctx.fillStyle = '#ff625c';
+      ctx.fillText('12 px  red     Il1 0O8 & [] {}', 58, 137);
+      ctx.fillStyle = '#52ed8f';
+      ctx.fillText('12 px  green   Il1 0O8 & [] {}', 58, 154);
+      ctx.fillStyle = '#75b5ff';
+      ctx.fillText('12 px  blue    Il1 0O8 & [] {}', 58, 171);
+
+      if (frames === 1) window.chrome?.webview?.postMessage('scanline-texture-benchmark-first-paint');
+
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+    window.__textureStreamBenchmarkPage = {
+      snapshot: () => ({ frames, width, height, now: performance.now() })
+    };
+  </script>
+</body>
+</html>

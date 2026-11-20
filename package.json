@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "tauri:dev:texture-stream": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/browser-texture-stream/dev.ps1",
     "tauri:build": "tauri build"
   },
   "dependencies": {

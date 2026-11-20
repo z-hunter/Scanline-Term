@@ -16,8 +16,7 @@ describe('Vite SVS development resolution', () => {
     server = await createServer({
       configFile: './vite.config.ts',
       optimizeDeps: { noDiscovery: true },
-      server: { middlewareMode: true },
-      watch: null,
+      server: { middlewareMode: true, watch: null },
     });
     expect(server.config.optimizeDeps.entries).toEqual(['index.html']);
     const settingsPath = path.resolve('src/crt/settings.ts');

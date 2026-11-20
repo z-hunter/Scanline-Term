@@ -41,6 +41,10 @@ Scanline Term deliberately keeps application-specific state outside SVS:
 
 For pointer mapping, `useCRT.ts` copies `VirtualScreenRenderer.rasterScale` to the terminal renderer after each rendered frame and capture. SVS exposes the centered scale used after bezel inset and curvature; `sourcePointAt()` and `cellAtPoint()` share it, so browser overlay points and terminal cells follow the visible raster. The scale uses the cached global GPU luma readback from the preceding source frame. That 1×1 synchronous readback is deferred to the next render and is skipped while CRT emulation or breathing is off. It can wait for queued GPU work, so measure performance on the target machine under continuous source updates.
 
+The Windows dev [TextureStream benchmark](./browser-texture-stream-experiment.md) selects an isolated SVS worktree with `SCANLINE_SVS_EXPERIMENT`. Its `renderVideo` method uploads video to WebGL using the same virtual raster dimensions as the JPEG overlay. Ordinary development and production builds use the installed pin.
+
+In the experimental browser-tab mode, the host uses `renderVideo` when the selected SVS build provides it. With the installed pin, a video-backed overlay supplies the same CRT composition and virtual raster.
+
 SVS owns the custom palette registry and groups Lua palettes after built-ins in its controlled settings section. Scanline Term applies the full native snapshot before loading saved presets. A successful Lua reload applies the prepared candidate snapshot only after commit; failed loads retain the last good catalog. Missing `lua:` references remain saved, render with SVS's built-in fallback, and produce a warning. Catalog changes refresh the theme and tab colors of every live session without changing preset names or dirty state.
 
 `src/ui/SettingsPanel.tsx` composes SVS's controlled `DisplaySettingsSection`, `TerminalSettingsSection`, and `AdvancedCRTSettingsSection`, plus `scanline-virtual-screen/react/styles.css`. Scanline Term provides its mode list, installed fonts, current `ScreenProfile`, and the host-owned smooth-scrolling callbacks; preset persistence, diagnostics, UI, and system controls stay local.
