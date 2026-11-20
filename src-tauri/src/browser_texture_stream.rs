@@ -200,6 +200,12 @@ fn native_dll(app: &AppHandle) -> Result<&'static NativeDll, String> {
         .map_err(Clone::clone)
 }
 
+pub(crate) fn set_browser_tab_bounds_on_ui(app: &AppHandle, handle: u64, width: u32, height: u32, mode: i32) -> Result<(), String> {
+    let set_bounds = native_dll(app)?.browser_tab_set_bounds.ok_or("native browser bounds are unavailable")?;
+    let result = unsafe { set_bounds(handle, 0, 0, width, height, mode) };
+    if result < 0 { Err(format!("native browser bounds failed: 0x{:08x}", result as u32)) } else { Ok(()) }
+}
+
 pub fn browser_tab_enabled(app: &AppHandle) -> bool {
     if cfg!(debug_assertions) && std::env::var("SCANLINE_BROWSER_TEXTURE_STREAM_TABS").is_ok_and(|value| value == "0") {
         return false;

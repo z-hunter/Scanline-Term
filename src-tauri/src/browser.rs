@@ -482,6 +482,84 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
     }
 }
 
+#[cfg(windows)]
+#[tauri::command]
+pub async fn capture_gallery_browser(app: tauri::AppHandle, session_id: BrowserId) -> Result<String, String> {
+    valid_id(&session_id)?;
+    static CAPTURE_LOCK: Mutex<()> = Mutex::new(());
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::{sync::mpsc, time::Duration};
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller;
+        use windows::Win32::Foundation::RECT;
+
+        let _guard = CAPTURE_LOCK.lock().map_err(|_| "browser capture is unavailable")?;
+        let app_on_ui = app.clone();
+        let id_on_ui = session_id.clone();
+        let (handle, width, height) = browser_texture_stream::with_main_webview(&app, move |_, _| {
+            let tab = {
+                let state = app_on_ui.state::<BrowserState>();
+                let store = state.0.lock().map_err(|_| "browser state is unavailable")?;
+                if store.active.is_some() { return Err("gallery browser capture is inactive".to_string()); }
+                *store.native_tabs.get(&id_on_ui).ok_or("native browser tab is unavailable")?
+            };
+            unsafe {
+                let mut raw = tab.controller as *mut std::ffi::c_void;
+                let controller = ICoreWebView2Controller::from_raw_borrowed(&mut raw).ok_or("browser controller is unavailable")?;
+                let mut bounds = RECT::default();
+                controller.Bounds(&mut bounds).map_err(|error| error.to_string())?;
+                let width = (bounds.right - bounds.left).max(2) as u32;
+                let height = (bounds.bottom - bounds.top).max(2) as u32;
+                browser_texture_stream::set_browser_tab_bounds_on_ui(&app_on_ui, tab.handle, width, height, 2)?;
+                Ok::<_, String>((tab.handle, width, height))
+            }
+        })??;
+
+        // Let the offscreen compositor produce a fresh frame after the tab becomes visible.
+        std::thread::sleep(Duration::from_millis(400));
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let app_on_ui = app.clone();
+        let id_on_ui = session_id.clone();
+        let started = browser_texture_stream::with_main_webview(&app, move |_, _| {
+            let tab = {
+                let state = app_on_ui.state::<BrowserState>();
+                let store = state.0.lock().map_err(|_| "browser state is unavailable")?;
+                if store.active.is_some() { return Err("gallery browser capture was cancelled".to_string()); }
+                *store.native_tabs.get(&id_on_ui).filter(|tab| tab.handle == handle).ok_or("browser tab is closed")?
+            };
+            unsafe {
+                let mut raw = tab.core as *mut std::ffi::c_void;
+                let core = ICoreWebView2::from_raw_borrowed(&mut raw).ok_or("native browser core is unavailable")?;
+                let callback = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |status, response| {
+                    let result = status.map_err(|error| error.to_string()).and_then(|_| {
+                        let parsed: serde_json::Value = serde_json::from_str(&response).map_err(|error| error.to_string())?;
+                        parsed.get("data").and_then(|value| value.as_str()).map(str::to_owned).ok_or_else(|| "browser snapshot is empty".to_string())
+                    });
+                    let _ = sender.send(result);
+                    Ok(())
+                }));
+                core.CallDevToolsProtocolMethod(
+                    &HSTRING::from("Page.captureScreenshot"),
+                    &HSTRING::from(r#"{"format":"jpeg","quality":65,"fromSurface":true}"#),
+                    &callback,
+                ).map_err(|error| error.to_string())
+            }
+        }).and_then(|result| result);
+        let result = match started {
+            Ok(()) => receiver.recv_timeout(Duration::from_secs(5)).map_err(|_| "browser snapshot timed out".to_string()).and_then(|result| result),
+            Err(error) => Err(error),
+        };
+        let app_on_ui = app.clone();
+        let _ = browser_texture_stream::with_main_webview(&app, move |_, _| {
+            let should_hide = app_on_ui.state::<BrowserState>().0.lock().is_ok_and(|store| {
+                store.active.as_deref() != Some(session_id.as_str()) &&
+                    store.native_tabs.get(&session_id).is_some_and(|tab| tab.handle == handle)
+            });
+            if should_hide { let _ = browser_texture_stream::set_browser_tab_bounds_on_ui(&app_on_ui, handle, width, height, 0); }
+        });
+        result
+    }).await.map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }

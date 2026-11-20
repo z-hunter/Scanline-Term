@@ -19,6 +19,7 @@ export function galleryThumbnailMaxDimension(cardSize = 100): number {
 export const GALLERY_MAX_TERMINAL_RENDERERS = 8;
 
 export type GalleryRenderSource = { id: string; terminal: Terminal; settings: CRTSettings; images: TerminalImage[]; width: number; height: number };
+export type GalleryBrowserRenderSource = { id: string; canvas: HTMLCanvasElement; settings: CRTSettings; width: number; height: number; version: number };
 
 export function fitGalleryRasterSettings(settings: CRTSettings, cols: number, rows: number, width: number, height: number, scale: number): CRTSettings | null {
   const padding = terminalPadding(width, height);
@@ -87,10 +88,10 @@ export class GalleryRenderer {
     }
   }
 
-  prepare(source: GalleryRenderSource): boolean {
+  prepare(source: GalleryRenderSource | GalleryBrowserRenderSource): boolean {
     if (this.contextLost) throw new Error('Gallery WebGL context was lost.');
     if (source.width * source.height > GALLERY_MAX_SOURCE_PIXELS) throw new Error('Gallery source exceeds the preview pixel budget.');
-    this.assertRendererCapacity(source);
+    if ('terminal' in source) this.assertRendererCapacity(source);
     return this.screen.prepare(this.settings(source.settings));
   }
 
@@ -103,7 +104,7 @@ export class GalleryRenderer {
     }
   }
 
-  render(source: GalleryRenderSource, target: HTMLCanvasElement, cardSize = 100): void {
+  render(source: GalleryRenderSource | GalleryBrowserRenderSource, target: HTMLCanvasElement, cardSize = 100): void {
     if (this.contextLost) throw new Error('Gallery WebGL context was lost.');
     const settings = this.settings(source.settings);
     const aspectRatio = source.width / source.height;
@@ -114,6 +115,18 @@ export class GalleryRenderer {
     if (target.height !== height) target.height = height;
     if (this.output.width !== width) this.output.width = width;
     if (this.output.height !== height) this.output.height = height;
+    if ('canvas' in source) {
+      this.screen.clearPersistence();
+      this.screen.render(source.canvas, settings, [], true);
+      this.lastSharedRenderKey = '';
+      const context = target.getContext('2d');
+      if (!context) throw new Error('Gallery card canvas is unavailable.');
+      context.imageSmoothingEnabled = true;
+      context.clearRect(0, 0, width, height);
+      context.drawImage(this.output, 0, 0, width, height);
+      this.screen.clearPersistence();
+      return;
+    }
     const rasterSettings = fitGalleryRasterSettings(settings, source.terminal.cols, source.terminal.rows, width, height, Math.min(width / source.width, height / source.height));
     if (!rasterSettings) throw new Error('Gallery thumbnail cannot fit the full terminal grid.');
     const entry = this.terminalRendererFor(source);

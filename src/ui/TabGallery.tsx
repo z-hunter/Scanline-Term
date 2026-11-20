@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
-import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderOverrun, nextGalleryRenderInterval, type GalleryRenderSource } from '../terminal/gallery-renderer';
+import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderOverrun, nextGalleryRenderInterval, type GalleryRenderSource, type GalleryBrowserRenderSource } from '../terminal/gallery-renderer';
 
 export type GalleryFrame = {
   canvas: HTMLCanvasElement;
@@ -66,7 +66,7 @@ function tabLabel(tab: WorkspaceTab): string {
   return tab.kind === 'browser' ? `${tab.title} — browser tab` : `${tab.title} — terminal tab`;
 }
 
-function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined, source?: GalleryRenderSource, cardSize = 100): void {
+function frameCanvas(node: HTMLCanvasElement | null, frame: GalleryFrame | undefined, source?: GalleryRenderSource | GalleryBrowserRenderSource, cardSize = 100): void {
   if (!node || !frame) return;
   const size = source ? galleryCanvasSize(source.width, source.height, cardSize) : galleryCanvasSize(frame.canvas.width, frame.canvas.height, cardSize);
   if (node.width !== size.width) node.width = size.width;
@@ -96,6 +96,7 @@ export function TabGallery({
   activeId,
   frames,
   getRenderSources,
+  getBrowserRenderSources,
   originRect,
   onChoose,
   onMove = () => undefined,
@@ -107,6 +108,7 @@ export function TabGallery({
   activeId: string | null;
   frames: ReadonlyMap<string, GalleryFrame>;
   getRenderSources?: () => GalleryRenderSource[];
+  getBrowserRenderSources?: () => GalleryBrowserRenderSource[];
   originRect: DOMRect | null;
   onChoose: (id: string) => void;
   onMove?: (id: string, targetIndex: number) => void;
@@ -198,7 +200,7 @@ export function TabGallery({
   useEffect(() => () => { if (timer.current !== null) window.clearTimeout(timer.current); }, []);
 
   useEffect(() => {
-    if (!getRenderSources || closing) return;
+    if ((!getRenderSources && !getBrowserRenderSources) || closing) return;
     let renderer: GalleryRenderer;
     let renderInterval = GALLERY_RENDER_INTERVAL_MS;
     let fastRenderSamples = 0;
@@ -218,6 +220,7 @@ export function TabGallery({
     let pendingSince = 0;
     let stopped = false;
     let disposed = false;
+    const browserVersions = new Map<string, string>();
     const disposeRenderer = () => { if (!disposed) { disposed = true; renderer.dispose(); } };
     const stopUpdates = () => {
       if (stopped) return;
@@ -247,8 +250,10 @@ export function TabGallery({
       }
       if (visibleWindow) slowFrameStreak = 0;
       if (visibleWindow) {
-        const sources = getRenderSources();
-        renderer.retainSources(sources);
+        const terminalSources = getRenderSources?.() ?? [];
+        const browserSources = (getBrowserRenderSources?.() ?? []).filter(source => browserVersions.get(source.id) !== JSON.stringify([source.version, source.settings, source.width, source.height]));
+        const sources = [...terminalSources, ...browserSources];
+        renderer.retainSources(terminalSources);
         if (pendingTabId && !sources.some(({ id }) => id === pendingTabId)) {
           pendingTabId = null;
           preparePollAfter = 0;
@@ -276,6 +281,7 @@ export function TabGallery({
             if (ready) {
               const renderStarted = performance.now();
               renderer.render(source, card, cardSize);
+              if ('canvas' in source) browserVersions.set(source.id, JSON.stringify([source.version, source.settings, source.width, source.height]));
               const renderDuration = performance.now() - renderStarted;
               if (!renderedPreviewIds.current.has(source.id)) {
                 renderedPreviewIds.current.add(source.id);
@@ -305,7 +311,7 @@ export function TabGallery({
     };
     raf = window.requestAnimationFrame(tick);
     return () => { stopped = true; window.cancelAnimationFrame(raf); window.removeEventListener('focus', resetFrameBaseline); window.removeEventListener('blur', resetFrameBaseline); document.removeEventListener('visibilitychange', resetFrameBaseline); disposeRenderer(); };
-  }, [cardSize, closing, getRenderSources]);
+  }, [cardSize, closing, getRenderSources, getBrowserRenderSources]);
 
   const finish = useCallback((callback: () => void, cardId = resolvedSelectedId) => {
     if (closing) return;
@@ -369,17 +375,17 @@ export function TabGallery({
     return () => { window.removeEventListener('keydown', onKeyDown, true); window.removeEventListener('keyup', onKeyUp, true); window.removeEventListener('blur', onBlur); };
   }, [cancel, closing, finish, layout, onChoose, onMove, resolvedSelectedId, tabs]);
 
-  const renderSources = getRenderSources?.() ?? [];
+  const renderSources = [...(getRenderSources?.() ?? []), ...(getBrowserRenderSources?.() ?? [])];
   const renderSourceById = new Map(renderSources.map((source) => [source.id, source]));
 
   return <div ref={dialogRef} className={`tab-gallery${visible ? ' is-visible' : ''}${closing ? ' is-closing' : ''}`} role="dialog" aria-modal="true" aria-label="Tab gallery" onClick={(event) => { if (!(event.target as Element).closest('.tab-gallery-card')) cancel(); }}>
     <div className="tab-gallery-grid" style={{ '--gallery-columns': columns, '--gallery-card-width': `${400 * cardSize / 100}px` } as CSSProperties}>
       {layout.map(({ tab, position }) => {
         const frame = frames.get(tab.id);
-        const renderSource = tab.kind === 'browser' ? undefined : renderSourceById.get(tab.id);
+        const renderSource = renderSourceById.get(tab.id);
         const showLivePreview = Boolean(renderSource && renderedPreviewIds.current.has(tab.id));
         const showFrame = !showLivePreview && Boolean(frame);
-        const showPreviewCanvas = showLivePreview || showFrame || Boolean(renderSource);
+        const showPreviewCanvas = showLivePreview || showFrame || Boolean(renderSource) || tab.kind === 'browser';
         const showPlaceholder = !showLivePreview && !frame;
         const isSelected = tab.id === resolvedSelectedId;
         return <button

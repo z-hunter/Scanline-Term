@@ -1099,6 +1099,7 @@ fn main() {
             #[cfg(windows)] browser_texture_stream::start_browser_texture_stream,
             #[cfg(windows)] browser_texture_stream::stop_browser_texture_stream,
             #[cfg(windows)] browser::browser_texture_stream_available,
+            #[cfg(windows)] browser::capture_gallery_browser,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Scanline Term")

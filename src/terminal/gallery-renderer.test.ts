@@ -167,6 +167,17 @@ describe('GalleryRenderer', () => {
     gallery.dispose();
   });
 
+  it('renders browser snapshots through the shared compositor with the tab CRT settings', () => {
+    const gallery = new GalleryRenderer();
+    const canvas = document.createElement('canvas');
+    const browser = { id: 'browser', canvas, settings: { crtEmulation: true, bloom: 0.6 } as never, width: 640, height: 480, version: 1 };
+    expect(gallery.prepare(browser)).toBe(true);
+    gallery.render(browser, target());
+    expect(state.render).toHaveBeenCalledWith(canvas, expect.objectContaining({ crtEmulation: true, bloom: 0.6, persistence: 0 }), [], true);
+    expect(state.terminalRendererCreations).toBe(0);
+    gallery.dispose();
+  });
+
   it('renders the live terminal source at the selected card resolution', () => {
     const gallery = new GalleryRenderer();
     gallery.render(source('large', {} as never, 640, 480), target(), 200);

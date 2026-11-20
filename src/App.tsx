@@ -121,6 +121,7 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const galleryFramesRef = useRef(new Map<string, GalleryFrame>());
   const browserPreviewFramesRef = useRef(new Map<string, HTMLCanvasElement>());
+  const browserGalleryVersionsRef = useRef(new Map<string, number>());
   const browserPreviewTabId = useRef<string | null>(null);
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
@@ -314,6 +315,42 @@ export default function App() {
   const refreshTerminalColorProfiles = terminal.refreshColorProfiles;
   const terminalRef = useRef(terminal);
   terminalRef.current = terminal;
+  const getBrowserGallerySources = useCallback(() => terminalRef.current.tabs.flatMap((tab) => {
+    if (tab.kind !== "browser" || tab.page !== "web" || !tab.preset) return [];
+    const canvas = browserPreviewFramesRef.current.get(tab.id);
+    return canvas ? [{ id: tab.id, canvas, settings: tab.preset.settings.crt, width: canvas.width, height: canvas.height, version: browserGalleryVersionsRef.current.get(tab.id) ?? 0 }] : [];
+  }), []);
+  useEffect(() => {
+    if (!galleryOpen || galleryCloseRequested || !isTauri()) return;
+    let disposed = false;
+    let timer = 0;
+    let index = 0;
+    const capture = async () => {
+      if (disposed) return;
+      const tabs = terminalRef.current.tabs.filter((tab): tab is BrowserTab => tab.kind === "browser" && tab.page === "web" && tab.status === "running");
+      if (document.visibilityState === "visible" && document.hasFocus() && tabs.length) {
+        const tab = tabs[index++ % tabs.length];
+        try {
+          const data = await invoke<string>("capture_gallery_browser", { sessionId: tab.id });
+          const image = new Image();
+          image.src = `data:image/jpeg;base64,${data}`;
+          await image.decode();
+          if (!disposed && terminalRef.current.tabs.some((current) => current.id === tab.id && current.kind === "browser" && current.page === "web")) {
+            const canvas = browserPreviewFramesRef.current.get(tab.id) ?? document.createElement("canvas");
+            const scale = Math.min(1, 800 / image.naturalWidth);
+            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+            canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+            browserPreviewFramesRef.current.set(tab.id, canvas);
+            browserGalleryVersionsRef.current.set(tab.id, (browserGalleryVersionsRef.current.get(tab.id) ?? 0) + 1);
+          }
+        } catch { /* Keep the previous preview when a tab cannot be captured. */ }
+      }
+      if (!disposed) timer = window.setTimeout(capture, 2000);
+    };
+    timer = window.setTimeout(capture, 500);
+    return () => { disposed = true; window.clearTimeout(timer); };
+  }, [galleryOpen, galleryCloseRequested]);
   const luaPresetRequestEpoch = useRef(0);
   const receiveLuaPresetRequest = useCallback((request: LuaPresetRequest) => {
     const epoch = luaPresetRequestEpoch.current;
@@ -861,6 +898,7 @@ export default function App() {
     const ids = new Set(terminal.tabs.map((tab) => tab.id));
     galleryFramesRef.current.forEach((_, id) => { if (!ids.has(id)) galleryFramesRef.current.delete(id); });
     browserPreviewFramesRef.current.forEach((_, id) => { if (!ids.has(id)) browserPreviewFramesRef.current.delete(id); });
+    browserGalleryVersionsRef.current.forEach((_, id) => { if (!ids.has(id)) browserGalleryVersionsRef.current.delete(id); });
   }, [terminal.tabs]);
   useEffect(() => {
     if (!isTauri()) return;
@@ -1503,6 +1541,7 @@ export default function App() {
         activeId={gallerySnapshot.activeId}
         frames={gallerySnapshot.frames}
         getRenderSources={terminal.galleryRenderSources}
+        getBrowserRenderSources={getBrowserGallerySources}
         originRect={gallerySnapshot.originRect}
         closeRequested={galleryCloseRequested}
         onChoose={chooseGalleryTab}
