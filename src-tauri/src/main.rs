@@ -1488,6 +1488,19 @@ mod tests {
         }
         assert!(child.try_wait().unwrap().is_some(), "Ctrl-C did not interrupt the ConPTY child");
     }
+
+    #[test]
+    fn terminal_output_ack_protocol_buffers_and_coalesces() {
+        use std::sync::mpsc;
+
+        let (ack_sender, ack_receiver) = mpsc::sync_channel::<()>(1);
+        assert!(ack_sender.try_send(()).is_ok());
+        assert!(matches!(ack_sender.try_send(()), Err(mpsc::TrySendError::Full(()))));
+        assert!(ack_receiver.recv().is_ok());
+        assert!(ack_sender.try_send(()).is_ok());
+        drop(ack_receiver);
+        assert!(matches!(ack_sender.try_send(()), Err(mpsc::TrySendError::Disconnected(()))));
+    }
 }
 
 #[tauri::command]
