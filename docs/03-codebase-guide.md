@@ -229,7 +229,7 @@ Owns the temporary Gallery rendering path: a bounded set of isolated per-tab ter
 * **[`home.rs`](../src-tauri/src/home.rs) (277 lines prod / 91 tests):** Manages `%APPDATA%/.../home.json` configuration and bookmarks.
 * **[`window_state.rs`](../src-tauri/src/window_state.rs) (271 lines prod / 54 tests):** Saves and restores window size and position with multi-monitor boundary validation.
 * **[`browser.rs`](../src-tauri/src/browser.rs):** Owns native browser tabs, direct display, offscreen CRT placement, and the allowlisted input commands.
-* **[`browser_texture_stream.rs`](../src-tauri/src/browser_texture_stream.rs):** Windows bridge to the bundled DLL. It creates composition hosts and starts TextureStream on the active browser tab. See [browser TextureStream](../scripts/browser-texture-stream/README.md).
+* **[`browser_texture_stream.rs`](../src-tauri/src/browser_texture_stream.rs):** Windows bridge to the bundled DLL. It creates composition hosts and starts TextureStream on the active browser tab. See [browser TextureStream and the legacy CDP porting notes](../scripts/browser-texture-stream/README.md).
 * **[`codex.rs`](../src-tauri/src/codex.rs) (88 lines prod):** Spawns and manages the `codex app-server --stdio` child process tree.
 * **[`explorer.rs`](../src-tauri/src/explorer.rs):** Owns per-user Explorer registry verbs and the `set_explorer_integration` Tauri command.
 

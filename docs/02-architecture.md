@@ -221,7 +221,7 @@ The browser injects a small page-local script that bridges allowed `Menu+…` sh
 
 The Browser settings retain the form-factor selector. **CRT Emulation** defaults off for each new browser tab. On Windows, a tab's WebView2 CompositionController supplies both the directly displayed browser and the source for TextureStream. In CRT mode the active tab remains visible to WebView2 offscreen. Windows Graphics Capture reads its composition visual, and the bundled companion publishes shared NV12 textures to the main WebView. The main WebView receives a MediaStream and sends its video frames to SVS.
 
-Canvas mouse, wheel, and keyboard events go back to the same tab through the allowlisted DevTools Input commands. The CRT image never requires reloading the document. Disabling CRT stops capture and restores direct display. If TextureStream is unavailable or fails to start, the browser continues in direct display and the CRT panel reports the cause. The historical JPEG/CDP implementation remains commented in the frontend.
+Canvas mouse, wheel, and keyboard events go back to the same tab through the allowlisted DevTools Input commands. The CRT image never requires reloading the document. Disabling CRT stops capture and restores direct display. If TextureStream is unavailable or fails to start, the browser continues in direct display and the CRT panel reports the cause. The historical JPEG/CDP implementation remains commented in the frontend. Its native command allowlist entries are also commented. The [browser capture guide](../scripts/browser-texture-stream/README.md#legacy-cdp-capture-and-porting) describes the retained path and platform dependencies.
 
 ### Native context menus and WebView2 layering
 
