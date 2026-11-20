@@ -41,7 +41,8 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $browserArguments
 
 Push-Location $root
 try {
-    npm run tauri:dev -- --no-watch
+    if ($args -notcontains '--no-watch') { $args = @('--no-watch') + $args }
+    npm.cmd run tauri:dev:wry -- @args
     exit $LASTEXITCODE
 } finally {
     Pop-Location

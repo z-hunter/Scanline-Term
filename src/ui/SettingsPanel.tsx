@@ -355,8 +355,8 @@ export function SettingsPanel({
           <button type="button" className="eyebrow" aria-label={`${allSectionsCollapsed ? 'Expand' : 'Collapse'} all settings sections`} title={`${allSectionsCollapsed ? 'Expand' : 'Collapse'} all settings sections`} onClick={toggleAllSections}>SETTINGS</button>
           <button type="button" className="settings-home-button" data-testid="settings-home" aria-label="Open Scanline Term home" title="Open Scanline Term home" onClick={onOpenHome}>?</button>
         </div>
-        <p className="display-status">{browserTabActive ? `BROWSER TAB · FPS: ${browserFps}` : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
-        {browserTabActive && browserCaptureMetrics && <p className="display-status">{browserCaptureMetrics}</p>}
+        <p className="display-status">{browserTabActive ? (browserCrtSettingsEnabled ? `BROWSER TAB · FPS: ${browserFps}` : 'BROWSER TAB') : `CONSOLE BUFFER: ${terminalSize.cols} × ${terminalSize.rows} · FPS: ${fps}`}</p>
+        {browserTabActive && browserCrtSettingsEnabled && browserCaptureMetrics && <p className="display-status">{browserCaptureMetrics}</p>}
       </header>
 
       {!browserTabActive && <fieldset className={cursorStyleOverridden ? 'preset-controls cursor-style-overridden' : 'preset-controls'}>

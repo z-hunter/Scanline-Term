@@ -42,7 +42,7 @@ $env:SCANLINE_SVS_EXPERIMENT = (Resolve-Path ..\SVS-TextureStream-Experiment).Pa
 $env:VITE_SCANLINE_BROWSER_BENCHMARK = '1'
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9223 --enable-features=msWebView2TextureStream'
 $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:TEMP 'ScanlineTerm-TextureStream-Experiment-WebView'
-npm run tauri:dev -- --no-watch
+npm run tauri:dev:wry -- --no-watch
 ```
 
 Дождитесь первой вкладки в окне `Scanline Term  [dev]`. Оставьте окно видимым и запустите из второго PowerShell.

@@ -201,18 +201,22 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('places lossless browser capture below CRT Emulation and hides it when CRT is off', async () => {
+  it('shows browser capture controls and metrics only with CRT on', async () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     const props = {
       ...defaultProps,
       browserTabActive: true,
       browserCrtEnabled: true,
+      browserFps: 30,
+      browserCaptureMetrics: 'STREAM 33 ms',
       browserCaptureFormat: 'jpeg' as const,
       onBrowserCaptureFormatChange: vi.fn(),
       stored: { ...defaultProps.stored, crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: true } },
     };
     await act(async () => { root.render(createElement(SettingsPanel, props)); });
+    expect(container.querySelector('header')?.textContent).toContain('FPS: 30');
+    expect(container.querySelector('header')?.textContent).toContain('STREAM 33 ms');
 
     const browserCRT = container.querySelector('.browser-crt-settings')!;
     const controls = Array.from(browserCRT.children);
@@ -229,6 +233,7 @@ describe('SettingsPanel font-size editing flow', () => {
       }));
     });
     expect(container.querySelector('.browser-crt-settings')?.textContent).not.toContain('Lossless capture (slow)');
+    expect(container.querySelector('header')?.textContent).not.toMatch(/FPS:|STREAM/);
 
     await act(async () => { root.unmount(); });
     container.remove();

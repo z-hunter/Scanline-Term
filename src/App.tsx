@@ -977,7 +977,7 @@ export default function App() {
   useEffect(() => {
     const canvas = outputRef.current;
     const browser = activeBrowser;
-    if (!canvas || !browser || browser.page !== "web" || galleryOpen || !isTauri()) {
+    if (!canvas || !browser || browser.page !== "web" || galleryOpen || !isTauri() || (!browserCrtEnabled && !presetPickerOpen)) {
       setBrowserFps(0);
       setBrowserCaptureMetrics("");
       terminal.renderer?.setBrowserPreview(null);
@@ -1066,7 +1066,7 @@ export default function App() {
       void invoke("browser_devtools", { sessionId: browser.id, method, params }).catch((reason) => { if (!disposed && !String(reason).includes("browser is not running")) reportError(`Browser screencast request failed: ${String(reason)}`); });
     };
     const onFrame = (event: { payload: { sessionId: string; screencastSessionId?: number; data?: string; timestamp?: number | null; error?: string } }) => {
-      if (event.payload.sessionId !== browser.id) return;
+      if (disposed || event.payload.sessionId !== browser.id) return;
       if (event.payload.error) {
         if (activeBenchmark) activeBenchmark.error = event.payload.error;
         reportError(`Browser screencast failed: ${event.payload.error}`);
@@ -1091,11 +1091,9 @@ export default function App() {
         frameBytesTotal += Math.floor(event.payload.data!.length * 0.75);
         frameWidth = image.naturalWidth;
         frameHeight = image.naturalHeight;
-        if (browserCrtEnabled || presetPickerOpen) {
-          terminal.renderer?.setBrowserPreview(image);
-          browserPreviewTabId.current = browser.id;
-          activeBenchmark?.frame(frameWidth, frameHeight, event.payload.timestamp == null ? undefined : event.payload.timestamp * 1000);
-        }
+        terminal.renderer?.setBrowserPreview(image);
+        browserPreviewTabId.current = browser.id;
+        activeBenchmark?.frame(frameWidth, frameHeight, event.payload.timestamp == null ? undefined : event.payload.timestamp * 1000);
         cachePreview(image, frameWidth, frameHeight);
         dispatch("Page.screencastFrameAck", { sessionId: event.payload.screencastSessionId });
       };
@@ -1120,8 +1118,8 @@ export default function App() {
         decodeMsTotal = 0;
         frameBytesTotal = 0;
       }, 1000);
-      dispatch("Page.startScreencast", { format: captureFormat, quality: 65, everyNthFrame: browserCrtEnabled || presetPickerOpen ? 1 : 60 });
-    }).catch((reason) => reportError(`Browser capture listener failed: ${String(reason)}`));
+      dispatch("Page.startScreencast", { format: captureFormat, quality: 65, everyNthFrame: 1 });
+    }).catch((reason) => { if (!disposed) reportError(`Browser capture listener failed: ${String(reason)}`); });
     return () => {
       disposed = true; window.clearInterval(fpsTimer); dispatch("Page.stopScreencast", {}); unlisten?.();
     };
@@ -1604,7 +1602,7 @@ export default function App() {
           browserTextureStreamStatus={!import.meta.env.DEV ? undefined
             : activeTextureFailure ? `TextureStream unavailable. Using CDP screencast. ${activeTextureFailure.reason}`
             : activeBrowser?.page === "web" && activeBrowser.status === "running" && !canUseTextureStream
-              ? "TextureStream requires the experimental Windows dev launcher." : undefined}
+              ? "TextureStream is unavailable in this session. Start the experiment with npm run tauri:dev." : undefined}
           onBrowserCaptureModeChange={import.meta.env.DEV ? (mode) => {
             setTextureFailure(null);
             setBrowserCaptureMode(mode);
