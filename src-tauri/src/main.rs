@@ -1474,9 +1474,11 @@ mod tests {
 #[tauri::command]
 fn ack_terminal_output(state: State<TerminalState>, session_id: SessionId) -> Result<(), String> {
     valid_session_id(&session_id)?;
-    let sender = state.0.lock().map_err(|_| "terminal state is unavailable")?
-        .get(&session_id).ok_or("terminal is not running")?.output_ack.clone();
-    sender.send(()).map_err(|_| "terminal output is not running".into())
+    if let Some(sender) = state.0.lock().map_err(|_| "terminal state is unavailable")?
+        .get(&session_id).map(|session| session.output_ack.clone()) {
+        let _ = sender.send(());
+    }
+    Ok(())
 }
 
 // Force rebuild
