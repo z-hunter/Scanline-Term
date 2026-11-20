@@ -6,7 +6,7 @@ use windows::core::{HSTRING, PWSTR};
 #[cfg(windows)]
 use windows::core::Interface;
 #[cfg(windows)]
-use webview2_com::{DocumentTitleChangedEventHandler, ExecuteScriptCompletedHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler, NewWindowRequestedEventHandler};
+use webview2_com::{ContainsFullScreenElementChangedEventHandler, DocumentTitleChangedEventHandler, ExecuteScriptCompletedHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler, NewWindowRequestedEventHandler};
 #[cfg(windows)]
 use crate::browser_texture_stream;
 
@@ -24,7 +24,7 @@ impl BrowserState {
 }
 
 #[derive(Default)]
-pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(windows)] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32 }
+pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(windows)] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32, fullscreen: bool }
 
 #[cfg(windows)]
 #[derive(Clone, Copy)]
@@ -56,6 +56,19 @@ impl BrowserState {
 #[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserBounds { pub x: f64, pub y: f64, pub width: f64, pub height: f64 }
+
+fn fit_browser_bounds(viewport: &BrowserBounds, window: &BrowserBounds) -> BrowserBounds {
+    if viewport.width <= 0.0 || viewport.height <= 0.0 || window.width <= 0.0 || window.height <= 0.0 {
+        return window.clone();
+    }
+    let ratio = viewport.width / viewport.height;
+    let (width, height) = if window.width / window.height > ratio {
+        (window.height * ratio, window.height)
+    } else {
+        (window.width, window.width / ratio)
+    };
+    BrowserBounds { x: window.x + (window.width - width) / 2.0, y: window.y + (window.height - height) / 2.0, width, height }
+}
 
 #[cfg(windows)]
 fn native_browser_rect(bounds: Option<&BrowserBounds>, scale: f64) -> (i32, i32, u32, u32) {
@@ -142,6 +155,31 @@ fn browser_color_value(value: &str) -> Option<String> {
 }
 
 #[cfg(windows)]
+fn install_browser_fullscreen_handler(app: &tauri::AppHandle, session_id: &str, core: &ICoreWebView2) -> Result<(), String> {
+    let app = app.clone();
+    let id = session_id.to_owned();
+    let handler = ContainsFullScreenElementChangedEventHandler::create(Box::new(move |webview, _| {
+        if let Some(webview) = webview {
+            let mut contains_fullscreen = windows::core::BOOL::default();
+            unsafe { webview.ContainsFullScreenElement(&mut contains_fullscreen)?; }
+            let active = app.state::<BrowserState>().0.lock().is_ok_and(|mut state| {
+                if state.active.as_deref() != Some(&id) { return false; }
+                state.fullscreen = contains_fullscreen.as_bool();
+                true
+            });
+            if active {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_fullscreen(contains_fullscreen.as_bool());
+                }
+            }
+        }
+        Ok(())
+    }));
+    let mut token = 0;
+    unsafe { core.add_ContainsFullScreenElementChanged(&handler, &mut token) }.map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
 fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: NativeBrowserTab, initial_url: &str, script: &str, screencast_active: Arc<AtomicBool>) -> Result<(), String> {
     let app = app.clone();
     let app_for_dispatch = app.clone();
@@ -151,6 +189,7 @@ fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: Nat
     browser_texture_stream::with_main_webview(&app_for_dispatch, move |_, _| unsafe {
         let mut raw = tab.core as *mut std::ffi::c_void;
         let Some(core) = ICoreWebView2::from_raw_borrowed(&mut raw) else { return Err("native browser core is unavailable".to_owned()); };
+        install_browser_fullscreen_handler(&app, &id, core)?;
 
         let nav_app = app.clone();
         let nav_id = id.clone();
@@ -286,6 +325,19 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
             .on_document_title_changed(move |_, title| { if let Some((_, raw_color)) = title.rsplit_once('\u{2063}') { if let Some(color) = browser_color_value(raw_color) { let _ = app_for_title.emit("browser-color", serde_json::json!({ "sessionId": id, "background": color })); return; } } let _ = app_for_title.emit("browser-title", serde_json::json!({ "sessionId": id, "title": title })); }),
         LogicalPosition::new(0.0, 0.0), LogicalSize::new(1.0, 1.0)
     ).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        let fullscreen_app = app.clone();
+        let fullscreen_id = session_id.clone();
+        browser.with_webview(move |platform| unsafe {
+            match platform.controller().CoreWebView2() {
+                Ok(core) => if let Err(error) = install_browser_fullscreen_handler(&fullscreen_app, &fullscreen_id, &core) {
+                    trace(&fullscreen_app, "fullscreen-handler-failed", &fullscreen_id, error);
+                },
+                Err(error) => trace(&fullscreen_app, "fullscreen-handler-failed", &fullscreen_id, error.to_string()),
+            }
+        }).map_err(|error| error.to_string())?;
+    }
     let event_active = screencast_active.clone();
     let app_for_frames = app.clone();
     let frame_session_id = session_id.clone();
@@ -434,16 +486,33 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
 pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
+    let window_bounds = app.get_webview_window("main").and_then(|window| {
+        let scale = window.scale_factor().ok()?;
+        let size = window.inner_size().ok()?;
+        Some(BrowserBounds { x: 0.0, y: 0.0, width: f64::from(size.width) / scale, height: f64::from(size.height) / scale })
+    });
     #[cfg(windows)]
     let native_scale = app.get_webview_window("main").and_then(|window| window.scale_factor().ok()).unwrap_or(1.0);
-    let (return_to_terminal, native_ops) = {
+    let (return_to_terminal, restore_fullscreen, native_ops) = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         let return_to_terminal = state.active.is_some() && session_id.is_none();
         let became_active = state.active != session_id;
+        let restore_fullscreen = became_active && state.fullscreen;
+        if restore_fullscreen { state.fullscreen = false; }
         state.active = session_id.clone(); state.bounds = bounds.clone();
         state.visibility_mode = if session_id.is_some() { visibility_mode.unwrap_or_else(|| if bounds.as_ref().is_some_and(|b| b.x < 0.0 || b.y < 0.0) { 2 } else { 1 }) } else { 0 };
+        let mut fullscreen_rect = if state.fullscreen {
+            window_bounds.as_ref().and_then(|window| bounds.as_ref().or(state.bounds.as_ref()).map(|viewport| fit_browser_bounds(viewport, window)))
+        } else { None };
+        if state.visibility_mode == 2 {
+            if let (Some(rect), Some(viewport)) = (fullscreen_rect.as_mut(), bounds.as_ref().or(state.bounds.as_ref())) {
+                rect.x = viewport.x;
+                rect.y = viewport.y;
+            }
+        }
+        let active_bounds = fullscreen_rect.as_ref().or(bounds.as_ref());
         for (id, browser) in state.webviews.iter() {
-            if let Some(rect) = &bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
+            if let Some(rect) = active_bounds { browser.set_bounds(tauri::Rect { position: LogicalPosition::new(rect.x, rect.y).into(), size: LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)).into() }).map_err(|e| e.to_string())?; }
             if Some(id) == session_id.as_ref() {
                 browser.show().map_err(|e| e.to_string())?; trace(&app, "show", id, bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
                 if became_active { let _ = browser.set_focus(); }
@@ -451,15 +520,18 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         }
         #[cfg(windows)]
         let native_ops = state.native_tabs.iter().map(|(id, _tab)| {
-            let rect = bounds.as_ref().or(state.bounds.as_ref());
+            let rect = active_bounds.or(state.bounds.as_ref());
             let mode = if Some(id) == session_id.as_ref() { state.visibility_mode } else { 0 };
             let (x, y, width, height) = native_browser_rect(rect, native_scale);
             (id.clone(), x, y, width, height, mode)
         }).collect::<Vec<_>>();
         #[cfg(not(windows))]
         let native_ops: Vec<(String, i32, i32, u32, u32, i32)> = Vec::new();
-        (return_to_terminal, native_ops)
+        (return_to_terminal, restore_fullscreen, native_ops)
     };
+    if restore_fullscreen {
+        if let Some(window) = app.get_webview_window("main") { let _ = window.set_fullscreen(false); }
+    }
     #[cfg(not(windows))]
     let _ = native_ops;
     #[cfg(windows)]
@@ -524,7 +596,16 @@ pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url};
+    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url, fit_browser_bounds, BrowserBounds};
+
+    #[test]
+    fn fullscreen_bounds_preserve_form_factor_and_center_in_window() {
+        let window = BrowserBounds { x: 0.0, y: 0.0, width: 1920.0, height: 1080.0 };
+        let four_three = fit_browser_bounds(&BrowserBounds { x: 50.0, y: 20.0, width: 800.0, height: 600.0 }, &window);
+        assert_eq!((four_three.x, four_three.y, four_three.width, four_three.height), (240.0, 0.0, 1440.0, 1080.0));
+        let eight_five = fit_browser_bounds(&BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 500.0 }, &window);
+        assert_eq!((eight_five.x, eight_five.y, eight_five.width, eight_five.height), (96.0, 0.0, 1728.0, 1080.0));
+    }
 
     #[test]
     fn accepts_only_http_urls() {
