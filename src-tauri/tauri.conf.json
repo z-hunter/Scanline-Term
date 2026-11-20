@@ -5,8 +5,8 @@
   "version": "0.7.3",
   "identifier": "com.zhunter.scanlineterm",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-mcp.ps1",
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/browser-texture-stream/build.ps1 && npm run dev",
+    "beforeBuildCommand": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/browser-texture-stream/build.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-mcp.ps1",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -32,6 +32,7 @@
     "icon": ["icons/icon.ico", "icons/128x128@2x.png", "icons/icon.png"],
     "resources": {
       "resources/conpty/": "conpty/",
+      "resources/browser-texture-stream/": "",
       "resources/palettes/": "palettes/",
       "resources/presets/": "presets/",
       "resources/fonts/": "fonts/",

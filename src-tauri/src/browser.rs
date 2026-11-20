@@ -3,11 +3,11 @@ use std::{collections::HashMap, path::Path, sync::{atomic::{AtomicBool, Ordering
 use tauri::{webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
 use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2, take_pwstr};
 use windows::core::{HSTRING, PWSTR};
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 use windows::core::Interface;
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 use webview2_com::{DocumentTitleChangedEventHandler, ExecuteScriptCompletedHandler, NavigationCompletedEventHandler, NavigationStartingEventHandler, NewWindowRequestedEventHandler};
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 use crate::browser_texture_stream;
 
 type BrowserId = String;
@@ -24,13 +24,13 @@ impl BrowserState {
 }
 
 #[derive(Default)]
-pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(all(windows, debug_assertions))] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32 }
+pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(windows)] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32 }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 #[derive(Clone, Copy)]
 struct NativeBrowserTab { handle: u64, core: usize, controller: usize }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 impl BrowserState {
     pub fn bounds_handle_if_current(&self, session_id: &str, visibility_mode: i32) -> Result<Option<u64>, String> {
         let store = self.0.lock().map_err(|_| "browser state is unavailable")?;
@@ -49,7 +49,6 @@ impl BrowserState {
 
     pub fn texture_stream_available(&self, session_id: &str) -> bool {
         valid_id(session_id).is_ok()
-            && browser_texture_stream::browser_tab_enabled()
             && self.0.lock().is_ok_and(|store| store.native_tabs.contains_key(session_id))
     }
 }
@@ -58,7 +57,7 @@ impl BrowserState {
 #[serde(rename_all = "camelCase")]
 pub struct BrowserBounds { pub x: f64, pub y: f64, pub width: f64, pub height: f64 }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 fn native_browser_rect(bounds: Option<&BrowserBounds>, scale: f64) -> (i32, i32, u32, u32) {
     let bounds = bounds.cloned().unwrap_or(BrowserBounds { x: 0.0, y: 0.0, width: 1280.0, height: 720.0 });
     ((bounds.x * scale).round() as i32, (bounds.y * scale).round() as i32, (bounds.width * scale).ceil().max(2.0) as u32, (bounds.height * scale).ceil().max(2.0) as u32)
@@ -142,7 +141,7 @@ fn browser_color_value(value: &str) -> Option<String> {
     }
 }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: NativeBrowserTab, initial_url: &str, script: &str, screencast_active: Arc<AtomicBool>) -> Result<(), String> {
     let app = app.clone();
     let app_for_dispatch = app.clone();
@@ -247,8 +246,8 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
     let navigation_script = NAVIGATION_SCRIPT.replace("__SCANLINE_SHORTCUT_URL__", &format!("scanline-term://shortcut/{session_id}/"));
     let screencast_active = Arc::new(AtomicBool::new(false));
     let store_session_id = session_id.clone();
-    #[cfg(all(windows, debug_assertions))]
-    if browser_texture_stream::browser_tab_enabled() {
+    #[cfg(windows)]
+    if browser_texture_stream::browser_tab_enabled(&app) {
         let native_tab = (|| -> Result<NativeBrowserTab, String> {
             let hwnd = window.hwnd().map_err(|error| error.to_string())?.0 as isize;
             let (size, active) = { let store = state.0.lock().map_err(|_| "browser state is unavailable")?; (store.bounds.clone(), store.active.as_deref() == Some(&session_id)) };
@@ -332,7 +331,7 @@ pub async fn create_browser(app: tauri::AppHandle, session_id: BrowserId, url: O
         .await.map_err(|error| error.to_string())?
 }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 #[tauri::command]
 pub fn browser_texture_stream_available(state: State<BrowserState>, session_id: BrowserId) -> bool {
     state.texture_stream_available(&session_id)
@@ -342,9 +341,9 @@ pub fn browser_texture_stream_available(state: State<BrowserState>, session_id: 
 pub async fn navigate_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId, url: String) -> Result<(), String> {
     valid_id(&session_id)?; let url = browser_target_url(&url)?;
     trace(&app, "navigate", &session_id, url.as_str());
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     let native = { state.0.lock().map_err(|_| "browser state is unavailable")?.native_tabs.get(&session_id).copied() };
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     if native.is_some() {
         let app = app.clone();
         let state_app = app.clone();
@@ -366,7 +365,10 @@ pub async fn navigate_browser(app: tauri::AppHandle, state: State<'_, BrowserSta
 #[tauri::command]
 pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId, method: String, params: serde_json::Value) -> Result<(), String> {
     valid_id(&session_id)?;
-    if !matches!(method.as_str(), "Page.startScreencast" | "Page.stopScreencast" | "Page.screencastFrameAck" | "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent") { return Err("unsupported browser experiment command".into()); }
+    if !matches!(method.as_str(), "Input.dispatchMouseEvent" | "Input.dispatchKeyEvent"
+        // Legacy CDP capture. Keep input routing when changing the capture transport.
+        /* | "Page.startScreencast" | "Page.stopScreencast" | "Page.screencastFrameAck" */
+    ) { return Err("unsupported browser DevTools command".into()); }
     let params = serde_json::to_string(&params).map_err(|error| error.to_string())?;
     let capture = method == "Page.startScreencast";
     let native_exists = {
@@ -394,13 +396,13 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
                 if let Err(error) = result { if capture { let _ = app_for_error.emit("browser-experiment-frame", serde_json::json!({ "sessionId": id_for_error, "error": error.to_string() })); } }
             }).map_err(|error| error.to_string());
         }
-        #[cfg(all(windows, debug_assertions))]
+        #[cfg(windows)]
         { browser_state.native_tabs.contains_key(&session_id) }
-        #[cfg(not(all(windows, debug_assertions)))]
+        #[cfg(not(windows))]
         { false }
     };
     if !native_exists { return Err("browser is not running".into()); }
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     {
         let app_for_callback = app.clone();
         let app_for_state = app.clone();
@@ -422,7 +424,7 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
             core.CallDevToolsProtocolMethod(&method, &params, &callback).map_err(|error| error.to_string())
         })).await.map_err(|error| error.to_string())??
     }
-    #[cfg(not(all(windows, debug_assertions)))]
+    #[cfg(not(windows))]
     {
         Err("browser is not running".into())
     }
@@ -432,7 +434,7 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
 pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     let native_scale = app.get_webview_window("main").and_then(|window| window.scale_factor().ok()).unwrap_or(1.0);
     let (return_to_terminal, native_ops) = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
@@ -447,20 +449,20 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
                 if became_active { let _ = browser.set_focus(); }
             } else { let _ = browser.hide(); }
         }
-        #[cfg(all(windows, debug_assertions))]
+        #[cfg(windows)]
         let native_ops = state.native_tabs.iter().map(|(id, _tab)| {
             let rect = bounds.as_ref().or(state.bounds.as_ref());
             let mode = if Some(id) == session_id.as_ref() { state.visibility_mode } else { 0 };
             let (x, y, width, height) = native_browser_rect(rect, native_scale);
             (id.clone(), x, y, width, height, mode)
         }).collect::<Vec<_>>();
-        #[cfg(not(all(windows, debug_assertions)))]
+        #[cfg(not(windows))]
         let native_ops: Vec<(String, i32, i32, u32, u32, i32)> = Vec::new();
         (return_to_terminal, native_ops)
     };
-    #[cfg(not(all(windows, debug_assertions)))]
+    #[cfg(not(windows))]
     let _ = native_ops;
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     if !native_ops.is_empty() {
         let app_for_bounds = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -476,7 +478,7 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
     Ok(())
 }
 
-#[cfg(all(windows, debug_assertions))]
+#[cfg(windows)]
 pub fn refresh_native_browser_bounds(app: &tauri::AppHandle) {
     let Some((bounds, active, mode, tabs)) = app.try_state::<BrowserState>().and_then(|state| {
         state.0.lock().ok().map(|store| (store.bounds.clone(), store.active.clone(), store.visibility_mode, store.native_tabs.keys().cloned().collect::<Vec<_>>()))
@@ -494,10 +496,10 @@ pub fn refresh_native_browser_bounds(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId) -> Result<(), String> {
-    #[cfg(not(all(windows, debug_assertions)))]
+    #[cfg(not(windows))]
     let _ = app;
     valid_id(&session_id)?;
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     let native = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         if state.active.as_deref() == Some(&session_id) { state.active = None; }
@@ -505,12 +507,12 @@ pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>
         if let Some(browser) = state.webviews.remove(&session_id) { browser.close().map_err(|e| e.to_string())?; }
         state.native_tabs.remove(&session_id)
     };
-    #[cfg(all(windows, debug_assertions))]
+    #[cfg(windows)]
     if let Some(tab) = native {
         tauri::async_runtime::spawn_blocking(move || browser_texture_stream::close_browser_tab(&app, tab.handle, tab.core, tab.controller))
             .await.map_err(|error| error.to_string())??;
     }
-    #[cfg(not(all(windows, debug_assertions)))]
+    #[cfg(not(windows))]
     {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         if state.active.as_deref() == Some(&session_id) { state.active = None; }

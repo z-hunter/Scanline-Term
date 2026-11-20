@@ -201,7 +201,7 @@ describe('SettingsPanel font-size editing flow', () => {
     container.remove();
   });
 
-  it('shows browser capture controls and metrics only with CRT on', async () => {
+  it('shows browser metrics only with CRT on and leaves a single CRT switch', async () => {
     const container = document.createElement('div'); document.body.appendChild(container);
     const root = createRoot(container);
     const props = {
@@ -210,21 +210,15 @@ describe('SettingsPanel font-size editing flow', () => {
       browserCrtEnabled: true,
       browserFps: 30,
       browserCaptureMetrics: 'STREAM 33 ms',
-      browserCaptureFormat: 'jpeg' as const,
-      onBrowserCaptureFormatChange: vi.fn(),
       stored: { ...defaultProps.stored, crt: { ...DEFAULT_CRT_SETTINGS, crtEmulation: true } },
     };
     await act(async () => { root.render(createElement(SettingsPanel, props)); });
     expect(container.querySelector('header')?.textContent).toContain('FPS: 30');
     expect(container.querySelector('header')?.textContent).toContain('STREAM 33 ms');
 
-    const browserCRT = container.querySelector('.browser-crt-settings')!;
-    const controls = Array.from(browserCRT.children);
-    expect(controls[0].querySelector('.svs-switch-label')?.textContent).toBe('CRT Emulation');
-    expect(controls[1].querySelector('.svs-switch-label')?.textContent).toBe('Lossless capture (slow)');
-    expect(controls[2].classList.contains('crt-section')).toBe(true);
-    await act(async () => { controls[1].querySelector<HTMLInputElement>('input')?.click(); });
-    expect(props.onBrowserCaptureFormatChange).toHaveBeenCalledWith('png');
+    const browserCrt = container.querySelector('[data-section-id="crt"]');
+    expect(browserCrt?.querySelectorAll('[data-testid="control-crtEmulation"]')).toHaveLength(1);
+    expect(browserCrt?.querySelector('[aria-label="Browser frame capture"]')).toBeNull();
 
     await act(async () => {
       root.render(createElement(SettingsPanel, {
@@ -232,7 +226,6 @@ describe('SettingsPanel font-size editing flow', () => {
         stored: { ...props.stored, crt: { ...props.stored.crt, crtEmulation: false } },
       }));
     });
-    expect(container.querySelector('.browser-crt-settings')?.textContent).not.toContain('Lossless capture (slow)');
     expect(container.querySelector('header')?.textContent).not.toMatch(/FPS:|STREAM/);
 
     await act(async () => { root.unmount(); });

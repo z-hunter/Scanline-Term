@@ -218,13 +218,11 @@ Each browser tab owns a separate WebView2 controller. Hiding a browser child doe
 
 WebView2 does not preserve a held `Menu` modifier across the browser → terminal boundary. After that transition, the user must release and press Menu again before another Menu shortcut; do not synthesize modifier key state to hide this limitation.
 
-### Experimental Browser CRT
+### Browser CRT
 
-The Windows dev [TextureStream benchmark](./browser-texture-stream-experiment.md) compares the current browser CRT path with direct video upload into the same SVS effects. The TextureStream source is a separate composition-hosted benchmark page. Ordinary browser tabs use the browser capture setting.
+The **CRT Emulation** switch starts TextureStream on the active browser tab. The Settings panel reports received frames per second and frame dimensions. Gallery uses the latest cached browser preview when available. The frontend routes canvas pointer and keyboard events through the WebView2 DevTools Input domain, mapping screen coordinates through the CRT transform into the native browser viewport.
 
-With the [experimental Windows launcher](../scripts/browser-texture-stream/README.md), the browser CRT **Frame capture** control selects CDP screencast or TextureStream for real tabs. Switching keeps the current document and continues routing input to the tab. The CDP image format setting applies when CDP is active.
-
-The Browser settings section keeps the form-factor selector. The CRT section is always visible for browser tabs and its CRT Emulation switch defaults off for each new tab. When enabled, Rust starts a WebView2 `Page.startScreencast` stream and forwards `Page.screencastFrame` events to the frontend. The frontend decodes and displays a frame, then sends `Page.screencastFrameAck` to release the next frame. It caches a downscaled copy for that browser tab's Gallery card. The Settings panel reports the number of decoded browser frames in the last second and, in development builds, stream interval, decode time, frame size and dimensions. After the first frame, the native child remains visible to WebView2 but moves outside the host window, because hidden WebView2 instances throttle rendering. Canvas mouse, wheel, and keyboard events are routed back through the DevTools `Input` domain. Browser pointer coordinates map from the terminal canvas through the CRT transform, then scale into the outer frame dimensions used for the native WebView bounds. Browser CRT presets are transient; enabling CRT exposes Presets. Preset selection uses the shared preset catalog and `Menu+P` navigator.
+Turning CRT off stops the stream and shows the native WebView. Direct display also remains available if the WebView2 runtime cannot start TextureStream. Browser CRT presets are transient, and the same tab can preview a preset from the shared catalog with `Menu+P`.
 
 ### Native context menu
 

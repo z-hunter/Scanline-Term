@@ -15,7 +15,7 @@ Codex CLI is not required for the terminal. Install it separately and add it to 
 
 1. Download `Scanline-Term-<version>-portable-x64.zip` from the release assets.
 2. Extract the entire archive to a writable folder, for example `C:\Tools\Scanline-Term`.
-3. Keep `sterm.exe` beside the `conpty`, `fonts`, `presets`, and `lua-examples` folders, plus `window-icon.ico`. In particular, `conpty\x64` is required for terminal sessions; these resource paths are relative to the executable.
+3. Keep `sterm.exe` beside the `conpty`, `fonts`, `presets`, and `lua-examples` folders, plus `window-icon.ico` and `browser_texture_stream.dll`. Terminal sessions use `conpty\x64`, and browser CRT display uses the capture DLL.
 4. Run `sterm.exe`.
 
 The Windows V1 portable packaging script adds the config layout to the ZIP: `sterm.lua` beside `sterm.exe`, with the `editors` and `modules` directories beside it. The entry registers the shared module but leaves the Neovim and Helix `sterm.use` blocks commented out; uncomment the binding you want to activate. Custom shells can be declared in this user-authored file, while the selected default shell is stored in the GUI-managed settings block by stable profile ID. Existing portable config files are preserved during startup seeding; upgrade preservation has not been separately release-validated. The user reports manually enabling and testing the Neovim and Helix bindings in installed 0.6.0 and confirming they work. The packaged Neovim Caps/MCP smoke is scoped separately from a full focus/tab/reload/error matrix.

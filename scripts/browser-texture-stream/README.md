@@ -1,27 +1,7 @@
-# Browser TextureStream experiment
+# Browser TextureStream
 
-On this branch, `npm run tauri:dev` and `npm run tauri:dev:texture-stream` start the same experimental Windows dev app. Stop an existing dev instance before restarting so WebView2 starts with the feature enabled. The launcher builds the native DLL with the Visual Studio C++ tools and Windows SDK. It uses `WEBVIEW2_SDK_DIR`, the sibling PoC SDK, or the pinned prerelease SDK restored from NuGet. `npm run tauri:dev:wry` starts the regular Wry host.
+`npm run tauri:dev` and `npm run tauri:build` build the Windows capture companion automatically. The build requires the x64 Visual Studio C++ tools and Windows SDK. It restores the pinned WebView2 SDK from NuGet, or uses an absolute `WEBVIEW2_SDK_DIR` supplied by the developer. The MSI and portable ZIP place `browser_texture_stream.dll` beside `sterm.exe`.
 
-In a web tab, open **Settings → CRT**, enable **CRT Emulation**, and select **Frame capture → TextureStream (experimental)**. The selection applies to browser tabs in the current app session. CDP screencast starts as the default. If TextureStream fails, the panel reports the fallback and the tab resumes CDP capture.
+With CRT enabled, the active browser tab uses TextureStream. With CRT disabled, the same WebView displays directly and capture stops. On a runtime without TextureStream support, the tab remains available in native display mode. Gallery uses the most recent captured preview when available.
 
-With CRT disabled, the tab displays its native WebView directly. Capture runs when CRT is enabled or while previewing a CRT preset. Gallery uses the most recent captured preview when available.
-
-The experimental launcher uses one WebView2 CompositionController per browser tab. CDP, TextureStream, navigation, and input all target that browser instance, so changing capture modes preserves the page. Native display uses the same controller with CRT off. The WGC stream only runs for the active CRT tab. The existing Wry browser host is available when the companion or feature is unavailable.
-
-The pinned SVS can composite the video through its existing overlay. For the direct WebGL path used in the benchmark, point `SCANLINE_SVS_EXPERIMENT` to an SVS worktree with `VirtualScreenRenderer.renderVideo` before running the launcher.
-
-## Standalone benchmark bridge
-
-The benchmark API also supports an isolated composition-hosted WebView2 loading the local benchmark page. That entry point accepts only `http://localhost:5173/texture-stream-benchmark.html`. The normal tab entry point uses a registered tab handle.
-
-Build from an x64 Visual Studio 2022 developer prompt, with `WEBVIEW2_SDK_DIR` set to a WebView2 SDK folder containing `build/native/include/WebView2Experimental.h`:
-
-```powershell
-$env:WEBVIEW2_SDK_DIR = 'C:\path\to\WebView2-SDK'
-cmd /c scripts\browser-texture-stream\build.cmd
-$env:SCANLINE_BROWSER_TEXTURE_STREAM_DLL = Join-Path $env:TEMP 'ScanlineTerm\browser-texture-stream\browser_texture_stream.dll'
-$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--enable-features=msWebView2TextureStream'
-npm run tauri:dev:wry
-```
-
-The API is experimental and runtime-gated by `--enable-features=msWebView2TextureStream`. The launcher and example scope the flag to the launched dev process. The source uses WGC `CreateFromVisual` on Windows 10 1809 and later.
+The companion captures the tab's visual with Windows Graphics Capture. The main WebView receives a MediaStream and sends its frames through SVS. See the [historical A/B report](../../docs/browser-texture-stream-experiment.md) for the original experiment and reproduction instructions.

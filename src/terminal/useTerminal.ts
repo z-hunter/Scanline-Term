@@ -484,18 +484,17 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     );
     return creation;
   }, []);
-  const openBrowser = useCallback((url?: string, benchmark?: { id: string; settings: PresetSettings; virtual: boolean }) => {
+  const openBrowser = useCallback((url?: string) => {
     if (!isTauri()) return;
-    const id = benchmark?.id ?? crypto.randomUUID();
+    const id = crypto.randomUUID();
     const ordinal = nextOrdinal.current++;
-    const settings = clonePresetSettings(benchmark?.settings ?? defaultPresetRef.current);
-    if (!benchmark) settings.crt.crtEmulation = false;
-    const name = benchmark ? 'benchmark-default' : defaultPresetNameRef.current;
+    const settings = clonePresetSettings(defaultPresetRef.current);
+    settings.crt.crtEmulation = false;
+    const name = defaultPresetNameRef.current;
     const preset: TabPresetState = { name, draftName: name, settings, dirty: false };
-    const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: url && !benchmark?.virtual ? 'starting' : 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
+    const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: url ? 'starting' : 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
     setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
-    if (benchmark?.virtual) return;
     void createBrowser(id, url).promise.then(() => {
       updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'running' } : current);
     }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, status: 'failed', title: `${current.ordinal}. Failed` } : current); onError(`Could not create browser: ${String(reason)}`); });

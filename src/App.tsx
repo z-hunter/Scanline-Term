@@ -32,7 +32,7 @@ import {
 import { useManagedSettings } from "./terminal/useManagedSettings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
-import { attachBrowserTextureStream, BENCHMARK_HEIGHT, BENCHMARK_URL, BENCHMARK_WIDTH, BrowserBenchmark, createBrowserTextureStreamReceiver, type BrowserVideoFrame } from "./crt/browser-benchmark";
+import { createBrowserTextureStreamReceiver, type BrowserVideoFrame } from "./crt/browser-benchmark";
 import { browserViewportPoint } from "./terminal/browser-coordinate";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
@@ -141,14 +141,10 @@ export default function App() {
   }));
   const [browserFps, setBrowserFps] = useState(0);
   const [browserCaptureMetrics, setBrowserCaptureMetrics] = useState("");
-  const [browserCaptureFormat, setBrowserCaptureFormat] = useState<"jpeg" | "png">("jpeg");
-  const [browserCaptureMode, setBrowserCaptureMode] = useState<"screencast" | "texture">("screencast");
-  const [textureReadyTabId, setTextureReadyTabId] = useState<string | null>(null);
+  const [textureSupport, setTextureSupport] = useState<{ id: string; available: boolean } | null>(null);
   const [textureFailure, setTextureFailure] = useState<{ id: string; reason: string } | null>(null);
   const [textureSize, setTextureSize] = useState<{ id: string; width: number; height: number } | null>(null);
   const browserVideo = useRef<BrowserVideoFrame | null>(null);
-  const [browserBenchmark, setBrowserBenchmark] = useState<BrowserBenchmark | null>(null);
-  const browserBenchmarkRef = useRef<BrowserBenchmark | null>(null);
   const [tabSpace, setTabSpace] = useState(36);
   const [measuredTerminalWidth, setMeasuredTerminalWidth] = useState(0);
   const lastUndisturbedWidth = useRef(0);
@@ -351,25 +347,32 @@ export default function App() {
     RESOLUTIONS.find((item) => item.id === activePreset.resolution) ?? RESOLUTIONS[1];
   const activeBrowser = terminal.tabs.find((tab): tab is BrowserTab => tab.id === terminal.activeTabId && tab.kind === "browser");
   const activeBrowserId = activeBrowser?.id;
-  const activeBenchmark = browserBenchmark?.id === activeBrowserId ? browserBenchmark : null;
-  const browserCrtEnabled = Boolean(activeBrowserId && activePreset.crt.crtEmulation);
-  const canUseTextureStream = Boolean(activeBrowserId && textureReadyTabId === activeBrowserId);
+  const browserCrtRequested = Boolean(activeBrowserId && activePreset.crt.crtEmulation);
+  const activeTextureSupport = textureSupport?.id === activeBrowserId ? textureSupport : null;
   const activeTextureFailure = textureFailure?.id === activeBrowserId ? textureFailure : null;
-  const textureRequested = browserCrtEnabled && browserCaptureMode === "texture" && canUseTextureStream && !activeTextureFailure && !activeBenchmark;
+  const canStreamBrowser = activeTextureSupport?.available && !activeTextureFailure;
+  const browserCrtEnabled = browserCrtRequested && Boolean(canStreamBrowser);
+  const textureRequested = Boolean(canStreamBrowser && (browserCrtRequested || presetPickerOpen));
   const streamSize = textureSize?.id === activeBrowserId ? textureSize : null;
 
   useEffect(() => {
-    if (!activeBrowserId || activeBrowser?.page !== "web" || activeBrowser.status !== "running" || !import.meta.env.DEV || !isTauri()) return;
+    if (!activeBrowserId || activeBrowser?.page !== "web" || activeBrowser.status !== "running" || !isTauri()) return;
     const webview = (window as Window & { chrome?: { webview?: { getTextureStream?: unknown } } }).chrome?.webview;
-    if (typeof webview?.getTextureStream !== "function") return;
+    if (typeof webview?.getTextureStream !== "function") {
+      setTextureSupport({ id: activeBrowserId, available: false });
+      return;
+    }
     let disposed = false;
-    void invoke<boolean>("browser_texture_stream_available", { sessionId: activeBrowserId }).then((available) => {
-      if (!disposed) setTextureReadyTabId(available ? activeBrowserId : null);
-    }).catch(() => {
-      if (!disposed) setTextureReadyTabId(null);
-    });
+    const update = (available: boolean) => {
+      if (!disposed) setTextureSupport({ id: activeBrowserId, available });
+    };
+    void invoke<boolean>("browser_texture_stream_available", { sessionId: activeBrowserId }).then(update, () => update(false));
     return () => { disposed = true; };
   }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status]);
+
+  useEffect(() => {
+    if (!browserCrtRequested && !presetPickerOpen) setTextureFailure(null);
+  }, [browserCrtRequested, presetPickerOpen]);
   const browserFormFactor = BROWSER_FORM_FACTORS.find((factor) => factor.id === (browserFormFactorOverride ?? stored.browserFormFactor)) ?? BROWSER_FORM_FACTORS[0];
   const physicalWindow = activeBrowser ? browserFormFactor.id === "physical" : resolution.id === "physical";
   const screenRatio = activeBrowser
@@ -686,17 +689,9 @@ export default function App() {
     }
     setStored((current) => ({ ...next, resolution: current.resolution, crt: current.crt }));
   }, [activePreset, setStored, stored, terminal]);
-  const recordBrowserBenchmarkFrame = useCallback((output: HTMLCanvasElement, now: number, changed: boolean) => {
-    const current = terminalRef.current;
-    if (TERMINAL_GEOMETRY_DIAGNOSTICS) current.recordFirstDraw(output, now, changed);
-    const benchmark = browserBenchmarkRef.current;
-    if (benchmark && benchmark.id === current.activeTabId) benchmark.submitted(output, current.renderer.compositedCanvas);
+  const recordFirstDraw = useCallback((output: HTMLCanvasElement, now: number, changed: boolean) => {
+    terminalRef.current.recordFirstDraw(output, now, changed);
   }, []);
-  const reportCrtError = useCallback((message: string) => {
-    const benchmark = browserBenchmarkRef.current;
-    if (benchmark && benchmark.id === terminalRef.current.activeTabId) benchmark.error = message;
-    reportError(message);
-  }, [reportError]);
   const onBrowserVideoError = useCallback((reason: string) => {
     const id = terminalRef.current.activeTabId;
     if (id) setTextureFailure({ id, reason });
@@ -705,54 +700,13 @@ export default function App() {
     settingsRef: terminal.settingsRef,
     resolution,
     renderer: terminal.renderer,
-    onError: reportCrtError,
+    onError: reportError,
     onResizeSource: terminal.resizeSource,
-    onFrame: import.meta.env.DEV || TERMINAL_GEOMETRY_DIAGNOSTICS ? recordBrowserBenchmarkFrame : undefined,
+    onFrame: TERMINAL_GEOMETRY_DIAGNOSTICS ? recordFirstDraw : undefined,
     enabled: (!activeBrowser || browserCrtEnabled || presetPickerOpen) && !galleryOpen,
-    browserVideo: activeBenchmark?.video ?? (textureRequested ? browserVideo : undefined),
+    browserVideo: textureRequested ? browserVideo : undefined,
     onBrowserVideoError,
   });
-  const { openBrowser, closeSession } = terminal;
-  useEffect(() => {
-    if (!import.meta.env.DEV || import.meta.env.VITE_SCANLINE_BROWSER_BENCHMARK !== "1" || !isTauri()) return;
-    const close = async () => {
-      const benchmark = browserBenchmarkRef.current;
-      if (!benchmark) return;
-      browserBenchmarkRef.current = null;
-      setBrowserBenchmark(null);
-      await closeSession(benchmark.id, true);
-      if (benchmark.mode === "texture") await invoke("stop_browser_texture_stream", { streamId: benchmark.id });
-    };
-    window.__scanlineBrowserBenchmark = {
-      async open({ mode, url }) {
-        if ((mode !== "jpeg" && mode !== "texture") || url !== BENCHMARK_URL) throw new Error("Unsupported benchmark mode or URL");
-        if (browserBenchmarkRef.current) throw new Error("Close the current benchmark first");
-        const benchmark = new BrowserBenchmark(crypto.randomUUID(), mode);
-        const settings = clonePresetSettings(DEFAULT_PRESET_SETTINGS);
-        settings.crt.crtEmulation = true;
-        browserBenchmarkRef.current = benchmark;
-        setBrowserBenchmark(benchmark);
-        openBrowser(url, { id: benchmark.id, settings, virtual: mode === "texture" });
-        const deadline = performance.now() + 20_000;
-        while (!benchmark.hasFrame && !benchmark.error && performance.now() < deadline) {
-          if (browserBenchmarkRef.current !== benchmark) throw new Error("Benchmark closed");
-          await new Promise(resolve => window.setTimeout(resolve, 50));
-        }
-        if (benchmark.error || !benchmark.hasFrame) {
-          const reason = benchmark.error ?? "Timed out waiting for a browser frame submitted to SVS";
-          await close().catch(reportError);
-          throw new Error(reason);
-        }
-      },
-      read() {
-        const benchmark = browserBenchmarkRef.current;
-        if (!benchmark) throw new Error("No browser benchmark is running");
-        return benchmark.read();
-      },
-      close,
-    };
-    return () => { delete window.__scanlineBrowserBenchmark; };
-  }, [openBrowser, closeSession, reportError]);
   useEffect(() => {
     const frame = screenRef.current;
     if (!activeBrowser || !frame) return;
@@ -936,15 +890,15 @@ export default function App() {
     const update = () => {
       const currentRevision = ++revision;
       const rect = screenRef.current?.getBoundingClientRect();
-      const showBrowser = !galleryOpen && activeBrowser?.page === "web" && activeBenchmark?.mode !== "texture";
-      const keepRendererLive = (browserCrtEnabled || presetPickerOpen) && showBrowser;
-      // Keep the child offscreen from the first frame so it cannot cover CRT output; hiding it throttles WebView2 rendering.
+      const showBrowser = !galleryOpen && activeBrowser?.page === "web" && (!presetPickerOpen || textureRequested);
+      const keepRendererLive = textureRequested && showBrowser;
+      // Keep WebView2 visible offscreen so it continues to produce frames.
       const payload = {
         sessionId: showBrowser ? activeBrowserId : null,
         visibilityMode: showBrowser ? (keepRendererLive ? 2 : 1) : 0,
-        bounds: showBrowser && rect ? activeBenchmark
-          ? { x: -BENCHMARK_WIDTH, y: -BENCHMARK_HEIGHT, width: BENCHMARK_WIDTH / devicePixelRatio, height: BENCHMARK_HEIGHT / devicePixelRatio }
-          : { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height } : undefined,
+        bounds: showBrowser && rect
+          ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height }
+          : undefined,
       };
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
@@ -965,7 +919,7 @@ export default function App() {
     };
     const observer = new ResizeObserver(update); if (screenRef.current) observer.observe(screenRef.current); update();
     return () => { disposed = true; observer.disconnect(); };
-  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, activeBenchmark, browserCrtEnabled, galleryOpen, presetPickerOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize, textureRequested]);
+  }, [activeBrowserId, activeBrowser?.page, activeBrowser?.status, galleryOpen, presetPickerOpen, reportError, stored.tabPlacement, activePreset.resolution, screenRatio, settingsVisible, aiVisible, terminal.addressTabId, tabsHidden, windowSize, textureRequested]);
   useLayoutEffect(() => {
     if (!activeBrowser || activeBrowser.page !== "web" || (!browserCrtEnabled && !presetPickerOpen)) return;
     const cachedFrame = browserPreviewFramesRef.current.get(activeBrowser.id);
@@ -977,7 +931,7 @@ export default function App() {
   useEffect(() => {
     const canvas = outputRef.current;
     const browser = activeBrowser;
-    if (!canvas || !browser || browser.page !== "web" || galleryOpen || !isTauri() || (!browserCrtEnabled && !presetPickerOpen)) {
+    if (!canvas || !browser || browser.page !== "web" || galleryOpen || !isTauri() || !textureRequested) {
       setBrowserFps(0);
       setBrowserCaptureMetrics("");
       terminal.renderer?.setBrowserPreview(null);
@@ -989,11 +943,7 @@ export default function App() {
       browserPreviewTabId.current = browser.id;
     }
     if (browser.status !== "running") return;
-    if (activeBenchmark?.mode === "texture") {
-      setBrowserFps(0);
-      setBrowserCaptureMetrics("TextureStream · direct SVS video input");
-      return attachBrowserTextureStream(activeBenchmark, () => terminal.renderer.markDirty());
-    }
+    if (!streamSize) return;
     const cachePreview = (image: CanvasImageSource, sourceWidth: number, sourceHeight: number) => {
       if (sourceWidth < 1 || sourceHeight < 1) return;
       const preview = browserPreviewFramesRef.current.get(browser.id) ?? document.createElement("canvas");
@@ -1009,41 +959,41 @@ export default function App() {
       const profile = terminal.settingsRef.current;
       galleryFramesRef.current.set(browser.id, { canvas: preview, aspectRatio: sourceWidth / sourceHeight, showBezel: profile.crtEmulation && profile.showBezel });
     };
-    if (textureRequested && streamSize) {
-      let disposed = false;
-      setBrowserFps(0);
-      setBrowserCaptureMetrics("Starting TextureStream…");
-      const fail = (reason: string) => {
-        if (!disposed) setTextureFailure({ id: browser.id, reason });
-      };
-      const { receiver, cleanup } = createBrowserTextureStreamReceiver(fail);
-      const unsubscribe = receiver.onFrame(frame => {
-        browserVideo.current = frame;
-      });
-      void receiver.start({ sessionId: browser.id, width: streamSize.width, height: streamSize.height })
-        .catch(reason => fail(String(reason)));
-      let frameCount = 0;
-      const timer = window.setInterval(() => {
-        const { frames, width, height } = receiver.metrics;
-        setBrowserFps(frames - frameCount);
-        frameCount = frames;
-        const frame = browserVideo.current;
-        if (frame && frame.video.readyState >= frame.video.HAVE_CURRENT_DATA) {
-          setBrowserCaptureMetrics(`TextureStream @ ${width}×${height}`);
-          cachePreview(frame.video, width, height);
-        }
-      }, 1000);
-      return () => {
-        disposed = true;
-        window.clearInterval(timer);
-        const cachedFrame = browserPreviewFramesRef.current.get(browser.id);
-        if (cachedFrame && terminalRef.current.activeTabId === browser.id) terminal.renderer.setBrowserPreview(cachedFrame);
-        browserVideo.current = null;
-        unsubscribe();
-        cleanup();
-      };
-    }
-    const captureFormat = activeBenchmark ? "jpeg" : browserCaptureFormat;
+    let disposed = false;
+    setBrowserFps(0);
+    setBrowserCaptureMetrics("Starting TextureStream…");
+    const fail = (reason: string) => {
+      if (!disposed) setTextureFailure({ id: browser.id, reason });
+    };
+    const { receiver, cleanup } = createBrowserTextureStreamReceiver(fail);
+    const unsubscribe = receiver.onFrame(frame => {
+      browserVideo.current = frame;
+    });
+    void receiver.start({ sessionId: browser.id, width: streamSize.width, height: streamSize.height })
+      .catch(reason => fail(String(reason)));
+    let frameCount = 0;
+    const timer = window.setInterval(() => {
+      const { frames, width, height } = receiver.metrics;
+      setBrowserFps(frames - frameCount);
+      frameCount = frames;
+      const frame = browserVideo.current;
+      if (frame && frame.video.readyState >= frame.video.HAVE_CURRENT_DATA) {
+        setBrowserCaptureMetrics(`TextureStream @ ${width}×${height}`);
+        cachePreview(frame.video, width, height);
+      }
+    }, 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      const cachedFrame = browserPreviewFramesRef.current.get(browser.id);
+      if (cachedFrame && terminalRef.current.activeTabId === browser.id) terminal.renderer.setBrowserPreview(cachedFrame);
+      browserVideo.current = null;
+      unsubscribe();
+      cleanup();
+    };
+    /*
+     * Legacy CDP browser capture. TextureStream now owns the browser CRT path.
+    const captureFormat = "jpeg"; // The legacy switch also supported PNG.
     let disposed = false;
     let busy = false;
     let consecutiveCaptureFailures = 0;
@@ -1068,7 +1018,6 @@ export default function App() {
     const onFrame = (event: { payload: { sessionId: string; screencastSessionId?: number; data?: string; timestamp?: number | null; error?: string } }) => {
       if (disposed || event.payload.sessionId !== browser.id) return;
       if (event.payload.error) {
-        if (activeBenchmark) activeBenchmark.error = event.payload.error;
         reportError(`Browser screencast failed: ${event.payload.error}`);
         return;
       }
@@ -1093,7 +1042,6 @@ export default function App() {
         frameHeight = image.naturalHeight;
         terminal.renderer?.setBrowserPreview(image);
         browserPreviewTabId.current = browser.id;
-        activeBenchmark?.frame(frameWidth, frameHeight, event.payload.timestamp == null ? undefined : event.payload.timestamp * 1000);
         cachePreview(image, frameWidth, frameHeight);
         dispatch("Page.screencastFrameAck", { sessionId: event.payload.screencastSessionId });
       };
@@ -1123,11 +1071,12 @@ export default function App() {
     return () => {
       disposed = true; window.clearInterval(fpsTimer); dispatch("Page.stopScreencast", {}); unlisten?.();
     };
-  }, [activeBrowser?.id, activeBrowser?.page, activeBrowser?.status, activeBenchmark, browserCaptureFormat, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, streamSize, terminal.renderer, terminal.settingsRef, textureRequested]);
+    */
+  }, [activeBrowser?.id, activeBrowser?.page, activeBrowser?.status, galleryOpen, outputRef, streamSize, terminal.renderer, terminal.settingsRef, textureRequested]);
   useEffect(() => {
     const canvas = outputRef.current;
     if (!canvas || !activeBrowserId || activeBrowser?.page !== "web" || galleryOpen || !isTauri()
-      || (!browserCrtEnabled && !presetPickerOpen) || activeBenchmark?.mode === "texture") return;
+      || !textureRequested) return;
     let disposed = false;
     const dispatch = (method: string, params: Record<string, unknown>) => {
       void invoke("browser_devtools", { sessionId: activeBrowserId, method, params }).catch(reason => {
@@ -1168,7 +1117,7 @@ export default function App() {
       disposed = true;
       canvas.removeEventListener("mousedown", mouse, true); canvas.removeEventListener("mouseup", mouse, true); canvas.removeEventListener("mousemove", mouse, true); canvas.removeEventListener("wheel", wheel, true); canvas.removeEventListener("contextmenu", contextMenu, true); canvas.removeEventListener("keydown", key, true); canvas.removeEventListener("keyup", key, true);
     };
-  }, [activeBrowserId, activeBrowser?.page, activeBenchmark, browserCrtEnabled, galleryOpen, outputRef, presetPickerOpen, reportError, terminal.renderer, terminal.settingsRef]);
+  }, [activeBrowserId, activeBrowser?.page, galleryOpen, outputRef, reportError, terminal.renderer, terminal.settingsRef, textureRequested]);
   useEffect(() => {
     if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
     const frame = requestAnimationFrame(() => {
@@ -1597,18 +1546,9 @@ export default function App() {
           fps={fps}
           browserFps={browserFps}
           browserCaptureMetrics={browserCaptureMetrics}
-          browserCaptureMode={textureRequested ? "texture" : "screencast"}
-          browserTextureStreamAvailable={canUseTextureStream}
-          browserTextureStreamStatus={!import.meta.env.DEV ? undefined
-            : activeTextureFailure ? `TextureStream unavailable. Using CDP screencast. ${activeTextureFailure.reason}`
-            : activeBrowser?.page === "web" && activeBrowser.status === "running" && !canUseTextureStream
-              ? "TextureStream is unavailable in this session. Start the experiment with npm run tauri:dev." : undefined}
-          onBrowserCaptureModeChange={import.meta.env.DEV ? (mode) => {
-            setTextureFailure(null);
-            setBrowserCaptureMode(mode);
-          } : undefined}
-          browserCaptureFormat={browserCaptureFormat}
-          onBrowserCaptureFormatChange={setBrowserCaptureFormat}
+          browserTextureStreamStatus={activeTextureFailure
+            ? `TextureStream failed. Showing the browser directly. ${activeTextureFailure.reason}`
+            : activeTextureSupport?.available === false ? "TextureStream is unavailable. Showing the browser directly." : undefined}
           appVersion={appVersion}
           presetState={activePresetState}
           cursorStyleOverridden={terminal.cursorStyleOverridden}

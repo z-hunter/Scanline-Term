@@ -1,4 +1,4 @@
-#![cfg(all(windows, debug_assertions))]
+#![cfg(windows)]
 
 use serde::Serialize;
 use std::{
@@ -7,13 +7,15 @@ use std::{
     sync::{OnceLock, mpsc},
     time::Duration,
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Webview};
 use tauri::State;
 use windows::{core::Interface, Win32::Foundation::HWND};
 
 const ORIGIN: &str = "http://localhost:5173";
+const BUNDLED_ORIGIN: &str = "http://tauri.localhost";
 const BENCHMARK_URL: &str = "http://localhost:5173/texture-stream-benchmark.html";
 const MAX_STREAM_ID: usize = 64;
+const TEXTURE_STREAM_FEATURE: &str = "msWebView2TextureStream";
 
 type StartFn = unsafe extern "system" fn(
     *mut std::ffi::c_void,
@@ -38,7 +40,7 @@ type BrowserTabCreateFn = unsafe extern "C" fn(
 type BrowserTabSetBoundsFn = unsafe extern "C" fn(u64, i32, i32, u32, u32, i32) -> i32;
 type BrowserTabCloseFn = unsafe extern "C" fn(u64) -> i32;
 type BrowserTabAvailableFn = unsafe extern "C" fn() -> i32;
-type StartForTabFn = unsafe extern "C" fn(u64, *const u16, u32, u32, *mut f64) -> i32;
+type StartForTabFn = unsafe extern "C" fn(u64, *const u16, *const u16, u32, u32, *mut f64) -> i32;
 
 struct NativeDll {
     start: StartFn,
@@ -104,14 +106,57 @@ unsafe extern "C" fn browser_tab_created(
     let _ = context.0.send(result);
 }
 
-fn native_dll() -> Result<&'static NativeDll, String> {
+fn browser_arguments_with_texture_stream(arguments: &str) -> String {
+    const ENABLE: &str = "--enable-features=";
+    if let Some((index, _)) = arguments
+        .rmatch_indices(ENABLE)
+        .find(|(index, _)| *index == 0 || arguments.as_bytes()[index - 1].is_ascii_whitespace())
+    {
+        let value = &arguments[index + ENABLE.len()..];
+        let start = usize::from(value.starts_with('"'));
+        let end = start + value[start..]
+            .find(|character: char| character.is_ascii_whitespace() || character == '"')
+            .unwrap_or(value.len() - start);
+        let features = &value[start..end];
+        if features.split(',').any(|feature| feature == TEXTURE_STREAM_FEATURE) {
+            return arguments.to_owned();
+        }
+        let separator = if features.is_empty() { "" } else { "," };
+        let end = index + ENABLE.len() + end;
+        return format!(
+            "{}{separator}{TEXTURE_STREAM_FEATURE}{}",
+            &arguments[..end], &arguments[end..],
+        );
+    }
+    let separator = if arguments.is_empty() { "" } else { " " };
+    format!("{arguments}{separator}{ENABLE}{TEXTURE_STREAM_FEATURE}")
+}
+
+pub fn enable_webview2_feature() {
+    const KEY: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+    let arguments = std::env::var(KEY).unwrap_or_default();
+    // Called before starting Tauri or any application threads.
+    unsafe { std::env::set_var(KEY, browser_arguments_with_texture_stream(&arguments)) };
+}
+
+fn native_dll(app: &AppHandle) -> Result<&'static NativeDll, String> {
     NATIVE_DLL
         .get_or_init(|| unsafe {
-            use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+            use windows_sys::Win32::System::LibraryLoader::{
+                GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32,
+            };
 
-            let path = std::env::var_os("SCANLINE_BROWSER_TEXTURE_STREAM_DLL")
-                .map(PathBuf::from)
-                .ok_or("SCANLINE_BROWSER_TEXTURE_STREAM_DLL is not set")?;
+            let override_path = if cfg!(debug_assertions) {
+                std::env::var_os("SCANLINE_BROWSER_TEXTURE_STREAM_DLL").map(PathBuf::from)
+            } else {
+                None
+            };
+            let path = match override_path {
+                Some(path) => path,
+                None => app.path().resource_dir()
+                    .map_err(|error| error.to_string())?
+                    .join("browser_texture_stream.dll"),
+            };
             if !path.is_absolute()
                 || path
                     .extension()
@@ -121,7 +166,11 @@ fn native_dll() -> Result<&'static NativeDll, String> {
                 return Err("texture stream DLL path must be an absolute .dll path".into());
             }
             let path_wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-            let module = LoadLibraryW(path_wide.as_ptr());
+            let module = LoadLibraryExW(
+                path_wide.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+            );
             if module.is_null() {
                 return Err(format!(
                     "failed to load texture stream DLL: {}",
@@ -144,24 +193,24 @@ fn native_dll() -> Result<&'static NativeDll, String> {
                 browser_tab_set_bounds: optional_symbol(module, b"ScanlineBrowserTabSetBounds\0"),
                 browser_tab_close: optional_symbol(module, b"ScanlineBrowserTabClose\0"),
                 browser_tab_available: optional_symbol(module, b"ScanlineBrowserTabAvailable\0"),
-                start_for_tab: optional_symbol(module, b"ScanlineTextureStreamStartForTab\0"),
+                start_for_tab: optional_symbol(module, b"ScanlineTextureStreamStartForTabWithOrigin\0"),
             })
         })
         .as_ref()
         .map_err(Clone::clone)
 }
 
-pub fn browser_tab_enabled() -> bool {
-    cfg!(debug_assertions)
-        && std::env::var("SCANLINE_BROWSER_TEXTURE_STREAM_TABS").is_ok_and(|value| value == "1")
-        && std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
-            .is_ok_and(|args| args.contains("msWebView2TextureStream"))
-        && native_dll().is_ok_and(|dll| {
-            dll.browser_tab_create.is_some()
-                && dll.browser_tab_set_bounds.is_some()
-                && dll.browser_tab_close.is_some()
-                && dll.browser_tab_available.is_some_and(|probe| unsafe { probe() != 0 })
-        })
+pub fn browser_tab_enabled(app: &AppHandle) -> bool {
+    if cfg!(debug_assertions) && std::env::var("SCANLINE_BROWSER_TEXTURE_STREAM_TABS").is_ok_and(|value| value == "0") {
+        return false;
+    }
+    native_dll(app).is_ok_and(|dll| {
+        dll.browser_tab_create.is_some()
+            && dll.browser_tab_set_bounds.is_some()
+            && dll.browser_tab_close.is_some()
+            && dll.start_for_tab.is_some()
+            && dll.browser_tab_available.is_some_and(|probe| unsafe { probe() != 0 })
+    })
 }
 
 pub fn create_browser_tab(
@@ -171,10 +220,10 @@ pub fn create_browser_tab(
     width: u32,
     height: u32,
 ) -> Result<BrowserTabController, String> {
-    if !browser_tab_enabled() {
+    if !browser_tab_enabled(app) {
         return Err("native browser tabs are unavailable".into());
     }
-    let create = native_dll()?.browser_tab_create.ok_or("native browser tab creation is unavailable")?;
+    let create = native_dll(app)?.browser_tab_create.ok_or("native browser tab creation is unavailable")?;
     let tab_id_wide: Vec<u16> = tab_id.encode_utf16().chain(Some(0)).collect();
     let context_id = tab_id.to_owned();
     let parent = parent as usize;
@@ -218,7 +267,7 @@ pub fn set_browser_tab_bounds(
     height: u32,
     visibility_mode: i32,
 ) -> Result<(), String> {
-    let set_bounds = native_dll()?
+    let set_bounds = native_dll(app)?
         .browser_tab_set_bounds
         .ok_or("native browser bounds are unavailable")?;
     let app = app.clone();
@@ -247,7 +296,7 @@ pub fn set_browser_tab_bounds_for_session(
     height: u32,
     visibility_mode: i32,
 ) -> Result<(), String> {
-    let set_bounds = native_dll()?.browser_tab_set_bounds.ok_or("native browser bounds are unavailable")?;
+    let set_bounds = native_dll(app)?.browser_tab_set_bounds.ok_or("native browser bounds are unavailable")?;
     let app_for_callback = app.clone();
     let app = app.clone();
     let result = tauri::async_runtime::block_on(async move {
@@ -262,7 +311,7 @@ pub fn set_browser_tab_bounds_for_session(
 }
 
 pub fn close_browser_tab(app: &AppHandle, handle: u64, core: usize, controller: usize) -> Result<(), String> {
-    let close = native_dll()?
+    let close = native_dll(app)?
         .browser_tab_close
         .ok_or("native browser close is unavailable")?;
     let app = app.clone();
@@ -289,10 +338,11 @@ pub fn start_for_browser_tab(
     app: &AppHandle,
     session_id: String,
     stream_id: String,
+    origin: &'static str,
     width: u32,
     height: u32,
 ) -> Result<BrowserTextureStreamInfo, String> {
-    if !browser_tab_enabled() {
+    if !browser_tab_enabled(app) {
         return Err("native browser tabs are unavailable".into());
     }
     if stream_id.is_empty()
@@ -302,10 +352,11 @@ pub fn start_for_browser_tab(
         return Err("invalid texture stream ID".into());
     }
     validate_tab_dimensions(width, height)?;
-    let start = native_dll()?
+    let start = native_dll(app)?
         .start_for_tab
         .ok_or("native browser texture capture is unavailable")?;
     let stream_wide: Vec<u16> = stream_id.encode_utf16().chain(Some(0)).collect();
+    let origin_wide: Vec<u16> = origin.encode_utf16().chain(Some(0)).collect();
     let app = app.clone();
     let state_app = app.clone();
     let epoch = tauri::async_runtime::block_on(async move {
@@ -315,7 +366,7 @@ pub fn start_for_browser_tab(
                 let state = state_app.state::<crate::browser::BrowserState>();
                 let tab_handle = state.texture_stream_tab_handle(&session_id)?;
                 let mut epoch = 0.0;
-                let result = start(tab_handle, stream_wide.as_ptr(), width, height, &mut epoch);
+                let result = start(tab_handle, stream_wide.as_ptr(), origin_wide.as_ptr(), width, height, &mut epoch);
                 Ok::<_, String>((result, epoch))
             })
         })
@@ -392,9 +443,19 @@ pub struct BrowserTextureStreamInfo {
     pub epoch_at_qpc_zero_ms: f64,
 }
 
+fn receiver_origin(webview: &Webview) -> Result<&'static str, String> {
+    let expected = if tauri::is_dev() { ORIGIN } else { BUNDLED_ORIGIN };
+    if webview.label() == "main" && webview.url().is_ok_and(|url| url.origin().ascii_serialization() == expected) {
+        Ok(expected)
+    } else {
+        Err("TextureStream requires the main application WebView".into())
+    }
+}
+
 #[tauri::command]
 pub async fn start_browser_texture_stream(
     app: AppHandle,
+    webview: Webview,
     state: State<'_, crate::browser::BrowserState>,
     session_id: Option<String>,
     stream_id: String,
@@ -402,19 +463,20 @@ pub async fn start_browser_texture_stream(
     width: u32,
     height: u32,
 ) -> Result<BrowserTextureStreamInfo, String> {
-    if !cfg!(debug_assertions) {
-        return Err("browser texture streaming is debug-only".into());
-    }
+    let origin = receiver_origin(&webview)?;
     if let Some(session_id) = session_id {
         if source_url.is_some() { return Err("provide either a browser tab or a benchmark source".into()); }
         state.texture_stream_tab_handle(&session_id)?;
-        return tauri::async_runtime::spawn_blocking(move || start_for_browser_tab(&app, session_id, stream_id, width, height))
+        return tauri::async_runtime::spawn_blocking(move || start_for_browser_tab(&app, session_id, stream_id, origin, width, height))
             .await
             .map_err(|error| error.to_string())?;
     }
+    if !cfg!(debug_assertions) || !tauri::is_dev() {
+        return Err("browser texture stream benchmark requires the dev app".into());
+    }
     let source_url = source_url.ok_or("texture stream source is missing")?;
     validate(&stream_id, &source_url, width, height)?;
-    let start = native_dll()?.start;
+    let start = native_dll(&app)?.start;
     let command_stream_id = stream_id.clone();
     let epoch = tauri::async_runtime::spawn_blocking(move || {
         let stream_id_wide: Vec<u16> = command_stream_id.encode_utf16().chain(Some(0)).collect();
@@ -448,12 +510,10 @@ pub async fn start_browser_texture_stream(
 }
 
 #[tauri::command]
-pub async fn stop_browser_texture_stream(app: AppHandle, stream_id: String) -> Result<(), String> {
-    if !cfg!(debug_assertions) {
-        return Err("browser texture streaming is debug-only".into());
-    }
+pub async fn stop_browser_texture_stream(app: AppHandle, webview: Webview, stream_id: String) -> Result<(), String> {
+    receiver_origin(&webview)?;
     validate(&stream_id, BENCHMARK_URL, 320, 240)?;
-    let stop = native_dll()?.stop;
+    let stop = native_dll(&app)?.stop;
     let stream_id_wide: Vec<u16> = stream_id.encode_utf16().chain(Some(0)).collect();
     let result = tauri::async_runtime::spawn_blocking(move || {
         with_main_webview(&app, move |_, _| unsafe { stop(stream_id_wide.as_ptr()) })
@@ -478,7 +538,20 @@ pub fn stop_all_browser_texture_streams() {
 
 #[cfg(test)]
 mod tests {
-    use super::validate;
+    use super::{browser_arguments_with_texture_stream, validate};
+
+    #[test]
+    fn enables_texture_stream_without_replacing_other_webview_arguments() {
+        assert_eq!(browser_arguments_with_texture_stream(""), "--enable-features=msWebView2TextureStream");
+        assert_eq!(
+            browser_arguments_with_texture_stream("--enable-features=Other --remote-debugging-port=9223"),
+            "--enable-features=Other,msWebView2TextureStream --remote-debugging-port=9223",
+        );
+        assert_eq!(
+            browser_arguments_with_texture_stream("--enable-features=\"Other,msWebView2TextureStream\" --flag"),
+            "--enable-features=\"Other,msWebView2TextureStream\" --flag",
+        );
+    }
 
     #[test]
     fn accepts_only_the_local_benchmark_and_bounded_even_sizes() {

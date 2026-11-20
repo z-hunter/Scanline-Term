@@ -16,7 +16,7 @@ if not defined VCToolsInstallDir (
   echo Run this from a VS 2022 x64 Native Tools prompt.
   exit /b 2
 )
-set "SCANLINE_TEXTURE_OUT=%TEMP%\ScanlineTerm\browser-texture-stream"
+if not defined SCANLINE_TEXTURE_OUT set "SCANLINE_TEXTURE_OUT=%TEMP%\ScanlineTerm\browser-texture-stream"
 if not exist "%SCANLINE_TEXTURE_OUT%" mkdir "%SCANLINE_TEXTURE_OUT%"
-cl /nologo /std:c++17 /EHsc /W4 /LD /MT /Fo"%SCANLINE_TEXTURE_OUT%\bridge.obj" /I "%WindowsSdkDir%Include\%WindowsSDKVersion%cppwinrt" /I "%WEBVIEW2_SDK_DIR%\build\native\include" bridge.cpp /link /IMPLIB:"%SCANLINE_TEXTURE_OUT%\browser_texture_stream.lib" ole32.lib oleaut32.lib user32.lib d3d11.lib dxgi.lib runtimeobject.lib windowsapp.lib CoreMessaging.lib /OUT:"%SCANLINE_TEXTURE_OUT%\browser_texture_stream.dll"
+cl /nologo /std:c++17 /EHsc /W4 /LD /MT /Fo"%SCANLINE_TEXTURE_OUT%\bridge.obj" /I "%WindowsSdkDir%Include\%WindowsSDKVersion%cppwinrt" /I "%WEBVIEW2_SDK_DIR%\build\native\include" bridge.cpp /link /MACHINE:X64 /IMPLIB:"%SCANLINE_TEXTURE_OUT%\browser_texture_stream.lib" ole32.lib oleaut32.lib user32.lib d3d11.lib dxgi.lib runtimeobject.lib windowsapp.lib CoreMessaging.lib /OUT:"%SCANLINE_TEXTURE_OUT%\browser_texture_stream.dll"
 exit /b %ERRORLEVEL%

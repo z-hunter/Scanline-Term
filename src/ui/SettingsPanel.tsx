@@ -72,7 +72,6 @@ const settingHelp: Record<string, string> = {
   'Bezel highlight': 'Set the brightness of highlights along the monitor frame.',
   'Monitor frame': 'Show the simulated physical monitor frame around the screen.',
   'Browser form factor': 'Choose the viewport aspect ratio used for browser tabs.',
-  'Lossless capture (slow)': 'Use PNG instead of JPEG for browser CRT frames.',
   'RMB menu in term.': 'Show the context menu when right-clicking inside the terminal.',
   'Tab switch animation': 'Briefly rolls the image during tab changes, like a momentary loss of scan sync. Works with CRT emulation on or off.',
   'Tab placement': 'Place the tab bar to the left of or above the monitor.',
@@ -112,12 +111,7 @@ export function SettingsPanel({
   fps,
   browserFps = 0,
   browserCaptureMetrics = '',
-  browserCaptureMode = 'screencast',
-  browserTextureStreamAvailable = false,
   browserTextureStreamStatus,
-  onBrowserCaptureModeChange,
-  browserCaptureFormat,
-  onBrowserCaptureFormatChange,
   appVersion,
   presetState = null,
   cursorStyleOverridden = false,
@@ -154,12 +148,7 @@ export function SettingsPanel({
   fps: number;
   browserFps?: number;
   browserCaptureMetrics?: string;
-  browserCaptureMode?: 'screencast' | 'texture';
-  browserTextureStreamAvailable?: boolean;
   browserTextureStreamStatus?: string;
-  onBrowserCaptureModeChange?: (mode: 'screencast' | 'texture') => void;
-  browserCaptureFormat?: 'jpeg' | 'png';
-  onBrowserCaptureFormatChange?: (format: 'jpeg' | 'png') => void;
   appVersion: string;
   presetState?: TabPresetState | null;
   cursorStyleOverridden?: boolean;
@@ -401,27 +390,8 @@ export function SettingsPanel({
       {browserTabActive && <fieldset className="preset-controls">
         {browserCrtSettingsEnabled && presetSection(false, 2)}
         <SettingsAccordionSection id="crt" number={browserCrtSettingsEnabled ? 3 : 2} title="CRT" icon="crt" expanded={Boolean(expandedSections.crt)} onToggle={() => toggleSection('crt')}>
-          {browserCaptureFormat && onBrowserCaptureFormatChange
-            ? <div className="browser-crt-settings">
-              <Switch label="CRT Emulation" checked={screenProfile.crt.crtEmulation} className="browser-crt-emulation" onChange={(crtEmulation) => updateProfile({ ...screenProfile, crt: { ...screenProfile.crt, crtEmulation } })} />
-              {screenProfile.crt.crtEmulation && onBrowserCaptureModeChange && (
-                <label className="host-select-control">
-                  Frame capture
-                  <select
-                    aria-label="Browser frame capture"
-                    value={browserCaptureMode}
-                    onChange={(event) => onBrowserCaptureModeChange(event.target.value === 'texture' ? 'texture' : 'screencast')}
-                  >
-                    <option value="screencast">CDP screencast</option>
-                    <option value="texture" disabled={!browserTextureStreamAvailable}>TextureStream (experimental)</option>
-                  </select>
-                </label>
-              )}
-              {screenProfile.crt.crtEmulation && browserTextureStreamStatus && <p className="display-status" role="status">{browserTextureStreamStatus}</p>}
-              {screenProfile.crt.crtEmulation && browserCaptureMode === 'screencast' && <Switch label="Lossless capture (slow)" checked={browserCaptureFormat === 'png'} onChange={(enabled) => onBrowserCaptureFormatChange(enabled ? 'png' : 'jpeg')} />}
-              <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
-            </div>
-            : <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />}
+          {screenProfile.crt.crtEmulation && browserTextureStreamStatus && <p className="display-status" role="status">{browserTextureStreamStatus}</p>}
+          <AdvancedCRTSettingsSection value={screenProfile} onChange={updateProfile} />
         </SettingsAccordionSection>
       </fieldset>}
 

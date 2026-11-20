@@ -12,6 +12,8 @@ $archive = [IO.Path]::GetFullPath((Join-Path $archiveRoot "Scanline-Term-$Versio
 $separator = [IO.Path]::DirectorySeparatorChar
 if (-not $stage.StartsWith($portableRoot.TrimEnd($separator) + $separator, [StringComparison]::OrdinalIgnoreCase)) { throw "Portable stage path escapes its target directory" }
 if (-not $archive.StartsWith($archiveRoot.TrimEnd($separator) + $separator, [StringComparison]::OrdinalIgnoreCase)) { throw "Portable archive path escapes its target directory" }
+$textureStream = Join-Path $root "src-tauri\resources\browser-texture-stream\browser_texture_stream.dll"
+if (-not (Test-Path -LiteralPath $textureStream -PathType Leaf)) { throw "Build the TextureStream companion first: npm run tauri:build" }
 if (Test-Path -LiteralPath $stage) {
   Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop
   if (Test-Path -LiteralPath $stage) { throw "Could not remove previous portable stage: $stage" }
@@ -21,6 +23,7 @@ Copy-Item -LiteralPath (Join-Path $root "src-tauri\target\release\sterm.exe") -D
 $mcpBinary = Join-Path $root "src-tauri\target\release\scanline-term-mcp.exe"
 if (-not (Test-Path -LiteralPath $mcpBinary)) { throw "Build the MCP sidecar first: cargo build --release --bin scanline-term-mcp" }
 Copy-Item -LiteralPath $mcpBinary -Destination $stage
+Copy-Item -LiteralPath $textureStream -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\conpty") -Destination $stage -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\fonts") -Destination $stage -Recurse
 Copy-Item -LiteralPath (Join-Path $root "src-tauri\resources\presets") -Destination $stage -Recurse

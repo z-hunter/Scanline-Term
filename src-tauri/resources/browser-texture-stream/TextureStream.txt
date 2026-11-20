@@ -1,0 +1,3 @@
+browser_texture_stream.dll is the Windows Graphics Capture companion used by
+Scanline Term for browser CRT display. Keep it beside sterm.exe. WebView2 Runtime
+is installed separately and must expose TextureStream support for browser CRT.

@@ -9,9 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
-    "tauri:dev": "npm run tauri:dev:texture-stream --",
-    "tauri:dev:wry": "tauri dev --config src-tauri/tauri.dev.conf.json",
-    "tauri:dev:texture-stream": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/browser-texture-stream/dev.ps1",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri build"
   },
   "dependencies": {

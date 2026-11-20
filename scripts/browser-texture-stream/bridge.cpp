@@ -29,6 +29,7 @@ void Require(const char* label, HRESULT hr) {
 
 namespace {
 constexpr wchar_t kOrigin[] = L"http://localhost:5173";
+constexpr wchar_t kBundledOrigin[] = L"http://tauri.localhost";
 constexpr wchar_t kBenchmarkUrl[] = L"http://localhost:5173/texture-stream-benchmark.html";
 constexpr UINT kPoolLimit = 8;
 
@@ -55,7 +56,7 @@ public:
 
     ~Session() { Stop(); }
 
-    HRESULT Start(double* epoch) {
+    HRESULT Start(double* epoch, const wchar_t* origin) {
         const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         if (FAILED(com) && com != RPC_E_CHANGED_MODE) return com;
         uninitializeCom_ = SUCCEEDED(com);
@@ -90,7 +91,7 @@ public:
 
         hr = environment12_->CreateTextureStream(id_.c_str(), device_.Get(), &stream_);
         if (FAILED(hr)) return hr;
-        hr = stream_->AddAllowedOrigin(kOrigin, FALSE);
+        hr = stream_->AddAllowedOrigin(origin, FALSE);
         if (FAILED(hr)) return hr;
         hr = stream_->add_ErrorReceived(
             Callback<ICoreWebView2ExperimentalTextureStreamErrorReceivedEventHandler>(
@@ -217,7 +218,7 @@ extern "C" __declspec(dllexport) HRESULT __cdecl ScanlineTextureStreamStart(
         (width & 1) || (height & 1)) return E_INVALIDARG;
     if (sessions.find(streamId) != sessions.end()) return HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS);
     auto session = std::make_unique<Session>(environment, streamId, width, height);
-    const HRESULT hr = session->Start(epochAtQpcZeroMs);
+    const HRESULT hr = session->Start(epochAtQpcZeroMs, kOrigin);
     if (FAILED(hr)) return hr;
     sessions.emplace(streamId, std::move(session));
     return S_OK;
@@ -236,16 +237,17 @@ extern "C" __declspec(dllexport) void __cdecl ScanlineTextureStreamStopAll() {
     sessions.clear();
 }
 
-extern "C" __declspec(dllexport) HRESULT __cdecl ScanlineTextureStreamStartForTab(
-    UINT64 tabHandle, const wchar_t* streamId, UINT width, UINT height, double* epochAtQpcZeroMs) {
-    if (!streamId || !epochAtQpcZeroMs || !*streamId || wcslen(streamId) > 64 ||
+extern "C" __declspec(dllexport) HRESULT __cdecl ScanlineTextureStreamStartForTabWithOrigin(
+    UINT64 tabHandle, const wchar_t* streamId, const wchar_t* origin, UINT width, UINT height, double* epochAtQpcZeroMs) {
+    if (!streamId || !origin || !epochAtQpcZeroMs || !*streamId || wcslen(streamId) > 64 ||
         width < 2 || width > 1920 || height < 2 || height > 1080 || (width & 1) || (height & 1)) return E_INVALIDARG;
+    if (wcscmp(origin, kOrigin) != 0 && wcscmp(origin, kBundledOrigin) != 0) return E_ACCESSDENIED;
     const auto tab = browser_tabs::tabs.find(tabHandle);
     if (tab == browser_tabs::tabs.end() || !tab->second->view || !tab->second->environment) return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
     if (sessions.find(streamId) != sessions.end()) return HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS);
     auto session = std::make_unique<Session>(tab->second->environment.Get(), streamId, width, height,
         tab->second->webVisual, tabHandle);
-    const HRESULT hr = session->Start(epochAtQpcZeroMs);
+    const HRESULT hr = session->Start(epochAtQpcZeroMs, origin);
     if (FAILED(hr)) return hr;
     sessions.emplace(streamId, std::move(session));
     return S_OK;

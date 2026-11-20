@@ -2,6 +2,7 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/resources/browser-texture-stream/browser_texture_stream.dll
 .kairo/
 .playwright-cli/
 output/
