@@ -301,6 +301,7 @@ pub fn set_browser_tab_bounds_for_session(
     width: u32,
     height: u32,
     visibility_mode: i32,
+    focus: bool,
 ) -> Result<(), String> {
     let set_bounds = native_dll(app)?.browser_tab_set_bounds.ok_or("native browser bounds are unavailable")?;
     let app_for_callback = app.clone();
@@ -308,9 +309,15 @@ pub fn set_browser_tab_bounds_for_session(
     let result = tauri::async_runtime::block_on(async move {
         tauri::async_runtime::spawn_blocking(move || with_main_webview(&app, move |_, _| {
             let state = app_for_callback.state::<crate::browser::BrowserState>();
-            let Some(handle) = state.bounds_handle_if_current(&session_id, visibility_mode)? else { return Ok(()); };
+            let Some((handle, controller)) = state.bounds_handle_if_current(&session_id, visibility_mode)? else { return Ok(()); };
             let result = unsafe { set_bounds(handle, x, y, width, height, visibility_mode) };
             if result < 0 { Err(format!("native browser bounds failed: 0x{:08x}", result as u32)) } else { Ok(()) }
+            .and_then(|()| if focus && visibility_mode == 1 {
+                use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Controller, COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC};
+                let mut raw = controller as *mut std::ffi::c_void;
+                let controller = unsafe { ICoreWebView2Controller::from_raw_borrowed(&mut raw) }.ok_or("native browser controller is unavailable")?;
+                unsafe { controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC) }.map_err(|error| error.to_string())
+            } else { Ok(()) })
         })).await.map_err(|error| error.to_string())?
     })?;
     result

@@ -32,12 +32,12 @@ struct NativeBrowserTab { handle: u64, core: usize, controller: usize }
 
 #[cfg(windows)]
 impl BrowserState {
-    pub fn bounds_handle_if_current(&self, session_id: &str, visibility_mode: i32) -> Result<Option<u64>, String> {
+    pub fn bounds_handle_if_current(&self, session_id: &str, visibility_mode: i32) -> Result<Option<(u64, usize)>, String> {
         let store = self.0.lock().map_err(|_| "browser state is unavailable")?;
         let Some(tab) = store.native_tabs.get(session_id) else { return Ok(None); };
         let is_active = store.active.as_deref() == Some(session_id);
         if (visibility_mode == 0 && is_active) || (visibility_mode != 0 && !is_active) { return Ok(None); }
-        Ok(Some(tab.handle))
+        Ok(Some((tab.handle, tab.controller)))
     }
 
     pub fn texture_stream_tab_handle(&self, session_id: &str) -> Result<u64, String> {
@@ -623,10 +623,10 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
             let rect = active_bounds.or(state.bounds.as_ref());
             let mode = if Some(id) == session_id.as_ref() { state.visibility_mode } else { 0 };
             let (x, y, width, height) = native_browser_rect(rect, native_scale);
-            (id.clone(), x, y, width, height, mode)
+            (id.clone(), x, y, width, height, mode, became_active && mode == 1)
         }).collect::<Vec<_>>();
         #[cfg(not(windows))]
-        let native_ops: Vec<(String, i32, i32, u32, u32, i32)> = Vec::new();
+        let native_ops: Vec<(String, i32, i32, u32, u32, i32, bool)> = Vec::new();
         (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops)
     };
     if restore_fullscreen {
@@ -650,8 +650,8 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
     if !native_ops.is_empty() {
         let app_for_bounds = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            for (session_id, x, y, width, height, mode) in native_ops {
-                browser_texture_stream::set_browser_tab_bounds_for_session(&app_for_bounds, session_id, x, y, width, height, mode)?;
+            for (session_id, x, y, width, height, mode, focus) in native_ops {
+                browser_texture_stream::set_browser_tab_bounds_for_session(&app_for_bounds, session_id, x, y, width, height, mode, focus)?;
             }
             Ok::<(), String>(())
         }).await.map_err(|error| error.to_string())??;
@@ -673,7 +673,7 @@ pub fn refresh_native_browser_bounds(app: &tauri::AppHandle) {
         for id in tabs {
             let visible_mode = if active.as_deref() == Some(&id) { mode } else { 0 };
             let (x, y, width, height) = native_browser_rect(bounds.as_ref(), scale);
-            let _ = browser_texture_stream::set_browser_tab_bounds_for_session(&app, id, x, y, width, height, visible_mode);
+            let _ = browser_texture_stream::set_browser_tab_bounds_for_session(&app, id, x, y, width, height, visible_mode, false);
         }
     });
 }
