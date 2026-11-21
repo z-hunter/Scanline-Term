@@ -289,7 +289,7 @@ The WebGL rendering engine and analog CRT post-processing pipeline are maintaine
 | `terminal-launch` | `{ command?, args?, cwd? }` | `App.tsx` | Second CLI instance launch request |
 | `browser-title` | `{ sessionId, title }` | `useTerminal` | Document title change from child WebView |
 | `browser-color` | `{ sessionId, background }`| `useTerminal` | Background color change from child WebView |
-| `browser-shortcut` | `{ sessionId, code, shiftKey }`| `App.tsx` | Forwarded shortcut from child WebView |
+| `browser-shortcut` | `{ sessionId, code, shiftKey, altKey }`| `useTerminal` | Forwarded allowlisted shortcut from child WebView; Alt is accepted only for Enter fullscreen |
 | `lua-preset-request`| `{ frontendId, tabId, name }` | `useManagedSettings` | Requested preset change from Lua script |
 | `codex-message` | `{ generation, message }` | `CodexClient` | Incoming JSON-RPC response from Codex |
 | `codex-exit` | `{ generation, text }` | `CodexClient` | Unexpected termination of Codex server |

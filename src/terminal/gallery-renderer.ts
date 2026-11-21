@@ -13,6 +13,18 @@ export const GALLERY_FRAME_LAG_MS = 120;
 export const GALLERY_PREPARE_TIMEOUT_MS = 5_000;
 export const GALLERY_MAX_SOURCE_PIXELS = 2_100_000;
 export const GALLERY_THUMBNAIL_MAX_DIMENSION = 480;
+export function galleryBrowserSnapshotSize(width: number, height: number): { width: number; height: number } {
+  if (width <= 0 || height <= 0) return { width: 1, height: 1 };
+  const scale = Math.min(1, 800 / width, Math.sqrt(GALLERY_MAX_SOURCE_PIXELS / (width * height)));
+  let scaledWidth = Math.max(1, Math.round(width * scale));
+  let scaledHeight = Math.max(1, Math.round(height * scale));
+  if (scaledWidth * scaledHeight > GALLERY_MAX_SOURCE_PIXELS) {
+    const correction = Math.sqrt(GALLERY_MAX_SOURCE_PIXELS / (scaledWidth * scaledHeight));
+    scaledWidth = Math.max(1, Math.floor(scaledWidth * correction));
+    scaledHeight = Math.max(1, Math.floor(scaledHeight * correction));
+  }
+  return { width: scaledWidth, height: scaledHeight };
+}
 export function galleryThumbnailMaxDimension(cardSize = 100): number {
   return Math.round(GALLERY_THUMBNAIL_MAX_DIMENSION * Math.min(200, Math.max(80, cardSize)) / 100);
 }

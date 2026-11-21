@@ -33,7 +33,8 @@ import { useManagedSettings } from "./terminal/useManagedSettings";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { createBrowserTextureStreamReceiver, type BrowserVideoFrame } from "./crt/browser-benchmark";
-import { browserViewportPoint } from "./terminal/browser-coordinate";
+import { browserFullscreenBounds, browserViewportPoint } from "./terminal/browser-coordinate";
+import { galleryBrowserSnapshotSize } from "./terminal/gallery-renderer";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
 import type { LuaPresetRequest } from "./terminal/lua-automation";
@@ -337,9 +338,9 @@ export default function App() {
           await image.decode();
           if (!disposed && terminalRef.current.tabs.some((current) => current.id === tab.id && current.kind === "browser" && current.page === "web")) {
             const canvas = browserPreviewFramesRef.current.get(tab.id) ?? document.createElement("canvas");
-            const scale = Math.min(1, 800 / image.naturalWidth);
-            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+            const size = galleryBrowserSnapshotSize(image.naturalWidth, image.naturalHeight);
+            canvas.width = size.width;
+            canvas.height = size.height;
             canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
             browserPreviewFramesRef.current.set(tab.id, canvas);
             browserGalleryVersionsRef.current.set(tab.id, (browserGalleryVersionsRef.current.get(tab.id) ?? 0) + 1);
@@ -930,10 +931,20 @@ export default function App() {
       const rect = screenRef.current?.getBoundingClientRect();
       const showBrowser = !galleryOpen && activeBrowser?.page === "web" && (!presetPickerOpen || textureRequested);
       const keepRendererLive = textureRequested && showBrowser;
+      const fullscreenBounds = rect ? browserFullscreenBounds(
+        { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        settingsVisible || aiVisible
+          ? Array.from(document.querySelectorAll<HTMLElement>(".settings-panel, .ai-panel"), (panel) => {
+            const { left, top, width, height } = panel.getBoundingClientRect();
+            return { x: left, y: top, width, height };
+          })
+          : [],
+      ) : undefined;
       // Keep WebView2 visible offscreen so it continues to produce frames.
       const payload = {
         sessionId: showBrowser ? activeBrowserId : null,
         visibilityMode: showBrowser ? (keepRendererLive ? 2 : 1) : 0,
+        fullscreenBounds: showBrowser && !keepRendererLive ? fullscreenBounds : undefined,
         bounds: showBrowser && rect
           ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height }
           : undefined,

@@ -101,7 +101,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   let mode = 'normal', pendingG = false, hint = null, menu = false;
   const open = window.open; window.open = (url, ...args) => typeof url === 'string' && /^(?:https?|file):/i.test(url) ? (location.href = url, window) : open.call(window, url, ...args);
   addEventListener('click', e => { const link = e.target.closest('a[target="_blank"]'); if (link?.href) { e.preventDefault(); location.href = link.href; } }, true);
-  const shortcut = (code, shiftKey) => { location.href = '__SCANLINE_SHORTCUT_URL__' + (shiftKey ? 'Shift-' : '') + code; };
+  const shortcut = (code, shiftKey, altKey = false) => { location.href = '__SCANLINE_SHORTCUT_URL__' + (shiftKey ? 'Shift-' : '') + (altKey ? 'Alt-' : '') + code; };
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
   const labels = 'asdfghjkl';
   const parseColor = value => { const hex=value?.match(/^#([\da-f]{3,6})$/i); if (hex) { const raw=hex[1].length===3 ? hex[1].split('').map(c=>c+c).join('') : hex[1]; return raw.toLowerCase(); } const rgb=value?.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i); return rgb && (rgb[4] === undefined || Number(rgb[4]) > 0) ? [rgb[1],rgb[2],rgb[3]].map(c=>Number(c).toString(16).padStart(2,'0')).join('') : null; };
@@ -112,6 +112,7 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; box.innerHTML = '<button type="button" data-back aria-label="Back">←</button><button type="button" data-forward aria-label="Forward">→</button><input aria-label="Address" style="min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px" />'; const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const v=input.value.trim(); close(); if(v) location.href=/^(?:https?|file):\/\//i.test(v)?v:`https://${v}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
   addEventListener('keydown', e => {
     if (e.key === 'ContextMenu') { menu = true; return; }
+    if (e.altKey && (e.code === 'Enter' || e.code === 'NumpadEnter')) { e.preventDefault(); e.stopImmediatePropagation(); shortcut(e.code, e.shiftKey, true); return; }
     if (menu) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) shortcut(e.code, e.shiftKey); return; }
     if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter(item=>item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
     if (e.key === 'F6') { e.preventDefault(); address(); return; }
@@ -138,12 +139,14 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   setTimeout(reportColor, 0);
 })()"#;
 
-fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<(String, bool)> {
+fn browser_shortcut(url: &url::Url, session_id: &str) -> Option<(String, bool, bool)> {
     let mut segments = url.path_segments()?;
     let id = segments.next()?; let raw_code = segments.next()?;
-    let (code, shift) = raw_code.strip_prefix("Shift-").map_or((raw_code, false), |code| (code, true));
+    let (raw_code, shift) = raw_code.strip_prefix("Shift-").map_or((raw_code, false), |code| (code, true));
+    let (code, alt) = raw_code.strip_prefix("Alt-").map_or((raw_code, false), |code| (code, true));
     if url.scheme() != "scanline-term" || url.host_str() != Some("shortcut") || id != session_id || segments.next().is_some() { return None; }
-    matches!(code, "KeyS" | "KeyP" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "KeyH" | "KeyL" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote").then(|| (code.to_owned(), shift))
+    (matches!(code, "KeyS" | "KeyP" | "KeyA" | "KeyB" | "KeyV" | "KeyC" | "KeyN" | "KeyW" | "KeyJ" | "KeyK" | "KeyH" | "KeyL" | "KeyZ" | "PageUp" | "PageDown" | "Digit0" | "Digit1" | "Digit2" | "Digit3" | "Digit4" | "Digit5" | "Digit6" | "Digit7" | "Digit8" | "Digit9" | "Backspace" | "ArrowRight" | "ArrowLeft" | "Period" | "Comma" | "Tab" | "Quote" | "Slash" | "Backslash" | "Minus" | "NumpadSubtract" | "Equal" | "NumpadAdd" | "Enter" | "NumpadEnter") && (!alt || matches!(code, "Enter" | "NumpadEnter")))
+        .then(|| (code.to_owned(), shift, alt))
 }
 
 fn browser_color_value(value: &str) -> Option<String> {
@@ -199,8 +202,8 @@ fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: Nat
             args.Uri(&mut uri)?;
             let target = take_pwstr(uri);
             if let Ok(url) = url::Url::parse(&target) {
-                if let Some((code, shift_key)) = browser_shortcut(&url, &nav_id) {
-                    let _ = nav_app.emit("browser-shortcut", serde_json::json!({ "sessionId": nav_id, "code": code, "shiftKey": shift_key }));
+                if let Some((code, shift_key, alt_key)) = browser_shortcut(&url, &nav_id) {
+                    let _ = nav_app.emit("browser-shortcut", serde_json::json!({ "sessionId": nav_id, "code": code, "shiftKey": shift_key, "altKey": alt_key }));
                     args.SetCancel(true)?;
                 } else if target != "about:blank" && browser_target_url(&target).is_err() {
                     args.SetCancel(true)?;
@@ -318,7 +321,7 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
     let browser = window.add_child(
         WebviewBuilder::new(format!("browser-{session_id}"), WebviewUrl::External(initial))
             .devtools(cfg!(debug_assertions))
-            .on_navigation(move |url| { if let Some((code, shift_key)) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code, "shiftKey": shift_key })); return false; } matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
+            .on_navigation(move |url| { if let Some((code, shift_key, alt_key)) = browser_shortcut(url, &navigation_id) { let _ = app_for_navigation.emit("browser-shortcut", serde_json::json!({ "sessionId": navigation_id, "code": code, "shiftKey": shift_key, "altKey": alt_key })); return false; } matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .on_download(|_, _| true)
             .on_page_load(move |webview, payload| { let event = payload.event(); trace(&page_app, match event { PageLoadEvent::Started => "load-start", PageLoadEvent::Finished => "load-finished" }, &page_id, payload.url().as_str()); if event == PageLoadEvent::Finished { match webview.eval(&navigation_script) { Ok(()) => trace(&page_app, "script-installed", &page_id, payload.url().as_str()), Err(error) => trace(&page_app, "script-failed", &page_id, error.to_string()) } } })
@@ -561,7 +564,7 @@ pub async fn capture_gallery_browser(app: tauri::AppHandle, session_id: BrowserI
 }
 
 #[tauri::command]
-pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
+pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, fullscreen_bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
     let window_bounds = app.get_webview_window("main").and_then(|window| {
@@ -569,18 +572,30 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         let size = window.inner_size().ok()?;
         Some(BrowserBounds { x: 0.0, y: 0.0, width: f64::from(size.width) / scale, height: f64::from(size.height) / scale })
     });
+    let window_fullscreen = app.get_webview_window("main").and_then(|window| window.is_fullscreen().ok()).unwrap_or(false);
     #[cfg(windows)]
     let native_scale = app.get_webview_window("main").and_then(|window| window.scale_factor().ok()).unwrap_or(1.0);
-    let (return_to_terminal, restore_fullscreen, native_ops) = {
+    let (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops) = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         let return_to_terminal = state.active.is_some() && session_id.is_none();
         let became_active = state.active != session_id;
         let restore_fullscreen = became_active && state.fullscreen;
         if restore_fullscreen { state.fullscreen = false; }
+        let force_exit_page_fullscreen = state.fullscreen && !window_fullscreen;
+        let exit_webview_fullscreen = if force_exit_page_fullscreen {
+            state.fullscreen = false;
+            state.active.as_ref().and_then(|id| state.webviews.get(id).cloned())
+        } else { None };
+        #[cfg(windows)]
+        let exit_page_fullscreen = if force_exit_page_fullscreen {
+            state.active.as_ref().and_then(|id| state.native_tabs.get(id).map(|tab| tab.core))
+        } else { None };
+        #[cfg(not(windows))]
+        let exit_page_fullscreen: Option<usize> = None;
         state.active = session_id.clone(); state.bounds = bounds.clone();
         state.visibility_mode = if session_id.is_some() { visibility_mode.unwrap_or_else(|| if bounds.as_ref().is_some_and(|b| b.x < 0.0 || b.y < 0.0) { 2 } else { 1 }) } else { 0 };
         let mut fullscreen_rect = if state.fullscreen {
-            window_bounds.as_ref().and_then(|window| bounds.as_ref().or(state.bounds.as_ref()).map(|viewport| fit_browser_bounds(viewport, window)))
+            fullscreen_bounds.as_ref().or(window_bounds.as_ref()).and_then(|area| bounds.as_ref().or(state.bounds.as_ref()).map(|viewport| fit_browser_bounds(viewport, area)))
         } else { None };
         if state.visibility_mode == 2 {
             if let (Some(rect), Some(viewport)) = (fullscreen_rect.as_mut(), bounds.as_ref().or(state.bounds.as_ref())) {
@@ -605,10 +620,22 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         }).collect::<Vec<_>>();
         #[cfg(not(windows))]
         let native_ops: Vec<(String, i32, i32, u32, u32, i32)> = Vec::new();
-        (return_to_terminal, restore_fullscreen, native_ops)
+        (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops)
     };
     if restore_fullscreen {
         if let Some(window) = app.get_webview_window("main") { let _ = window.set_fullscreen(false); }
+    }
+    if let Some(browser) = exit_webview_fullscreen { let _ = browser.eval("document.exitFullscreen?.()"); }
+    #[cfg(windows)]
+    if let Some(core_ptr) = exit_page_fullscreen {
+        let script_app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || browser_texture_stream::with_main_webview(&script_app, move |_, _| unsafe {
+            let mut raw = core_ptr as *mut std::ffi::c_void;
+            if let Some(core) = ICoreWebView2::from_raw_borrowed(&mut raw) {
+                let callback = ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(())));
+                core.ExecuteScript(&HSTRING::from("document.exitFullscreen?.()"), &callback).map_err(|error| error.to_string())
+            } else { Err("active browser core is unavailable".to_owned()) }
+        })).await.map_err(|error| error.to_string())???;
     }
     #[cfg(not(windows))]
     let _ = native_ops;
@@ -683,6 +710,8 @@ mod tests {
         assert_eq!((four_three.x, four_three.y, four_three.width, four_three.height), (240.0, 0.0, 1440.0, 1080.0));
         let eight_five = fit_browser_bounds(&BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 500.0 }, &window);
         assert_eq!((eight_five.x, eight_five.y, eight_five.width, eight_five.height), (96.0, 0.0, 1728.0, 1080.0));
+        let beside_settings = fit_browser_bounds(&BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 }, &BrowserBounds { x: 0.0, y: 0.0, width: 1200.0, height: 1080.0 });
+        assert_eq!((beside_settings.x, beside_settings.y, beside_settings.width, beside_settings.height), (0.0, 90.0, 1200.0, 900.0));
     }
 
     #[test]
@@ -700,16 +729,22 @@ mod tests {
     fn accepts_only_its_supported_browser_shortcuts() {
         let id = "11111111-1111-1111-1111-111111111111";
         let url = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyW")).unwrap();
-        assert_eq!(browser_shortcut(&url, id), Some(("KeyW".into(), false)));
+        assert_eq!(browser_shortcut(&url, id), Some(("KeyW".into(), false, false)));
         let presets = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyP")).unwrap();
-        assert_eq!(browser_shortcut(&presets, id), Some(("KeyP".into(), false)));
+        assert_eq!(browser_shortcut(&presets, id), Some(("KeyP".into(), false, false)));
         let shifted = url::Url::parse(&format!("scanline-term://shortcut/{id}/Shift-KeyL")).unwrap();
-        assert_eq!(browser_shortcut(&shifted, id), Some(("KeyL".into(), true)));
+        assert_eq!(browser_shortcut(&shifted, id), Some(("KeyL".into(), true, false)));
         assert_eq!(browser_shortcut(&url, "22222222-2222-2222-2222-222222222222"), None);
         let right_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowRight")).unwrap();
-        assert_eq!(browser_shortcut(&right_arrow, id), Some(("ArrowRight".into(), false)));
+        assert_eq!(browser_shortcut(&right_arrow, id), Some(("ArrowRight".into(), false, false)));
         let left_arrow = url::Url::parse(&format!("scanline-term://shortcut/{id}/ArrowLeft")).unwrap();
-        assert_eq!(browser_shortcut(&left_arrow, id), Some(("ArrowLeft".into(), false)));
+        assert_eq!(browser_shortcut(&left_arrow, id), Some(("ArrowLeft".into(), false, false)));
+        let search = url::Url::parse(&format!("scanline-term://shortcut/{id}/Slash")).unwrap();
+        assert_eq!(browser_shortcut(&search, id), Some(("Slash".into(), false, false)));
+        let fullscreen = url::Url::parse(&format!("scanline-term://shortcut/{id}/Alt-Enter")).unwrap();
+        assert_eq!(browser_shortcut(&fullscreen, id), Some(("Enter".into(), false, true)));
+        let unrelated_alt = url::Url::parse(&format!("scanline-term://shortcut/{id}/Alt-KeyS")).unwrap();
+        assert_eq!(browser_shortcut(&unrelated_alt, id), None);
         let unsupported = url::Url::parse(&format!("scanline-term://shortcut/{id}/KeyX")).unwrap();
         assert_eq!(browser_shortcut(&unsupported, id), None);
     }

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { browserViewportPoint } from './browser-coordinate';
+import { browserFullscreenBounds, browserViewportPoint } from './browser-coordinate';
+
+describe('browserFullscreenBounds', () => {
+  it('keeps the fullscreen browser clear of a settings panel while preserving the display area', () => {
+    expect(browserFullscreenBounds(
+      { x: 240, y: 0, width: 1440, height: 1080 },
+      [{ x: 1370, y: 0, width: 320, height: 1080 }],
+    )).toEqual({ x: 240, y: 0, width: 1130, height: 1080 });
+  });
+});
 
 describe('browserViewportPoint', () => {
   it('maps CRT points into the outer browser viewport with a visible 24px frame difference', () => {

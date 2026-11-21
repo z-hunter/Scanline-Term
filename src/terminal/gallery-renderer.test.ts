@@ -37,6 +37,7 @@ vi.mock('scanline-virtual-screen/terminal', () => ({
 }));
 
 import {
+  galleryBrowserSnapshotSize,
   galleryThumbnailMaxDimension,
   fitGalleryRasterSettings,
   galleryFrameLagShouldStop,
@@ -55,6 +56,13 @@ import {
 beforeEach(() => { vi.clearAllMocks(); state.screenCreations = 0; state.terminalRendererCreations = 0; });
 
 describe('gallery renderer budgets', () => {
+  it('limits browser snapshots by width and total pixels without changing landscape sizing', () => {
+    expect(galleryBrowserSnapshotSize(1920, 1080)).toEqual({ width: 800, height: 450 });
+    const portrait = galleryBrowserSnapshotSize(1080, 12_000);
+    expect(portrait.width * portrait.height).toBeLessThanOrEqual(GALLERY_MAX_SOURCE_PIXELS);
+    expect(portrait.width / portrait.height).toBeCloseTo(1080 / 12_000, 2);
+  });
+
   it('scales preview raster resolution with card size within the supported limits', () => {
     expect(galleryThumbnailMaxDimension(80)).toBe(384);
     expect(galleryThumbnailMaxDimension(100)).toBe(480);
