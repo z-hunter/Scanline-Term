@@ -10,7 +10,13 @@ if (!$env:WEBVIEW2_SDK_DIR) {
         $url = "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$version/microsoft.web.webview2.$version.nupkg"
         & curl.exe -fsSL $url -o $package
         if ($LASTEXITCODE -ne 0) { throw 'WebView2 SDK download failed.' }
-        if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne '07FE4A9D1831CDEDA72672E84FAC4BC52DBF99D3D04D2530C6D087B54F14CDEB') {
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try {
+            $stream = [IO.File]::OpenRead($package)
+            try { $hash = [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') }
+            finally { $stream.Dispose() }
+        } finally { $sha256.Dispose() }
+        if ($hash -ne '07FE4A9D1831CDEDA72672E84FAC4BC52DBF99D3D04D2530C6D087B54F14CDEB') {
             throw 'Unexpected WebView2 SDK package hash.'
         }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
