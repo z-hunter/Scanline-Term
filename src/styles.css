@@ -1122,6 +1122,7 @@ footer {
 /* Reuse the Settings glass treatment for tab-bar action buttons. */
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"],
 .lua-automation-actions .glass-button-recess > button,
+.update-notice .glass-button-recess > button,
 .tabs-ai-button,
 .tabs-settings-button,
 .new-tab-button {
@@ -1143,6 +1144,7 @@ footer {
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):hover,
 .lua-automation-actions .glass-button-recess > button:not(:disabled):hover,
+.update-notice .glass-button-recess > button:not(:disabled):hover,
 .tabs-ai-button:not(:disabled):hover,
 .tabs-settings-button:not(:disabled):hover,
 .new-tab-button:not(:disabled):hover {
@@ -1164,6 +1166,7 @@ footer {
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:not(:disabled):active,
 .lua-automation-actions .glass-button-recess > button:not(:disabled):active,
+.update-notice .glass-button-recess > button:not(:disabled):active,
 .tabs-ai-button:active,
 .tabs-settings-button:active,
 .new-tab-button:active {
@@ -1174,7 +1177,8 @@ footer {
 }
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:disabled,
-.lua-automation-actions .glass-button-recess > button:disabled {
+.lua-automation-actions .glass-button-recess > button:disabled,
+.update-notice .glass-button-recess > button:disabled {
   cursor: default;
   opacity: .45;
   filter: saturate(.45);
@@ -1183,6 +1187,7 @@ footer {
 
 .preset-picker-row .glass-button-recess > [data-testid="preset-save"]:focus-visible,
 .lua-automation-actions .glass-button-recess > button:focus-visible,
+.update-notice .glass-button-recess > button:focus-visible,
 .tabs-ai-button:focus-visible,
 .tabs-settings-button:focus-visible,
 .new-tab-button:focus-visible {
@@ -1193,6 +1198,7 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   .preset-picker-row [data-testid="preset-save"],
   .lua-automation-actions button,
+  .update-notice button,
   .tabs-ai-button,
   .tabs-settings-button,
   .new-tab-button { transition: none; }

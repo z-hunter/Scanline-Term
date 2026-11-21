@@ -1537,12 +1537,12 @@ export default function App() {
         {availableUpdate && (
           <div className="update-notice" role="status">
             <span>Update {availableUpdate.version} is available.</span>
-            <button type="button" onClick={() => void installUpdate()} disabled={updateInstalling}>
+            <span className="glass-button-recess"><button type="button" onClick={() => void installUpdate()} disabled={updateInstalling}>
               {updateInstalling ? "Installing…" : "Install"}
-            </button>
-            <button type="button" onClick={dismissUpdate} disabled={updateInstalling}>
+            </button></span>
+            <span className="glass-button-recess"><button type="button" onClick={dismissUpdate} disabled={updateInstalling}>
               Later
-            </button>
+            </button></span>
           </div>
         )}
       </section>
