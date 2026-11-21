@@ -24,7 +24,7 @@ impl BrowserState {
 }
 
 #[derive(Default)]
-pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(windows)] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32, fullscreen: bool }
+pub struct BrowserStore { webviews: HashMap<BrowserId, Webview>, #[cfg(windows)] native_tabs: HashMap<BrowserId, NativeBrowserTab>, screencast_active: HashMap<BrowserId, Arc<AtomicBool>>, active: Option<BrowserId>, bounds: Option<BrowserBounds>, visibility_mode: i32, fullscreen: bool, host_fullscreen: bool }
 
 #[cfg(windows)]
 #[derive(Clone, Copy)]
@@ -68,6 +68,10 @@ fn fit_browser_bounds(viewport: &BrowserBounds, window: &BrowserBounds) -> Brows
         (window.width, window.width / ratio)
     };
     BrowserBounds { x: window.x + (window.width - width) / 2.0, y: window.y + (window.height - height) / 2.0, width, height }
+}
+
+fn must_exit_page_fullscreen(page_fullscreen: bool, host_fullscreen: bool, window_fullscreen: bool) -> bool {
+    page_fullscreen && host_fullscreen && !window_fullscreen
 }
 
 #[cfg(windows)]
@@ -581,9 +585,10 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         let became_active = state.active != session_id;
         let restore_fullscreen = became_active && state.fullscreen;
         if restore_fullscreen { state.fullscreen = false; }
-        let force_exit_page_fullscreen = state.fullscreen && !window_fullscreen;
+        let force_exit_page_fullscreen = must_exit_page_fullscreen(state.fullscreen, state.host_fullscreen, window_fullscreen);
         let exit_webview_fullscreen = if force_exit_page_fullscreen {
             state.fullscreen = false;
+            state.host_fullscreen = false;
             state.active.as_ref().and_then(|id| state.webviews.get(id).cloned())
         } else { None };
         #[cfg(windows)]
@@ -592,6 +597,8 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         } else { None };
         #[cfg(not(windows))]
         let exit_page_fullscreen: Option<usize> = None;
+        if window_fullscreen { state.host_fullscreen = true; }
+        else if !state.fullscreen { state.host_fullscreen = false; }
         state.active = session_id.clone(); state.bounds = bounds.clone();
         state.visibility_mode = if session_id.is_some() { visibility_mode.unwrap_or_else(|| if bounds.as_ref().is_some_and(|b| b.x < 0.0 || b.y < 0.0) { 2 } else { 1 }) } else { 0 };
         let mut fullscreen_rect = if state.fullscreen {
@@ -701,7 +708,7 @@ pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url, fit_browser_bounds, BrowserBounds};
+    use super::{browser_color_value, browser_shortcut, browser_target_url, browser_url, fit_browser_bounds, must_exit_page_fullscreen, BrowserBounds};
 
     #[test]
     fn fullscreen_bounds_preserve_form_factor_and_center_in_window() {
@@ -712,6 +719,13 @@ mod tests {
         assert_eq!((eight_five.x, eight_five.y, eight_five.width, eight_five.height), (96.0, 0.0, 1728.0, 1080.0));
         let beside_settings = fit_browser_bounds(&BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 }, &BrowserBounds { x: 0.0, y: 0.0, width: 1200.0, height: 1080.0 });
         assert_eq!((beside_settings.x, beside_settings.y, beside_settings.width, beside_settings.height), (0.0, 90.0, 1200.0, 900.0));
+    }
+
+    #[test]
+    fn exits_page_fullscreen_only_after_the_host_was_fullscreen() {
+        assert!(!must_exit_page_fullscreen(true, false, false));
+        assert!(must_exit_page_fullscreen(true, true, false));
+        assert!(!must_exit_page_fullscreen(true, true, true));
     }
 
     #[test]
