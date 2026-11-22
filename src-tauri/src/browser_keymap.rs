@@ -37,6 +37,10 @@ pub struct Binding {
 pub struct BrowserKeymapState(pub std::sync::Mutex<BrowserKeymap>, [std::sync::atomic::AtomicU64; 4]);
 
 impl BrowserKeymapState {
+    pub fn focused_generation(&self) -> Option<u64> {
+        self.0.try_lock().ok().and_then(|state| state.focused.then_some(state.generation))
+    }
+
     #[cfg(debug_assertions)]
     pub fn supports_probe_chord(&self, keys: &[u32]) -> bool {
         if keys.is_empty() || keys.len() > 4 || keys.iter().any(|key| *key > 0xFF || matches!(*key, 0 | 0x5b | 0x5c)) {

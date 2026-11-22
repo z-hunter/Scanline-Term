@@ -74,7 +74,7 @@ export function HomeDashboard({ tabId, onNavigate, onError }: { tabId: string; o
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
-      if (event.key === 'F6' || (event.code === 'KeyO' && !event.ctrlKey && !event.altKey && !event.metaKey && !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement))) {
+      if (event.code === 'F6' || (event.code === 'KeyO' && !event.ctrlKey && !event.altKey && !event.metaKey && !(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement))) {
         event.preventDefault();
         searchRef.current?.focus();
         searchRef.current?.select();
@@ -139,7 +139,7 @@ export function HomeDashboard({ tabId, onNavigate, onError }: { tabId: string; o
         return;
       }
       const editable = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
-      if (event.key.toLocaleLowerCase() === 'f' && !editable) { event.preventDefault(); showHints(); return; }
+      if (event.code === 'KeyF' && !editable) { event.preventDefault(); showHints(); return; }
       if (editable || (event.target instanceof Element && event.target.closest('button'))) return;
       const shortcut = event.key.toLocaleLowerCase();
       const link = links.find(({ link: item }) => item.shortcut?.toLocaleLowerCase() === shortcut)?.link;

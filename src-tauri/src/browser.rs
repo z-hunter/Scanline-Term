@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
 
 use tauri::{webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
-use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2, take_pwstr};
+use webview2_com::{AddScriptToExecuteOnDocumentCreatedCompletedHandler, CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, FrameCreatedEventHandler, FrameDOMContentLoadedEventHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2, ICoreWebView2_4, ICoreWebView2Frame2}, take_pwstr};
 use windows::core::{HSTRING, PWSTR};
 #[cfg(windows)]
 use windows::core::Interface;
@@ -115,30 +115,67 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const labelAt = (n, total = 0) => { let w = 1, c = labels.length; while (total > c) { w++; c *= labels.length; } let s = ''; for (let i = w - 1; i >= 0; i--) s += labels[Math.floor(n / Math.pow(labels.length, i)) % labels.length]; return s; };
   const clearHints = () => { hint?.nodes.forEach(n => n.remove()); hint = null; };
   const showHints = () => { clearHints(); const items = [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button]')].filter(e => { const r=e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; }); const entries=items.map((element,index)=>({element,label:labelAt(index, items.length)})); const nodes=entries.map(({element,label})=>{ const r=element.getBoundingClientRect(), node=document.createElement('i'); node.textContent=label; node.style.cssText=`position:fixed;z-index:2147483647;left:${r.left}px;top:${r.top}px;background:#ffe66d;color:#111;padding:1px 3px;font:12px monospace;font-style:normal;pointer-events:none`; document.documentElement.append(node); return node; }); hint={entries,nodes,typed:''}; };
-  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; box.innerHTML = '<button type="button" data-back aria-label="Back">←</button><button type="button" data-forward aria-label="Forward">→</button><input aria-label="Address" style="min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px" />'; const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const v=input.value.trim(); close(); if(v) location.href=/^(?:https?|file):\/\//i.test(v)?v:`https://${v}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
+  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px'; box.append(field); const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const value=input.value.trim(); close(); if(value) location.href=/^(?:https?|file):\/\//i.test(value)?value:`https://${value}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
+  window.__scanlineOpenAddress = address;
   addEventListener('keydown', e => {
     if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter(item=>item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
-    if (e.key === 'F6') { e.preventDefault(); address(); return; }
+    if (e.code === 'F6') { e.preventDefault(); address(); return; }
     if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); mode = 'normal'; } return; }
     if (mode === 'pass') { if (e.key === 'Escape') { e.preventDefault(); mode = 'normal'; } return; }
     if (editable(e.target)) return;
-    if (e.key === 'i') { mode = 'pass'; return; }
     if (e.code === 'KeyO') { e.preventDefault(); address(); return; }
+    if (e.code === 'KeyI') { mode = 'pass'; return; }
     if (e.code === 'Backspace') { e.preventDefault(); history.back(); return; }
     if (e.code === 'KeyJ') { e.preventDefault(); scrollBy(0, 64); }
     else if (e.code === 'KeyK') { e.preventDefault(); scrollBy(0, -64); }
     else if (e.code === 'KeyD') { e.preventDefault(); scrollBy(0, innerHeight / 2); }
     else if (e.code === 'KeyU') { e.preventDefault(); scrollBy(0, -innerHeight / 2); }
-    else if (e.key === 'G') { e.preventDefault(); scrollTo(0, document.body.scrollHeight); }
-    else if (e.key === 'g' && pendingG) { e.preventDefault(); scrollTo(0, 0); pendingG = false; }
-    else if (e.key === 'g') { pendingG = true; setTimeout(() => pendingG = false, 500); }
+    else if (e.code === 'KeyG' && e.shiftKey) { e.preventDefault(); scrollTo(0, document.body.scrollHeight); }
+    else if (e.code === 'KeyG' && pendingG) { e.preventDefault(); scrollTo(0, 0); pendingG = false; }
+    else if (e.code === 'KeyG') { pendingG = true; setTimeout(() => pendingG = false, 500); }
     else if (e.code === 'KeyH') { e.preventDefault(); history.back(); }
     else if (e.code === 'KeyL') { e.preventDefault(); history.forward(); }
-    else if (e.key.toLowerCase() === 'f') { e.preventDefault(); showHints(); }
-    else if (e.key === '/') { e.preventDefault(); const text=prompt('Find'); if(text) window.find(text); }
-    else if (e.key === 'r') { e.preventDefault(); location.reload(); }
+    else if (e.code === 'KeyF') { e.preventDefault(); showHints(); }
+    else if (e.code === 'Slash') { e.preventDefault(); const text=prompt('Find'); if(text) window.find(text); }
+    else if (e.code === 'KeyR') { e.preventDefault(); location.reload(); }
   }, true);
   setTimeout(reportColor, 0);
+})()"#;
+
+const FRAME_HOTKEY_SCRIPT: &str = r#"(() => {
+  const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
+  const isAddressKey = e => e.code === 'F6' || e.code === 'KeyO' && !editable(e.target);
+  if (window === window.top) {
+    const openAddress = () => {
+      document.querySelector('[data-scanline-address]')?.remove();
+      const box = document.createElement('form');
+      box.dataset.scanlineAddress = '';
+      box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box';
+      for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px'; box.append(field);
+      const input = box.querySelector('input');
+      const close = () => { document.removeEventListener('pointerdown', outside, true); box.remove(); };
+      const outside = e => { if (!box.contains(e.target)) close(); };
+      input.value = location.href;
+      box.querySelector('[data-back]').onclick = () => history.back();
+      box.querySelector('[data-forward]').onclick = () => history.forward();
+      box.onsubmit = e => { e.preventDefault(); const value = input.value.trim(); close(); if (value) location.href = /^(?:https?|file):\/\//i.test(value) ? value : `https://${value}`; };
+      input.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } else if (e.key === 'Enter') { e.preventDefault(); box.requestSubmit(); } };
+      document.documentElement.append(box);
+      requestAnimationFrame(() => document.addEventListener('pointerdown', outside, true));
+      input.focus(); input.select();
+    };
+    window.__scanlineOpenAddress = openAddress;
+    addEventListener('keydown', e => { if (!isAddressKey(e)) return; e.preventDefault(); e.stopImmediatePropagation(); openAddress(); }, true);
+    addEventListener('message', e => {
+      if (e.source !== window && e.data === '__scanline-browser-address') openAddress();
+    }, true);
+  } else {
+    addEventListener('keydown', e => {
+      if (!isAddressKey(e)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      window.top.postMessage('__scanline-browser-address', '*');
+    }, true);
+  }
 })()"#;
 
 fn browser_color_value(value: &str) -> Option<String> {
@@ -202,6 +239,37 @@ fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: Nat
         }));
         let mut token = 0;
         core.add_NavigationStarting(&navigation, &mut token).map_err(|error| error.to_string())?;
+
+        let core_for_script = core.clone();
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(
+            Box::new(move |handler| {
+                let script = HSTRING::from(FRAME_HOTKEY_SCRIPT);
+                core_for_script.AddScriptToExecuteOnDocumentCreated(&script, &handler).map_err(Into::into)
+            }),
+            Box::new(|error, _| error),
+        ).map_err(|error| error.to_string())?;
+
+        // Reinstall the shortcut bridge after each child frame has a script context.
+        // Some embedded players receive keys in their own frame instead of the page.
+        let frame_created = FrameCreatedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()); };
+            let frame: ICoreWebView2Frame2 = args.Frame()?.cast()?;
+            let loaded = FrameDOMContentLoadedEventHandler::create(Box::new(move |frame, _| {
+                if let Some(frame) = frame {
+                    if let Ok(frame) = frame.cast::<ICoreWebView2Frame2>() {
+                        let callback = ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(())));
+                        let _ = frame.ExecuteScript(&HSTRING::from(FRAME_HOTKEY_SCRIPT), &callback);
+                    }
+                }
+                Ok(())
+            }));
+            let mut frame_token = 0;
+            frame.add_DOMContentLoaded(&loaded, &mut frame_token)?;
+            Ok(())
+        }));
+        let core_v4: ICoreWebView2_4 = core.cast().map_err(|error| error.to_string())?;
+        let mut frame_token = 0;
+        core_v4.add_FrameCreated(&frame_created, &mut frame_token).map_err(|error| error.to_string())?;
 
         let page_app = app.clone();
         let page_id = id.clone();
@@ -311,6 +379,7 @@ fn create_browser_impl(app: tauri::AppHandle, session_id: BrowserId, url: Option
             .on_navigation(move |url| { matches!(url.scheme(), "http" | "https" | "about") || (url.scheme() == "file" && browser_target_url(url.as_str()).is_ok()) })
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .on_download(|_, _| true)
+            .initialization_script_for_all_frames(FRAME_HOTKEY_SCRIPT)
             .on_page_load(move |webview, payload| { let event = payload.event(); trace(&page_app, match event { PageLoadEvent::Started => "load-start", PageLoadEvent::Finished => "load-finished" }, &page_id, payload.url().as_str()); if event == PageLoadEvent::Finished { match webview.eval(&navigation_script) { Ok(()) => trace(&page_app, "script-installed", &page_id, payload.url().as_str()), Err(error) => trace(&page_app, "script-failed", &page_id, error.to_string()) } } })
             .on_document_title_changed(move |_, title| { if let Some((_, raw_color)) = title.rsplit_once('\u{2063}') { if let Some(color) = browser_color_value(raw_color) { let _ = app_for_title.emit("browser-color", serde_json::json!({ "sessionId": id, "background": color })); return; } } let _ = app_for_title.emit("browser-title", serde_json::json!({ "sessionId": id, "title": title })); }),
         LogicalPosition::new(0.0, 0.0), LogicalSize::new(1.0, 1.0)
@@ -402,6 +471,28 @@ pub async fn navigate_browser(app: tauri::AppHandle, state: State<'_, BrowserSta
     }
     let browser_state = state.0.lock().map_err(|_| "browser state is unavailable")?;
     browser_state.webviews.get(&session_id).ok_or("browser is not running")?.navigate(url).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_browser_address(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId) -> Result<(), String> {
+    valid_id(&session_id)?;
+    #[cfg(windows)]
+    if state.0.lock().map_err(|_| "browser state is unavailable")?.native_tabs.contains_key(&session_id) {
+        let app_for_state = app.clone();
+        let id = session_id.clone();
+        tauri::async_runtime::spawn_blocking(move || browser_texture_stream::with_main_webview(&app, move |_, _| unsafe {
+            let state = app_for_state.state::<BrowserState>();
+            let store = state.0.lock().map_err(|_| "browser state is unavailable".to_owned())?;
+            let tab = store.native_tabs.get(&id).ok_or_else(|| "native browser tab is unavailable".to_owned())?;
+            let mut core_raw = tab.core as *mut std::ffi::c_void;
+            let core = ICoreWebView2::from_raw_borrowed(&mut core_raw).ok_or_else(|| "native browser core is unavailable".to_owned())?;
+            let callback = ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(())));
+            core.ExecuteScript(&HSTRING::from("window.__scanlineOpenAddress?.()"), &callback).map_err(|error| error.to_string())
+        })).await.map_err(|error| error.to_string())???;
+        return Ok(());
+    }
+    let store = state.0.lock().map_err(|_| "browser state is unavailable")?;
+    store.webviews.get(&session_id).ok_or("browser is not running")?.eval("window.__scanlineOpenAddress?.()").map_err(|error| error.to_string())
 }
 
 #[tauri::command]

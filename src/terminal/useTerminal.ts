@@ -636,7 +636,10 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
         .catch((reason) => onError(`Could not update browser shortcuts: ${String(reason)}`));
     };
     void listen<{ generation: number; sessionId: string; command: string }>('browser-command', ({ payload }) => {
-      if (payload.generation === generation && payload.sessionId === activeRef.current) dispatchCommand(payload.command);
+      if (payload.generation !== generation || payload.sessionId !== activeRef.current) return;
+      if (payload.command === 'browser.address.open') {
+        void invoke('open_browser_address', { sessionId: payload.sessionId }).catch((reason) => onError(`Could not open browser address: ${String(reason)}`));
+      } else dispatchCommand(payload.command);
     }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; });
     window.addEventListener('keymap-changed', update);
     update();
@@ -810,7 +813,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
       if (event.keyCode === 252) return;
       const tab = tabsRef.current.find((item) => item.id === activeRef.current && item.kind === 'browser');
       if (!addressTabId && tab && !browsers.current.has(tab.id)) {
-        if (event.key === 'F6') {
+        if (event.code === 'F6') {
           event.preventDefault();
           event.stopImmediatePropagation();
           setAddressTabId(tab.id);

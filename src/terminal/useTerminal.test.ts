@@ -824,7 +824,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     await act(async () => { hostButton.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true })); });
     expect(hookResult.addressTabId).toBeNull();
 
-    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', bubbles: true })); });
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'F6', code: 'F6', bubbles: true })); });
     expect(hookResult.addressTabId).toBe(browserId);
 
     await act(async () => { await hookResult.closeSession(browserId); });

@@ -54,7 +54,7 @@ describe('HomeDashboard', () => {
   it('uses F hints for panel actions and suppresses F5 reload', async () => {
     const { host, onNavigate } = await renderHome();
     const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 10, top: 10, right: 90, bottom: 40, width: 80, height: 30 } as DOMRect);
-    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true })); });
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', bubbles: true, cancelable: true })); });
     expect(host.querySelector('[data-hint-mode="active"]')).toBeTruthy();
     const actions = Array.from(host.querySelectorAll<HTMLElement>('a[href],button,input,textarea,select,[role="button"]'));
     const githubIndex = actions.findIndex((element) => element.textContent?.includes('GitHub'));

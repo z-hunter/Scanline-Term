@@ -741,7 +741,7 @@ mod windows_hook {
         UI::{
             Input::KeyboardAndMouse::{
                 INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_CAPITAL,
-                VK_NONAME,
+                VK_F6, VK_NONAME,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, GA_ROOT, GUITHREADINFO, GetAncestor,
@@ -786,6 +786,7 @@ mod windows_hook {
     static DEBUG_ARMED: AtomicBool = AtomicBool::new(false);
     static CAPS_SUPPRESSED_DOWN: AtomicBool = AtomicBool::new(false);
     static BROWSER_CAPS_DOWN: AtomicBool = AtomicBool::new(false);
+    static BROWSER_F6_DOWN: AtomicBool = AtomicBool::new(false);
     static CAPS_LOGICAL_DOWN: AtomicBool = AtomicBool::new(false);
     static TOKEN_UP_PENDING: AtomicBool = AtomicBool::new(false);
 
@@ -995,6 +996,9 @@ mod windows_hook {
                 }
                 return 1;
             }
+            if vk == VK_F6 as u32 && up && BROWSER_F6_DOWN.swap(false, Ordering::AcqRel) {
+                return 1;
+            }
             if up {
                 if let Some(app) = HOOK_APP.get() {
                     if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
@@ -1006,6 +1010,19 @@ mod windows_hook {
             if browser_is_focused(browser_hwnd) {
                 if let Some(app) = HOOK_APP.get() {
                     if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                        if vk == VK_F6 as u32 && down {
+                            if BROWSER_F6_DOWN.swap(true, Ordering::AcqRel) { return 1; }
+                            let Some(map_generation) = state.focused_generation() else {
+                                BROWSER_F6_DOWN.store(false, Ordering::Release);
+                                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+                            };
+                            if !crate::browser_keymap::queue_command(generation, map_generation, "browser.address.open".into()) {
+                                BROWSER_F6_DOWN.store(false, Ordering::Release);
+                                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+                            }
+                            unsafe { PostThreadMessageW(HOOK_THREAD_ID.load(Ordering::Acquire), WM_BROWSER_COMMAND, 0, 0); }
+                            return 1;
+                        }
                         let (consumed, map_generation, command) = state.key(generation, vk, down);
                         if vk == VK_CAPITAL as u32 && down && state.uses_caps_term() {
                             BROWSER_CAPS_DOWN.store(true, Ordering::Release);
