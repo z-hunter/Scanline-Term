@@ -77,6 +77,10 @@ fn must_exit_page_fullscreen(page_fullscreen: bool, host_fullscreen: bool, windo
     page_fullscreen && host_fullscreen && !window_fullscreen
 }
 
+fn host_fullscreen_after_page_change(host_fullscreen: bool, page_fullscreen: bool) -> bool {
+    host_fullscreen && page_fullscreen
+}
+
 #[cfg(windows)]
 fn native_browser_rect(bounds: Option<&BrowserBounds>, scale: f64) -> (i32, i32, u32, u32) {
     let bounds = bounds.cloned().unwrap_or(BrowserBounds { x: 0.0, y: 0.0, width: 1280.0, height: 720.0 });
@@ -200,6 +204,7 @@ fn install_browser_fullscreen_handler(app: &tauri::AppHandle, session_id: &str, 
             let active = app.state::<BrowserState>().0.lock().is_ok_and(|mut state| {
                 if state.active.as_deref() != Some(&id) { return false; }
                 state.fullscreen = contains_fullscreen.as_bool();
+                state.host_fullscreen = host_fullscreen_after_page_change(state.host_fullscreen, state.fullscreen);
                 true
             });
             if active {
@@ -859,7 +864,7 @@ pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_color_value, browser_target_url, browser_url, fit_browser_bounds, must_exit_page_fullscreen, BrowserBounds};
+    use super::{browser_color_value, browser_target_url, browser_url, fit_browser_bounds, host_fullscreen_after_page_change, must_exit_page_fullscreen, BrowserBounds};
 
     #[test]
     fn fullscreen_bounds_preserve_form_factor_and_center_in_window() {
@@ -877,6 +882,12 @@ mod tests {
         assert!(!must_exit_page_fullscreen(true, false, false));
         assert!(must_exit_page_fullscreen(true, true, false));
         assert!(!must_exit_page_fullscreen(true, true, true));
+    }
+
+    #[test]
+    fn page_exit_clears_the_previous_host_fullscreen_state() {
+        assert!(!host_fullscreen_after_page_change(true, false));
+        assert!(host_fullscreen_after_page_change(true, true));
     }
 
     #[test]
