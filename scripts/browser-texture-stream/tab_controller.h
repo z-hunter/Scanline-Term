@@ -148,6 +148,11 @@ inline HRESULT SetBounds(BrowserTab& tab, INT x, INT y, UINT width, UINT height,
 
 extern "C" __declspec(dllexport) BOOL __cdecl ScanlineBrowserTabAvailable() { return TRUE; }
 
+extern "C" __declspec(dllexport) HWND __cdecl ScanlineBrowserTabWindow(UINT64 handle) {
+    const auto found = browser_tabs::tabs.find(handle);
+    return found == browser_tabs::tabs.end() ? nullptr : found->second->window;
+}
+
 extern "C" __declspec(dllexport) HRESULT __cdecl ScanlineBrowserTabCreate(
     ICoreWebView2Environment* environment, HWND owner, const wchar_t* tabId, UINT width, UINT height,
     void* context, void (__cdecl* completed)(void*, HRESULT, UINT64, ICoreWebView2*, ICoreWebView2Controller*)) {

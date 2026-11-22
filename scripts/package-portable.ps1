@@ -35,7 +35,7 @@ $luaResource = Join-Path $stage "lua-examples"
 foreach ($directory in @("editors", "modules", "scripts", "palettes", "lua-examples", "lua-examples\editors", "lua-examples\modules", "lua-examples\scripts", "lua-examples\palettes")) {
   New-Item -ItemType Directory -Path (Join-Path $stage $directory) -Force | Out-Null
 }
-foreach ($relativePath in @("sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua", "palettes\users.lua", "ai-prompts.lua")) {
+  foreach ($relativePath in @("sterm.lua", "keymap.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua", "palettes\users.lua", "ai-prompts.lua")) {
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $stage $relativePath)
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $luaResource $relativePath)
 }

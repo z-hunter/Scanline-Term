@@ -2,6 +2,8 @@
 -- in the Lua guide. Its files are snapshotted at startup and on Reload config.
 local sterm = require 'sterm'
 
+sterm.include('keymap.lua')
+
 -- scanline-term:managed-settings:begin
 -- GUI settings are saved here; this inert template declares no overrides.
 -- scanline-term:managed-settings:end

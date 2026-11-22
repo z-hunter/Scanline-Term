@@ -67,6 +67,8 @@ ScanlineTerm/
 │   │   ├── lua-preset-request.ts          # Safe preset request validation & rejection
 │   │   ├── ScanlineTerminalRenderer.ts    # SVS host adapter, image overlays & splash screen
 │   │   ├── gallery-renderer.ts            # Isolated sequential live Gallery renderer
+│   │   ├── keymap.ts                      # Command bindings, validation and key matching
+│   │   ├── global-hotkeys.ts              # Windows-wide shortcut conversion
 │   │   ├── shells.ts                      # Shell identity, command resolution & catalog
 │   │   ├── terminal-automation.ts         # Shared Codex/MCP observation & input dispatch
 │   │   ├── terminal-input.ts              # Standard VT escape sequence keyboard encoder
@@ -101,6 +103,7 @@ ScanlineTerm/
 │   │   │   └── scanline-term-mcp.rs       # Standalone stdio MCP JSON-RPC sidecar CLI
 │   │   ├── automation_probe.rs            # Debug-only Windows hook & input injection probe
 │   │   ├── browser.rs                     # Native child WebViews for browser tabs
+│   │   ├── browser_keymap.rs              # Focus-scoped browser shortcut matching and queue
 │   │   ├── caps_hook.rs                   # Low-level Windows hook (`WH_KEYBOARD_LL`) & Smart Caps
 │   │   ├── codex.rs                       # Codex app-server child process & JSONL bridge
 │   │   ├── explorer.rs                    # Per-user Windows Explorer folder integration
@@ -130,7 +133,7 @@ ScanlineTerm/
 
 #### [`src/App.tsx`](../src/App.tsx) *(composition root)*
 The primary React composition root. Rather than containing low-level terminal rendering directly, it coordinates all submodules:
-* **Global Hotkey & Shortcut Routing:** Handles `Ctrl+T` (new tab), `Ctrl+W` (close), `Ctrl+Tab` / `Ctrl+Shift+Tab` (tab cycle), `Alt+Enter` (fullscreen), `Menu+P` (quick preset picker), `Menu+Backspace` (tab gallery), and `Ctrl+F` (search).
+* **Global Hotkey & Shortcut Routing:** Applies the Lua keymap and routes commands for tabs, fullscreen, presets, gallery, and terminal search. The bundled defaults use `Menu` as the `term` modifier.
 * **Modal Dialog & Drawer State:** Controls visibility of `SettingsPanel`, `AiPanel`, `QuickPresetPicker`, `TabGallery`, and in-canvas search overlays.
 * **Codex Session Mapping:** Supplies active-tab context to `useCodexAssistant`, which owns each tab's thread, messages, model selection, and turn lifecycle.
 * **CRT Preview Cache:** Captures lightweight thumbnail frames of inactive tabs to feed the `TabGallery`.
@@ -289,7 +292,7 @@ The WebGL rendering engine and analog CRT post-processing pipeline are maintaine
 | `terminal-launch` | `{ command?, args?, cwd? }` | `App.tsx` | Second CLI instance launch request |
 | `browser-title` | `{ sessionId, title }` | `useTerminal` | Document title change from child WebView |
 | `browser-color` | `{ sessionId, background }`| `useTerminal` | Background color change from child WebView |
-| `browser-shortcut` | `{ sessionId, code, shiftKey, altKey }`| `useTerminal` | Forwarded allowlisted shortcut from child WebView; Alt is accepted only for Enter fullscreen |
+| `browser-command` | `{ sessionId, generation, command }` | `useTerminal` | Focus-checked native browser shortcut dispatched through the active keymap |
 | `lua-preset-request`| `{ frontendId, tabId, name }` | `useManagedSettings` | Requested preset change from Lua script |
 | `codex-message` | `{ generation, message }` | `CodexClient` | Incoming JSON-RPC response from Codex |
 | `codex-exit` | `{ generation, text }` | `CodexClient` | Unexpected termination of Codex server |

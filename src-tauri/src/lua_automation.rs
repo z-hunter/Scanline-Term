@@ -149,6 +149,7 @@ pub(crate) struct ReloadCleanupRequest {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReloadPreparation {
+    keymap: Option<serde_json::Value>,
     token: String,
     frontend_id: String,
     generation: u64,
@@ -883,6 +884,7 @@ pub struct ManagedSettingsPayload {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagedSettingsResult {
+    pub keymap: Option<serde_json::Value>,
     pub settings: ManagedSettingsPayload,
     pub revision: String,
     pub path: String,
@@ -925,6 +927,7 @@ pub fn load_managed_settings(
         snapshot.ansi_palettes(),
         snapshot.custom_shells(),
         snapshot.ai_prompts(),
+        snapshot.keymap(),
     ))
 }
 
@@ -984,6 +987,7 @@ pub fn save_managed_settings(
         snapshot.ansi_palettes(),
         snapshot.custom_shells(),
         snapshot.ai_prompts(),
+        snapshot.keymap(),
     ))
 }
 
@@ -1448,6 +1452,7 @@ fn worker_loop(
                         .map(|snapshot| snapshot.ansi_palettes().to_vec()),
                     shells: candidate.as_ref().map(|snapshot| snapshot.custom_shells().to_vec()),
                     ai_prompts: candidate.as_ref().and_then(|snapshot| snapshot.ai_prompts().cloned()),
+                    keymap: candidate.as_ref().and_then(|snapshot| snapshot.keymap().cloned()),
                     candidate_status,
                     error,
                 };
@@ -1513,6 +1518,15 @@ fn worker_loop(
                     let _ = reply.send(Err("Lua reload cleanup acknowledgement is invalid".into()));
                     continue;
                 }
+                if prepared.candidate.is_some() {
+                    if let Err(error) = crate::commit_global_hotkeys(app.clone()) {
+                        let _ = reply.send(Err(error));
+                        continue;
+                    }
+                } else if let Err(error) = crate::abort_global_hotkeys(app.clone()) {
+                    let _ = reply.send(Err(error));
+                    continue;
+                }
                 let prepared = prepared_reload.take().unwrap();
                 let tabs: Vec<String> = shared
                     .lock()
@@ -1570,6 +1584,10 @@ fn worker_loop(
                 });
                 if !matches {
                     let _ = reply.send(Err("Lua reload transition is stale".into()));
+                    continue;
+                }
+                if let Err(error) = crate::abort_global_hotkeys(app.clone()) {
+                    let _ = reply.send(Err(error));
                     continue;
                 }
                 crate::caps_hook::revoke(&app);
@@ -1910,6 +1928,7 @@ const LUA_STARTER_FILES: &[(&str, &str)] = &[
     ("palettes/users.lua", "palettes/users.lua"),
     ("ai-prompts.lua", "ai-prompts.lua"),
     ("sterm.lua", "config.lua"),
+    ("keymap.lua", "keymap.lua"),
 ];
 
 fn seed_lua_config(
@@ -2099,8 +2118,10 @@ fn managed_settings_result(
     palettes: &[AnsiPalette],
     shells: &[CustomShell],
     ai_prompts: Option<&AiPrompts>,
+    keymap: Option<&serde_json::Value>,
 ) -> ManagedSettingsResult {
     ManagedSettingsResult {
+        keymap: keymap.cloned(),
         settings: ManagedSettingsPayload {
             default_preset: settings.and_then(|settings| settings.default_preset.clone()),
             smooth_scrollback: settings.and_then(|settings| settings.smooth_scrollback),
@@ -3326,6 +3347,7 @@ mod tests {
         fs::create_dir_all(root.join("editors")).unwrap();
         fs::create_dir_all(root.join("modules")).unwrap();
         fs::create_dir_all(root.join("palettes")).unwrap();
+        fs::write(root.join("keymap.lua"), include_str!("../../examples/lua/keymap.lua")).unwrap();
         fs::write(
             root.join("config.lua"),
             include_str!("../../examples/lua/sterm.lua"),
@@ -3666,6 +3688,7 @@ mod tests {
             original_snapshot.ansi_palettes(),
             original_snapshot.custom_shells(),
             original_snapshot.ai_prompts(),
+            original_snapshot.keymap(),
         );
         assert!(!result.has_settings);
         assert_eq!(result.palettes[0].id, "lua:users");
@@ -3808,6 +3831,7 @@ mod tests {
         fs::create_dir_all(directory.join("modules")).unwrap();
         fs::create_dir_all(directory.join("scripts")).unwrap();
         fs::create_dir_all(directory.join("palettes")).unwrap();
+        fs::write(directory.join("keymap.lua"), include_str!("../../examples/lua/keymap.lua")).unwrap();
         fs::write(
             directory.join("sterm.lua"),
             include_str!("../../examples/lua/sterm.lua"),
@@ -3868,6 +3892,7 @@ mod tests {
             "modules/modal_editor.lua",
             "scripts/far_preset.lua",
             "palettes/users.lua",
+            "keymap.lua",
             "ai-prompts.lua",
         ] {
             assert_eq!(
@@ -3999,6 +4024,7 @@ mod tests {
             palettes: Some(Vec::new()),
             shells: Some(Vec::new()),
             ai_prompts: None,
+            keymap: None,
             candidate_status: "ready",
             error: None,
         };

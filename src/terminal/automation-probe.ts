@@ -69,6 +69,11 @@ export class TerminalAutomationProbe {
     if (request) void this.requestLayout(request);
   }
 
+  testBrowserChord(keys: unknown): void {
+    if (!this.status.enabled || !Array.isArray(keys) || keys.length < 1 || keys.length > 4 || new Set(keys).size !== keys.length || keys.some((key) => !Number.isInteger(key) || key < 1 || key > 0xff || [0x5b, 0x5c].includes(key))) return;
+    this.send('automation-probe-browser-key-test', { frontendId: this.frontendId, keys });
+  }
+
   dispose(): void {
     this.startEpoch++;
     this.startPromise = null;
@@ -97,21 +102,29 @@ export class TerminalAutomationProbe {
   }
 
   private async startListeners(epoch: number): Promise<void> {
+    const browserChord = (event: Event) => {
+      if (event instanceof CustomEvent) this.testBrowserChord(event.detail);
+    };
+    window.addEventListener('scanline-automation-probe-browser-chord', browserChord);
     const results = await Promise.allSettled([
       listen<ProbeStatus>('automation-probe-status', ({ payload }) => { if (epoch === this.startEpoch) this.setStatus(payload); }),
       listen<ProbeLayoutChangeEvent>('automation-probe-layout-changed', ({ payload }) => { if (epoch === this.startEpoch) this.layoutChanged(payload); }),
       listen<ProbeLayoutErrorEvent>('automation-probe-layout-error', ({ payload }) => { if (epoch === this.startEpoch) this.layoutError(payload); }),
+      listen<{ reason: string }>('automation-probe-error', ({ payload }) => { if (epoch === this.startEpoch) this.onError(`Automation probe failed: ${payload.reason}`); }),
     ]);
     const stops = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
     if (epoch !== this.startEpoch) {
+      window.removeEventListener('scanline-automation-probe-browser-chord', browserChord);
       stops.forEach((stop) => stop());
       return;
     }
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failed) {
+      window.removeEventListener('scanline-automation-probe-browser-chord', browserChord);
       stops.forEach((stop) => stop());
       throw failed.reason;
     }
+    stops.push(() => window.removeEventListener('scanline-automation-probe-browser-chord', browserChord));
     this.unlisten = stops;
     await emit('automation-probe-ready', { frontendId: this.frontendId });
   }

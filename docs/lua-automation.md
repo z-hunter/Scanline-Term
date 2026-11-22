@@ -33,6 +33,30 @@ For Helix, click inside the terminal canvas first so the editor receives focus. 
 
 Sources are read into a bounded snapshot at load; filesystem edits take effect on reload.
 
+## Keyboard shortcuts
+
+The bundled `keymap.lua` lists the app commands and their keyboard shortcuts. The starter `sterm.lua` loads it with `sterm.include('keymap.lua')`. Existing configurations can add that line themselves. Edit the file and use **Reload config** in Settings to apply changes without restarting.
+
+The `term` setting names the shared shortcut modifier. It defaults to `Menu`, the keyboard's application-menu key. For example, change it to `RightCtrl+RightShift` to make `term+S` work by holding those two keys and pressing S. You can also use `CapsLock`, `RightShift`, or combinations of Ctrl, Shift, Alt and Win. Prefix a modifier with `Left` or `Right` to choose a side.
+
+Each command has a stable name. A shortcut can be a string, a list of alternatives, or `false` to disable it. For example:
+
+```lua
+require('sterm').keymap({
+  term = 'RightCtrl+RightShift',
+  bindings = {
+    ['settings.toggle'] = 'term+S',
+    ['window.toggle_visibility'] = 'Win+Backquote',
+    ['window.show_gallery'] = 'Win+Shift+G',
+    ['terminal.copy_mode'] = false,
+  },
+})
+```
+
+`window.toggle_visibility` and `window.show_gallery` are Windows-wide shortcuts. They use Ctrl, Shift, Alt and Win modifiers and work when another application has focus. Enable the global hotkey setting in System to use them. The Gallery command shows Scanline Term and opens Gallery. Windows may reject a combination that is already in use.
+
+When no keymap is declared, the built-in shortcuts remain available. See the bundled `keymap.lua` for command names and the complete default list. The same map applies to all tabs. If Caps Lock is assigned to `term`, it takes precedence over Smart Caps while Scanline Term has focus.
+
 ## Managed settings
 
 The entry file may declare GUI-managed settings once, at top level. All fields are optional and omitted fields use application defaults; unknown fields are rejected.

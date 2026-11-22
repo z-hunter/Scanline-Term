@@ -26,6 +26,7 @@ export type LuaPresetRequest = { frontendId: string; generation: number; tabId: 
 
 export type LuaReloadCleanup = { id: string; tabId: string; name: string; expectedCurrentPreset: string };
 export type LuaReloadPreparation = {
+  keymap?: import('./keymap').Keymap | null;
   frontendId: string;
   token: string;
   cleanup: LuaReloadCleanup[];

@@ -140,25 +140,24 @@ The global **Gallery card size** knob in UI settings uses integer percentages fr
 
 The System setting `Windows Explorer: Open with ScanlineTerm here` is persisted in `StoredSettings`. The native `set_explorer_integration` command owns the matching per-user registry verbs under `HKCU\\Software\\Classes`, including the `Icon` value sourced from the bundled window icon; keep enable, disable, and the MSI's `ForceDeleteOnUninstall` entries in sync. Commands use `-T -P` for folder objects and folder backgrounds, so the regular CLI and single-instance launch path remain the only terminal-start path.
 
-## Adding a System Menu Action
+## Adding a Keyboard Shortcut
 
 ### Files to Modify
 
-1. **[`src/App.tsx`](../src/App.tsx)** — `onKeyDown` handler for Menu+key shortcut
-2. Optionally: [`src-tauri/src/main.rs`](../src-tauri/src/main.rs) — if the action requires native functionality
+1. **[`src/terminal/keymap.ts`](../src/terminal/keymap.ts)** — command catalog and built-in shortcuts
+2. Add the command dispatch at the existing frontend handler that owns the action.
+3. Update **[`examples/lua/keymap.lua`](../examples/lua/keymap.lua)** and the [Lua keyboard shortcut guide](./lua-automation.md#keyboard-shortcuts).
+4. Add native browser handling in `src-tauri/src/browser_keymap.rs` only when the command must work in native browser tabs; global shortcuts also need `src/terminal/global-hotkeys.ts` and `src-tauri/src/main.rs`.
 
 ### Pattern
 
-System menu actions follow the Menu-key chord pattern:
+Keyboard shortcuts are declared as command bindings, not as direct `Menu` checks. `keymap.ts` retains the built-in bindings, and the user's Lua `sterm.keymap` declaration can replace or disable them. Keep dispatch with the action's existing owner so it works consistently for keyboard events and native browser commands.
 
 ```typescript
-if (menuKeyDownRef.current && event.code === 'KeyX') {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!event.repeat) {
-        // Action
-    }
-    return;
+if (commandForEvent(event) === 'my.command') {
+  event.preventDefault();
+  if (!event.repeat) runAction();
+  return;
 }
 ```
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { commandForEvent } from '../terminal/keymap';
 
 export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onCancel }: {
   names: string[];
@@ -28,7 +29,7 @@ export function QuickPresetPicker({ names, initialName, onPreview, onCommit, onC
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (event.code === 'ContextMenu') { menuHeld.current = true; return; }
-      if (event.code === 'KeyP' && menuHeld.current) { event.preventDefault(); if (resolvedSelected) void onCommit(resolvedSelected); return; }
+      if (commandForEvent(event) === 'presets.toggle_picker') { event.preventDefault(); if (resolvedSelected) void onCommit(resolvedSelected); return; }
       if (event.code === 'Escape') { event.preventDefault(); onCancel(); return; }
       if (event.code === 'Enter' || event.code === 'NumpadEnter') { event.preventDefault(); if (resolvedSelected) void onCommit(resolvedSelected); return; }
       if (event.code === 'Tab' || event.key === 'Tab') {

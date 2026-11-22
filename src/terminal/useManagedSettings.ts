@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { effectiveManagedSettings, normalizeManagedSettings, type EffectiveManagedSettings, type ManagedSettings, type ManagedSettingsResponse } from '../crt/managed-settings';
 import { appGlobalsFromStored, loadStoredSettings, type AppSettings } from '../crt/settings';
+import { setActiveKeymap, validateKeymap } from './keymap';
+import { globalHotkeyBindings } from './global-hotkeys';
 
 export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError: (message: string) => void) {
   const [values, setValues] = useState<EffectiveManagedSettings>({ ...legacy, defaultPreset: 'default', restoreWindow: true });
@@ -26,7 +28,18 @@ export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError
       const base = migrated.current ? appGlobalsFromStored(loadStoredSettings(null)) : fallback;
       const next = effectiveManagedSettings(response, base);
       const needsMigration = response.settings.settingsVersion !== 1 && !migrated.current;
+      let keymapReady = true;
+      try {
+        validateKeymap(response.keymap ?? null);
+        globalHotkeyBindings(response.keymap ?? null, true);
+        const bindings = globalHotkeyBindings(response.keymap ?? null, next.globalHotkeyEnabled);
+        await invoke('set_global_hotkeys', { bindings });
+      } catch (reason) {
+        keymapReady = false;
+        onErrorRef.current(`Could not register global hotkeys: ${String(reason)}`);
+      }
       if (request === sequence.current) {
+        if (keymapReady) setActiveKeymap(response.keymap ?? null);
         current.current = { values: next, revision: response.revision };
         if (response.settings.settingsVersion === 1) migrated.current = true;
         setValues(next);

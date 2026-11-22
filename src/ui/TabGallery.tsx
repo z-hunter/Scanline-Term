@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { BrowserTab, WorkspaceTab } from '../terminal/useTerminal';
+import { commandForEvent } from '../terminal/keymap';
 import { GalleryRenderer, GALLERY_FRAME_LAG_MS, GALLERY_RENDER_INTERVAL_MS, galleryThumbnailMaxDimension, galleryFrameLagShouldStop, galleryPreparationShouldStop, galleryPreparationTimedOut, galleryRenderOverrun, nextGalleryRenderInterval, type GalleryRenderSource, type GalleryBrowserRenderSource } from '../terminal/gallery-renderer';
 
 export type GalleryFrame = {
@@ -335,13 +336,14 @@ export function TabGallery({
     const onKeyDown = (event: KeyboardEvent) => {
       if (closing) return;
       if (event.code === 'ContextMenu') { menuHeld.current = true; return; }
-      if (menuHeld.current && event.shiftKey && (event.code === 'ArrowLeft' || event.code === 'ArrowRight' || event.code === 'ArrowUp' || event.code === 'ArrowDown' || event.code === 'KeyH' || event.code === 'KeyJ' || event.code === 'KeyK' || event.code === 'KeyL')) {
+      const command = commandForEvent(event);
+      if (command === 'tab.move_left' || command === 'tab.move_right' || command === 'gallery.move_up' || command === 'gallery.move_down') {
         const currentIndex = tabs.findIndex((tab) => tab.id === resolvedSelectedId);
         const current = layout.find((item) => item.tab.id === resolvedSelectedId);
         let targetId: string | null = null;
-        if (event.code === 'ArrowLeft' || event.code === 'KeyH') targetId = tabs[currentIndex - 1]?.id ?? null;
-        else if (event.code === 'ArrowRight' || event.code === 'KeyL') targetId = tabs[currentIndex + 1]?.id ?? null;
-        else if (current) targetId = nearestInColumn(layout, current.position.row, current.position.column, event.code === 'ArrowUp' || event.code === 'KeyK' ? -1 : 1);
+        if (command === 'tab.move_left') targetId = tabs[currentIndex - 1]?.id ?? null;
+        else if (command === 'tab.move_right') targetId = tabs[currentIndex + 1]?.id ?? null;
+        else if (current) targetId = nearestInColumn(layout, current.position.row, current.position.column, command === 'gallery.move_up' ? -1 : 1);
         const targetIndex = targetId ? tabs.findIndex((tab) => tab.id === targetId) : -1;
         if (resolvedSelectedId && targetIndex >= 0 && targetIndex !== currentIndex) onMove(resolvedSelectedId, targetIndex);
         event.preventDefault(); event.stopImmediatePropagation(); return;

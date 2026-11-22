@@ -79,6 +79,13 @@ struct LayoutRequest {
     hkl: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserKeyTest {
+    frontend_id: String,
+    keys: Vec<u32>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LayoutChange {
@@ -411,6 +418,23 @@ impl Probe {
         });
     }
 
+    fn test_browser_chord(&self, app: &AppHandle, request: BrowserKeyTest) -> Result<(), String> {
+        if !self.enabled || request.keys.is_empty() || request.keys.len() > 4 {
+            return Err("browser key probe is disabled or chord is out of bounds".into());
+        }
+        let context = self.context.lock().map_err(|_| "probe context is unavailable")?;
+        if context.frontend_id != request.frontend_id {
+            return Err("stale browser key probe frontend".into());
+        }
+        let Some(keymap) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() else {
+            return Err("browser keymap is unavailable".into());
+        };
+        if !keymap.supports_probe_chord(&request.keys) {
+            return Err("probe chord does not match an active browser binding".into());
+        }
+        crate::caps_hook::send_probe_browser_chord(&request.keys)
+    }
+
     fn trace(&self) -> ProbeTrace {
         let context = self.context.lock().ok();
         let mut entries = Vec::new();
@@ -533,6 +557,15 @@ pub fn setup(app: &AppHandle, window: &tauri::WebviewWindow) {
     app.listen("automation-probe-trace-request", move |_| {
         if let Some(probe) = handle.try_state::<Probe>() {
             let _ = handle.emit("automation-probe-trace", probe.trace());
+        }
+    });
+    let handle = app.clone();
+    app.listen("automation-probe-browser-key-test", move |event| {
+        let Ok(request) = serde_json::from_str::<BrowserKeyTest>(event.payload()) else { return; };
+        if let Some(probe) = handle.try_state::<Probe>() {
+            if let Err(reason) = probe.test_browser_chord(&handle, request) {
+                let _ = handle.emit("automation-probe-error", serde_json::json!({ "reason": reason }));
+            }
         }
     });
     if let Some(webview) = app.get_webview("main") {

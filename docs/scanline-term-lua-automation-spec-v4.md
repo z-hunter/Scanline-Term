@@ -8,7 +8,7 @@ Scope: lightweight, sandboxed Lua 5.4 event automation and tab-local scripting; 
 
 ### Accepted and implemented Windows V1 contract
 
-Windows V1 provides bounded Lua event automation plus an explicitly declared Smart Caps policy for a matching active, focused terminal tab. The entry file uses `require 'sterm'`, `sterm.module(name, path)` to declare trusted local modules, `sterm.shells({...})` for validated shell profiles, and `sterm.use(path, options)` to attach scripts. Lua can load only the built-in `sterm` API and modules captured in that declaration manifest; it receives no runtime filesystem access. The 22 global GUI settings persist in the bounded Lua config and share validation between GUI saves and Lua evaluation. The feature also provides guarded saved-preset selection and temporary focused-tab window/panel actions. Window geometry is stored separately by the app, restored according to `restore_window`, and never overwritten by Lua actions.
+Windows V1 provides bounded Lua event automation plus an explicitly declared Smart Caps policy for a matching active, focused terminal tab. The entry file uses `require 'sterm'`, `sterm.module(name, path)` to declare trusted local modules, `sterm.shells({...})` for validated shell profiles, and `sterm.use(path, options)` to attach scripts. Lua can load only the built-in `sterm` API and modules captured in that declaration manifest; it receives no runtime filesystem access. The 22 global GUI settings persist in the bounded Lua config and share validation between GUI saves and Lua evaluation. The feature also provides guarded saved-preset selection, configurable bindings for existing app commands through `sterm.keymap({...})`, and temporary focused-tab window/panel actions. Its shared `term` modifier defaults to Menu; system-wide window shortcuts remain limited to Ctrl, Shift, Alt, and Win combinations. Window geometry is stored separately by the app, restored according to `restore_window`, and never overwritten by Lua actions.
 
 The example entry → editor wrapper → shared modal-editor module pattern supports Neovim and Helix through shared cursor/layout logic. Neovim uses its visible Normal-mode block cursor; Helix additionally treats its hidden physical cursor as Normal mode. Layout changes are guarded by active-tab and window focus checks. Load and runtime failures are surfaced as error toasts, and Edit config opens the current entry file in the operating system's default editor.
 
@@ -1023,12 +1023,9 @@ The following capabilities remain future choices beyond the required settings/co
 - script-selectable launch fields and profile-specific overrides beyond the canonical persisted settings contract;
 - optional scoped per-tab runtime override layers with source diagnostics.
 
-#### Configurable keymap
+#### Extended keymap and action model
 
-- `config.keys`;
-- predefined `sterm.action.*` values;
-- spawn/launch action;
-- conflict/validation diagnostics.
+Windows V1's `sterm.keymap({...})` remaps existing application commands, as described in the [Lua guide](lua-automation.md#keyboard-shortcuts). A broader `config.keys` model, predefined `sterm.action.*` values, and spawn/launch actions remain future options.
 
 ### Deferred / only with demonstrated demand
 

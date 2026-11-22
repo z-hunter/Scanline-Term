@@ -1,6 +1,7 @@
 import { act, createElement, useEffect, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
+import { setActiveKeymap } from './keymap';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -1206,6 +1207,28 @@ describe('useTerminal closeSession concurrent closures', () => {
       session = terminalSession(sessionId);
       expect(session).not.toBeNull();
 
+      session!.win32InputMode = true;
+      await act(async () => { setActiveKeymap({ term: 'RightCtrl', bindings: { 'terminal.copy_mode': false } }); });
+      mocked.invoke.mockClear();
+      const menuDown = new KeyboardEvent('keydown', { key: 'ContextMenu', code: 'ContextMenu', bubbles: true, cancelable: true });
+      const menuUp = new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'ContextMenu', bubbles: true, cancelable: true });
+      const cDown = new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', bubbles: true, cancelable: true });
+      const cUp = new KeyboardEvent('keyup', { key: 'c', code: 'KeyC', bubbles: true, cancelable: true });
+      await act(async () => {
+        window.dispatchEvent(menuDown);
+        window.dispatchEvent(cDown);
+        window.dispatchEvent(cUp);
+        window.dispatchEvent(menuUp);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(mocked.invoke.mock.calls.filter(([command]) => command === 'write_terminal')).toEqual([
+        ['write_terminal', { sessionId, input: win32InputKey(menuDown, true) }],
+        ['write_terminal', { sessionId, input: win32InputKey(cDown, true) }],
+        ['write_terminal', { sessionId, input: win32InputKey(cUp, false) }],
+        ['write_terminal', { sessionId, input: win32InputKey(menuUp, false) }],
+      ]);
+      await act(async () => { setActiveKeymap(null); });
+
       for (const win32InputMode of [false, true]) {
         session!.win32InputMode = win32InputMode;
         mocked.invoke.mockClear();
@@ -1271,6 +1294,7 @@ describe('useTerminal closeSession concurrent closures', () => {
       }))));
       expect(writeText).not.toHaveBeenCalled();
     } finally {
+      setActiveKeymap(null);
       session?.dispose();
       await act(async () => { root.unmount(); });
       container.remove();
@@ -2245,8 +2269,8 @@ describe('automation probe input routing', () => {
   it.each(['vt', 'win32'] as const)('translates only matching framed markers after the Lua lease is acknowledged through %s', async (encoder) => {
     mocked.handlers.clear(); mocked.emit.mockClear(); mocked.invoke.mockClear();
     mocked.invoke.mockImplementation((command: string) => Promise.resolve(
-      command === 'start_terminal' ? 'cmd.exe'
-        : command === 'active_terminal_process' ? 'cmd.exe'
+      command === 'start_terminal' ? 'hx.exe'
+        : command === 'active_terminal_process' ? 'hx.exe'
           : command === 'lua_automation_start' ? { frontendId: 'lua-frontend', state: 'ready', configPath: null, error: null, diagnostics: [] }
             : command === 'caps_policy_ack' ? true : {},
     ));
@@ -2268,14 +2292,14 @@ describe('automation probe input routing', () => {
     const session = terminalSession(id!);
     const sendInput = vi.spyOn(session!, 'sendInput');
     if (encoder === 'win32') session!.win32InputMode = true;
-    await vi.waitFor(() => expect(session?.localProcessName).toBe('cmd.exe'));
+    await vi.waitFor(() => expect(session?.localProcessName).toBe('hx.exe'));
     await act(async () => { output.focus(); hookResult.canvasProps.onFocus(); await new Promise((resolve) => setTimeout(resolve, 0)); });
     const latestUpdate = mocked.invoke.mock.calls.filter(([command]) => command === 'lua_automation_update').at(-1)?.[1] as { snapshot: { frontendId: string; generation: number } };
-    const lease = { frontendId: latestUpdate.snapshot.frontendId, generation: latestUpdate.snapshot.generation, policyEpoch: 1, markerToken: '0123456789abcdef', tabId: id!, processName: 'cmd.exe', enabled: true };
+    const lease = { frontendId: latestUpdate.snapshot.frontendId, generation: latestUpdate.snapshot.generation, policyEpoch: 1, markerToken: '0123456789abcdef', tabId: id!, processName: 'hx.exe', enabled: true };
     await act(async () => { mocked.handlers.get('caps-policy-lease')?.({ payload: lease }); await vi.waitFor(() => expect(mocked.invoke).toHaveBeenCalledWith('caps_policy_ack', { ack: lease })); await new Promise((resolve) => setTimeout(resolve, 0)); });
-    const dispatch = (type: 'keydown' | 'keyup', code = '', repeat = false, key = 'Unidentified') => {
+    const dispatch = (type: 'keydown' | 'keyup', code = '', repeat = false, key = 'Unidentified', keyCode = 252) => {
       const event = new KeyboardEvent(type, { key, code, repeat, bubbles: true, cancelable: true });
-      Object.defineProperty(event, 'keyCode', { value: 252 });
+      Object.defineProperty(event, 'keyCode', { value: keyCode });
       window.dispatchEvent(event);
       return event;
     };
@@ -2328,6 +2352,21 @@ describe('automation probe input routing', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(sendInput).not.toHaveBeenCalled();
+
+    sendInput.mockClear();
+    await act(async () => {
+      frame('down', lease.markerToken!);
+      await new Promise((resolve) => setTimeout(resolve, 240));
+      dispatch('keydown', 'KeyH', false, 'h', 72);
+      dispatch('keyup', 'KeyH', false, 'h', 72);
+      frame('up', lease.markerToken!, 'held');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    if (encoder === 'vt') expect(sendInput.mock.calls.map(([input]) => input)).toEqual(['\x08']);
+    else expect(sendInput.mock.calls.map(([input]) => input)).toEqual([
+      win32InputKey(new KeyboardEvent('keydown', { key: 'h', code: 'KeyH', ctrlKey: true }), true),
+      win32InputKey(new KeyboardEvent('keyup', { key: 'h', code: 'KeyH', ctrlKey: true }), false),
+    ]);
 
     session?.dispose();
     await act(async () => { root.unmount(); });

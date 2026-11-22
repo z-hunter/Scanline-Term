@@ -203,6 +203,7 @@ struct LuaModule {
 
 #[derive(Clone, Default)]
 struct ConfigRegistrations {
+    keymap: Option<JsonValue>,
     attachments: Vec<(String, Option<Vec<String>>, JsonValue)>,
     modules: HashMap<String, String>,
     ansi_palettes: Vec<AnsiPalette>,
@@ -300,6 +301,7 @@ pub struct AnsiPalette {
 /// replacing the runtime's current generation on its owning controller worker.
 #[derive(Clone)]
 pub struct RuntimeSnapshot {
+    keymap: Option<JsonValue>,
     config_path: PathBuf,
     attachments: Vec<Attachment>,
     modules: HashMap<String, LuaModule>,
@@ -598,6 +600,7 @@ impl RuntimeSnapshot {
             .iter()
             .any(|attachment| attachment.events.contains("input-language-changed"));
         Ok(Self {
+            keymap: registrations.keymap,
             config_path: entry_path.to_path_buf(),
             attachments,
             modules,
@@ -612,6 +615,8 @@ impl RuntimeSnapshot {
     pub fn settings(&self) -> Option<&ManagedSettings> {
         self.settings.as_ref()
     }
+
+    pub fn keymap(&self) -> Option<&JsonValue> { self.keymap.as_ref() }
 
     pub fn ansi_palettes(&self) -> &[AnsiPalette] {
         &self.ansi_palettes
@@ -1301,6 +1306,50 @@ fn install_registration_api(
                 cursor,
                 colors,
             });
+            Ok(())
+        })?
+    })?;
+    module.set("keymap", {
+        let registrations = registrations.clone();
+        lua.create_function(move |_, table: Table| {
+            for pair in table.clone().pairs::<Value, Value>() {
+                let (key, value) = pair?;
+                let Value::String(key) = key else { return Err(mlua::Error::RuntimeError("sterm.keymap requires named fields".into())); };
+                match key.to_str()?.as_ref() {
+                    "term" if matches!(value, Value::String(_)) => (),
+                    "bindings" if matches!(value, Value::Table(_)) => (),
+                    "term" | "bindings" => return Err(mlua::Error::RuntimeError("invalid sterm.keymap field type".into())),
+                    _ => return Err(mlua::Error::RuntimeError("unknown sterm.keymap field".into())),
+                }
+            }
+            if let Value::Table(bindings) = table.get::<Value>("bindings")? {
+                for pair in bindings.pairs::<Value, Value>() {
+                    let (key, value) = pair?;
+                    if !matches!(key, Value::String(_)) { return Err(mlua::Error::RuntimeError("keymap command must be a string".into())); }
+                    match value {
+                        Value::String(_) | Value::Boolean(false) => (),
+                        Value::Table(alternatives) => {
+                            let len = alternatives.raw_len();
+                            if len == 0 || alternatives.clone().pairs::<Value, Value>().count() != len { return Err(mlua::Error::RuntimeError("keymap alternatives must be a nonempty array".into())); }
+                            for index in 1..=len { if !matches!(alternatives.get::<Value>(index)?, Value::String(_)) { return Err(mlua::Error::RuntimeError("keymap alternative must be a string".into())); } }
+                        },
+                        _ => return Err(mlua::Error::RuntimeError("keymap binding must be a string, array, or false".into())),
+                    }
+                }
+            }
+            let mut count = 0;
+            let mut value = lua_to_json(Value::Table(table), 0, &mut count)?;
+            if value == JsonValue::Array(Vec::new()) { value = serde_json::json!({}); }
+            if let Some(object) = value.as_object_mut() {
+                if object.get("bindings") == Some(&JsonValue::Array(Vec::new())) {
+                    object.insert("bindings".into(), serde_json::json!({}));
+                }
+                object.entry("term").or_insert_with(|| JsonValue::String("Menu".into()));
+                object.entry("bindings").or_insert_with(|| serde_json::json!({}));
+            }
+            let mut registrations = registrations.lock().map_err(|_| mlua::Error::RuntimeError("config registration lock failed".into()))?;
+            if registrations.keymap.is_some() { return Err(mlua::Error::RuntimeError("sterm.keymap may only be declared once".into())); }
+            registrations.keymap = Some(value);
             Ok(())
         })?
     })?;
@@ -2699,6 +2748,7 @@ mod tests {
             include_str!("../../examples/lua/sterm.lua")
         );
         dir.write("config.lua", &config);
+        dir.write("keymap.lua", include_str!("../../examples/lua/keymap.lua"));
         dir.write(
             "editors/nvim.lua",
             include_str!("../../examples/lua/editors/nvim.lua"),
@@ -2829,6 +2879,27 @@ mod tests {
     }
 
     #[test]
+    fn keymap_capture_preserves_lua_values_and_rejects_duplicates() {
+        let dir = TempDir::new();
+        dir.write("config.lua", "");
+        let source = "local s=require 'sterm'; s.keymap({term='RightShift', bindings={['settings.toggle']={'term+S', 'F10'}, ['terminal.paste']=false}})";
+        let snapshot = RuntimeSnapshot::load_source(&dir.entry(), source).unwrap();
+        let map = snapshot.keymap().unwrap();
+        assert_eq!(map["term"], "RightShift");
+        assert_eq!(map["bindings"]["settings.toggle"][1], "F10");
+        assert_eq!(map["bindings"]["terminal.paste"], false);
+        for source in ["require('sterm').keymap({})", "require('sterm').keymap({bindings={}})"] {
+            let snapshot = RuntimeSnapshot::load_source(&dir.entry(), source).unwrap();
+            assert_eq!(snapshot.keymap().unwrap(), &serde_json::json!({"term": "Menu", "bindings": {}}));
+        }
+        assert!(RuntimeSnapshot::load_source(&dir.entry(), &format!("{source}; s.keymap({{}})")).is_err());
+        for invalid in ["{term=42}", "{bindings={x=true}}", "{bindings={x={1}}}", "{unexpected='x'}"] {
+            let source = format!("require('sterm').keymap({invalid})");
+            assert!(RuntimeSnapshot::load_source(&dir.entry(), &source).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
     fn settings_capture_evaluates_values_in_the_bounded_registration_vm() {
         let dir = TempDir::new();
         dir.write("config.lua", "");
@@ -2943,6 +3014,7 @@ mod tests {
     fn shipped_users_palette_loads_inline_and_palette_registration_is_strict() {
         let dir = TempDir::new();
         dir.write("config.lua", include_str!("../../examples/lua/sterm.lua"));
+        dir.write("keymap.lua", include_str!("../../examples/lua/keymap.lua"));
         dir.write(
             "modules/modal_editor.lua",
             include_str!("../../examples/lua/modules/modal_editor.lua"),

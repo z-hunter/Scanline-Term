@@ -32,6 +32,7 @@ use conpty_oxide::{
 use tauri::{image::Image, path::BaseDirectory, Emitter, Manager, State};
 mod codex;
 mod browser;
+mod browser_keymap;
 #[cfg(windows)]
 mod browser_texture_stream;
 mod caps_hook;
@@ -479,7 +480,9 @@ fn operating_system() -> String {
 #[cfg(windows)]
 const SUMMON_HOTKEY_ID: i32 = 1;
 #[cfg(windows)]
-static SUMMON_HOTKEY_ENABLED: AtomicBool = AtomicBool::new(false);
+static GLOBAL_HOTKEYS: std::sync::Mutex<Vec<(i32, String, u32, u32)>> = std::sync::Mutex::new(Vec::new());
+#[cfg(windows)]
+static NEXT_GLOBAL_HOTKEY_ID: AtomicI32 = AtomicI32::new(100);
 #[cfg(windows)]
 static SLIDE_FROM_TOP_ENABLED: AtomicBool = AtomicBool::new(true);
 #[cfg(windows)]
@@ -495,7 +498,7 @@ static SUMMON_TARGET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 #[cfg(windows)]
 static SUMMON_WAS_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 fn summon_hotkey() -> (u32, u32) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_NOREPEAT, MOD_WIN, VK_OEM_3};
     (MOD_WIN | MOD_NOREPEAT, VK_OEM_3 as u32)
@@ -816,6 +819,19 @@ unsafe extern "system" fn window_subclass_proc(
         return 0;
     }
 
+    if msg == WM_HOTKEY {
+        let command = GLOBAL_HOTKEYS.lock().ok().and_then(|bindings| bindings.iter().find(|binding| binding.0 == wparam as i32).map(|binding| binding.1.clone()));
+        if let (Some(command), Some(window)) = (command, MAIN_WINDOW.get()) {
+            if command == "window.toggle_visibility" {
+                toggle_summon_window(window);
+            } else if command == "window.show_gallery" {
+                restore_and_focus_window(window);
+                let _ = window.app_handle().emit("global-show-gallery", ());
+            }
+            return 0;
+        }
+    }
+
     if msg == WM_ENTERSIZEMOVE {
         if let Some(window) = MAIN_WINDOW.get() {
             if let Some(state) = window.app_handle().try_state::<std::sync::Arc<window_state::WindowState>>() {
@@ -860,6 +876,123 @@ unsafe extern "system" fn window_subclass_proc(
     result
 }
 
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GlobalHotkeyBinding {
+    command: String,
+    modifiers: u32,
+    key: u32,
+}
+
+#[cfg(windows)]
+static PREPARED_GLOBAL_HOTKEYS: std::sync::Mutex<Option<(Vec<(i32, String, u32, u32)>, Vec<i32>)>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn prepare_global_hotkeys(app: tauri::AppHandle, bindings: Vec<GlobalHotkeyBinding>) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let mut prepared = PREPARED_GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        if prepared.is_some() { return Err("global hotkey update already pending".into()); }
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
+        let hwnd = app.get_webview_window("main").ok_or("main window is unavailable")?.hwnd().map_err(|error| error.to_string())?;
+        let current = GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        let mut candidate: Vec<(i32, String, u32, u32)> = Vec::new();
+        let mut added = Vec::new();
+        for binding in bindings {
+            if !matches!(binding.command.as_str(), "window.toggle_visibility" | "window.show_gallery") || binding.key == 0 || binding.key > 255 || binding.modifiers & !0x000f != 0 || candidate.iter().any(|entry| entry.2 == binding.modifiers && entry.3 == binding.key) {
+                for id in added { unsafe { UnregisterHotKey(hwnd.0 as _, id); } }
+                return Err("invalid or duplicate global hotkey".into());
+            }
+            let id = if let Some(entry) = current.iter().find(|entry| entry.2 == binding.modifiers && entry.3 == binding.key) { entry.0 } else {
+                let id = NEXT_GLOBAL_HOTKEY_ID.fetch_add(1, Ordering::Relaxed);
+                if unsafe { RegisterHotKey(hwnd.0 as _, id, binding.modifiers | MOD_NOREPEAT, binding.key) } == 0 {
+                    let error = std::io::Error::last_os_error();
+                    for id in added { unsafe { UnregisterHotKey(hwnd.0 as _, id); } }
+                    return Err(format!("Could not register {}: {error}", binding.command));
+                }
+                added.push(id);
+                id
+            };
+            candidate.push((id, binding.command, binding.modifiers, binding.key));
+        }
+        *prepared = Some((candidate, added));
+    }
+    #[cfg(not(windows))]
+    let _ = (app, bindings);
+    Ok(())
+}
+
+#[tauri::command]
+fn commit_global_hotkeys(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
+        let hwnd = app.get_webview_window("main").ok_or("main window is unavailable")?.hwnd().map_err(|error| error.to_string())?;
+        let mut prepared = PREPARED_GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        let mut current = GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        let Some((candidate, _)) = prepared.take() else { return Ok(()); };
+        for entry in current.iter() { if !candidate.iter().any(|next| next.0 == entry.0) { unsafe { UnregisterHotKey(hwnd.0 as _, entry.0); } } }
+        *current = candidate;
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(())
+}
+
+#[tauri::command]
+fn abort_global_hotkeys(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
+        let hwnd = app.get_webview_window("main").ok_or("main window is unavailable")?.hwnd().map_err(|error| error.to_string())?;
+        let pending = PREPARED_GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?.take();
+        if let Some((_, added)) = pending { for id in added { unsafe { UnregisterHotKey(hwnd.0 as _, id); } } }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_global_hotkeys(app: tauri::AppHandle, bindings: Vec<GlobalHotkeyBinding>) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
+        let pending = PREPARED_GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        if pending.is_some() { return Err("global hotkey update already pending".into()); }
+        let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        let mut current = GLOBAL_HOTKEYS.lock().map_err(|_| "global hotkeys unavailable")?;
+        let mut candidate = Vec::new();
+        let mut added = Vec::new();
+        for binding in bindings {
+            if !matches!(binding.command.as_str(), "window.toggle_visibility" | "window.show_gallery") || binding.key == 0 || binding.key > 255 || binding.modifiers & !0x000f != 0 || candidate.iter().any(|entry: &(i32, String, u32, u32)| entry.2 == binding.modifiers && entry.3 == binding.key) {
+                for id in added { unsafe { UnregisterHotKey(hwnd.0 as _, id); } }
+                return Err("invalid or duplicate global hotkey".into());
+            }
+            let existing = current.iter().find(|entry| entry.2 == binding.modifiers && entry.3 == binding.key);
+            let id = if let Some(entry) = existing { entry.0 } else {
+                let id = NEXT_GLOBAL_HOTKEY_ID.fetch_add(1, Ordering::Relaxed);
+                if unsafe { RegisterHotKey(hwnd.0 as _, id, binding.modifiers | MOD_NOREPEAT, binding.key) } == 0 {
+                    let error = std::io::Error::last_os_error();
+                    for id in added { unsafe { UnregisterHotKey(hwnd.0 as _, id); } }
+                    return Err(format!("Could not register {}: {error}", binding.command));
+                }
+                added.push(id);
+                id
+            };
+            candidate.push((id, binding.command, binding.modifiers, binding.key));
+        }
+        for entry in current.iter() {
+            if !candidate.iter().any(|next| next.0 == entry.0) { unsafe { UnregisterHotKey(hwnd.0 as _, entry.0); } }
+        }
+        *current = candidate;
+    }
+    #[cfg(not(windows))]
+    let _ = (app, bindings);
+    Ok(())
+}
+
 #[cfg(windows)]
 fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_WNDPROC};
@@ -885,24 +1018,8 @@ fn setup_window_restore_listener(window: &tauri::WebviewWindow) {
 fn set_global_hotkey_enabled(app: tauri::AppHandle, enabled: bool, slide_from_top: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
-
         SLIDE_FROM_TOP_ENABLED.store(slide_from_top, Ordering::SeqCst);
-
-        let window = app.get_webview_window("main").ok_or("main window is unavailable")?;
-        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
-        if enabled && !SUMMON_HOTKEY_ENABLED.load(Ordering::SeqCst) {
-            let (modifiers, key) = summon_hotkey();
-            if unsafe { RegisterHotKey(hwnd.0 as _, SUMMON_HOTKEY_ID, modifiers, key) } == 0 {
-                return Err(std::io::Error::last_os_error().to_string());
-            }
-            SUMMON_HOTKEY_ENABLED.store(true, Ordering::SeqCst);
-        } else if !enabled && SUMMON_HOTKEY_ENABLED.load(Ordering::SeqCst) {
-            if unsafe { UnregisterHotKey(hwnd.0 as _, SUMMON_HOTKEY_ID) } == 0 {
-                return Err(std::io::Error::last_os_error().to_string());
-            }
-            SUMMON_HOTKEY_ENABLED.store(false, Ordering::SeqCst);
-        }
+        let _ = (app, enabled);
     }
     #[cfg(not(windows))]
     let _ = (app, enabled, slide_from_top);
@@ -1056,6 +1173,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(TerminalState::default())
         .manage(browser::BrowserState::default())
+        .manage(browser_keymap::BrowserKeymapState::default())
         .manage(codex::CodexState::default())
         .manage(mcp::McpState::default())
         .manage(LaunchState(launch))
@@ -1095,7 +1213,7 @@ fn main() {
                 restore_and_focus_window(&window);
             }
         }))
-        .invoke_handler(tauri::generate_handler![start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, explorer::set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::browser_devtools, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond,
+        .invoke_handler(tauri::generate_handler![browser_keymap::set_browser_keymap, start_terminal, write_terminal, ack_terminal_output, resize_terminal, active_terminal_process, close_terminal, confirm_close_with_sessions, list_monospace_fonts, load_monospace_font, list_available_shells, initial_terminal_launch, operating_system, set_global_hotkey_enabled, set_global_hotkeys, prepare_global_hotkeys, commit_global_hotkeys, abort_global_hotkeys, explorer::set_explorer_integration, window_state::restore_window_state, caps_hook::caps_policy_ack, caps_hook::term_caps_offer, caps_hook::term_caps_ack, caps_hook::term_caps_revoke, lua_automation::lua_automation_start, lua_automation::lua_automation_update, lua_automation::lua_automation_status, lua_automation::lua_automation_reload, lua_automation::lua_automation_prepare_reload, lua_automation::lua_automation_commit_reload, lua_automation::lua_automation_abort_reload, lua_automation::load_managed_settings, lua_automation::save_managed_settings, browser::create_browser, browser::navigate_browser, browser::browser_devtools, browser::set_active_browser, browser::close_browser, home::load_home_config, home::save_home_config, presets::list_presets, presets::load_preset, presets::save_preset, codex::codex_start, codex::codex_send, codex::codex_stop, mcp::mcp_set_enabled, mcp::mcp_respond,
             #[cfg(windows)] browser_texture_stream::start_browser_texture_stream,
             #[cfg(windows)] browser_texture_stream::stop_browser_texture_stream,
             #[cfg(windows)] browser::browser_texture_stream_available,

@@ -40,6 +40,7 @@ type BrowserTabCreateFn = unsafe extern "C" fn(
 type BrowserTabSetBoundsFn = unsafe extern "C" fn(u64, i32, i32, u32, u32, i32) -> i32;
 type BrowserTabCloseFn = unsafe extern "C" fn(u64) -> i32;
 type BrowserTabAvailableFn = unsafe extern "C" fn() -> i32;
+type BrowserTabWindowFn = unsafe extern "C" fn(u64) -> HWND;
 type StartForTabFn = unsafe extern "C" fn(u64, *const u16, *const u16, u32, u32, *mut f64) -> i32;
 
 struct NativeDll {
@@ -50,6 +51,7 @@ struct NativeDll {
     browser_tab_set_bounds: Option<BrowserTabSetBoundsFn>,
     browser_tab_close: Option<BrowserTabCloseFn>,
     browser_tab_available: Option<BrowserTabAvailableFn>,
+    browser_tab_window: Option<BrowserTabWindowFn>,
     start_for_tab: Option<StartForTabFn>,
 }
 
@@ -193,6 +195,7 @@ fn native_dll(app: &AppHandle) -> Result<&'static NativeDll, String> {
                 browser_tab_set_bounds: optional_symbol(module, b"ScanlineBrowserTabSetBounds\0"),
                 browser_tab_close: optional_symbol(module, b"ScanlineBrowserTabClose\0"),
                 browser_tab_available: optional_symbol(module, b"ScanlineBrowserTabAvailable\0"),
+                browser_tab_window: optional_symbol(module, b"ScanlineBrowserTabWindow\0"),
                 start_for_tab: optional_symbol(module, b"ScanlineTextureStreamStartForTabWithOrigin\0"),
             })
         })
@@ -291,6 +294,16 @@ pub fn set_browser_tab_bounds(
     } else {
         Ok(())
     }
+}
+
+pub fn browser_tab_window(app: &AppHandle, handle: u64) -> Result<isize, String> {
+    let get_window = native_dll(app)?.browser_tab_window.ok_or("native browser focus identity is unavailable")?;
+    let app = app.clone();
+    tauri::async_runtime::block_on(async move {
+        tauri::async_runtime::spawn_blocking(move || with_main_webview(&app, move |_, _| {
+            unsafe { get_window(handle).0 as isize }
+        })).await.map_err(|error| error.to_string())?
+    })
 }
 
 pub fn set_browser_tab_bounds_for_session(

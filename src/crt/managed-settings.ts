@@ -2,6 +2,7 @@ import type { TerminalColorProfile } from 'scanline-virtual-screen/core';
 import { loadStoredSettings, type AppSettings, type StoredSettings } from './settings';
 import type { ShellInfo } from '../terminal/shells';
 import { normalizeLuaPromptOverrides, type LuaPromptOverrides } from '../ai/luaPromptOverrides';
+import type { Keymap } from '../terminal/keymap';
 
 export type ManagedSettings = Omit<AppSettings, 'version' | 'lastAiSelection'> & {
   lastAiSelection: AppSettings['lastAiSelection'] | null;
@@ -18,6 +19,7 @@ export type ManagedSettingsResponse = {
   palettes: TerminalColorProfile[];
   shells: (ShellInfo & { id: string; args: string[] })[];
   aiPrompts?: LuaPromptOverrides | null;
+  keymap?: Keymap | null;
 };
 
 export type EffectiveManagedSettings = Omit<AppSettings, 'version'> & { defaultPreset: string; restoreWindow: boolean };
@@ -43,7 +45,7 @@ export function normalizeManagedSettings(value: unknown): ManagedSettingsRespons
   const response = value as Partial<ManagedSettingsResponse>;
   if (!response.settings || typeof response.settings !== 'object' || typeof response.revision !== 'string' || typeof response.path !== 'string' || typeof response.hasSettings !== 'boolean' || !Array.isArray(response.palettes) || !Array.isArray(response.shells)) throw new Error('invalid managed settings response');
   if (!response.shells.every((shell) => shell && typeof shell === 'object' && typeof shell.id === 'string' && shell.id.startsWith('lua:') && typeof shell.name === 'string' && typeof shell.command === 'string' && Array.isArray(shell.args) && shell.args.every((argument) => typeof argument === 'string'))) throw new Error('invalid managed settings response');
-  return { settings: response.settings as Record<keyof ManagedSettings, unknown>, revision: response.revision, path: response.path, hasSettings: response.hasSettings, palettes: response.palettes as TerminalColorProfile[], shells: response.shells as ManagedSettingsResponse['shells'], aiPrompts: normalizeLuaPromptOverrides(response.aiPrompts) };
+  return { settings: response.settings as Record<keyof ManagedSettings, unknown>, revision: response.revision, path: response.path, hasSettings: response.hasSettings, palettes: response.palettes as TerminalColorProfile[], shells: response.shells as ManagedSettingsResponse['shells'], aiPrompts: normalizeLuaPromptOverrides(response.aiPrompts), keymap: response.keymap ?? null };
 }
 
 export function effectiveManagedSettings(response: ManagedSettingsResponse, legacy: Omit<AppSettings, 'version'>): EffectiveManagedSettings {

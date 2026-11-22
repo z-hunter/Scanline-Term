@@ -1,3 +1,4 @@
+import { shortcutHint } from '../terminal/keymap';
 import { Menu, PredefinedMenuItem, Submenu } from '@tauri-apps/api/menu';
 import { splitShellCatalog, type ShellInfo } from '../terminal/shells';
 
@@ -22,8 +23,8 @@ async function newTabItems({ onNew, onNewBrowser, onNewShell, shells }: NewTabMe
   }) : null;
   const separator = automatic.length && user.length ? await PredefinedMenuItem.new({ item: 'Separator' }) : null;
   return [
-    { id: 'scanline-new-terminal-tab', text: 'New Terminal tab [menu-N]', action: () => onNew() },
-    { id: 'scanline-new-browser-tab', text: 'New Browser tab [menu-B]', action: () => onNewBrowser() },
+    { id: 'scanline-new-terminal-tab', text: `New Terminal tab${shortcutHint('tab.new_terminal')}`, action: () => onNew() },
+    { id: 'scanline-new-browser-tab', text: `New Browser tab${shortcutHint('tab.new_browser')}`, action: () => onNewBrowser() },
     ...(shellMenu ? [shellMenu] : []),
     ...(separator ? [separator] : []),
     ...(userShellMenu ? [userShellMenu] : []),
@@ -46,13 +47,13 @@ export async function showNativeTerminalMenu({ onFind, onFindBack, onCopyByMouse
   const separator = await PredefinedMenuItem.new({ item: 'Separator' });
   const menu = await Menu.new({ items: [
     ...(await newTabItems({ onNewBrowser, ...actions })),
-    { id: 'scanline-find', text: 'Find [menu-/]', action: onFind },
-    { id: 'scanline-find-back', text: 'Find back [menu-shift-/]', action: onFindBack },
-    { id: 'scanline-copy-by-mouse', text: 'Select and copy by mouse [menu-C]', action: onCopyByMouse },
+    { id: 'scanline-find', text: `Find${shortcutHint('terminal.find')}`, action: onFind },
+    { id: 'scanline-find-back', text: `Find back${shortcutHint('terminal.find_back')}`, action: onFindBack },
+    { id: 'scanline-copy-by-mouse', text: `Select and copy by mouse${shortcutHint('terminal.copy_mode')}`, action: onCopyByMouse },
     separator,
-    { id: 'scanline-toggle-tabs-bar', text: 'Hide/show tab bar [menu-Z]', action: onToggleTabsBar },
-    { id: 'scanline-open-preset-browser', text: 'Presets selector [menu-P]', action: onOpenPresetPicker },
-    { id: 'scanline-gallery', text: 'Gallery [menu-backspace]', action: onToggleGallery },
+    { id: 'scanline-toggle-tabs-bar', text: `Hide/show tab bar${shortcutHint('tabs.toggle_bar')}`, action: onToggleTabsBar },
+    { id: 'scanline-open-preset-browser', text: `Presets selector${shortcutHint('presets.toggle_picker')}`, action: onOpenPresetPicker },
+    { id: 'scanline-gallery', text: `Gallery${shortcutHint('gallery.toggle')}`, action: onToggleGallery },
   ] });
   await menu.popup();
 }

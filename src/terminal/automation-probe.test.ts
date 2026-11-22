@@ -22,18 +22,18 @@ describe('TerminalAutomationProbe lifecycle', () => {
   afterEach(() => { mocked.emit.mockReset().mockImplementation(async () => undefined); mocked.listen.mockReset(); mocked.handlers.clear(); });
 
   it('unlistens every late listener when disposed during async startup and skips ready', async () => {
-    const pending = [deferred<UnlistenFn>(), deferred<UnlistenFn>(), deferred<UnlistenFn>()];
+    const pending = Array.from({ length: 4 }, () => deferred<UnlistenFn>());
     mocked.listen.mockImplementation(() => pending[mocked.listen.mock.calls.length - 1].promise);
     const stops = vi.fn();
     const probe = new TerminalAutomationProbe();
     const started = probe.start();
-    expect(mocked.listen).toHaveBeenCalledTimes(3);
+    expect(mocked.listen).toHaveBeenCalledTimes(4);
 
     probe.dispose();
     pending.forEach(({ resolve }) => resolve(stops));
     await started;
 
-    expect(stops).toHaveBeenCalledTimes(3);
+    expect(stops).toHaveBeenCalledTimes(4);
     expect(mocked.emit).not.toHaveBeenCalled();
   });
 
@@ -86,6 +86,29 @@ describe('TerminalAutomationProbe lifecycle', () => {
     const contexts = mocked.emit.mock.calls.filter(([name]) => name === 'automation-probe-context').map(([, payload]) => payload as { focused: boolean; tabId: string | null });
     expect(contexts.length).toBeGreaterThan(0);
     expect(contexts.every(({ tabId, focused }) => tabId !== null || !focused)).toBe(true);
+    probe.dispose();
+  });
+
+  it('emits only bounded integer browser key chords from the dev test route', async () => {
+    mocked.listen.mockImplementation(async (name: string, handler: (event: { payload: unknown }) => void) => {
+      mocked.handlers.set(name, handler);
+      return () => mocked.handlers.delete(name);
+    });
+    const probe = new TerminalAutomationProbe();
+    await probe.start();
+    const frontendId = (mocked.emit.mock.calls.find(([name]) => name === 'automation-probe-ready')?.[1] as { frontendId: string }).frontendId;
+    mocked.handlers.get('automation-probe-status')?.({ payload: { frontendId, enabled: true } });
+
+    probe.testBrowserChord([0xA2, 0xA0, 83]);
+    probe.testBrowserChord([0x5B, 83]);
+    probe.testBrowserChord([83, 83]);
+    probe.testBrowserChord(Array.from({ length: 5 }, () => 83));
+    probe.testBrowserChord([0x14, 83]);
+
+    expect(mocked.emit.mock.calls.filter(([name]) => name === 'automation-probe-browser-key-test')).toEqual([
+      ['automation-probe-browser-key-test', { frontendId, keys: [0xA2, 0xA0, 83] }],
+      ['automation-probe-browser-key-test', { frontendId, keys: [0x14, 83] }],
+    ]);
     probe.dispose();
   });
 

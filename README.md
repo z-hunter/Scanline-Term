@@ -98,6 +98,8 @@ The shipped `User's` palette is enabled by default; optional examples show **Vim
 
 ## Keyboard Shortcuts Cheat Sheet
 
+You can change app shortcuts in `keymap.lua`. The starter configuration loads this file and calls the shared modifier `term`. It defaults to the Menu key. Edit `term` to use another key, then select **Reload config** in Settings. See the [Lua guide](docs/lua-automation.md#keyboard-shortcuts) for examples and system-wide shortcuts.
+
 > **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
 
 | Shortcut | Action | Description |

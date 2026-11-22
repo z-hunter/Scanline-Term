@@ -5,6 +5,7 @@ import type { TabPlacement } from '../crt/settings';
 import type { ShellInfo, WorkspaceTab } from '../terminal/useTerminal';
 import { showNativeTabMenu } from './nativeNewTabMenu';
 import { shellIdentity, splitShellCatalog } from '../terminal/shells';
+import { shortcutHint } from '../terminal/keymap';
 
 export function TerminalTabs({
   tabs,
@@ -42,6 +43,12 @@ export function TerminalTabs({
   panelRef?: Ref<HTMLDivElement>;
 }) {
   const [newTabMenuOpen, setNewTabMenuOpen] = useState(false);
+  const [, setKeymapRevision] = useState(0);
+  useEffect(() => {
+    const update = () => setKeymapRevision((revision) => revision + 1);
+    window.addEventListener('keymap-changed', update);
+    return () => window.removeEventListener('keymap-changed', update);
+  }, []);
   const newTabControlRef = useRef<HTMLDivElement>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
   const hoveredTab = useRef<{ id: string; x: number; y: number } | null>(null);
@@ -198,8 +205,8 @@ export function TerminalTabs({
     <div ref={newTabControlRef} className="new-tab-control">
       <button type="button" className="new-tab-button" aria-label="New terminal tab" aria-haspopup="menu" aria-expanded={newTabMenuOpen} onClick={() => { onNew(); setNewTabMenuOpen(false); }}>+</button>
       {newTabMenuOpen && <div className="new-tab-menu" role="menu" aria-label="New tab options">
-        <button type="button" role="menuitem" onClick={() => { onNew(); setNewTabMenuOpen(false); }}>New Terminal tab [menu-N]</button>
-        <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab [menu-B]</button>
+        <button type="button" role="menuitem" onClick={() => { onNew(); setNewTabMenuOpen(false); }}>New Terminal tab{shortcutHint('tab.new_terminal')}</button>
+        <button type="button" role="menuitem" onClick={() => { onNewBrowser(); setNewTabMenuOpen(false); }}>New Browser tab{shortcutHint('tab.new_browser')}</button>
         {shells.length > 0 && <>
           <div className="new-tab-menu-label">Shells</div>
           {shellGroups.automatic.map((shell) => <button key={shellIdentity(shell)} type="button" role="menuitem" onClick={() => { onNewShell(shell); setNewTabMenuOpen(false); }}>{shell.name}</button>)}
@@ -213,7 +220,7 @@ export function TerminalTabs({
         type="button"
         className={`tabs-ai-button${aiVisible ? ' active' : ''}`}
         aria-label="Toggle AI assistant"
-        title="Toggle AI Assistant [menu-A]"
+        title={`Toggle AI Assistant${shortcutHint('ai.toggle')}`}
         aria-pressed={aiVisible}
         onClick={onToggleAi}
       >
@@ -223,7 +230,7 @@ export function TerminalTabs({
         type="button"
         className={`tabs-settings-button${settingsVisible ? ' active' : ''}`}
         aria-label="Toggle settings"
-        title="Toggle Settings [menu-S]"
+        title={`Toggle Settings${shortcutHint('settings.toggle')}`}
         aria-pressed={settingsVisible}
         onClick={onToggleSettings}
       >

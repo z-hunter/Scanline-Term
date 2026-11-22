@@ -21,6 +21,47 @@ const NIBBLE_SCANS: [u16; 16] = [
     0x0b, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21,
 ];
 
+#[derive(Default)]
+struct TermCapsLease {
+    generation: u64,
+    pending: Option<(u64, u64)>,
+    active: Option<(u64, u64)>,
+}
+
+#[cfg(test)]
+#[test]
+fn term_caps_lease_rejects_stale_acknowledgements() {
+    let mut lease = TermCapsLease::default();
+    let old = lease.offer(42);
+    let current = lease.offer(43);
+    assert!(!lease.acknowledge(old, 42));
+    assert!(lease.acknowledge(current, 43));
+    lease.revoke();
+    assert!(!lease.acknowledge(current, 43));
+    assert!(lease.active.is_none());
+}
+
+impl TermCapsLease {
+    fn offer(&mut self, token: u64) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.active = None;
+        self.pending = (token != 0).then_some((self.generation, token));
+        self.generation
+    }
+
+    fn acknowledge(&mut self, generation: u64, token: u64) -> bool {
+        if self.pending != Some((generation, token)) { return false; }
+        self.active = self.pending.take();
+        true
+    }
+
+    fn revoke(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.pending = None;
+        self.active = None;
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FrameInputSpec {
     vk_code: u16,
@@ -205,6 +246,7 @@ fn select_caps_mode(policy_token_snapshot: u64, debug_armed: bool) -> CapsMode {
 
 pub struct CapsHook {
     control: Mutex<Control>,
+    term_caps: Mutex<TermCapsLease>,
     #[cfg(windows)]
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
     #[cfg(windows)]
@@ -217,6 +259,7 @@ impl CapsHook {
     fn new() -> Self {
         Self {
             control: Mutex::new(Control::default()),
+            term_caps: Mutex::new(TermCapsLease::default()),
             #[cfg(windows)]
             thread: Mutex::new(None),
             #[cfg(windows)]
@@ -249,6 +292,13 @@ impl CapsHook {
                 || old.process_name != next_process
                 || old.focused != focused
         });
+        let term_context_changed = control.context.as_ref().is_none_or(|old| {
+            old.frontend_id != frontend_id || old.tab_id != next_tab || old.focused != focused
+        });
+        if term_context_changed {
+            clear_term_token();
+            if let Ok(mut lease) = self.term_caps.lock() { lease.revoke(); }
+        }
         let previous = if identity_changed {
             let previous = control.active.take().or_else(|| control.pending.take());
             control.pending = None;
@@ -290,6 +340,8 @@ impl CapsHook {
     }
 
     fn revoke(&self, app: Option<&AppHandle>) {
+        clear_term_token();
+        if let Ok(mut lease) = self.term_caps.lock() { lease.revoke(); }
         let Ok(mut control) = self.control.lock() else {
             return;
         };
@@ -548,6 +600,46 @@ pub fn caps_policy_ack(
     webview.label() == "main" && hook.acknowledge(ack)
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TermCapsOffer {
+    generation: u64,
+    token: String,
+}
+
+#[tauri::command]
+pub fn term_caps_offer(webview: tauri::Webview, hook: State<'_, CapsHook>) -> Result<TermCapsOffer, String> {
+    if webview.label() != "main" || !native_focus_is_valid() { return Err("terminal is not focused".into()); }
+    let mut lease = hook.term_caps.lock().map_err(|_| "term Caps lease unavailable")?;
+    let token = random_marker_value();
+    let generation = lease.offer(token);
+    clear_term_token();
+    Ok(TermCapsOffer { generation, token: format!("{token:016x}") })
+}
+
+#[tauri::command]
+pub fn term_caps_ack(webview: tauri::Webview, hook: State<'_, CapsHook>, offer: TermCapsOffer) -> bool {
+    if webview.label() != "main" || !native_focus_is_valid() { return false; }
+    let Ok(token) = u64::from_str_radix(&offer.token, 16) else { return false; };
+    let Ok(mut lease) = hook.term_caps.lock() else { return false; };
+    if !lease.acknowledge(offer.generation, token) { return false; }
+    set_term_token(token);
+    true
+}
+
+#[tauri::command]
+pub fn term_caps_revoke(webview: tauri::Webview, hook: State<'_, CapsHook>) {
+    if webview.label() != "main" { return; }
+    clear_term_token();
+    if let Ok(mut lease) = hook.term_caps.lock() { lease.revoke(); }
+}
+
+#[cfg(windows)]
+fn set_term_token(token: u64) { windows_hook::TERM_TOKEN.store(token, std::sync::atomic::Ordering::Release); }
+#[cfg(not(windows))]
+fn set_term_token(_token: u64) {}
+fn clear_term_token() { set_term_token(0); }
+
 #[cfg(windows)]
 pub(crate) fn set_webview_hwnd(hwnd: windows_sys::Win32::Foundation::HWND) {
     windows_hook::TARGET_WEBVIEW_HWND.store(hwnd as isize, std::sync::atomic::Ordering::Release);
@@ -648,6 +740,8 @@ mod windows_hook {
     const LATCH_POLICY: u32 = 1;
     const LATCH_DEBUG: u32 = 2;
     const WM_RELEASE_PENDING_TOKEN: u32 = 0x8001;
+    const WM_BROWSER_COMMAND: u32 = 0x8002;
+    static HOOK_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
     pub(super) static TARGET_HWND: AtomicIsize = AtomicIsize::new(0);
     pub(super) static TARGET_WEBVIEW_HWND: AtomicIsize = AtomicIsize::new(0);
     pub(super) static TARGET_PID: AtomicU32 = AtomicU32::new(0);
@@ -660,9 +754,12 @@ mod windows_hook {
     #[cfg(debug_assertions)]
     pub(super) static HOOK_CALLBACK_COUNT: AtomicU64 = AtomicU64::new(0);
     static CURRENT_MARKER_TOKEN: AtomicU64 = AtomicU64::new(0);
+    pub(super) static TERM_TOKEN: AtomicU64 = AtomicU64::new(0);
     static CAPS_PHYSICAL_DOWN_TIME: AtomicU32 = AtomicU32::new(0);
     static FRAME_INSTANCE_SIGNATURE: AtomicU64 = AtomicU64::new(0);
     static DEBUG_INSTANCE_SIGNATURE: AtomicU64 = AtomicU64::new(0);
+    #[cfg(debug_assertions)]
+    static PROBE_INPUT_ARMED: AtomicBool = AtomicBool::new(false);
     static CAPS_LATCHED_TOKEN: AtomicU64 = AtomicU64::new(0);
     static CAPS_LATCHED_KIND: AtomicU32 = AtomicU32::new(LATCH_NONE);
     static FRAME_FAILURE_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -670,6 +767,7 @@ mod windows_hook {
     #[cfg(debug_assertions)]
     static DEBUG_ARMED: AtomicBool = AtomicBool::new(false);
     static CAPS_SUPPRESSED_DOWN: AtomicBool = AtomicBool::new(false);
+    static BROWSER_CAPS_DOWN: AtomicBool = AtomicBool::new(false);
     static CAPS_LOGICAL_DOWN: AtomicBool = AtomicBool::new(false);
     static TOKEN_UP_PENDING: AtomicBool = AtomicBool::new(false);
 
@@ -735,6 +833,7 @@ mod windows_hook {
     }
 
     fn hook_thread(ready: mpsc::SyncSender<Result<(), String>>, app: AppHandle) {
+        let _ = HOOK_APP.set(app.clone());
         unsafe {
             let thread_id = GetCurrentThreadId();
             HOOK_THREAD_ID.store(thread_id, Ordering::Release);
@@ -762,6 +861,10 @@ mod windows_hook {
                 }
                 let mut quit = false;
                 while PeekMessageW(&mut message, null_mut(), 0, 0, PM_REMOVE) != 0 {
+                    if message.message == WM_BROWSER_COMMAND {
+                        dispatch_browser_commands(&app);
+                        continue;
+                    }
                     if message.message == WM_QUIT {
                         quit = true;
                         break;
@@ -774,6 +877,7 @@ mod windows_hook {
                     DispatchMessageW(&message);
                 }
                 post_pending_token_up();
+                dispatch_browser_commands(&app);
                 report_pending_frame_failure(&app);
                 if quit {
                     break;
@@ -784,6 +888,31 @@ mod windows_hook {
             HOOK_ACTIVE.store(false, Ordering::Release);
             UnhookWindowsHookEx(hook);
             HOOK_THREAD_ID.store(0, Ordering::Release);
+        }
+    }
+
+    fn browser_is_focused(browser_hwnd: isize) -> bool {
+        let target = browser_hwnd as HWND;
+        let foreground = unsafe { GetForegroundWindow() };
+        let mut info = GUITHREADINFO { cbSize: size_of::<GUITHREADINFO>() as u32, ..Default::default() };
+        let thread = if browser_hwnd != 0 { unsafe { GetWindowThreadProcessId(target, null_mut()) } } else { 0 };
+        thread != 0 && !foreground.is_null()
+            && unsafe { GetAncestor(foreground, GA_ROOT) == GetAncestor(target, GA_ROOT) }
+            && unsafe { GetGUIThreadInfo(thread, &mut info) } != 0
+            && (info.hwndFocus == target || unsafe { IsChild(target, info.hwndFocus) } != 0)
+    }
+
+    fn dispatch_browser_commands(app: &AppHandle) {
+        use tauri::Emitter;
+        let (hwnd, generation) = crate::browser_keymap::browser_focus_identity();
+        let commands = crate::browser_keymap::take_commands();
+        if !browser_is_focused(hwnd) { return; }
+        if let Some(session_id) = app.try_state::<crate::browser::BrowserState>().and_then(|state| state.active_id()) {
+            for (queued_generation, map_generation, command) in commands {
+                if queued_generation == generation {
+                    let _ = app.emit("browser-command", serde_json::json!({ "generation": map_generation, "sessionId": session_id, "command": command }));
+                }
+            }
         }
     }
 
@@ -819,6 +948,59 @@ mod windows_hook {
         let event_time = key.time;
         let injected = key.flags & LLKHF_INJECTED != 0;
         let vk = key.vkCode;
+        #[cfg(debug_assertions)]
+        let probe_token = key.dwExtraInfo as u64;
+        #[cfg(debug_assertions)]
+        let probe_input = injected
+            && PROBE_INPUT_ARMED.load(Ordering::Acquire)
+            && probe_token == DEBUG_INSTANCE_SIGNATURE.load(Ordering::Acquire);
+        #[cfg(not(debug_assertions))]
+        let probe_input = false;
+        if (!injected || probe_input) && (down || up) {
+            #[cfg(debug_assertions)]
+            if probe_input && DEBUG_ARMED.load(Ordering::Acquire) {
+                super::trace_hook_event(vk, down, true, true, 0);
+            }
+            if vk == VK_CAPITAL as u32 && up && BROWSER_CAPS_DOWN.swap(false, Ordering::AcqRel) {
+                if let Some(app) = HOOK_APP.get() {
+                    if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                        let (_, generation) = crate::browser_keymap::browser_focus_identity();
+                        state.key(generation, vk, false);
+                    }
+                }
+                return 1;
+            }
+            if up {
+                if let Some(app) = HOOK_APP.get() {
+                    if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                        if state.take_consumed_up(vk) { return 1; }
+                    }
+                }
+            }
+            let (browser_hwnd, generation) = crate::browser_keymap::browser_focus_identity();
+            if browser_is_focused(browser_hwnd) {
+                if let Some(app) = HOOK_APP.get() {
+                    if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                        let (consumed, map_generation, command) = state.key(generation, vk, down);
+                        if vk == VK_CAPITAL as u32 && down && state.uses_caps_term() {
+                            BROWSER_CAPS_DOWN.store(true, Ordering::Release);
+                            return 1;
+                        }
+                        if let Some(command) = command {
+                            if crate::browser_keymap::queue_command(generation, map_generation, command) {
+                                unsafe { PostThreadMessageW(HOOK_THREAD_ID.load(Ordering::Acquire), WM_BROWSER_COMMAND, 0, 0); }
+                            } else {
+                                state.release_consumed(vk);
+                                return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
+                            }
+                        }
+                        if consumed { return 1; }
+                    }
+                }
+            } else if let Some(app) = HOOK_APP.get() {
+                if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() { state.clear_pressed(); }
+            }
+        }
         let extra_token = key.dwExtraInfo as u64;
         let frame_signature = FRAME_INSTANCE_SIGNATURE.load(Ordering::Acquire);
         let debug_signature = DEBUG_INSTANCE_SIGNATURE.load(Ordering::Acquire);
@@ -855,7 +1037,8 @@ mod windows_hook {
             let debug_armed = DEBUG_ARMED.load(Ordering::Acquire);
             #[cfg(not(debug_assertions))]
             let debug_armed = false;
-            let mode = select_caps_mode(CURRENT_MARKER_TOKEN.load(Ordering::Acquire), debug_armed);
+            let term_token = TERM_TOKEN.load(Ordering::Acquire);
+            let mode = if term_token != 0 { CapsMode::Policy(term_token) } else { select_caps_mode(CURRENT_MARKER_TOKEN.load(Ordering::Acquire), debug_armed) };
             if mode == CapsMode::PassThrough {
                 return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
             }
@@ -1047,6 +1230,50 @@ mod windows_hook {
     }
 
     #[cfg(debug_assertions)]
+    pub(super) fn send_probe_browser_chord(keys: &[u32]) -> Result<(), String> {
+        if keys.is_empty() || keys.len() > 4 || keys.iter().any(|key| *key == 0 || *key > 0xFF) {
+            return Err("invalid probe chord".into());
+        }
+        let (hwnd, generation) = crate::browser_keymap::browser_focus_identity();
+        if hwnd == 0 || !browser_is_focused(hwnd) {
+            return Err("browser WebView is not focused".into());
+        }
+        let token = DEBUG_INSTANCE_SIGNATURE.load(Ordering::Acquire);
+        if token == 0 { return Err("debug hook token is unavailable".into()); }
+        let mut inputs = Vec::with_capacity(keys.len() * 2);
+        for key in keys {
+            inputs.push(probe_key_input(*key as u16, false, token));
+        }
+        for key in keys.iter().rev() {
+            inputs.push(probe_key_input(*key as u16, true, token));
+        }
+        PROBE_INPUT_ARMED.store(true, Ordering::Release);
+        let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_mut_ptr(), size_of::<INPUT>() as i32) };
+        PROBE_INPUT_ARMED.store(false, Ordering::Release);
+        if sent != inputs.len() as u32 { return Err("probe SendInput did not send the complete chord".into()); }
+        if crate::browser_keymap::browser_focus_identity() != (hwnd, generation) || !browser_is_focused(hwnd) {
+            return Err("browser focus changed during probe chord".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn probe_key_input(vk: u16, keyup: bool, token: u64) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: if keyup { KEYEVENTF_KEYUP } else { 0 },
+                    time: 0,
+                    dwExtraInfo: token as usize,
+                },
+            },
+        }
+    }
+
+    #[cfg(debug_assertions)]
     pub(super) fn frame_failure_count() -> u64 {
         FRAME_FAILURE_COUNT.load(Ordering::Acquire)
     }
@@ -1145,6 +1372,11 @@ fn cancel_logical_hold() {}
 #[cfg(all(windows, debug_assertions))]
 pub(crate) fn hook_is_active() -> bool {
     windows_hook::HOOK_ACTIVE.load(std::sync::atomic::Ordering::Acquire)
+}
+
+#[cfg(all(windows, debug_assertions))]
+pub(crate) fn send_probe_browser_chord(keys: &[u32]) -> Result<(), String> {
+    windows_hook::send_probe_browser_chord(keys)
 }
 
 #[cfg(all(windows, debug_assertions))]

@@ -1,3 +1,4 @@
+import { shortcutHint } from '../terminal/keymap';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -386,19 +387,29 @@ You are attached to one specific terminal session. You can observe its visible s
 
 Scanline Term is a Windows terminal with CRT visual effects, configurable display and font settings, multiple terminal tabs, an optional browser tab, and this AI assistant panel (source code on github: https://github.com/z-hunter/Scanline-Term). You can confirm these listed features, including CRT effects, when asked, and explain the shortcuts below; do not claim features that are not listed here.
 
-Application shortcuts use the dedicated Menu (Context Menu) key, not Ctrl:
-- Menu+S: show or hide display settings.
-- Menu+Z: show or hide the tab bar. Menu+- and Menu++ change the terminal font size by one point.
-- Menu+P: quickly preview and choose a terminal preset.
-- Menu+A: show or hide the AI assistant panel.
-- Menu+': switch keyboard focus between the terminal and AI panel.
-- Menu+N: create a terminal tab; Menu+B: create a browser tab; Menu+W: close the active tab.
-- Menu+1 through Menu+9: select that numbered tab; Menu+Right or Menu+>: next tab; Menu+Left or Menu+<: previous tab; Menu+Shift+Left/Right or Menu+Shift+H/L: move the active tab; Menu+Tab: return to the previously active tab.
-- Menu+V: paste clipboard text into the terminal. Menu+C: start copy mode, then drag to select and copy terminal text. Middle-click and drag also selects text.
-- Menu+I: choose a local PNG or JPG and place it over the active terminal tab; drag images to move them and use the mouse wheel to scale them.
-- Menu+PageUp or Menu+PageDown (or Menu+J / Menu+K): scroll terminal history by a page. Menu+J/K also scrolls the AI panel when it has focus.
-- Alt+Enter: toggle fullscreen in the desktop application.
-- Win+~: show/focus Scanline Term, or hide it when focused, if the optional global hotkey is enabled in settings.
+Application shortcuts are configurable. The current bindings are:
+- ${shortcutHint('settings.toggle').trim() || 'Unbound'}: show or hide display settings.
+- ${shortcutHint('tabs.toggle_bar').trim() || 'Unbound'}: show or hide the tab bar.
+- ${shortcutHint('terminal.font_decrease').trim() || 'Unbound'}: decrease terminal font size.
+- ${shortcutHint('terminal.font_increase').trim() || 'Unbound'}: increase terminal font size.
+- ${shortcutHint('presets.toggle_picker').trim() || 'Unbound'}: open the preset picker.
+- ${shortcutHint('ai.toggle').trim() || 'Unbound'}: show or hide the assistant.
+- ${shortcutHint('ai.toggle_focus').trim() || 'Unbound'}: switch terminal and assistant focus.
+- ${shortcutHint('tab.new_terminal').trim() || 'Unbound'}: create a terminal tab.
+- ${shortcutHint('tab.new_browser').trim() || 'Unbound'}: create a browser tab.
+- ${shortcutHint('tab.close').trim() || 'Unbound'}: close the active tab.
+- ${shortcutHint('tab.next').trim() || 'Unbound'}: select the next tab.
+- ${shortcutHint('tab.previous').trim() || 'Unbound'}: select the previous tab.
+- ${shortcutHint('tab.last_active').trim() || 'Unbound'}: select the previously active tab.
+- ${shortcutHint('terminal.paste').trim() || 'Unbound'}: paste clipboard text.
+- ${shortcutHint('terminal.copy_mode').trim() || 'Unbound'}: start mouse selection and copy mode.
+- ${shortcutHint('terminal.add_image').trim() || 'Unbound'}: choose a terminal image.
+- ${shortcutHint('terminal.find').trim() || 'Unbound'}: search terminal output.
+- ${shortcutHint('terminal.find_back').trim() || 'Unbound'}: search terminal output backwards.
+- ${shortcutHint('terminal.page_up').trim() || 'Unbound'}: scroll terminal output up.
+- ${shortcutHint('terminal.page_down').trim() || 'Unbound'}: scroll terminal output down.
+- ${shortcutHint('window.toggle_fullscreen').trim() || 'Unbound'}: toggle fullscreen.
+- ${shortcutHint('window.toggle_visibility').trim() || 'Unbound'}: show or hide Scanline Term when global hotkeys are enabled.
 
 Use only the scanline_terminal tools to interact with the computer. Do not use your own shell, filesystem, or other execution environment. Work at a deliberate human pace in the interactive session. Prefer a text editor for editing files and interact with the shell one command at a time, observing its response before continuing.
 

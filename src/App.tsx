@@ -30,6 +30,8 @@ import {
   type TabPresetState,
 } from "./crt/settings";
 import { useManagedSettings } from "./terminal/useManagedSettings";
+import { commandForEvent, getActiveKeymap, publishReloadKeymap, validateKeymap } from "./terminal/keymap";
+import { globalHotkeyBindings } from "./terminal/global-hotkeys";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { createBrowserTextureStreamReceiver, type BrowserVideoFrame } from "./crt/browser-benchmark";
@@ -438,17 +440,16 @@ export default function App() {
   }, [presetPickerOpen, presetPickerTabId, terminal.activeTabId]);
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "ContextMenu") { galleryMenuRef.current = true; return; }
       if (presetPickerOpen) return;
-      const hasMenu = galleryMenuRef.current || !event.isTrusted;
-      if (hasMenu && event.code === "Backspace") { event.preventDefault(); event.stopImmediatePropagation(); toggleGallery(); return; }
+      const command = commandForEvent(event);
+      if (command === "gallery.toggle") { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) toggleGallery(); return; }
       if (!galleryOpen) return;
-      if (hasMenu && (event.code === "KeyN" || event.code === "KeyB")) {
+      if (command === "tab.new_terminal" || command === "tab.new_browser") {
         event.preventDefault(); event.stopImmediatePropagation();
-        if (!event.repeat) { if (event.code === "KeyN") terminal.openSession(); else terminal.openBrowser(); setGalleryCloseRequested(true); }
+        if (!event.repeat) { if (command === "tab.new_terminal") terminal.openSession(); else terminal.openBrowser(); setGalleryCloseRequested(true); }
         return;
       }
-      if ((event.code === "Enter" || event.code === "NumpadEnter") && event.altKey && isTauri()) {
+      if (command === "window.toggle_fullscreen" && isTauri()) {
         event.preventDefault(); event.stopImmediatePropagation();
         if (!event.repeat) void getCurrentWindow().isFullscreen().then((fullscreen) => getCurrentWindow().setFullscreen(!fullscreen)).catch((reason) => reportError(`Fullscreen toggle failed: ${String(reason)}`));
       }
@@ -600,6 +601,7 @@ export default function App() {
     luaPresetRequestEpoch.current += 1;
     let reloadToken: number | null = null;
     let preparedForAbort: { frontendId: string; token: string } | null = null;
+    let hotkeysPrepared = false;
     try {
       reloadToken = await terminal.pauseLuaAutomationForReload();
       if (reloadToken === null) return;
@@ -610,6 +612,18 @@ export default function App() {
       if (!prepared) return;
       preparedForAbort = { frontendId: prepared.frontendId, token: prepared.token };
       if (prepared.frontendId !== frontendId || !terminal.isLuaAutomationReloadCurrent(reloadToken)) return;
+      try {
+        validateKeymap(prepared.keymap ?? null);
+        globalHotkeyBindings(prepared.keymap ?? null, true);
+        if (prepared.candidateStatus !== 'error') {
+          const bindings = globalHotkeyBindings(prepared.keymap ?? null, canonicalGlobals.globalHotkeyEnabled);
+          await invoke('prepare_global_hotkeys', { bindings });
+          hotkeysPrepared = true;
+        }
+      } catch (reason) {
+        reportError(`Hotkey configuration failed: ${String(reason)}`);
+        return;
+      }
       const handledCleanupIds: string[] = [];
       for (const cleanup of prepared.cleanup) {
         const result = await applyLuaPresetCleanup(
@@ -633,6 +647,8 @@ export default function App() {
       const committed = await luaAutomation.commitReload(frontendId, prepared.token, handledCleanupIds);
       if (!committed) return;
       preparedForAbort = null;
+      hotkeysPrepared = false;
+      publishReloadKeymap(prepared.keymap ?? null, prepared.candidateStatus);
       if (prepared.palettes && replaceLuaPaletteSnapshot(prepared.palettes, reportError)) {
         setPaletteCatalogRevision((revision) => revision + 1);
         refreshTerminalColorProfiles();
@@ -649,12 +665,13 @@ export default function App() {
         setDefaultPreset(result.settings);
       }
     } finally {
+      if (hotkeysPrepared) await invoke('abort_global_hotkeys').catch((reason) => reportError(`Global hotkey rollback failed: ${String(reason)}`));
       if (preparedForAbort) await luaAutomation.abortReload(preparedForAbort.frontendId, preparedForAbort.token);
       luaPresetRequestEpoch.current += 1;
       if (reloadToken !== null) terminal.resumeLuaAutomationAfterReload(reloadToken);
       setManagedReloading(false);
     }
-  }, [defaultPresetChangeRequest, legacyGlobals, loadDefaultPreset, luaAutomation, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal, refreshTerminalColorProfiles]);
+  }, [canonicalGlobals.globalHotkeyEnabled, defaultPresetChangeRequest, legacyGlobals, loadDefaultPreset, luaAutomation, loadManagedSettings, refreshPresets, reportError, settleManagedSettings, terminal, refreshTerminalColorProfiles]);
   const previewPreset = useCallback(async (name: string, openingTabId: string | null) => {
     if (!openingTabId || activeTabIdRef.current !== openingTabId) return false;
     const request = ++presetPickerRequest.current;
@@ -895,6 +912,14 @@ export default function App() {
     setGalleryCloseRequested(false);
     setGalleryOpen(true);
   };
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void listen("global-show-gallery", () => {
+      if (!galleryOpen) galleryToggleRef.current();
+    }).then((cleanup) => { unlisten = cleanup; });
+    return () => unlisten?.();
+  }, [galleryOpen]);
   useEffect(() => {
     const ids = new Set(terminal.tabs.map((tab) => tab.id));
     galleryFramesRef.current.forEach((_, id) => { if (!ids.has(id)) galleryFramesRef.current.delete(id); });
@@ -1275,6 +1300,18 @@ export default function App() {
       setStored((current) => ({ ...current, globalHotkeyEnabled: !canonicalGlobals.globalHotkeyEnabled }));
     });
   }, [canonicalGlobals.globalHotkeyEnabled, canonicalGlobals.slideFromTop, managedSettled, reportError, setStored]);
+  useEffect(() => {
+    if (!isTauri() || !managedSettled) return;
+    const update = () => {
+      try {
+        const bindings = globalHotkeyBindings(getActiveKeymap(), canonicalGlobals.globalHotkeyEnabled);
+        void invoke("set_global_hotkeys", { bindings }).catch((reason) => reportError(`Global hotkey registration failed: ${String(reason)}`));
+      } catch (reason) {
+        reportError(`Global hotkey configuration failed: ${String(reason)}`);
+      }
+    };
+    update();
+  }, [canonicalGlobals.globalHotkeyEnabled, managedSettled, reportError]);
   useEffect(() => {
     if (isTauri()) void getVersion().then(setAppVersion);
   }, []);
