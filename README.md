@@ -51,22 +51,15 @@ Keep your hands on the keyboard and stay in the zone:
 - **Fast Tab Switching**: Jump between multiple live console sessions and browser tabs instantly using `Menu + 1...9`, or open the static Sessions Gallery with `Menu + Backspace`.
 - **Tab Reordering**: Drag the active tab left or right in the tab bar, or move it one position at a time with `Menu + Shift + ←/→` or `Menu + Shift + H/L`. Tab numbers are refreshed automatically.
 
-### 3. Native Windows ConPTY Engine
-
-Built specifically for Windows with Rust and native APIs:
-
-- **ConPTY Backend**: Direct integration via `conpty-oxide` with bundled Windows ConPTY binaries.
-- **Win32 Input Mode**: Full support for Win32 Console Input Mode (`?9001h`), function keys, numpad application modes, and full mouse tracking (SGR 1006, drag, and any-event).
-
 ![Scanline Term](public/Screenshot_16.png)
 
-![Scanline Term](public/Screenshot_23.png)
-
-### 4. 'Quake-Style' Global Hotkey
+### 3. 'Quake-Style' Global Hotkey
 
 Summon Scanline Term from anywhere in Windows with a single keystroke. When you're done, press `Win + ~` again to tuck it away without disrupting your active window layout.
 
-### 5. AI Terminal Assistant
+![Scanline Term](public/Screenshot_23.png)
+
+### 4. AI Terminal Assistant
 
 Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The operator can only see the terminal session and execute commands in it.
 
@@ -74,29 +67,31 @@ Connect any terminal session to an embedded Codex AI assistant (`Menu + A`). The
 
 > **Note**: To use the AI Terminal Assistant, [Codex CLI](https://github.com/openai/codex) (version `0.152.1` or newer) must be installed on your system and available on your `PATH`.
 
-### 6. Ultra-Lightweight & Fast
+You can also use the **built-in MCP server** to enable your coding agents to operate within a terminal with an unprecedented level of ease. This is particularly useful for working with or debugging TUI (terminal user interface) applications, as well as in remote SSH sessions; it allows coding agents to move beyond short, fragmented interactions—they can instead monitor the screen in real time, press keys, and control the mouse directly within the terminal.
+
+### 5. Lightweight & Fast
 
 Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only *30 MB** (most of which consists of the included fonts), launches instantly, and stays lightweight on system resources.
 
----
-![Scanline Term](public/Screenshot_39.png)
-
-## Lua Configuration & Scripts
+## 6. Lua Configuration & Scripts
 
 Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes.
+Lua' can also be used for remapping and substituting keys—for instance, you could remap 'Caps Lock to function in terminal intelligently as 'Esc' and/or 'Ctrl', depending on the current application and its mode.
 The shipped `User's` palette is enabled by default; optional examples show **Vim/Neovim** and **Helix** mode-based layout switching with Smart Caps, plus switching to a saved preset while **FAR Manager** runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
 
 ---
 
 ### Quick Preset Picker
 
-`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible. Type to filter preset names; use arrow keys to choose a preview, use the mouse wheel to scroll the list, or click a row to choose its preview. `Enter`, a second `Menu + P`, or a double-click keeps the selected preset. `Esc` or clicking outside the picker restores the preset that was active before opening it.
+`Menu + P` opens a compact preset list in the upper-right corner without dimming the display, so each preview remains visible.
 
 ### Sessions Gallery
 
+![Scanline Term](public/Screenshot_39.png)
+
 `Menu + Backspace` opens a static overview of all sessions; a primary click on unused workspace or tab-bar space does the same, including the outer monitor frame and the narrow physical-window gutters. Terminal cards retain their last CRT-rendered frame; browser cards show a title/type placeholder. Use arrows or `h`/`j`/`k`/`l` to move the selection. While Gallery is open, `Menu + Shift + ←/→` or `Menu + Shift + H/L` moves the selected card one position horizontally, and `Menu + Shift + ↑/↓` or `Menu + Shift + K/J` moves it to the nearest card in the adjacent row. Gallery reordering is keyboard-only; cards animate into their new positions and tab numbers are refreshed after every move. `Enter`, `Space`, or `1`…`9`/`0` opens a tab, while `Esc`, `Menu + Backspace`, or a click outside a card returns unchanged. `Menu + N` and `Menu + B` create a terminal or browser tab from the overview.
 
-## Keyboard Shortcuts Cheat Sheet
+## Default Keyboard Shortcuts Cheat Sheet
 
 > **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
 
@@ -127,19 +122,24 @@ The shipped `User's` palette is enabled by default; optional examples show **Vim
 | **`Menu + Shift + /`** | Find Back in Terminal | Open reverse terminal-buffer search; `Enter` or `n` moves to the previous match |
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
 
-### Change the Menu shortcut key
+While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
 
-The shortcuts above use a shared modifier named `term`, which is set to Menu by default. You can change it once for all shortcuts that use it:
+### Change the 'Menu' shortcut key
 
-1. Open **Settings → Lua Automation** and use the folder button to reveal the active config file. Open it in a text editor. If it includes `keymap.lua`, open that file in the same folder.
+The shortcuts above use a shared modifier (virtual key) named `term`, which is set to phisical 'Menu' key by default. You can change it once for all shortcuts that use it:
+
+1. Open **Settings → Lua Automation** and use the folder button to reveal the active config file. Open it in a text editor.
 2. In the existing `sterm.keymap` declaration, change the `term` line. For example, use `term = 'CapsLock'` for Caps Lock, or `term = 'RightCtrl+RightShift'` to hold both right Ctrl and right Shift.
-3. Save the file and select **Reload config** in Settings. The new key applies without restarting Scanline Term. For example, `term+S` now opens Settings with your chosen key or combination plus S.
 
-If your config has no `sterm.keymap` declaration, add `require('sterm').keymap({ term = 'CapsLock', bindings = {} })` to the main config. If it already includes `keymap.lua`, edit the existing declaration instead. Caps Lock as `term` takes priority over Smart Caps while Scanline Term has focus.
+```Lua
+sterm.keymap({
+  term = 'RightCtrl+RightShift',  
+})
+```
+
+1. Save the file and select **Reload config** in Settings. The new key applies without restarting Scanline Term. For example, `term+S` now opens Settings with your chosen key or combination plus S.
 
 For more examples and system-wide shortcuts, see the [Lua shortcut guide](docs/lua-automation.md#keyboard-shortcuts). Developers extending commands can use the [extension guide](docs/09-extension-guide.md#adding-a-keyboard-shortcut).
-
-While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
 
 ### Browser Tab Keyboard Navigation
 
@@ -316,7 +316,7 @@ npm run tauri:build -- --bundles msi
 
 ---
 
-<img src="public/qr-code.png" alt="Buy me a coffee" width="250">
+<a href="https://buymeacoffee.com/z.hunter"><img src="public/qr-code.png" alt="Buy me a coffee" width="250"></a>
 
 ## License
 

@@ -31,12 +31,16 @@ The built-in bindings are in [`src/terminal/keymap.ts`](../src/terminal/keymap.t
 4. For terminal input encoding rather than an application command, update [`terminal-input.ts`](../src/terminal/terminal-input.ts) for VT mode or [`win32-input.ts`](../src/win32-input.ts) for Win32 mode.
 
 ```typescript
-if (commandForEvent(event) === 'my.command') {
-  event.preventDefault();
-  if (!event.repeat) runAction();
-  return;
-}
+window.addEventListener('keydown', (event) => {
+  if (commandForEvent(event) === 'my.command') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (!event.repeat) runAction();
+  }
+}, { capture: true });
 ```
+
+For a separate window capture listener, `stopImmediatePropagation()` keeps the terminal listener from processing the same event as terminal input. If the command is handled inside the terminal input handler instead, place the branch before terminal input encoding and return before the event is encoded.
 
 ### Terminal Buffer Search
 
