@@ -220,7 +220,7 @@ WebView2 does not preserve a held `Menu` modifier across the browser → termina
 
 ### Browser CRT
 
-The **CRT Emulation** switch starts TextureStream on the active browser tab. The Settings panel reports received frames per second and frame dimensions. Gallery uses the latest cached browser preview when available. The frontend routes canvas pointer and keyboard events through the WebView2 DevTools Input domain, mapping screen coordinates through the CRT transform into the native browser viewport.
+The **CRT Emulation** switch starts TextureStream on the active browser tab. Native activation/deactivation and stream startup share an async transition gate, keeping the active tab stable until native capture startup completes. Frontend activation requests are serialized; callbacks queued by a disposed resize observer are ignored; capture startup waits for the latest activation even when dimensions are cached from an earlier visit. The Settings panel reports received frames per second and frame dimensions. Gallery uses the latest cached browser preview when available. The frontend routes canvas pointer and keyboard events through the WebView2 DevTools Input domain, mapping screen coordinates through the CRT transform into the native browser viewport.
 
 Turning CRT off stops the stream and shows the native WebView. Direct display also remains available if the WebView2 runtime cannot start TextureStream. Browser CRT presets are transient, and the same tab can preview a preset from the shared catalog with `Menu+P`.
 

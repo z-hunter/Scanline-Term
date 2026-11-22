@@ -15,7 +15,7 @@ type BrowserId = String;
 fn trace(app: &tauri::AppHandle, stage: &str, session_id: &str, detail: impl serde::Serialize) { let _ = app.emit("browser-trace", serde_json::json!({ "stage": stage, "sessionId": session_id, "detail": detail })); }
 
 #[derive(Default)]
-pub struct BrowserState(pub Mutex<BrowserStore>);
+pub struct BrowserState(pub Mutex<BrowserStore>, pub tauri::async_runtime::Mutex<()>);
 
 impl BrowserState {
     pub fn active_id(&self) -> Result<Option<String>, ()> {
@@ -552,6 +552,7 @@ pub async fn capture_gallery_browser(app: tauri::AppHandle, session_id: BrowserI
 
 #[tauri::command]
 pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, fullscreen_bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
+    let _transition = state.1.lock().await;
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
     let window_bounds = app.get_webview_window("main").and_then(|window| {
@@ -693,6 +694,7 @@ pub fn refresh_native_browser_bounds(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn close_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId) -> Result<(), String> {
+    let _transition = state.1.lock().await;
     #[cfg(not(windows))]
     let _ = app;
     valid_id(&session_id)?;

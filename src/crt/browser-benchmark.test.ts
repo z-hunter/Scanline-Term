@@ -51,7 +51,7 @@ it('times out when acquiring the MediaStream hangs', async () => {
     const startArgs = vi.mocked(invoke).mock.calls[0][1] as { streamId: string };
     await vi.advanceTimersByTimeAsync(10_000);
     await starting;
-    expect(onError).toHaveBeenCalledWith('Error: TextureStream startup timed out');
+    expect(onError).toHaveBeenCalledWith('Error: TextureStream startup timed out', { sessionId: 'tab', width: 640, height: 480 });
     expect(invoke).toHaveBeenCalledWith('stop_browser_texture_stream', { streamId: startArgs.streamId });
   } finally {
     await receiver.stop();
@@ -60,4 +60,18 @@ it('times out when acquiring the MediaStream hangs', async () => {
     else delete (window as Window & { chrome?: unknown }).chrome;
     vi.mocked(invoke).mockReset();
   }
+});
+
+it('associates receiver errors with the browser tab that owns the stream', async () => {
+  const previousChrome = Object.getOwnPropertyDescriptor(window, 'chrome');
+  vi.mocked(invoke).mockRejectedValue(new Error('native stream failed'));
+  Object.defineProperty(window, 'chrome', { configurable: true, value: { webview: { getTextureStream: vi.fn() } } });
+  const onError = vi.fn();
+  const receiver = new BrowserTextureStreamReceiver(onError);
+  await expect(receiver.start({ sessionId: 'browser-tab-7', width: 640, height: 480 })).rejects.toThrow('native stream failed');
+  expect(onError).toHaveBeenCalledWith('Error: native stream failed', { sessionId: 'browser-tab-7', width: 640, height: 480 });
+  await receiver.stop();
+  if (previousChrome) Object.defineProperty(window, 'chrome', previousChrome);
+  else delete (window as Window & { chrome?: unknown }).chrome;
+  vi.mocked(invoke).mockReset();
 });

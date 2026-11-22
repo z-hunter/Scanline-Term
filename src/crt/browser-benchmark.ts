@@ -4,7 +4,7 @@ export const BENCHMARK_URL = 'http://localhost:5173/texture-stream-benchmark.htm
 export const BENCHMARK_WIDTH = 1280;
 export const BENCHMARK_HEIGHT = 720;
 export type BrowserBenchmarkMode = 'jpeg' | 'texture';
-export type BrowserVideoFrame = { video: HTMLVideoElement; timestamp: number; epochTimeMs?: number; requireDirect?: boolean };
+export type BrowserVideoFrame = { video: HTMLVideoElement; timestamp: number; epochTimeMs?: number; requireDirect?: boolean; sessionId?: string };
 export type BrowserTextureMetrics = { frames: number; width: number; height: number };
 
 type TextureStreamInfo = { streamId: string; epochAtQpcZeroMs?: number | null };
@@ -85,13 +85,14 @@ export class BrowserTextureStreamReceiver {
   private callback = 0;
   private stream: MediaStream | undefined;
   private streamId: string | null = null;
+  private options: BrowserTextureStreamOptions | null = null;
   private generation = 0;
   private started = false;
   private startupTimer = 0;
   private readonly onStreamInactive = () => { void this.fail(new Error('TextureStream ended')); };
   private readonly listeners = new Set<(frame: BrowserVideoFrame, metrics: BrowserTextureMetrics) => void>();
 
-  constructor(private readonly onError: (reason: string) => void = () => {}) {}
+  constructor(private readonly onError: (reason: string, options: BrowserTextureStreamOptions | null) => void = () => {}) {}
 
   onFrame(callback: (frame: BrowserVideoFrame, metrics: BrowserTextureMetrics) => void): () => void {
     this.listeners.add(callback);
@@ -102,6 +103,7 @@ export class BrowserTextureStreamReceiver {
     const generation = ++this.generation;
     await this.stopResources();
     if (generation !== this.generation) return;
+    this.options = options;
     this.error = null;
     this.metrics.frames = this.metrics.width = this.metrics.height = 0;
     const streamId = options.sourceUrl ? options.streamId! : crypto.randomUUID();
@@ -146,7 +148,7 @@ export class BrowserTextureStreamReceiver {
           previous = metadata.mediaTime;
           window.clearTimeout(this.startupTimer);
           this.startupTimer = 0;
-          const current = this.video.current = { video, timestamp: previous, epochTimeMs: result.epochAtQpcZeroMs == null ? undefined : result.epochAtQpcZeroMs + previous * 1000, requireDirect: !!options.sourceUrl };
+          const current = this.video.current = { video, timestamp: previous, epochTimeMs: result.epochAtQpcZeroMs == null ? undefined : result.epochAtQpcZeroMs + previous * 1000, requireDirect: !!options.sourceUrl, sessionId: options.sessionId };
           this.metrics.frames += 1; this.metrics.width = metadata.width; this.metrics.height = metadata.height;
           this.listeners.forEach(callback => callback(current, this.metrics));
         }
@@ -173,6 +175,7 @@ export class BrowserTextureStreamReceiver {
     if (video && this.callback) video.cancelVideoFrameCallback(this.callback);
     this.callback = 0;
     this.video.current = null;
+    this.options = null;
     const stream = this.stream;
     this.stream = undefined;
     if (stream) { stream.removeEventListener('inactive', this.onStreamInactive); stream.getTracks().forEach(track => track.stop()); }
@@ -189,7 +192,7 @@ export class BrowserTextureStreamReceiver {
 
   private async fail(reason: unknown) {
     this.error = String(reason);
-    this.onError(this.error);
+    this.onError(this.error, this.options);
     await this.stop();
   }
 }

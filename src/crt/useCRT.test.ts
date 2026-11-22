@@ -137,6 +137,33 @@ describe('useCRT settings ref', () => {
     container.remove();
   });
 
+  it('reports browser render failures with the source tab id', async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    mocked.render.mockImplementationOnce(() => { throw new Error('video upload failed'); });
+    const onBrowserVideoError = vi.fn();
+    const video = document.createElement('video');
+    function TestComponent() {
+      const result = useCRT({
+        settingsRef: { current: { ...DEFAULT_CRT_SETTINGS } },
+        resolution: { id: '1024x768', width: 1024, height: 768 },
+        renderer: { draw: vi.fn(), compositedCanvas: document.createElement('canvas'), isScrollAnimating: false, hasMeasuredLuma: false, markDirty: vi.fn(), getOverlays: vi.fn(() => []), setBrowserPreview: vi.fn(), setRasterScale: mocked.setRasterScale } as never,
+        onError: vi.fn(), onBrowserVideoError, onResizeSource: vi.fn(),
+        browserVideo: { current: { video, timestamp: 1, sessionId: 'browser-tab-7' } },
+      });
+      return createElement('canvas', { ref: result.outputRef });
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { frames[0](16); });
+    expect(onBrowserVideoError).toHaveBeenCalledWith('Screen render failed: Error: video upload failed', 'browser-tab-7');
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
   it('recreates the screen renderer after WebGL restores its context', async () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });

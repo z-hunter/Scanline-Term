@@ -9,7 +9,7 @@ type VideoRenderer = {
   renderVideo?: (video: HTMLVideoElement, settings: CRTSettings, width: number, height: number, changed: boolean) => void;
 };
 
-export function useCRT({ settingsRef, resolution, renderer, onError, onBrowserVideoError, onResizeSource, onFrame, enabled = true, browserVideo }: { settingsRef: { current: CRTSettings }; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onBrowserVideoError?: (message: string) => void; onResizeSource: (output: HTMLCanvasElement, reason?: string) => void; onFrame?: (output: HTMLCanvasElement, now: number, changed: boolean) => void; enabled?: boolean; browserVideo?: { current: BrowserVideoFrame | null } }) {
+export function useCRT({ settingsRef, resolution, renderer, onError, onBrowserVideoError, onResizeSource, onFrame, enabled = true, browserVideo }: { settingsRef: { current: CRTSettings }; resolution: Resolution; renderer: TerminalRenderer; onError: (message: string) => void; onBrowserVideoError?: (message: string, sessionId?: string) => void; onResizeSource: (output: HTMLCanvasElement, reason?: string) => void; onFrame?: (output: HTMLCanvasElement, now: number, changed: boolean) => void; enabled?: boolean; browserVideo?: { current: BrowserVideoFrame | null } }) {
   const outputRef = useRef<HTMLCanvasElement>(null); const screenRef = useRef<VirtualScreenRenderer | null>(null); const [fps, setFps] = useState(0);
   const enabledRef = useRef(enabled); enabledRef.current = enabled;
   const browserVideoRef = useRef(browserVideo); browserVideoRef.current = browserVideo;
@@ -99,7 +99,8 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onBrowserVi
               } catch (reason) {
                 if (video && !video.requireDirect) {
                   previousVideo = video;
-                  (onBrowserVideoError ?? onError)(`Screen render failed: ${String(reason)}`);
+                  if (onBrowserVideoError) onBrowserVideoError(`Screen render failed: ${String(reason)}`, video.sessionId);
+                  else onError(`Screen render failed: ${String(reason)}`);
                 } else { renderFailed = true; onError(`Screen render failed: ${String(reason)}`); }
               }
             }

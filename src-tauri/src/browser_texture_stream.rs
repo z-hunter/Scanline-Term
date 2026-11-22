@@ -492,6 +492,7 @@ pub async fn start_browser_texture_stream(
     let origin = receiver_origin(&webview)?;
     if let Some(session_id) = session_id {
         if source_url.is_some() { return Err("provide either a browser tab or a benchmark source".into()); }
+        let _transition = state.1.lock().await;
         state.texture_stream_tab_handle(&session_id)?;
         return tauri::async_runtime::spawn_blocking(move || start_for_browser_tab(&app, session_id, stream_id, origin, width, height))
             .await

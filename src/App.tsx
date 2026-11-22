@@ -128,6 +128,7 @@ export default function App() {
   const browserPreviewTabId = useRef<string | null>(null);
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
+  const browserActivationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const galleryMenuRef = useRef(false);
   const beforeTabChangeRef = useRef<(id: string) => void>(() => {});
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -747,9 +748,8 @@ export default function App() {
   const recordFirstDraw = useCallback((output: HTMLCanvasElement, now: number, changed: boolean) => {
     terminalRef.current.recordFirstDraw(output, now, changed);
   }, []);
-  const onBrowserVideoError = useCallback((reason: string) => {
-    const id = terminalRef.current.activeTabId;
-    if (id) setTextureFailure({ id, reason });
+  const onBrowserVideoError = useCallback((reason: string, sessionId?: string) => {
+    if (sessionId) setTextureFailure({ id: sessionId, reason });
   }, []);
   const crt = useCRT({
     settingsRef: terminal.settingsRef,
@@ -954,6 +954,7 @@ export default function App() {
     let disposed = false;
     let revision = 0;
     const update = () => {
+      if (disposed) return;
       const currentRevision = ++revision;
       const rect = screenRef.current?.getBoundingClientRect();
       const showBrowser = !galleryOpen && activeBrowser?.page === "web" && (!presetPickerOpen || textureRequested);
@@ -979,7 +980,13 @@ export default function App() {
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
       }
-      void invoke("set_active_browser", payload).then(() => {
+      const activation = browserActivationQueueRef.current.catch(() => {}).then(() => {
+        if (disposed || currentRevision !== revision) return;
+        return invoke("set_active_browser", payload);
+      });
+      browserActivationQueueRef.current = activation.then(() => {}, (reason) => { throw reason; });
+      void browserActivationQueueRef.current.catch(() => {});
+      void activation.then(() => {
         if (disposed || currentRevision !== revision || !textureRequested || !activeBrowserId || !payload.bounds) return;
         const pixelWidth = payload.bounds.width * devicePixelRatio;
         const pixelHeight = payload.bounds.height * devicePixelRatio;
@@ -1038,15 +1045,26 @@ export default function App() {
     let disposed = false;
     setBrowserFps(0);
     setBrowserCaptureMetrics("Starting TextureStream…");
-    const fail = (reason: string) => {
-      if (!disposed) setTextureFailure({ id: browser.id, reason });
+    const fail = (reason: string, options: { sessionId?: string } | null = { sessionId: browser.id }) => {
+      if (!disposed && options?.sessionId === browser.id) setTextureFailure({ id: browser.id, reason });
     };
     const { receiver, cleanup } = createBrowserTextureStreamReceiver(fail);
     const unsubscribe = receiver.onFrame(frame => {
       browserVideo.current = frame;
     });
-    void receiver.start({ sessionId: browser.id, width: streamSize.width, height: streamSize.height })
-      .catch(reason => fail(String(reason)));
+    void (async () => {
+      try {
+        let activation: Promise<void>;
+        do {
+          activation = browserActivationQueueRef.current;
+          await activation;
+        } while (activation !== browserActivationQueueRef.current);
+        if (disposed || terminalRef.current.activeTabId !== browser.id) return;
+        await receiver.start({ sessionId: browser.id, width: streamSize.width, height: streamSize.height });
+      } catch (reason) {
+        fail(`TextureStream startup failed after browser activation: ${String(reason)}`);
+      }
+    })();
     let frameCount = 0;
     const timer = window.setInterval(() => {
       const { frames, width, height } = receiver.metrics;
