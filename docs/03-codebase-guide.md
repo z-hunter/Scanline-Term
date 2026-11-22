@@ -278,6 +278,7 @@ The WebGL rendering engine and analog CRT post-processing pipeline are maintaine
 | `load_home_config` | — | `{ path, config }` | Reading bookmarks for home tab |
 | `save_home_config` | `config` | `{ path, config }` | Saving bookmarks for home tab |
 | `open_browser_address` | `sessionId` | `Result<(), String>` | Opening the active native browser page's address form |
+| `browser_history` | `sessionId, back` | `Result<(), String>` | Moving backward or forward in a browser tab's history |
 | `codex_start` | — | `{ generation, version }` | Launching Codex app-server |
 | `codex_send` | `generation, rpc` | `Result<(), String>` | Forwarding JSON-RPC message to Codex |
 | `codex_stop` | `generation` | `Result<(), String>` | Stopping Codex process tree |
@@ -293,7 +294,7 @@ The WebGL rendering engine and analog CRT post-processing pipeline are maintaine
 | `terminal-launch` | `{ command?, args?, cwd? }` | `App.tsx` | Second CLI instance launch request |
 | `browser-title` | `{ sessionId, title }` | `useTerminal` | Document title change from child WebView |
 | `browser-color` | `{ sessionId, background }`| `useTerminal` | Background color change from child WebView |
-| `browser-command` | `{ sessionId, generation, command }` | `useTerminal` | Focus-checked native browser shortcut; `browser.address.open` invokes `open_browser_address` |
+| `browser-command` | `{ sessionId, generation, command }` | `useTerminal` | Focus-checked browser shortcut; with browser CRT enabled, address open displays the host React overlay above the CRT canvas |
 | `lua-preset-request`| `{ frontendId, tabId, name }` | `useManagedSettings` | Requested preset change from Lua script |
 | `codex-message` | `{ generation, message }` | `CodexClient` | Incoming JSON-RPC response from Codex |
 | `codex-exit` | `{ generation, text }` | `CodexClient` | Unexpected termination of Codex server |

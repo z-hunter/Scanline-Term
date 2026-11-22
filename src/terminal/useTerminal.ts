@@ -23,7 +23,7 @@ import { resolveShellLaunch, type ShellInfo } from './shells';
 import type { GalleryRenderSource } from './gallery-renderer';
 
 export type TerminalTab = { kind?: 'terminal'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'exited' | 'failed' } & TabColor;
-export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web'; preset?: TabPresetState } & TabColor;
+export type BrowserTab = { kind: 'browser'; id: string; ordinal: number; title: string; status: 'starting' | 'running' | 'failed'; page: 'home' | 'web'; url?: string; preset?: TabPresetState } & TabColor;
 export type WorkspaceTab = TerminalTab | BrowserTab;
 export type { ShellInfo } from './shells';
 type SessionRecord = { tab: TerminalTab; session: TerminalSession; ownerId: string | null; inputLocked: boolean; preset: TabPresetState; images: TerminalImage[] };
@@ -498,7 +498,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     settings.crt.crtEmulation = false;
     const name = defaultPresetNameRef.current;
     const preset: TabPresetState = { name, draftName: name, settings, dirty: false };
-    const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: url ? 'starting' : 'running', page: url ? 'web' : 'home', background: '#18241e', foreground: '#d7f4dc', preset };
+    const tab: BrowserTab = { kind: 'browser', id, ordinal, title: `${ordinal}. ${url ? new URL(url).hostname : 'Home'}`, status: url ? 'starting' : 'running', page: url ? 'web' : 'home', url, background: '#18241e', foreground: '#d7f4dc', preset };
     setTabs((current) => [...current, tab]); selectSession(id, false, true, preset);
     if (!url) { setAddressTabId(id); return; }
     void createBrowser(id, url).promise.then(() => {
@@ -513,7 +513,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     const navigation = pending
       ? pending.promise.then(() => pending.url === url ? undefined : invoke('navigate_browser', { sessionId: id, url }))
       : browsers.current.has(id) ? invoke('navigate_browser', { sessionId: id, url }) : createBrowser(id, url).promise;
-    void navigation.then(() => { browsers.current.add(id); updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'web' as const, status: 'running', title: `${current.ordinal}. ${new URL(url).hostname}` } : current); }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'home' as const, status: 'failed' } : current); onError(`Browser navigation failed: ${String(reason)}`); });
+    void navigation.then(() => { browsers.current.add(id); updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'web' as const, status: 'running', url, title: `${current.ordinal}. ${new URL(url).hostname}` } : current); }).catch((reason) => { updateTab(id, (current) => current.kind === 'browser' ? { ...current, page: 'home' as const, status: 'failed' } : current); onError(`Browser navigation failed: ${String(reason)}`); });
   }, [createBrowser, onError, updateTab]);
   const closeSession = useCallback(async (id: string, skipConfirmation = false, preserveWindow = false) => {
     const tab = tabsRef.current.find((item) => item.id === id); const record = sessions.current.get(id);
@@ -638,7 +638,9 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     void listen<{ generation: number; sessionId: string; command: string }>('browser-command', ({ payload }) => {
       if (payload.generation !== generation || payload.sessionId !== activeRef.current) return;
       if (payload.command === 'browser.address.open') {
-        void invoke('open_browser_address', { sessionId: payload.sessionId }).catch((reason) => onError(`Could not open browser address: ${String(reason)}`));
+        const tab = tabsRef.current.find((item) => item.id === payload.sessionId && item.kind === 'browser');
+        if (tab?.kind === 'browser' && tab.preset?.settings.crt.crtEmulation) setAddressTabId(payload.sessionId);
+        else void invoke('open_browser_address', { sessionId: payload.sessionId }).catch((reason) => onError(`Could not open browser address: ${String(reason)}`));
       } else dispatchCommand(payload.command);
     }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; });
     window.addEventListener('keymap-changed', update);

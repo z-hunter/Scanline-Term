@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
 
 use tauri::{webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder}, Emitter, LogicalPosition, LogicalSize, Manager, State, Webview, WebviewUrl};
-use webview2_com::{AddScriptToExecuteOnDocumentCreatedCompletedHandler, CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, FrameCreatedEventHandler, FrameDOMContentLoadedEventHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2, ICoreWebView2_4, ICoreWebView2Frame2}, take_pwstr};
+use webview2_com::{AddScriptToExecuteOnDocumentCreatedCompletedHandler, CallDevToolsProtocolMethodCompletedHandler, DevToolsProtocolEventReceivedEventHandler, FrameCreatedEventHandler, FrameDOMContentLoadedEventHandler, WebMessageReceivedEventHandler, Microsoft::Web::WebView2::Win32::{ICoreWebView2, ICoreWebView2_4, ICoreWebView2Frame2}, take_pwstr};
 use windows::core::{HSTRING, PWSTR};
 #[cfg(windows)]
 use windows::core::Interface;
@@ -115,10 +115,11 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const labelAt = (n, total = 0) => { let w = 1, c = labels.length; while (total > c) { w++; c *= labels.length; } let s = ''; for (let i = w - 1; i >= 0; i--) s += labels[Math.floor(n / Math.pow(labels.length, i)) % labels.length]; return s; };
   const clearHints = () => { hint?.nodes.forEach(n => n.remove()); hint = null; };
   const showHints = () => { clearHints(); const items = [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button]')].filter(e => { const r=e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; }); const entries=items.map((element,index)=>({element,label:labelAt(index, items.length)})); const nodes=entries.map(({element,label})=>{ const r=element.getBoundingClientRect(), node=document.createElement('i'); node.textContent=label; node.style.cssText=`position:fixed;z-index:2147483647;left:${r.left}px;top:${r.top}px;background:#ffe66d;color:#111;padding:1px 3px;font:12px monospace;font-style:normal;pointer-events:none`; document.documentElement.append(node); return node; }); hint={entries,nodes,typed:''}; };
-  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box'; for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px'; box.append(field); const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const value=input.value.trim(); close(); if(value) location.href=/^(?:https?|file):\/\//i.test(value)?value:`https://${value}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
+  const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:8px;padding:12px;background:linear-gradient(145deg,#122019f5,#0b130ff5);border:1px solid #a9f4ca45;border-radius:8px;color:#d7f5df;font:14px ui-monospace,Consolas,monospace;box-sizing:border-box;box-shadow:0 8px 22px #0009,inset 0 1px #e4fff018;backdrop-filter:blur(14px) saturate(130%);-webkit-backdrop-filter:blur(14px) saturate(130%)'; for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; button.style.cssText = 'min-width:36px;min-height:34px;border:1px solid #a9f4ca38;border-radius:5px;color:#d7f5df;cursor:pointer;background:linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d);box-shadow:inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004;backdrop-filter:blur(12px) saturate(125%);-webkit-backdrop-filter:blur(12px) saturate(125%);transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease'; button.onmouseenter = () => { button.style.borderColor = '#a6ffc77a'; button.style.background = 'linear-gradient(145deg,#b4ffd52b,#61d99216 48%,#d2fff016)'; button.style.boxShadow = 'inset 0 1px #e4fff044,0 0 18px #62f38d20,0 7px 18px #0006'; }; button.onmouseleave = () => { button.style.borderColor = '#a9f4ca38'; button.style.background = 'linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d)'; button.style.boxShadow = 'inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004'; button.style.transform = ''; }; button.onmousedown = () => { button.style.borderColor = '#a9ffc7'; button.style.transform = 'translateY(2px) scale(.97,.94)'; button.style.background = 'linear-gradient(145deg,#b4ffd536,#61d99224 48%,#b4ffd51c)'; button.style.boxShadow = 'inset 0 1px 5px #e4fff04a,inset 0 0 10px #63fa8b48,0 0 10px #63fa8b30'; }; button.onmouseup = () => { button.style.transform = ''; }; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020604;color:#d7f4dc;border:1px solid #547764;border-radius:4px;padding:7px 10px;font:14px ui-monospace,Consolas,monospace;outline:none;transition:border-color .16s ease,outline-color .16s ease,box-shadow .16s ease'; field.onfocus = () => { field.style.borderColor = '#79d897'; field.style.outline = '2px solid #79d89766'; field.style.outlineOffset = '1px'; field.style.boxShadow = '0 0 8px #79d89738'; }; field.onblur = () => { field.style.borderColor = '#547764'; field.style.outline = 'none'; field.style.outlineOffset = '0'; field.style.boxShadow = 'none'; }; box.append(field); const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const value=input.value.trim(); close(); if(value) location.href=/^(?:https?|file):\/\//i.test(value)?value:`https://${value}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
   window.__scanlineOpenAddress = address;
   addEventListener('keydown', e => {
     if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter(item=>item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
+    if (e.code === 'F5') { e.preventDefault(); location.reload(); return; }
     if (e.code === 'F6') { e.preventDefault(); address(); return; }
     if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); mode = 'normal'; } return; }
     if (mode === 'pass') { if (e.key === 'Escape') { e.preventDefault(); mode = 'normal'; } return; }
@@ -144,14 +145,14 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
 
 const FRAME_HOTKEY_SCRIPT: &str = r#"(() => {
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
-  const isAddressKey = e => e.code === 'F6' || e.code === 'KeyO' && !editable(e.target);
+  const isBrowserHotkey = e => e.code === 'F5' || e.code === 'F6' || e.code === 'KeyO' && !editable(e.target);
   if (window === window.top) {
     const openAddress = () => {
       document.querySelector('[data-scanline-address]')?.remove();
       const box = document.createElement('form');
       box.dataset.scanlineAddress = '';
-      box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:6px;padding:8px;background:#101510;border:1px solid #6a8;color:#dfe;font:16px monospace;box-sizing:border-box';
-      for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020;color:#dfe;border:1px solid #6a8;padding:8px'; box.append(field);
+      box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:8px;padding:12px;background:linear-gradient(145deg,#122019f5,#0b130ff5);border:1px solid #a9f4ca45;border-radius:8px;color:#d7f5df;font:14px ui-monospace,Consolas,monospace;box-sizing:border-box;box-shadow:0 8px 22px #0009,inset 0 1px #e4fff018;backdrop-filter:blur(14px) saturate(130%);-webkit-backdrop-filter:blur(14px) saturate(130%)';
+      for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; button.style.cssText = 'min-width:36px;min-height:34px;border:1px solid #a9f4ca38;border-radius:5px;color:#d7f5df;cursor:pointer;background:linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d);box-shadow:inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004;backdrop-filter:blur(12px) saturate(125%);-webkit-backdrop-filter:blur(12px) saturate(125%);transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease'; button.onmouseenter = () => { button.style.borderColor = '#a6ffc77a'; button.style.background = 'linear-gradient(145deg,#b4ffd52b,#61d99216 48%,#d2fff016)'; button.style.boxShadow = 'inset 0 1px #e4fff044,0 0 18px #62f38d20,0 7px 18px #0006'; }; button.onmouseleave = () => { button.style.borderColor = '#a9f4ca38'; button.style.background = 'linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d)'; button.style.boxShadow = 'inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004'; button.style.transform = ''; }; button.onmousedown = () => { button.style.borderColor = '#a9ffc7'; button.style.transform = 'translateY(2px) scale(.97,.94)'; button.style.background = 'linear-gradient(145deg,#b4ffd536,#61d99224 48%,#b4ffd51c)'; button.style.boxShadow = 'inset 0 1px 5px #e4fff04a,inset 0 0 10px #63fa8b48,0 0 10px #63fa8b30'; }; button.onmouseup = () => { button.style.transform = ''; }; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020604;color:#d7f4dc;border:1px solid #547764;border-radius:4px;padding:7px 10px;font:14px ui-monospace,Consolas,monospace;outline:none;transition:border-color .16s ease,outline-color .16s ease,box-shadow .16s ease'; field.onfocus = () => { field.style.borderColor = '#79d897'; field.style.outline = '2px solid #79d89766'; field.style.outlineOffset = '1px'; field.style.boxShadow = '0 0 8px #79d89738'; }; field.onblur = () => { field.style.borderColor = '#547764'; field.style.outline = 'none'; field.style.outlineOffset = '0'; field.style.boxShadow = 'none'; }; box.append(field);
       const input = box.querySelector('input');
       const close = () => { document.removeEventListener('pointerdown', outside, true); box.remove(); };
       const outside = e => { if (!box.contains(e.target)) close(); };
@@ -165,15 +166,17 @@ const FRAME_HOTKEY_SCRIPT: &str = r#"(() => {
       input.focus(); input.select();
     };
     window.__scanlineOpenAddress = openAddress;
-    addEventListener('keydown', e => { if (!isAddressKey(e)) return; e.preventDefault(); e.stopImmediatePropagation(); openAddress(); }, true);
+    const requestAddress = () => { if (window.chrome?.webview) window.chrome.webview.postMessage('browser.address.open'); else openAddress(); };
+    addEventListener('keydown', e => { if (!isBrowserHotkey(e)) return; e.preventDefault(); e.stopImmediatePropagation(); if (e.code === 'F5') location.reload(); else requestAddress(); }, true);
     addEventListener('message', e => {
-      if (e.source !== window && e.data === '__scanline-browser-address') openAddress();
+      if (e.source === window) return; if (e.data === '__scanline-browser-reload') location.reload(); else if (e.data === '__scanline-browser-address') requestAddress();
     }, true);
   } else {
     addEventListener('keydown', e => {
-      if (!isAddressKey(e)) return;
+      if (!isBrowserHotkey(e)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      window.top.postMessage('__scanline-browser-address', '*');
+      if (e.code === 'F5') window.top.postMessage('__scanline-browser-reload', '*');
+      else window.top.postMessage('__scanline-browser-address', '*');
     }, true);
   }
 })()"#;
@@ -248,6 +251,28 @@ fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: Nat
             }),
             Box::new(|error, _| error),
         ).map_err(|error| error.to_string())?;
+
+        let message_app = app.clone();
+        let message_id = id.clone();
+        let message_handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()); };
+            let mut message = PWSTR::null();
+            args.TryGetWebMessageAsString(&mut message)?;
+            if take_pwstr(message) == "browser.address.open" {
+                if let Some(keymap) = message_app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                    if let Some(generation) = keymap.focused_generation() {
+                        let _ = message_app.emit("browser-command", serde_json::json!({
+                            "generation": generation,
+                            "sessionId": message_id,
+                            "command": "browser.address.open"
+                        }));
+                    }
+                }
+            }
+            Ok(())
+        }));
+        let mut message_token = 0;
+        core.add_WebMessageReceived(&message_handler, &mut message_token).map_err(|error| error.to_string())?;
 
         // Reinstall the shortcut bridge after each child frame has a script context.
         // Some embedded players receive keys in their own frame instead of the page.
@@ -493,6 +518,26 @@ pub async fn open_browser_address(app: tauri::AppHandle, state: State<'_, Browse
     }
     let store = state.0.lock().map_err(|_| "browser state is unavailable")?;
     store.webviews.get(&session_id).ok_or("browser is not running")?.eval("window.__scanlineOpenAddress?.()").map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn browser_history(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: BrowserId, back: bool) -> Result<(), String> {
+    valid_id(&session_id)?;
+    #[cfg(windows)]
+    if state.0.lock().map_err(|_| "browser state is unavailable")?.native_tabs.contains_key(&session_id) {
+        let app_for_state = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || browser_texture_stream::with_main_webview(&app, move |_, _| unsafe {
+            let state = app_for_state.state::<BrowserState>();
+            let store = state.0.lock().map_err(|_| "browser state is unavailable".to_owned())?;
+            let tab = store.native_tabs.get(&session_id).ok_or_else(|| "native browser tab is unavailable".to_owned())?;
+            let mut core_raw = tab.core as *mut std::ffi::c_void;
+            let core = ICoreWebView2::from_raw_borrowed(&mut core_raw).ok_or_else(|| "native browser core is unavailable".to_owned())?;
+            if back { core.GoBack() } else { core.GoForward() }.map_err(|error| error.to_string())
+        })).await.map_err(|error| error.to_string())??;
+    }
+    let store = state.0.lock().map_err(|_| "browser state is unavailable")?;
+    let webview = store.webviews.get(&session_id).ok_or("browser is not running")?;
+    webview.eval(if back { "history.back()" } else { "history.forward()" }).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

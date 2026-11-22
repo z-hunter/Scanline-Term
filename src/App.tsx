@@ -146,6 +146,8 @@ export default function App() {
   }));
   const [browserFps, setBrowserFps] = useState(0);
   const [browserCaptureMetrics, setBrowserCaptureMetrics] = useState("");
+  const [browserAddressValue, setBrowserAddressValue] = useState("");
+  const browserAddressInputRef = useRef<HTMLInputElement>(null);
   const [textureSupport, setTextureSupport] = useState<{ id: string; available: boolean } | null>(null);
   const [textureFailure, setTextureFailure] = useState<{ id: string; reason: string } | null>(null);
   const [textureSize, setTextureSize] = useState<{ id: string; width: number; height: number } | null>(null);
@@ -1213,14 +1215,19 @@ export default function App() {
     };
   }, [activeBrowserId, activeBrowser?.page, galleryOpen, outputRef, reportError, terminal.renderer, terminal.settingsRef, textureRequested]);
   useEffect(() => {
-    if (!terminal.addressTabId || activeBrowser?.page !== "home") return;
+    if (!terminal.addressTabId || terminal.addressTabId !== activeBrowser?.id) return;
     const frame = requestAnimationFrame(() => {
-      const search = document.querySelector<HTMLInputElement>(".browser-home-search input");
-      search?.focus();
-      search?.select();
+      if (activeBrowser.page === "home") {
+        const search = document.querySelector<HTMLInputElement>(".browser-home-search input");
+        search?.focus(); search?.select();
+      } else if (browserCrtEnabled) {
+        setBrowserAddressValue(activeBrowser.url ?? "");
+        browserAddressInputRef.current?.focus();
+        browserAddressInputRef.current?.select();
+      }
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeBrowser?.page, terminal.addressTabId]);
+  }, [activeBrowser?.id, activeBrowser?.page, activeBrowser?.url, browserCrtEnabled, terminal.addressTabId]);
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
@@ -1231,7 +1238,9 @@ export default function App() {
         const interval = setInterval(() => {
           window.focus();
           window.requestAnimationFrame(() => {
-            if (activeBrowser?.page === "home") {
+            if (browserAddressInputRef.current && terminal.addressTabId === activeBrowser?.id) {
+              browserAddressInputRef.current.focus();
+            } else if (activeBrowser?.page === "home") {
               const search = document.querySelector<HTMLInputElement>(".browser-home-search input");
               search?.focus();
               search?.select();
@@ -1261,7 +1270,7 @@ export default function App() {
       unlisten?.();
       void unlistenFocus.then((f) => f());
     };
-  }, [activeBrowser?.page, galleryOpen, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
+  }, [activeBrowser?.id, activeBrowser?.page, galleryOpen, settingsVisible, aiVisible, terminal.addressTabId, terminal.live, terminal.renderer, outputRef]);
   useEffect(() => {
     if (isTauri()) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -1585,6 +1594,13 @@ export default function App() {
             <span className="frame-status">
               {terminal.size.cols} × {terminal.size.rows}
             </span>
+            {activeBrowser?.page === "web" && browserCrtEnabled && terminal.addressTabId === activeBrowser.id && (
+              <form className="browser-address browser-address-host" onSubmit={(event) => { event.preventDefault(); if (browserAddressValue.trim()) terminal.navigateBrowser(activeBrowser.id, browserAddressValue); }}>
+                <button type="button" aria-label="Back" onClick={() => void invoke("browser_history", { sessionId: activeBrowser.id, back: true }).catch((reason) => reportError(`Browser back failed: ${String(reason)}`))}>←</button>
+                <button type="button" aria-label="Forward" onClick={() => void invoke("browser_history", { sessionId: activeBrowser.id, back: false }).catch((reason) => reportError(`Browser forward failed: ${String(reason)}`))}>→</button>
+                <input ref={browserAddressInputRef} aria-label="Address" value={browserAddressValue} onChange={(event) => setBrowserAddressValue(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); terminal.closeAddress(); } }} spellCheck={false} autoComplete="url" />
+              </form>
+            )}
             {activeBrowser?.page === "home" && <HomeDashboard tabId={activeBrowser.id} onNavigate={terminal.navigateBrowser} onError={reportError} />}
           </div>
         </div>
