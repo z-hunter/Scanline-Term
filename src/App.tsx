@@ -1207,7 +1207,7 @@ export default function App() {
       if (event.defaultPrevented || document.activeElement !== canvas) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const modifiers = (event.altKey ? 1 : 0) | (event.ctrlKey ? 2 : 0) | (event.metaKey ? 4 : 0) | (event.shiftKey ? 8 : 0);
-      dispatch("Input.dispatchKeyEvent", { type: event.type === "keydown" ? "keyDown" : "keyUp", key: event.key, code: event.code, text: event.type === "keydown" && event.key.length === 1 ? event.key : undefined, windowsVirtualKeyCode: event.keyCode, nativeVirtualKeyCode: event.keyCode, modifiers });
+      dispatch("Input.dispatchKeyEvent", { type: event.type === "keydown" ? "keyDown" : "keyUp", key: event.key, code: event.code, location: event.location, text: event.type === "keydown" && event.key.length === 1 ? event.key : undefined, windowsVirtualKeyCode: event.keyCode, nativeVirtualKeyCode: event.keyCode, modifiers });
     };
     canvas.addEventListener("mousedown", mouse, true); canvas.addEventListener("mouseup", mouse, true); canvas.addEventListener("mousemove", mouse, true); canvas.addEventListener("wheel", wheel, { capture: true, passive: false }); canvas.addEventListener("contextmenu", contextMenu, true); canvas.addEventListener("keydown", key, true); canvas.addEventListener("keyup", key, true);
     return () => {
