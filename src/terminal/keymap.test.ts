@@ -21,6 +21,16 @@ describe('keymap', () => {
     expect(matchingCommand(keymap, new Set(['ShiftLeft', 'ShiftRight', 'KeyS']), 'KeyS')).toBe('settings.toggle');
   });
 
+  it('keeps Menu held through ContextMenu events with an unidentified code', () => {
+    const keymap = { term: 'Menu', bindings: {} };
+    setActiveKeymap(keymap);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', code: 'Unidentified' }));
+    expect(commandForEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' }))).toBe('gallery.toggle');
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'Unidentified' }));
+    expect(commandForEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' }))).toBeNull();
+    setActiveKeymap(null);
+  });
+
   it('formats a backslash binding in shortcut hints', () => {
     setActiveKeymap({ term: 'Menu', bindings: { 'settings.toggle': 'term+Backslash' } });
     expect(shortcutHint('settings.toggle')).toBe(' [menu-\\]');

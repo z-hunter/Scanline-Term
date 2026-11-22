@@ -14,6 +14,7 @@ export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError
   const [saving, setSaving] = useState(false);
   const current = useRef({ values, revision: '' });
   const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const hotkeyQueue = useRef<Promise<unknown>>(Promise.resolve());
   const sequence = useRef(0);
   const failureGeneration = useRef(0);
   const migrated = useRef(false);
@@ -33,7 +34,13 @@ export function useManagedSettings(legacy: Omit<AppSettings, 'version'>, onError
         validateKeymap(response.keymap ?? null);
         globalHotkeyBindings(response.keymap ?? null, true);
         const bindings = globalHotkeyBindings(response.keymap ?? null, next.globalHotkeyEnabled);
-        await invoke('set_global_hotkeys', { bindings });
+        const registration = hotkeyQueue.current.catch(() => undefined).then(async () => {
+          if (request !== sequence.current) return false;
+          await invoke('set_global_hotkeys', { bindings });
+          return request === sequence.current;
+        });
+        hotkeyQueue.current = registration;
+        keymapReady = await registration;
       } catch (reason) {
         keymapReady = false;
         onErrorRef.current(`Could not register global hotkeys: ${String(reason)}`);

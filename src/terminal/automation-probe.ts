@@ -103,7 +103,7 @@ export class TerminalAutomationProbe {
 
   private async startListeners(epoch: number): Promise<void> {
     const browserChord = (event: Event) => {
-      if (event instanceof CustomEvent) this.testBrowserChord(event.detail);
+      if (epoch === this.startEpoch && event instanceof CustomEvent) this.testBrowserChord(event.detail);
     };
     window.addEventListener('scanline-automation-probe-browser-chord', browserChord);
     const results = await Promise.allSettled([

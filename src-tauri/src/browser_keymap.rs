@@ -187,6 +187,7 @@ impl BrowserKeymap {
             if self.pressed.contains(&0x5d) { self.consumed.insert(0x5d); }
             return (true, (!repeated || binding.repeat).then_some(binding.command.as_str()));
         }
+        if repeated && self.consumed.contains(&key) { return (true, None); }
         (false, None)
     }
 }
@@ -215,6 +216,17 @@ mod tests {
         map.key(1, 1, true);
         map.key(1, 2, true);
         assert_eq!(map.key(1, 83, true), (true, Some("test")));
+    }
+
+    #[test]
+    fn consumed_key_repeats_stay_consumed_after_modifier_release() {
+        let mut map = BrowserKeymap::default();
+        map.reset(1, true, vec![Binding { command: "settings.toggle".into(), key: 83, modifiers: vec![vec![0x5d]], repeat: false }]);
+        map.key(1, 0x5d, true);
+        assert_eq!(map.key(1, 83, true), (true, Some("settings.toggle")));
+        map.key(1, 0x5d, false);
+        assert_eq!(map.key(1, 83, true), (true, None));
+        assert_eq!(map.key(1, 83, false), (true, None));
     }
 
     #[test]

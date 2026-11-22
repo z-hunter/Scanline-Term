@@ -905,7 +905,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
       }
       if (commandForEvent(event) === 'window.toggle_fullscreen' && isTauri()) {
         releaseForwardedAlt();
-        suppressAlt.current = true;
+        suppressAlt.current = hasAlt(event);
         fullscreen.current = isEnter(event);
         event.preventDefault();
         event.stopImmediatePropagation();

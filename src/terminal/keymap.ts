@@ -52,10 +52,10 @@ export function commandForEvent(event: KeyboardEvent): string | null {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (event) => {
-    const code = event.code || (event.key === 'ContextMenu' ? 'ContextMenu' : '');
+    const code = event.key === 'ContextMenu' ? 'ContextMenu' : event.code;
     if (Object.values(modifierCodes).some((codes) => codes.includes(code))) pressedKeys.add(code);
   }, true);
-  window.addEventListener('keyup', (event) => { pressedKeys.delete(event.code || (event.key === 'ContextMenu' ? 'ContextMenu' : '')); }, true);
+  window.addEventListener('keyup', (event) => { pressedKeys.delete(event.key === 'ContextMenu' ? 'ContextMenu' : event.code); }, true);
   window.addEventListener('blur', () => pressedKeys.clear());
 }
 
@@ -147,11 +147,14 @@ export function validateKeymap(keymap: Keymap | null): void {
   const term = keymap.term.split('+');
   if (!term.length || term.some((part) => !modifierCodes[part]) || new Set(term).size !== term.length) throw new Error('Invalid term modifier');
   const combinations = new Map<string, string>();
-  for (const [command, value] of Object.entries(keymap.bindings)) {
+  const bindings = Object.entries(keymap.bindings);
+  const inherited = Object.entries(defaultBindings).filter(([command]) => !(command in keymap.bindings));
+  for (const [command, value] of [...bindings, ...inherited]) {
     if (!(command in defaultBindings)) throw new Error(`Unknown command: ${command}`);
     if (value === false) continue;
     const bindings = typeof value === 'string' ? [value] : value;
-    if (!Array.isArray(bindings) || bindings.length === 0 || bindings.some((binding) => typeof binding !== 'string')) throw new Error(`Invalid bindings for ${command}`);
+    if (!Array.isArray(bindings) || bindings.some((binding) => typeof binding !== 'string')) throw new Error(`Invalid bindings for ${command}`);
+    if (bindings.length === 0) continue;
     for (const binding of bindings) {
       const tokens = binding.split('+');
       const key = tokens.pop();

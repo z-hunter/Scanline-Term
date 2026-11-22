@@ -296,8 +296,10 @@ impl CapsHook {
             old.frontend_id != frontend_id || old.tab_id != next_tab || old.focused != focused
         });
         if term_context_changed {
-            clear_term_token();
-            if let Ok(mut lease) = self.term_caps.lock() { lease.revoke(); }
+            if let Ok(mut lease) = self.term_caps.lock() {
+                lease.revoke();
+                clear_term_token();
+            }
         }
         let previous = if identity_changed {
             let previous = control.active.take().or_else(|| control.pending.take());
@@ -340,11 +342,13 @@ impl CapsHook {
     }
 
     fn revoke(&self, app: Option<&AppHandle>) {
-        clear_term_token();
-        if let Ok(mut lease) = self.term_caps.lock() { lease.revoke(); }
         let Ok(mut control) = self.control.lock() else {
             return;
         };
+        if let Ok(mut lease) = self.term_caps.lock() {
+            lease.revoke();
+            clear_term_token();
+        }
         let previous = control.active.take().or_else(|| control.pending.take());
         control.pending = None;
         control.active = None;
@@ -630,8 +634,10 @@ pub fn term_caps_ack(webview: tauri::Webview, hook: State<'_, CapsHook>, offer: 
 #[tauri::command]
 pub fn term_caps_revoke(webview: tauri::Webview, hook: State<'_, CapsHook>) {
     if webview.label() != "main" { return; }
-    clear_term_token();
-    if let Ok(mut lease) = hook.term_caps.lock() { lease.revoke(); }
+    if let Ok(mut lease) = hook.term_caps.lock() {
+        lease.revoke();
+        clear_term_token();
+    }
 }
 
 #[cfg(windows)]
@@ -905,13 +911,20 @@ mod windows_hook {
     fn dispatch_browser_commands(app: &AppHandle) {
         use tauri::Emitter;
         let (hwnd, generation) = crate::browser_keymap::browser_focus_identity();
-        let commands = crate::browser_keymap::take_commands();
         if !browser_is_focused(hwnd) { return; }
-        if let Some(session_id) = app.try_state::<crate::browser::BrowserState>().and_then(|state| state.active_id()) {
-            for (queued_generation, map_generation, command) in commands {
-                if queued_generation == generation {
-                    let _ = app.emit("browser-command", serde_json::json!({ "generation": map_generation, "sessionId": session_id, "command": command }));
-                }
+        let Some(state) = app.try_state::<crate::browser::BrowserState>() else { return; };
+        let session_id = match state.active_id() {
+            Ok(Some(session_id)) => session_id,
+            Ok(None) => { crate::browser_keymap::take_commands(); return; }
+            Err(()) => return,
+        };
+        if crate::browser_keymap::browser_focus_identity() != (hwnd, generation)
+            || !browser_is_focused(hwnd)
+            || state.active_id().ok().flatten().as_deref() != Some(session_id.as_str())
+        { return; }
+        for (queued_generation, map_generation, command) in crate::browser_keymap::take_commands() {
+            if queued_generation == generation {
+                let _ = app.emit("browser-command", serde_json::json!({ "generation": map_generation, "sessionId": session_id, "command": command }));
             }
         }
     }
@@ -1138,6 +1151,7 @@ mod windows_hook {
     fn disarm_after_frame_failure() {
         FRAME_FAILURE_COUNT.fetch_add(1, Ordering::Relaxed);
         CURRENT_MARKER_TOKEN.store(0, Ordering::Release);
+        TERM_TOKEN.store(0, Ordering::Release);
         POLICY_ARMED.store(false, Ordering::Release);
     }
 

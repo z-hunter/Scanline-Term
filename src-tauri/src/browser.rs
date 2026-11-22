@@ -18,8 +18,8 @@ fn trace(app: &tauri::AppHandle, stage: &str, session_id: &str, detail: impl ser
 pub struct BrowserState(pub Mutex<BrowserStore>);
 
 impl BrowserState {
-    pub fn active_id(&self) -> Option<String> {
-        self.0.try_lock().ok().and_then(|state| state.active.clone())
+    pub fn active_id(&self) -> Result<Option<String>, ()> {
+        self.0.try_lock().map(|state| state.active.clone()).map_err(|_| ())
     }
     pub fn has_active_browser(&self) -> bool {
         self.0.lock().map(|state| state.active.is_some()).unwrap_or(true)

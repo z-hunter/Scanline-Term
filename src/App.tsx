@@ -915,10 +915,11 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     void listen("global-show-gallery", () => {
-      if (!galleryOpen) galleryToggleRef.current();
-    }).then((cleanup) => { unlisten = cleanup; });
-    return () => unlisten?.();
+      if (!disposed) galleryToggleRef.current();
+    }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; });
+    return () => { disposed = true; unlisten?.(); };
   }, [galleryOpen]);
   useEffect(() => {
     const ids = new Set(terminal.tabs.map((tab) => tab.id));
@@ -929,20 +930,21 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     void listen("browser-trace", (event) => {
-      if (import.meta.env.DEV) {
+      if (!disposed && import.meta.env.DEV) {
         console.info("[browser]", event.payload);
       }
     })
       .then((cleanup) => {
-        unlisten = cleanup;
+        if (disposed) cleanup(); else unlisten = cleanup;
       })
       .catch((reason) => {
         if (import.meta.env.DEV) {
           console.error("[browser] trace listener failed", reason);
         }
       });
-    return () => unlisten?.();
+    return () => { disposed = true; unlisten?.(); };
   }, []);
   const tabsHidden = luaPanelVisibility.tabs === undefined
     ? shouldHideTabsBar(stored.hideTabsBar, stored.hideTabsBarOnlyIfSingleTab, terminal.tabs.length)

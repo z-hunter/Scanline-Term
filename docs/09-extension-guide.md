@@ -151,7 +151,9 @@ The System setting `Windows Explorer: Open with ScanlineTerm here` is persisted 
 
 ### Pattern
 
-Keyboard shortcuts are declared as command bindings, not as direct `Menu` checks. `keymap.ts` retains the built-in bindings, and the user's Lua `sterm.keymap` declaration can replace or disable them. Keep dispatch with the action's existing owner so it works consistently for keyboard events and native browser commands.
+Keyboard shortcuts are declared as command bindings, not as direct `Menu` checks. `src/terminal/keymap.ts` is the source of the command catalog and built-in bindings. A user's Lua `sterm.keymap({ term = 'Menu', bindings = { ... } })` declaration replaces the built-in alternatives only for commands it names; other commands inherit their built-in bindings. Set a command to `false` to disable it. Keep dispatch with the action's existing owner: frontend keyboard events and native browser commands both resolve to the same command, while the owning UI or terminal handler performs the action.
+
+For a new command, add it to the catalog/default bindings, then handle its command ID at the existing action owner. If the command must work in a native browser tab, add it to the native browser binding conversion as well. See the [Lua keyboard shortcut guide](./lua-automation.md#keyboard-shortcuts) for the config schema and reload behavior.
 
 ```typescript
 if (commandForEvent(event) === 'my.command') {
