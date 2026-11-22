@@ -342,7 +342,12 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     if (id === activeRef.current) return;
     if (capturePrevious && !galleryOpenRef.current && activeRef.current) onBeforeTabChangeRef.current?.(activeRef.current);
     const record = sessions.current.get(id);
-    if (animate && record && sessions.current.has(activeRef.current ?? '') && channelSwitchEffectRef.current && onTerminalTabTransitionRef.current) {
+    const currentTab = tabsRef.current.find((tab) => tab.id === activeRef.current);
+    const nextTab = tabsRef.current.find((tab) => tab.id === id);
+    const currentBrowserCRT = currentTab?.kind === 'browser' && Boolean(currentTab.preset?.settings.crt.crtEmulation);
+    const nextBrowserCRT = nextTab?.kind === 'browser' && Boolean(nextTab.preset?.settings.crt.crtEmulation);
+    const channelSwitchApplies = (record && sessions.current.has(activeRef.current ?? '')) || currentBrowserCRT || nextBrowserCRT;
+    if (animate && channelSwitchApplies && channelSwitchEffectRef.current && onTerminalTabTransitionRef.current) {
       onTerminalTabTransitionRef.current(false);
       pendingSelection.current = window.setTimeout(() => {
         pendingSelection.current = null;

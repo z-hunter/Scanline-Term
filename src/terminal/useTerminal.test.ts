@@ -728,6 +728,42 @@ describe('terminal launch event', () => {
 });
 
 describe('useTerminal closeSession concurrent closures', () => {
+  it('uses Channel Roll when switching from a terminal to a browser tab with CRT enabled', async () => {
+    vi.useFakeTimers();
+    mocked.handlers.clear();
+    mocked.invoke.mockReset();
+    mocked.invoke.mockImplementation((command: string) => Promise.resolve(command === 'start_terminal' ? 'cmd.exe' : {}));
+    let hookResult!: ReturnType<typeof useTerminal>;
+    const onTerminalTabTransition = vi.fn();
+    function TestComponent() {
+      hookResult = useTerminal({ defaultPreset: { version: 1, resolution: '1024x768', crt: { ...DEFAULT_CRT_SETTINGS } }, ready: false, channelSwitchEffect: true, onError: vi.fn(), onToggleSettings: vi.fn(), onTerminalTabTransition });
+      return null;
+    }
+    const container = document.createElement('div'); document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(createElement(TestComponent)); });
+    await act(async () => { await hookResult.openSession(); });
+    const terminalId = hookResult.activeTabId!;
+    await act(async () => { hookResult.openBrowser('https://example.com'); });
+    const browserId = hookResult.activeTabId!;
+    await act(async () => { hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, crtEmulation: true } } })); });
+    await act(async () => { hookResult.selectSession(terminalId, false, false); });
+    await act(async () => { hookResult.selectSession(browserId); });
+    expect(onTerminalTabTransition).toHaveBeenCalledWith(false);
+    expect(hookResult.activeTabId).toBe(terminalId);
+    await act(async () => { vi.advanceTimersByTime(150); });
+    expect(onTerminalTabTransition).toHaveBeenCalledWith(true);
+    expect(hookResult.activeTabId).toBe(browserId);
+    await act(async () => { hookResult.selectSession(terminalId); });
+    expect(onTerminalTabTransition).toHaveBeenLastCalledWith(false);
+    expect(hookResult.activeTabId).toBe(browserId);
+    await act(async () => { vi.advanceTimersByTime(150); });
+    expect(onTerminalTabTransition).toHaveBeenLastCalledWith(true);
+    expect(hookResult.activeTabId).toBe(terminalId);
+    await act(async () => { root.unmount(); });
+    container.remove(); vi.useRealTimers(); vi.restoreAllMocks();
+  });
+
   it('removes the address modal when an unvisited browser tab closes', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     let hookResult!: ReturnType<typeof useTerminal>;

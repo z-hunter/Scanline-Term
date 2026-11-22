@@ -139,7 +139,19 @@ export function useCRT({ settingsRef, resolution, renderer, onError, onBrowserVi
     if (!output || !screen || output.width < 1 || output.height < 1) return null;
     const changed = renderer.draw(performance.now() / 1000, settingsRef.current);
     try {
-      screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+      const frame = browserVideoRef.current?.current ?? null;
+      if (frame && frame.video.readyState >= frame.video.HAVE_CURRENT_DATA) {
+        const videoRenderer = screen as VirtualScreenRenderer & VideoRenderer;
+        if (videoRenderer.renderVideo && screen.isValid()) {
+          const { width, height } = renderer.compositedCanvas;
+          videoRenderer.renderVideo(frame.video, settingsRef.current, width, height, true);
+        } else {
+          renderer.setBrowserPreview(frame.video);
+          screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), true);
+        }
+      } else {
+        screen.render(renderer.compositedCanvas, settingsRef.current, renderer.getOverlays(), changed);
+      }
       renderer.setRasterScale(screen.rasterScale);
     } catch (reason) {
       onError(`Could not capture CRT frame: ${String(reason)}`);
