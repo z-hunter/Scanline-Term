@@ -117,12 +117,50 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
   const parseColor = value => { const hex=value?.match(/^#([\da-f]{3,6})$/i); if (hex) { const raw=hex[1].length===3 ? hex[1].split('').map(c=>c+c).join('') : hex[1]; return raw.toLowerCase(); } const rgb=value?.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/i); return rgb && (rgb[4] === undefined || Number(rgb[4]) > 0) ? [rgb[1],rgb[2],rgb[3]].map(c=>Number(c).toString(16).padStart(2,'0')).join('') : null; };
   const reportColor = () => { const body=document.body, root=document.documentElement; const meta=document.querySelector('meta[name="theme-color"]')?.content; const background=parseColor(meta) || parseColor(getComputedStyle(body || root).backgroundColor) || parseColor(getComputedStyle(root).backgroundColor) || 'f5f5f5'; const title=document.title; document.title=title+'\u2063'+background; setTimeout(() => { if (document.title === title+'\u2063'+background) document.title=title; }, 0); };
   const labelAt = (n, total = 0) => { let w = 1, c = labels.length; while (total > c) { w++; c *= labels.length; } let s = ''; for (let i = w - 1; i >= 0; i--) s += labels[Math.floor(n / Math.pow(labels.length, i)) % labels.length]; return s; };
-  const clearHints = () => { hint?.nodes.forEach(n => n.remove()); hint = null; };
-  const showHints = () => { clearHints(); const items = [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button]')].filter(e => { const r=e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; }); const entries=items.map((element,index)=>({element,label:labelAt(index, items.length)})); const nodes=entries.map(({element,label})=>{ const r=element.getBoundingClientRect(), node=document.createElement('i'); node.textContent=label; node.style.cssText=`position:fixed;z-index:2147483647;left:${r.left}px;top:${r.top}px;background:#ffe66d;color:#111;padding:1px 3px;font:12px monospace;font-style:normal;pointer-events:none`; document.documentElement.append(node); return node; }); hint={entries,nodes,typed:''}; };
+  const updateHints = () => {
+    if (!hint) return;
+    hint.entries.forEach(({ element }, index) => {
+      const rect = element.getBoundingClientRect();
+      const visible = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
+      const node = hint.nodes[index];
+      node.style.display = visible ? '' : 'none';
+      if (visible) {
+        node.style.left = `${Math.max(0, rect.left)}px`;
+        node.style.top = `${Math.max(0, rect.top)}px`;
+      }
+    });
+  };
+  const clearHints = () => {
+    if (!hint) return;
+    hint.nodes.forEach(node => node.remove());
+    hint = null;
+    removeEventListener('scroll', updateHints, true);
+    removeEventListener('resize', updateHints);
+  };
+  const showHints = () => {
+    clearHints();
+    const items = [...document.querySelectorAll('a[href],button,input,textarea,select,[role=button]')].filter(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width && rect.height && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
+    });
+    const entries = items.map((element, index) => ({ element, label: labelAt(index, items.length) }));
+    const nodes = entries.map(({ element, label }) => {
+      const rect = element.getBoundingClientRect();
+      const node = document.createElement('i');
+      node.textContent = label;
+      node.style.cssText = `position:fixed;z-index:2147483647;left:${rect.left}px;top:${rect.top}px;background:#ffe66d;color:#111;padding:1px 3px;font:12px monospace;font-style:normal;pointer-events:none`;
+      document.documentElement.append(node);
+      return node;
+    });
+    hint = { entries, nodes, typed: '' };
+    addEventListener('scroll', updateHints, true);
+    addEventListener('resize', updateHints);
+    updateHints();
+  };
   const address = () => { document.querySelector('[data-scanline-address]')?.remove(); const box = document.createElement('form'); box.dataset.scanlineAddress=''; box.style.cssText = 'position:fixed;z-index:2147483647;left:4%;top:12px;width:92%;display:flex;gap:8px;padding:12px;background:linear-gradient(145deg,#122019f5,#0b130ff5);border:1px solid #a9f4ca45;border-radius:8px;color:#d7f5df;font:14px ui-monospace,Consolas,monospace;box-sizing:border-box;box-shadow:0 8px 22px #0009,inset 0 1px #e4fff018;backdrop-filter:blur(14px) saturate(130%);-webkit-backdrop-filter:blur(14px) saturate(130%)'; for (const [name, label, text] of [['back', 'Back', '←'], ['forward', 'Forward', '→']]) { const button = document.createElement('button'); button.type = 'button'; button.dataset[name] = ''; button.setAttribute('aria-label', label); button.textContent = text; button.style.cssText = 'min-width:36px;min-height:34px;border:1px solid #a9f4ca38;border-radius:5px;color:#d7f5df;cursor:pointer;background:linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d);box-shadow:inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004;backdrop-filter:blur(12px) saturate(125%);-webkit-backdrop-filter:blur(12px) saturate(125%);transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease'; button.onmouseenter = () => { button.style.borderColor = '#a6ffc77a'; button.style.background = 'linear-gradient(145deg,#b4ffd52b,#61d99216 48%,#d2fff016)'; button.style.boxShadow = 'inset 0 1px #e4fff044,0 0 18px #62f38d20,0 7px 18px #0006'; }; button.onmouseleave = () => { button.style.borderColor = '#a9f4ca38'; button.style.background = 'linear-gradient(145deg,#b4ffd51c,#61d9920b 48%,#d2fff00d)'; button.style.boxShadow = 'inset 0 1px #e4fff022,inset 0 -1px #72d89a12,0 5px 14px #0004'; button.style.transform = ''; }; button.onmousedown = () => { button.style.borderColor = '#a9ffc7'; button.style.transform = 'translateY(2px) scale(.97,.94)'; button.style.background = 'linear-gradient(145deg,#b4ffd536,#61d99224 48%,#b4ffd51c)'; button.style.boxShadow = 'inset 0 1px 5px #e4fff04a,inset 0 0 10px #63fa8b48,0 0 10px #63fa8b30'; }; button.onmouseup = () => { button.style.transform = ''; }; box.append(button); } const field = document.createElement('input'); field.setAttribute('aria-label', 'Address'); field.style.cssText = 'min-width:0;flex:1;background:#020604;color:#d7f4dc;border:1px solid #547764;border-radius:4px;padding:7px 10px;font:14px ui-monospace,Consolas,monospace;outline:none;transition:border-color .16s ease,outline-color .16s ease,box-shadow .16s ease'; field.onfocus = () => { field.style.borderColor = '#79d897'; field.style.outline = '2px solid #79d89766'; field.style.outlineOffset = '1px'; field.style.boxShadow = '0 0 8px #79d89738'; }; field.onblur = () => { field.style.borderColor = '#547764'; field.style.outline = 'none'; field.style.outlineOffset = '0'; field.style.boxShadow = 'none'; }; box.append(field); const input = box.querySelector('input'); const close=()=>{ document.removeEventListener('pointerdown', outside, true); box.remove(); }; const outside=e=>{ if(!box.contains(e.target)) close(); }; input.value = location.href; box.querySelector('[data-back]').onclick=()=>history.back(); box.querySelector('[data-forward]').onclick=()=>history.forward(); box.onsubmit = e => { e.preventDefault(); const value=input.value.trim(); close(); if(value) location.href=/^(?:https?|file):\/\//i.test(value)?value:`https://${value}`; }; input.onkeydown = e => { if(e.key==='Escape') { e.preventDefault(); close(); } else if(e.key==='Enter') { e.preventDefault(); box.requestSubmit(); } }; document.documentElement.append(box); requestAnimationFrame(()=>document.addEventListener('pointerdown', outside, true)); input.focus(); input.select(); };
   window.__scanlineOpenAddress = address;
   addEventListener('keydown', e => {
-    if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter(item=>item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
+    if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter((item,index)=>hint.nodes[index].style.display !== 'none' && item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
     if (e.code === 'F5') { e.preventDefault(); location.reload(); return; }
     if (e.code === 'F6') { e.preventDefault(); address(); return; }
     if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); mode = 'normal'; } return; }
