@@ -77,7 +77,7 @@ Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer i
 
 Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes.
 
-Lua' can also be used for remapping and substituting keys—for instance, you could remap 'Caps Lock to function in terminal intelligently as 'Esc' and/or 'Ctrl', depending on the current application and its mode.
+Lua can also be used for remapping and substituting keys—for instance, you could remap `Caps Lock` to function in terminal intelligently as `Esc` and/or `Ctrl`, depending on the current application and its mode.
 
 The shipped `User's` palette is enabled by default; optional examples show **Vim/Neovim** and **Helix** mode-based layout switching with Smart Caps, plus switching to a saved preset while **FAR Manager** runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
 
@@ -130,16 +130,11 @@ While terminal search is open, `N` reverses the search direction and `Esc` close
 
 The shortcuts above use a shared modifier (virtual key) named `term`, which is set to phisical 'Menu' key by default. You can change it once for all shortcuts that use it:
 
-1. Open **Settings → Lua Automation** and use the folder button to reveal the active config file. Open it in a text editor.
+1. Open **Settings → Lua Automation** and use the folder button to reveal the `keymap.lua` file. Open it in a text editor.
+
 2. In the existing `sterm.keymap` declaration, change the `term` line. For example, use `term = 'CapsLock'` for Caps Lock, or `term = 'RightCtrl+RightShift'` to hold both right Ctrl and right Shift.
 
-```Lua
-sterm.keymap({
-  term = 'RightCtrl+RightShift',  
-})
-```
-
-1. Save the file and select **Reload config** in Settings. The new key applies without restarting Scanline Term. For example, `term+S` now opens Settings with your chosen key or combination plus S.
+3. Save the file and select **Reload config** in Settings. The new key applies without restarting Scanline Term.
 
 For more examples and system-wide shortcuts, see the [Lua shortcut guide](docs/lua-automation.md#keyboard-shortcuts). Developers extending commands can use the [extension guide](docs/09-extension-guide.md#adding-a-keyboard-shortcut).
 

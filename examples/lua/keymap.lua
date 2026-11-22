@@ -1,6 +1,22 @@
--- Change term to use another physical key or held modifier combination.
+-- Supported key codes (case-sensitive): A-Z, 0-9, Digit0-Digit9,
+-- F1-F24, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, PageUp, PageDown,
+-- Home, End, Insert, Delete, Backspace, Tab, Enter, NumpadEnter, Escape,
+-- Space, Slash, Backslash, Quote, Comma, Period, Minus, Equal, Backquote,
+-- NumpadAdd, NumpadSubtract, and Numpad0-Numpad9.
+-- Modifier names: Ctrl, LeftCtrl, RightCtrl, Shift, LeftShift, RightShift,
+-- Alt, LeftAlt, RightAlt, Win, LeftWin, RightWin, Menu, CapsLock.
+-- Use `term` as a modifier in bindings; its physical key(s) are set above.
+
 require('sterm').keymap({
-  term = 'Menu',
+  term = 'Menu', 
+  -- 'term' is a virtual prefix key that can be assigned to any combination of physical keys.
+  --[[
+sterm.keymap({
+  term = 'RightCtrl+RightShift',
+})
+]]
+--  Once assigned, all shortcuts defined using 'term' will be mapped to this key combination. 
+
   bindings = {
     ['settings.toggle'] = { 'term+S', 'term+Backslash' },
     ['tabs.toggle_bar'] = 'term+Z',
@@ -35,7 +51,7 @@ require('sterm').keymap({
     ['terminal.font_decrease'] = { 'term+Minus', 'term+NumpadSubtract' },
     ['terminal.font_increase'] = { 'term+Equal', 'term+NumpadAdd' },
     ['window.toggle_fullscreen'] = { 'Alt+Enter', 'Alt+NumpadEnter' },
-    ['window.toggle_visibility'] = 'Win+Backquote',
-    ['window.show_gallery'] = false,
+    ['window.toggle_visibility'] = 'Win+Backquote', -- gloabal shortcut
+    ['window.show_gallery'] = 'Win+Backspace', -- gloabal shortcut
   },
 })
