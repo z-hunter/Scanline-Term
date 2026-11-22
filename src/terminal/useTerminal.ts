@@ -1,5 +1,4 @@
-import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, setVirtualKeyState } from './keymap';
-let browserKeymapGeneration = 0;
+import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, nextBrowserKeymapGeneration, setVirtualKeyState } from './keymap';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
@@ -631,7 +630,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
     const update = () => {
-      generation = ++browserKeymapGeneration;
+      generation = nextBrowserKeymapGeneration();
       const focused = tabsRef.current.some((tab) => tab.id === activeRef.current && tab.kind === 'browser');
       void invoke('set_browser_keymap', { generation, focused, capsTerm: (getActiveKeymap()?.term ?? 'Menu').split('+').includes('CapsLock'), bindings: browserKeymap(getActiveKeymap()) })
         .catch((reason) => onError(`Could not update browser shortcuts: ${String(reason)}`));
@@ -643,7 +642,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     update();
     return () => {
       disposed = true;
-      generation = ++browserKeymapGeneration;
+      generation = nextBrowserKeymapGeneration();
       unlisten?.();
       window.removeEventListener('keymap-changed', update);
       void invoke('set_browser_keymap', { generation, focused: false, capsTerm: false, bindings: [] });

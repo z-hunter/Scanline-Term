@@ -3,6 +3,13 @@ export type Keymap = { term: string; bindings: Record<string, string | string[] 
 let activeKeymap: Keymap | null = null;
 const pressedKeys = new Set<string>();
 const dispatchedCommands = new WeakMap<KeyboardEvent, string>();
+// Rust retains the last browser keymap generation across WebView reloads.
+// Seed with an epoch-scale value so a refreshed frontend supersedes that snapshot.
+let browserKeymapGeneration = Date.now() * 1000;
+
+export function nextBrowserKeymapGeneration(): number {
+  return ++browserKeymapGeneration;
+}
 
 export function dispatchCommand(command: string): void {
   if (!(command in defaultBindings)) return;

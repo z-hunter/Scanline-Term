@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, matchingCommand, publishReloadKeymap, setActiveKeymap, shortcutHint, validateKeymap } from './keymap';
+import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, matchingCommand, nextBrowserKeymapGeneration, publishReloadKeymap, setActiveKeymap, shortcutHint, validateKeymap } from './keymap';
 
 describe('keymap', () => {
+  it('uses epoch-based generations so a reloaded frontend supersedes native browser keymaps', () => {
+    const first = nextBrowserKeymapGeneration();
+    expect(first).toBeGreaterThan(Date.now());
+    expect(nextBrowserKeymapGeneration()).toBe(first + 1);
+  });
+
   it('resolves default and remapped term combinations', () => {
     expect(matchingCommand(null, new Set(['ContextMenu', 'KeyS']), 'KeyS')).toBe('settings.toggle');
     const keymap = { term: 'RightCtrl+RightShift', bindings: {} };
