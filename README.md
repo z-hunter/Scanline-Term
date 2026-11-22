@@ -98,8 +98,6 @@ The shipped `User's` palette is enabled by default; optional examples show **Vim
 
 ## Keyboard Shortcuts Cheat Sheet
 
-You can change app shortcuts in `keymap.lua`. The starter configuration loads this file and calls the shared modifier `term`. It defaults to the Menu key. Edit `term` to use another key, then select **Reload config** in Settings. See the [Lua guide](docs/lua-automation.md#keyboard-shortcuts) for examples and system-wide shortcuts.
-
 > **Note**: The **`Menu`** key refers to the Application / Context Menu key (typically situated in the lower right keyboard row between `Alt`/`Win` and `Ctrl`).
 
 | Shortcut | Action | Description |
@@ -128,6 +126,18 @@ You can change app shortcuts in `keymap.lua`. The starter configuration loads th
 | **`Menu + /`** | Find in Terminal | Open terminal-buffer search; type a query, then use `Enter` or `n` for the next match |
 | **`Menu + Shift + /`** | Find Back in Terminal | Open reverse terminal-buffer search; `Enter` or `n` moves to the previous match |
 | **`Menu + PgUp / PgDn`** | Scroll Buffer | Scroll the terminal screen and history buffer up or down |
+
+### Change the Menu shortcut key
+
+The shortcuts above use a shared modifier named `term`, which is set to Menu by default. You can change it once for all shortcuts that use it:
+
+1. Open **Settings → Lua Automation** and use the folder button to reveal the active config file. Open it in a text editor. If it includes `keymap.lua`, open that file in the same folder.
+2. In the existing `sterm.keymap` declaration, change the `term` line. For example, use `term = 'CapsLock'` for Caps Lock, or `term = 'RightCtrl+RightShift'` to hold both right Ctrl and right Shift.
+3. Save the file and select **Reload config** in Settings. The new key applies without restarting Scanline Term. For example, `term+S` now opens Settings with your chosen key or combination plus S.
+
+If your config has no `sterm.keymap` declaration, add `require('sterm').keymap({ term = 'CapsLock', bindings = {} })` to the main config. If it already includes `keymap.lua`, edit the existing declaration instead. Caps Lock as `term` takes priority over Smart Caps while Scanline Term has focus.
+
+For more examples and system-wide shortcuts, see the [Lua shortcut guide](docs/lua-automation.md#keyboard-shortcuts). Developers extending commands can use the [extension guide](docs/09-extension-guide.md#adding-a-keyboard-shortcut).
 
 While terminal search is open, `N` reverses the search direction and `Esc` closes the overlay and restores terminal input. Search includes normal scrollback; in alternate-screen applications it covers the current screen only.
 

@@ -17,32 +17,26 @@ CRT settings, shaders, profiles, rendering passes and the shared React sections 
 
 ## Adding a Keyboard Shortcut
 
-### Files to Modify
+### Direct bindings vs. term-prefixed bindings
 
-- **App-level shortcut (like Menu+S):** [`src/terminal/useTerminal.ts`](../src/terminal/useTerminal.ts) — `down` handler in `useTerminal`
-- **Terminal-level key (VT mode):** [`src/terminal/terminal-input.ts`](../src/terminal/terminal-input.ts)
-- **Terminal-level key (Win32 mode):** [`src/win32-input.ts`](../src/win32-input.ts)
+A command can use a direct combination such as `Alt+Enter`, or a combination such as `term+S` that uses the shared `term` modifier. The starter configuration maps `term` to `Menu`; changing `term` changes every binding that uses it. Both forms resolve through the same command catalog and action handler: a direct binding does not require a separate `onKeyDown` check.
 
-### Steps (App-Level Shortcut)
+The built-in bindings are in [`src/terminal/keymap.ts`](../src/terminal/keymap.ts). A Lua `sterm.keymap` declaration replaces the alternatives for each named command; other commands keep their defaults. Use `false` to disable a command's shortcuts. See the [Lua keyboard shortcut guide](./lua-automation.md#keyboard-shortcuts) for syntax and reload instructions.
 
-1. Add detection in the `onKeyDown` function inside the keyboard effect:
-   ```typescript
-   if (menuKeyDownRef.current && event.code === 'KeyX') {
-     event.preventDefault();
-     event.stopPropagation();
-     if (!event.repeat) { /* your action */ }
-     return;
-   }
-   ```
+### Adding a new command
 
-2. The shortcut must be checked **before** the terminal input encoding at the bottom of `onKeyDown`.
+1. Add a stable command ID and its default binding to [`src/terminal/keymap.ts`](../src/terminal/keymap.ts), and update [`examples/lua/keymap.lua`](../examples/lua/keymap.lua) and the Lua guide.
+2. Handle the command at the existing owner of the action. Place its handler before terminal input encoding, and prevent the consumed event from reaching the terminal. Both frontend keyboard events and native browser commands reach the same action owner.
+3. Check the native browser binding conversion and [`browser_keymap.rs`](../src-tauri/src/browser_keymap.rs) when the command must work in native browser tabs. System-wide shortcuts also use [`global-hotkeys.ts`](../src/terminal/global-hotkeys.ts) and [`main.rs`](../src-tauri/src/main.rs).
+4. For terminal input encoding rather than an application command, update [`terminal-input.ts`](../src/terminal/terminal-input.ts) for VT mode or [`win32-input.ts`](../src/win32-input.ts) for Win32 mode.
 
-### Validation
-
-- [ ] Shortcut works with Menu key held
-- [ ] Shortcut doesn't interfere with terminal input (doesn't leak to ConPTY)
-- [ ] `event.repeat` is checked to prevent rapid re-triggering
-- [ ] `event.preventDefault()` and `event.stopPropagation()` are called
+```typescript
+if (commandForEvent(event) === 'my.command') {
+  event.preventDefault();
+  if (!event.repeat) runAction();
+  return;
+}
+```
 
 ### Terminal Buffer Search
 
@@ -139,29 +133,6 @@ The global **Gallery card size** knob in UI settings uses integer percentages fr
 ## Windows Explorer integration
 
 The System setting `Windows Explorer: Open with ScanlineTerm here` is persisted in `StoredSettings`. The native `set_explorer_integration` command owns the matching per-user registry verbs under `HKCU\\Software\\Classes`, including the `Icon` value sourced from the bundled window icon; keep enable, disable, and the MSI's `ForceDeleteOnUninstall` entries in sync. Commands use `-T -P` for folder objects and folder backgrounds, so the regular CLI and single-instance launch path remain the only terminal-start path.
-
-## Adding a Keyboard Shortcut
-
-### Files to Modify
-
-1. **[`src/terminal/keymap.ts`](../src/terminal/keymap.ts)** — command catalog and built-in shortcuts
-2. Add the command dispatch at the existing frontend handler that owns the action.
-3. Update **[`examples/lua/keymap.lua`](../examples/lua/keymap.lua)** and the [Lua keyboard shortcut guide](./lua-automation.md#keyboard-shortcuts).
-4. Add native browser handling in `src-tauri/src/browser_keymap.rs` only when the command must work in native browser tabs; global shortcuts also need `src/terminal/global-hotkeys.ts` and `src-tauri/src/main.rs`.
-
-### Pattern
-
-Keyboard shortcuts are declared as command bindings, not as direct `Menu` checks. `src/terminal/keymap.ts` is the source of the command catalog and built-in bindings. A user's Lua `sterm.keymap({ term = 'Menu', bindings = { ... } })` declaration replaces the built-in alternatives only for commands it names; other commands inherit their built-in bindings. Set a command to `false` to disable it. Keep dispatch with the action's existing owner: frontend keyboard events and native browser commands both resolve to the same command, while the owning UI or terminal handler performs the action.
-
-For a new command, add it to the catalog/default bindings, then handle its command ID at the existing action owner. If the command must work in a native browser tab, add it to the native browser binding conversion as well. See the [Lua keyboard shortcut guide](./lua-automation.md#keyboard-shortcuts) for the config schema and reload behavior.
-
-```typescript
-if (commandForEvent(event) === 'my.command') {
-  event.preventDefault();
-  if (!event.repeat) runAction();
-  return;
-}
-```
 
 ### Existing Menu Actions
 
