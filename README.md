@@ -73,10 +73,12 @@ You can also use the **built-in MCP server** to enable your coding agents to ope
 
 Scanline Term is built on **Tauri 2 + Rust + WebGL**. The production installer is only *30 MB** (most of which consists of the included fonts), launches instantly, and stays lightweight on system resources.
 
-## 6. Lua Configuration & Scripts
+### 6. Lua Configuration & Scripts
 
 Lua can set global defaults, add custom ANSI palettes and shell profiles, and run event scripts that react to terminal tabs, processes, and cursor changes.
+
 Lua' can also be used for remapping and substituting keys—for instance, you could remap 'Caps Lock to function in terminal intelligently as 'Esc' and/or 'Ctrl', depending on the current application and its mode.
+
 The shipped `User's` palette is enabled by default; optional examples show **Vim/Neovim** and **Helix** mode-based layout switching with Smart Caps, plus switching to a saved preset while **FAR Manager** runs. Uncomment the examples you want in the main Lua config. The Lua API will continue to grow in future versions. See the [Lua guide](./docs/lua-automation.md).
 
 ---
