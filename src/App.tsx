@@ -443,18 +443,19 @@ export default function App() {
   }, [presetPickerOpen, presetPickerTabId, terminal.activeTabId]);
   useLayoutEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (presetPickerOpen) return;
       const command = commandForEvent(event);
+      if (command === "window.toggle_fullscreen" && isTauri()) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) void getCurrentWindow().isFullscreen().then((fullscreen) => getCurrentWindow().setFullscreen(!fullscreen)).catch((reason) => reportError(`Fullscreen toggle failed: ${String(reason)}`));
+        return;
+      }
+      if (presetPickerOpen) return;
       if (command === "gallery.toggle") { event.preventDefault(); event.stopImmediatePropagation(); if (!event.repeat) toggleGallery(); return; }
       if (!galleryOpen) return;
       if (command === "tab.new_terminal" || command === "tab.new_browser") {
         event.preventDefault(); event.stopImmediatePropagation();
         if (!event.repeat) { if (command === "tab.new_terminal") terminal.openSession(); else terminal.openBrowser(); setGalleryCloseRequested(true); }
         return;
-      }
-      if (command === "window.toggle_fullscreen" && isTauri()) {
-        event.preventDefault(); event.stopImmediatePropagation();
-        if (!event.repeat) void getCurrentWindow().isFullscreen().then((fullscreen) => getCurrentWindow().setFullscreen(!fullscreen)).catch((reason) => reportError(`Fullscreen toggle failed: ${String(reason)}`));
       }
     };
     const keyup = (event: KeyboardEvent) => { if (event.key === "ContextMenu") galleryMenuRef.current = false; };

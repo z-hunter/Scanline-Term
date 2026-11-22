@@ -50,9 +50,11 @@ export function commandForEvent(event: KeyboardEvent): string | null {
   const dispatched = dispatchedCommands.get(event);
   if (dispatched) return dispatched;
   const pressed = new Set([...pressedKeys, event.code]);
+  const altGraph = typeof event.getModifierState === 'function' && event.getModifierState('AltGraph');
   if (event.shiftKey && !pressed.has('ShiftLeft') && !pressed.has('ShiftRight')) pressed.add('ShiftLeft');
-  if (event.ctrlKey && !pressed.has('ControlLeft') && !pressed.has('ControlRight')) pressed.add('ControlLeft');
-  if (event.altKey && !pressed.has('AltLeft') && !pressed.has('AltRight')) pressed.add('AltLeft');
+  if (altGraph) { pressed.delete('ControlLeft'); pressed.delete('ControlRight'); }
+  else if (event.ctrlKey && !pressed.has('ControlLeft') && !pressed.has('ControlRight')) pressed.add('ControlLeft');
+  if (event.altKey && !modifierCodes.Alt.some((code) => pressed.has(code))) pressed.add('AltLeft');
   if (event.metaKey && !pressed.has('MetaLeft') && !pressed.has('MetaRight')) pressed.add('MetaLeft');
   return matchingCommand(activeKeymap, pressed, event.code);
 }
@@ -103,7 +105,7 @@ export const defaultBindings: Record<string, string[]> = {
 const modifierCodes: Record<string, string[]> = {
   Ctrl: ['ControlLeft', 'ControlRight'], LeftCtrl: ['ControlLeft'], RightCtrl: ['ControlRight'],
   Shift: ['ShiftLeft', 'ShiftRight'], LeftShift: ['ShiftLeft'], RightShift: ['ShiftRight'],
-  Alt: ['AltLeft', 'AltRight'], LeftAlt: ['AltLeft'], RightAlt: ['AltRight'],
+  Alt: ['AltLeft', 'AltRight', 'Alt'], LeftAlt: ['AltLeft'], RightAlt: ['AltRight'],
   Win: ['MetaLeft', 'MetaRight'], LeftWin: ['MetaLeft'], RightWin: ['MetaRight'],
   Menu: ['ContextMenu'], CapsLock: ['CapsLock'],
 };
@@ -116,7 +118,7 @@ function keyCode(key: string): string {
 
 const virtualKeys: Record<string, number> = {
   ContextMenu: 0x5d, CapsLock: 0x14, ControlLeft: 0xa2, ControlRight: 0xa3,
-  ShiftLeft: 0xa0, ShiftRight: 0xa1, AltLeft: 0xa4, AltRight: 0xa5, MetaLeft: 0x5b, MetaRight: 0x5c,
+  ShiftLeft: 0xa0, ShiftRight: 0xa1, Alt: 0x12, AltLeft: 0xa4, AltRight: 0xa5, MetaLeft: 0x5b, MetaRight: 0x5c,
   Escape: 0x1b, Backspace: 0x08, Tab: 0x09, Enter: 0x0d, NumpadEnter: 0x0d, Space: 0x20,
   Minus: 0xbd, Equal: 0xbb, Backslash: 0xdc, Quote: 0xde, Backquote: 0xc0, Comma: 0xbc, Period: 0xbe, Slash: 0xbf,
   Insert: 0x2d, Delete: 0x2e, Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22,

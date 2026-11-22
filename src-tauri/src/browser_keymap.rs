@@ -41,6 +41,18 @@ impl BrowserKeymapState {
         self.0.try_lock().ok().and_then(|state| state.focused.then_some(state.generation))
     }
 
+    pub fn active_command(&self, command: &str, key: u32) -> Option<u64> {
+        let state = self.0.try_lock().ok()?;
+        if !state.focused { return None; }
+        let mut pressed = state.pressed.clone();
+        pressed.insert(key);
+        state.bindings.iter().any(|binding| {
+            if binding.command != command || binding.key != key { return false; }
+            let mut used = HashSet::from([key]);
+            match_modifiers(&binding.modifiers, &pressed, &mut used)
+        }).then_some(state.generation)
+    }
+
     #[cfg(debug_assertions)]
     pub fn supports_probe_chord(&self, keys: &[u32]) -> bool {
         if keys.is_empty() || keys.len() > 4 || keys.iter().any(|key| *key > 0xFF || matches!(*key, 0 | 0x5b | 0x5c)) {
@@ -125,7 +137,7 @@ pub fn set_browser_keymap(
     caps_term: bool,
     bindings: Vec<Binding>,
 ) -> Result<(), String> {
-    if bindings.len() > 256 || bindings.iter().any(|binding| binding.command.is_empty() || binding.command.len() > 128 || binding.modifiers.len() > 8 || binding.modifiers.iter().any(|keys| keys.is_empty() || keys.len() > 2)) {
+    if !valid_bindings(&bindings) {
         return Err("invalid browser keymap".into());
     }
     let mut current = state.0.lock().map_err(|_| "browser keymap is unavailable")?;
@@ -133,6 +145,12 @@ pub fn set_browser_keymap(
     // Keep the newer snapshot and treat the superseded request as successfully ignored.
     current.update_if_newer(generation, focused, caps_term, bindings);
     Ok(())
+}
+
+fn valid_bindings(bindings: &[Binding]) -> bool {
+    bindings.len() <= 256 && bindings.iter().all(|binding|
+        !binding.command.is_empty() && binding.command.len() <= 128 && binding.modifiers.len() <= 8
+            && binding.modifiers.iter().all(|keys| !keys.is_empty() && keys.len() <= 3))
 }
 
 #[derive(Default)]
@@ -286,6 +304,22 @@ mod tests {
         map.key(2, 65, false);
         map.key(2, 83, false);
         assert_eq!(map.key(2, 83, true), (true, Some("new")));
+    }
+
+    #[test]
+    fn accepts_the_three_alt_variants_and_rejects_four() {
+        let binding = Binding { command: "fullscreen".into(), key: 0x0d, modifiers: vec![vec![0xa4, 0xa5, 0x12]], repeat: false };
+        assert!(valid_bindings(&[binding.clone()]));
+        assert!(!valid_bindings(&[Binding { modifiers: vec![vec![0xa4, 0xa5, 0x12, 0x11]], ..binding }]));
+    }
+
+    #[test]
+    fn active_command_uses_the_held_alt_variant() {
+        let state = BrowserKeymapState::default();
+        state.0.lock().unwrap().reset(1, true, vec![Binding { command: "window.toggle_fullscreen".into(), key: 0x0d, modifiers: vec![vec![0xa4, 0xa5, 0x12]], repeat: false }]);
+        assert_eq!(state.active_command("window.toggle_fullscreen", 0x0d), None);
+        state.key(1, 0xa5, true);
+        assert_eq!(state.active_command("window.toggle_fullscreen", 0x0d), Some(1));
     }
 
     #[test]

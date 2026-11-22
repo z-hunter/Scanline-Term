@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, matchingCommand, nextBrowserKeymapGeneration, publishReloadKeymap, setActiveKeymap, shortcutHint, validateKeymap } from './keymap';
+import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, matchingCommand, nextBrowserKeymapGeneration, publishReloadKeymap, setActiveKeymap, setVirtualKeyState, shortcutHint, validateKeymap } from './keymap';
 
 describe('keymap', () => {
   it('uses epoch-based generations so a reloaded frontend supersedes native browser keymaps', () => {
@@ -10,9 +10,18 @@ describe('keymap', () => {
 
   it('resolves default and remapped term combinations', () => {
     expect(matchingCommand(null, new Set(['ContextMenu', 'KeyS']), 'KeyS')).toBe('settings.toggle');
+    expect(matchingCommand(null, new Set(['Alt', 'Enter']), 'Enter')).toBe('window.toggle_fullscreen');
     const keymap = { term: 'RightCtrl+RightShift', bindings: {} };
     expect(matchingCommand(keymap, new Set(['ControlRight', 'ShiftRight', 'KeyS']), 'KeyS')).toBe('settings.toggle');
     expect(matchingCommand(keymap, new Set(['ControlLeft', 'ShiftRight', 'KeyS']), 'KeyS')).toBeNull();
+  });
+
+  it('treats AltGr as Alt rather than Ctrl+Alt for application shortcuts', () => {
+    setVirtualKeyState('AltRight', true);
+    const event = new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter', altKey: true, ctrlKey: true });
+    Object.defineProperty(event, 'getModifierState', { value: (key: string) => key === 'AltGraph' });
+    expect(commandForEvent(event)).toBe('window.toggle_fullscreen');
+    setVirtualKeyState('AltRight', false);
   });
 
   it('honors removed and custom bindings', () => {
@@ -59,6 +68,10 @@ describe('keymap', () => {
   it('compiles side-specific term modifiers for native browser input', () => {
     const keymap = { term: 'RightCtrl+RightShift', bindings: { 'settings.toggle': 'term+S' } };
     expect(browserKeymap(keymap)).toContainEqual({ command: 'settings.toggle', key: 83, modifiers: [[0xa3], [0xa1]], repeat: false });
+  });
+
+  it('compiles a generic Alt binding for native browser input', () => {
+    expect(browserKeymap(null)).toContainEqual({ command: 'window.toggle_fullscreen', key: 0x0d, modifiers: [[0xa4, 0xa5, 0x12]], repeat: false });
   });
 
   it('publishes the committed reload snapshot and preserves the old map on invalid candidates', () => {

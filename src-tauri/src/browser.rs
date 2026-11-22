@@ -171,12 +171,22 @@ const FRAME_HOTKEY_SCRIPT: &str = r#"(() => {
     };
     window.__scanlineOpenAddress = openAddress;
     const requestAddress = () => { if (window.chrome?.webview) window.chrome.webview.postMessage('browser.address.open'); else openAddress(); };
-    addEventListener('keydown', e => { if (!isBrowserHotkey(e)) return; e.preventDefault(); e.stopImmediatePropagation(); if (e.code === 'F5') location.reload(); else requestAddress(); }, true);
+    const requestFullscreen = () => { if (window.chrome?.webview) window.chrome.webview.postMessage('window.toggle_fullscreen'); };
+    addEventListener('keydown', e => {
+      if (e.altKey && (e.code === 'Enter' || e.code === 'NumpadEnter')) { e.preventDefault(); e.stopImmediatePropagation(); requestFullscreen(); return; }
+      if (!isBrowserHotkey(e)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.code === 'F5') location.reload(); else requestAddress();
+    }, true);
     addEventListener('message', e => {
-      if (e.source === window) return; if (e.data === '__scanline-browser-reload') location.reload(); else if (e.data === '__scanline-browser-address') requestAddress();
+      if (e.source === window) return;
+      if (e.data === '__scanline-browser-fullscreen') requestFullscreen();
+      else if (e.data === '__scanline-browser-reload') location.reload();
+      else if (e.data === '__scanline-browser-address') requestAddress();
     }, true);
   } else {
     addEventListener('keydown', e => {
+      if (e.altKey && (e.code === 'Enter' || e.code === 'NumpadEnter')) { e.preventDefault(); e.stopImmediatePropagation(); window.top.postMessage('__scanline-browser-fullscreen', '*'); return; }
       if (!isBrowserHotkey(e)) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (e.code === 'F5') window.top.postMessage('__scanline-browser-reload', '*');
@@ -263,13 +273,24 @@ fn install_native_browser_tab(app: &tauri::AppHandle, session_id: &str, tab: Nat
             let Some(args) = args else { return Ok(()); };
             let mut message = PWSTR::null();
             args.TryGetWebMessageAsString(&mut message)?;
-            if take_pwstr(message) == "browser.address.open" {
+            let message = take_pwstr(message);
+            if message == "browser.address.open" {
                 if let Some(keymap) = message_app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
                     if let Some(generation) = keymap.focused_generation() {
                         let _ = message_app.emit("browser-command", serde_json::json!({
                             "generation": generation,
                             "sessionId": message_id,
-                            "command": "browser.address.open"
+                            "command": message
+                        }));
+                    }
+                }
+            } else if message == "window.toggle_fullscreen" {
+                if let Some(keymap) = message_app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
+                    if let Some(generation) = keymap.active_command(&message, 0x0d) {
+                        let _ = message_app.emit("browser-command", serde_json::json!({
+                            "generation": generation,
+                            "sessionId": message_id,
+                            "command": message
                         }));
                     }
                 }
