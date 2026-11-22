@@ -110,6 +110,7 @@ pub fn browser_target_url(value: &str) -> Result<url::Url, String> {
 
 const NAVIGATION_SCRIPT: &str = r#"(() => {
   let mode = 'normal', pendingG = false, hint = null;
+  const setMode = value => { mode = value; window.dispatchEvent(new CustomEvent('scanline-mode-change', { detail: mode })); };
   const open = window.open; window.open = (url, ...args) => typeof url === 'string' && /^(?:https?|file):/i.test(url) ? (location.href = url, window) : open.call(window, url, ...args);
   addEventListener('click', e => { const link = e.target.closest('a[target="_blank"]'); if (link?.href) { e.preventDefault(); location.href = link.href; } }, true);
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
@@ -163,11 +164,11 @@ const NAVIGATION_SCRIPT: &str = r#"(() => {
     if (hint) { const key=e.key.toLowerCase(); if (e.key === 'Escape') { e.preventDefault(); clearHints(); return; } if (!labels.includes(key)) return; e.preventDefault(); hint.typed += key; const matches=hint.entries.filter((item,index)=>hint.nodes[index].style.display !== 'none' && item.label.startsWith(hint.typed)); if (matches.length === 1 && matches[0].label === hint.typed) { const element=matches[0].element; clearHints(); element.focus?.(); element.click(); } else if (!matches.length) clearHints(); return; }
     if (e.code === 'F5') { e.preventDefault(); location.reload(); return; }
     if (e.code === 'F6') { e.preventDefault(); address(); return; }
-    if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); mode = 'normal'; } return; }
-    if (mode === 'pass') { if (e.key === 'Escape') { e.preventDefault(); mode = 'normal'; } return; }
+    if (mode === 'insert') { if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); setMode('normal'); } return; }
+    if (mode === 'pass') { if (e.key === 'Escape') { e.preventDefault(); setMode('normal'); } return; }
     if (editable(e.target)) return;
     if (e.code === 'KeyO') { e.preventDefault(); address(); return; }
-    if (e.code === 'KeyI') { mode = 'pass'; return; }
+    if (e.code === 'KeyI') { setMode('pass'); return; }
     if (e.code === 'Backspace') { e.preventDefault(); history.back(); return; }
     if (e.code === 'KeyJ') { e.preventDefault(); scrollBy(0, 64); }
     else if (e.code === 'KeyK') { e.preventDefault(); scrollBy(0, -64); }
@@ -189,6 +190,22 @@ const FRAME_HOTKEY_SCRIPT: &str = r#"(() => {
   const editable = e => e && (e.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName));
   const isBrowserHotkey = e => e.code === 'F5' || e.code === 'F6' || e.code === 'KeyO' && !editable(e.target);
   if (window === window.top) {
+    const modeBadge = document.createElement('div');
+    modeBadge.setAttribute('aria-live', 'polite');
+    modeBadge.style.cssText = 'position:fixed;z-index:2147483646;left:8px;bottom:8px;padding:2px 4px;color:#d7f5df99;background:transparent;font:11px ui-monospace,Consolas,monospace;letter-spacing:.04em;opacity:.65;pointer-events:none';
+    let mode = 'normal', loading = document.readyState !== 'complete';
+    const updateModeBadge = () => {
+      modeBadge.hidden = mode !== 'normal' || editable(document.activeElement);
+      modeBadge.textContent = `NORM. [j/k, f, o, i]${loading ? ' · loading' : ''}`;
+    };
+    const mountModeBadge = () => { if (document.documentElement && !modeBadge.isConnected) document.documentElement.append(modeBadge); };
+    mountModeBadge();
+    addEventListener('DOMContentLoaded', mountModeBadge, { once: true });
+    addEventListener('load', () => { loading = false; updateModeBadge(); }, { once: true });
+    addEventListener('scanline-mode-change', event => { mode = event.detail; updateModeBadge(); });
+    document.addEventListener('focusin', updateModeBadge);
+    document.addEventListener('focusout', () => setTimeout(updateModeBadge, 0));
+    updateModeBadge();
     const openAddress = () => {
       document.querySelector('[data-scanline-address]')?.remove();
       const box = document.createElement('form');
