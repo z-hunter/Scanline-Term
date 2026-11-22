@@ -917,7 +917,7 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     let disposed = false;
     void listen("global-show-gallery", () => {
-      if (!disposed) galleryToggleRef.current();
+      if (!disposed && !galleryOpen) galleryToggleRef.current();
     }).then((cleanup) => { if (disposed) cleanup(); else unlisten = cleanup; });
     return () => { disposed = true; unlisten?.(); };
   }, [galleryOpen]);

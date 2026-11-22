@@ -41,6 +41,18 @@ fn term_caps_lease_rejects_stale_acknowledgements() {
     assert!(lease.active.is_none());
 }
 
+#[cfg(test)]
+#[test]
+fn term_caps_lease_recovers_after_native_token_failure() {
+    let mut lease = TermCapsLease::default();
+    let failed_generation = lease.offer(42);
+    assert!(lease.acknowledge(failed_generation, 42));
+    lease.active = None; // Native frame failure clears TERM_TOKEN.
+    let retry_generation = lease.offer(43);
+    assert!(lease.acknowledge(retry_generation, 43));
+    assert_eq!(lease.active, Some((retry_generation, 43)));
+}
+
 impl TermCapsLease {
     fn offer(&mut self, token: u64) -> u64 {
         self.generation = self.generation.wrapping_add(1);
