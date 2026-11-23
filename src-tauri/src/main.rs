@@ -569,9 +569,11 @@ fn load_monospace_font(family: String) -> Result<Option<Vec<u8>>, String> {
 
 #[cfg(windows)]
 fn is_window_active(window: &tauri::WebviewWindow) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOTOWNER};
     if let Ok(hwnd) = window.hwnd() {
-        unsafe { GetAncestor(GetForegroundWindow(), GA_ROOT) == hwnd.0 as _ }
+        // Native browser tabs are owned popup windows, so GA_ROOT identifies the
+        // browser tab instead of the application window while the tab has focus.
+        unsafe { GetAncestor(GetForegroundWindow(), GA_ROOTOWNER) == hwnd.0 as _ }
     } else {
         false
     }
