@@ -1,5 +1,6 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
+    <Property Id="REBOOT" Value="ReallySuppress" Secure="yes" />
     <DirectoryRef Id="TARGETDIR">
       <Directory Id="WindowsFolder" Name="Windows">
         <Directory Id="FontsFolder" Name="Fonts" />

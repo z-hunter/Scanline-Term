@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Scanline Term",
   "mainBinaryName": "sterm",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "identifier": "com.zhunter.scanlineterm",
   "build": {
     "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/browser-texture-stream/build.ps1 && npm run dev",

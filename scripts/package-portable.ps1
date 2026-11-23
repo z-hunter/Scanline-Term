@@ -39,7 +39,7 @@ foreach ($directory in @("editors", "modules", "scripts", "palettes", "lua-examp
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $stage $relativePath)
   Copy-Item -LiteralPath (Join-Path $luaSource $relativePath) -Destination (Join-Path $luaResource $relativePath)
 }
-foreach ($requiredPath in @("conpty\x64", "fonts", "presets\default.json", "window-icon.ico", "sterm.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua", "palettes\users.lua", "ai-prompts.lua", "lua-examples\sterm.lua", "lua-examples\palettes\users.lua", "lua-examples\scripts\far_preset.lua", "lua-examples\ai-prompts.lua")) {
+foreach ($requiredPath in @("conpty\x64", "fonts", "presets\default.json", "window-icon.ico", "sterm.lua", "keymap.lua", "editors\nvim.lua", "editors\hx.lua", "modules\modal_editor.lua", "scripts\far_preset.lua", "palettes\users.lua", "ai-prompts.lua", "lua-examples\sterm.lua", "lua-examples\keymap.lua", "lua-examples\palettes\users.lua", "lua-examples\scripts\far_preset.lua", "lua-examples\ai-prompts.lua")) {
   if (-not (Test-Path -LiteralPath (Join-Path $stage $requiredPath))) { throw "Portable package is missing required path: $requiredPath" }
 }
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $stage
