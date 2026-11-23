@@ -764,7 +764,7 @@ describe('useTerminal closeSession concurrent closures', () => {
     container.remove(); vi.useRealTimers(); vi.restoreAllMocks();
   });
 
-  it('removes the address modal when an unvisited browser tab closes', async () => {
+  it('routes a native browser close-window shortcut to the app while managing browser tabs', async () => {
     mocked.invoke.mockResolvedValue('cmd.exe');
     let hookResult!: ReturnType<typeof useTerminal>;
     const onError = vi.fn();
@@ -780,6 +780,17 @@ describe('useTerminal closeSession concurrent closures', () => {
     await act(async () => { hookResult.openBrowser(); });
     const browserId = hookResult.activeTabId!;
     expect(hookResult.addressTabId).toBe(browserId);
+    await act(async () => {
+      hookResult.updateActivePreset((current) => ({ ...current, settings: { ...current.settings, crt: { ...current.settings.crt, crtEmulation: true } }, dirty: true }));
+    });
+    expect(hookResult.activePreset.crt.crtEmulation).toBe(true);
+    mocked.mockCloseWindow.mockReset().mockResolvedValue(undefined);
+    const browserKeymapCall = mocked.invoke.mock.calls.filter(([command]) => command === 'set_browser_keymap').at(-1)?.[1] as { generation: number } | undefined;
+    expect(browserKeymapCall).toBeDefined();
+    await act(async () => {
+      mocked.handlers.get('browser-command')!({ payload: { generation: browserKeymapCall!.generation, sessionId: browserId, command: 'window.close' } });
+    });
+    expect(mocked.mockCloseWindow).toHaveBeenCalledTimes(1);
     await act(async () => { mocked.handlers.get('browser-color')!({ payload: { sessionId: browserId, background: '#f0f0f0' } }); });
     expect(hookResult.tabs.find((tab) => tab.id === browserId)).toMatchObject({ background: '#f0f0f0', foreground: '#101a14' });
     await act(async () => { hookResult.closeAddress(); });

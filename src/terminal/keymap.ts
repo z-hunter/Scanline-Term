@@ -97,6 +97,7 @@ export const defaultBindings: Record<string, string[]> = {
   'terminal.font_decrease': ['term+Minus', 'term+NumpadSubtract'],
   'terminal.font_increase': ['term+Equal', 'term+NumpadAdd'],
   'window.toggle_fullscreen': ['Alt+Enter', 'Alt+NumpadEnter'],
+  'window.close': ['Alt+F4'],
   'window.toggle_visibility': ['Win+Backquote'],
   'window.show_gallery': [],
   ...Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`tab.select.${index + 1}`, [`term+${(index + 1) % 10}`]])),

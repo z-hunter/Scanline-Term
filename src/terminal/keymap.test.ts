@@ -74,6 +74,11 @@ describe('keymap', () => {
     expect(browserKeymap(null)).toContainEqual({ command: 'window.toggle_fullscreen', key: 0x0d, modifiers: [[0xa4, 0xa5, 0x12]], repeat: false });
   });
 
+  it('routes Alt+F4 from native browser input to the application window', () => {
+    expect(browserKeymap(null)).toContainEqual({ command: 'window.close', key: 0x73, modifiers: [[0xa4, 0xa5, 0x12]], repeat: false });
+    expect(matchingCommand(null, new Set(['AltLeft', 'F4']), 'F4')).toBe('window.close');
+  });
+
   it('publishes the committed reload snapshot and preserves the old map on invalid candidates', () => {
     const previous = { term: 'Menu', bindings: { 'settings.toggle': 'term+S' } };
     const committed = { term: 'RightCtrl', bindings: { 'settings.toggle': 'term+F10' } };
@@ -91,8 +96,9 @@ describe('keymap', () => {
     const listener = (event: KeyboardEvent) => received.push(commandForEvent(event));
     window.addEventListener('keydown', listener);
     dispatchCommand('settings.toggle');
+    dispatchCommand('window.close');
     dispatchCommand('unknown.command');
     window.removeEventListener('keydown', listener);
-    expect(received).toEqual(['settings.toggle']);
+    expect(received).toEqual(['settings.toggle', 'window.close']);
   });
 });
