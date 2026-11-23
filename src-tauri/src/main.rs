@@ -681,6 +681,8 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     let saved_y = SUMMON_TARGET_Y.load(Ordering::SeqCst);
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
+    let restore_maximized = SUMMON_WAS_MAXIMIZED.load(Ordering::SeqCst)
+        || placement.showCmd == SW_SHOWMAXIMIZED as u32;
     let saved_is_visible = saved_x != i32::MIN && saved_y != i32::MIN
         && saved_x + width > monitor.rcWork.left && saved_x < monitor.rcWork.right
         && saved_y + height > monitor.rcWork.top && saved_y < monitor.rcWork.bottom;
@@ -698,22 +700,29 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         SUMMON_SHOWING.store(true, Ordering::SeqCst);
         SUMMON_HIDING.store(false, Ordering::SeqCst);
         unsafe {
-            let show_cmd = if SUMMON_WAS_MAXIMIZED.swap(false, Ordering::SeqCst)
-                || placement.showCmd == SW_SHOWMAXIMIZED as u32
-            {
-                SW_SHOWMAXIMIZED
-            } else {
-                SW_RESTORE
-            };
-            ShowWindow(hwnd as _, show_cmd);
-            SetWindowPos(hwnd as _, std::ptr::null_mut(), target_x, from, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER | SWP_SHOWWINDOW);
+            ShowWindow(hwnd as _, SW_RESTORE);
+            SetWindowPos(
+                hwnd as _, std::ptr::null_mut(), target_x, from,
+                if restore_maximized { width } else { 0 },
+                if restore_maximized { height } else { 0 },
+                SWP_NOACTIVATE | if restore_maximized { 0 } else { SWP_NOSIZE } | SWP_NOZORDER | SWP_SHOWWINDOW,
+            );
         }
         let _ = window.set_focus();
         focus_webview(window);
     } else {
-        SUMMON_WAS_MAXIMIZED.store(placement.showCmd == SW_SHOWMAXIMIZED as u32, Ordering::SeqCst);
+        SUMMON_WAS_MAXIMIZED.store(restore_maximized, Ordering::SeqCst);
         SUMMON_SHOWING.store(false, Ordering::SeqCst);
         SUMMON_HIDING.store(true, Ordering::SeqCst);
+        if restore_maximized {
+            unsafe {
+                ShowWindow(hwnd as _, SW_RESTORE);
+                SetWindowPos(
+                    hwnd as _, std::ptr::null_mut(), target_x, from, width, height,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                );
+            }
+        }
     }
 
     let window = window.clone();
@@ -725,7 +734,14 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
             let progress = (started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
             let eased = 1.0 - (1.0 - progress).powi(3);
             let y = from + ((to - from) as f32 * eased) as i32;
-            unsafe { SetWindowPos(hwnd as _, std::ptr::null_mut(), target_x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER); }
+            unsafe {
+                SetWindowPos(
+                    hwnd as _, std::ptr::null_mut(), target_x, y,
+                    if restore_maximized { width } else { 0 },
+                    if restore_maximized { height } else { 0 },
+                    SWP_NOACTIVATE | if restore_maximized { 0 } else { SWP_NOSIZE } | SWP_NOZORDER,
+                );
+            }
             if progress >= 1.0 { break; }
             std::thread::sleep(std::time::Duration::from_millis(16));
         }
@@ -735,6 +751,10 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
                 ShowWindow(hwnd as _, SW_HIDE);
             }
         } else {
+            if restore_maximized {
+                unsafe { ShowWindow(hwnd as _, SW_SHOWMAXIMIZED); }
+                SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
+            }
             SUMMON_SHOWING.store(false, Ordering::SeqCst);
             focus_webview(&window);
             let _ = window.app_handle().emit("window-summoned", ());
