@@ -809,8 +809,7 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         } else { None };
         #[cfg(not(windows))]
         let exit_page_fullscreen: Option<usize> = None;
-        if window_fullscreen { state.host_fullscreen = true; }
-        else if !state.fullscreen { state.host_fullscreen = false; }
+        state.host_fullscreen = state.fullscreen && (state.host_fullscreen || window_fullscreen);
         state.active = session_id.clone(); state.bounds = bounds.clone();
         state.visibility_mode = if session_id.is_some() { visibility_mode.unwrap_or_else(|| if bounds.as_ref().is_some_and(|b| b.x < 0.0 || b.y < 0.0) { 2 } else { 1 }) } else { 0 };
         let mut fullscreen_rect = if state.fullscreen {
