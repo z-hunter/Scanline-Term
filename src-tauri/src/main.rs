@@ -521,6 +521,18 @@ fn screen_rect_to_workspace(rect: windows_sys::Win32::Foundation::RECT, monitor:
 }
 
 #[cfg(windows)]
+fn workspace_rect_to_screen(rect: windows_sys::Win32::Foundation::RECT, monitor: &windows_sys::Win32::Graphics::Gdi::MONITORINFO) -> windows_sys::Win32::Foundation::RECT {
+    let offset_x = monitor.rcWork.left - monitor.rcMonitor.left;
+    let offset_y = monitor.rcWork.top - monitor.rcMonitor.top;
+    windows_sys::Win32::Foundation::RECT {
+        left: rect.left + offset_x,
+        top: rect.top + offset_y,
+        right: rect.right + offset_x,
+        bottom: rect.bottom + offset_y,
+    }
+}
+
+#[cfg(windows)]
 fn summon_maximized_placement(
     mut placement: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
     target_x: i32,
@@ -529,7 +541,7 @@ fn summon_maximized_placement(
 ) -> windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOWMAXIMIZED, WPF_RESTORETOMAXIMIZED};
 
-    let normal = placement.rcNormalPosition;
+    let normal = workspace_rect_to_screen(placement.rcNormalPosition, monitor);
     let width = normal.right - normal.left;
     let height = normal.bottom - normal.top;
     if !summon_target_is_visible(normal.left, normal.top, width, height, monitor.rcWork, true) {
@@ -551,7 +563,13 @@ fn summon_maximized_placement(
 #[cfg(windows)]
 fn summon_target_is_visible(x: i32, y: i32, width: i32, height: i32, work: windows_sys::Win32::Foundation::RECT, require_origin: bool) -> bool {
     if require_origin {
-        x >= work.left && x < work.right && y >= work.top && y < work.bottom
+        let x = i64::from(x);
+        let y = i64::from(y);
+        let width = i64::from(width);
+        let height = i64::from(height);
+        let visible_width = (x + width).min(i64::from(work.right)) - x.max(i64::from(work.left));
+        let visible_height = (y + height).min(i64::from(work.bottom)) - y.max(i64::from(work.top));
+        width > 0 && height > 0 && visible_width * 100 >= width * 95 && visible_height * 100 >= height * 95
     } else {
         x + width > work.left && x < work.right && y + height > work.top && y < work.bottom
     }
@@ -738,7 +756,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     let restore_maximized = SUMMON_WAS_MAXIMIZED.load(Ordering::SeqCst)
         || placement.showCmd == SW_SHOWMAXIMIZED as u32;
     let terminal_maximized = restore_maximized && main_webview_is_active(window);
-    let normal = placement.rcNormalPosition;
+    let normal = workspace_rect_to_screen(placement.rcNormalPosition, &monitor);
     let normal_is_visible = summon_target_is_visible(
         normal.left,
         normal.top,
@@ -1377,7 +1395,7 @@ mod tests {
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
-    use super::{is_focus_activation, retain_summon_normal_placement, screen_rect_to_workspace, summon_maximized_placement, summon_target_is_visible, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
+    use super::{is_focus_activation, retain_summon_normal_placement, screen_rect_to_workspace, summon_maximized_placement, summon_target_is_visible, system_font_bytes, workspace_rect_to_screen, SUMMON_NORMAL_PLACEMENT};
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -1436,6 +1454,13 @@ mod tests {
         assert_eq!(workspace.top, 0);
         assert_eq!(workspace.right, -80);
         assert_eq!(workspace.bottom, 1040);
+
+        let screen_again = workspace_rect_to_screen(workspace, &monitor);
+        assert_eq!(screen_again.left, screen.left);
+        assert_eq!(screen_again.top, screen.top);
+        assert_eq!(screen_again.right, screen.right);
+        assert_eq!(screen_again.bottom, screen.bottom);
+        assert!(summon_target_is_visible(screen_again.left, screen_again.top, screen_again.right - screen_again.left, screen_again.bottom - screen_again.top, monitor.rcWork, true));
     }
 
     #[cfg(windows)]
@@ -1444,6 +1469,7 @@ mod tests {
         use windows_sys::Win32::Foundation::RECT;
 
         let work = RECT { left: 0, top: 0, right: 1920, bottom: 1040 };
+        assert!(summon_target_is_visible(-8, -8, 1936, 1066, work, true));
         assert!(!summon_target_is_visible(0, -963, 1456, 999, work, true));
         assert!(summon_target_is_visible(0, -963, 1456, 999, work, false));
         assert!(!summon_target_is_visible(0, -1058, 1936, 1066, work, true));
