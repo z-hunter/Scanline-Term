@@ -861,25 +861,33 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
             }
         } else {
             if restore_maximized {
-                if let Some(placement) = original_maximized_placement {
-                    let placement = if terminal_maximized {
-                        summon_maximized_placement(placement, target_x, target_y, &monitor)
-                    } else {
-                        let mut placement = placement;
-                        placement.showCmd = SW_SHOWMAXIMIZED as u32;
-                        placement
-                    };
-                    if unsafe { SetWindowPlacement(hwnd as _, &placement) } != 0 {
-                        *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
-                        SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
-                    } else {
-                        unsafe { ShowWindow(hwnd as _, SW_SHOWMAXIMIZED); }
+                let final_window = window.clone();
+                let _ = window.run_on_main_thread(move || {
+                    if SUMMON_ANIMATION_GENERATION.load(Ordering::SeqCst) != generation { return; }
+                    if let Some(placement) = original_maximized_placement {
+                        let placement = if terminal_maximized {
+                            summon_maximized_placement(placement, target_x, target_y, &monitor)
+                        } else {
+                            let mut placement = placement;
+                            placement.showCmd = SW_SHOWMAXIMIZED as u32;
+                            placement
+                        };
+                        if unsafe { SetWindowPlacement(hwnd as _, &placement) } != 0 {
+                            *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
+                            SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
+                        } else {
+                            unsafe { ShowWindow(hwnd as _, SW_SHOWMAXIMIZED); }
+                        }
                     }
-                }
+                    SUMMON_SHOWING.store(false, Ordering::SeqCst);
+                    focus_webview(&final_window);
+                    let _ = final_window.app_handle().emit("window-summoned", ());
+                });
+            } else {
+                SUMMON_SHOWING.store(false, Ordering::SeqCst);
+                focus_webview(&window);
+                let _ = window.app_handle().emit("window-summoned", ());
             }
-            SUMMON_SHOWING.store(false, Ordering::SeqCst);
-            focus_webview(&window);
-            let _ = window.app_handle().emit("window-summoned", ());
         }
     });
 }
