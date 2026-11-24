@@ -1,4 +1,4 @@
-import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, nextBrowserKeymapGeneration, setVirtualKeyState } from './keymap';
+import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, getPressedVirtualModifiers, nextBrowserKeymapGeneration, setVirtualKeyState, syncVirtualModifiers } from './keymap';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
@@ -632,11 +632,12 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
     const update = () => {
       generation = nextBrowserKeymapGeneration();
       const focused = tabsRef.current.some((tab) => tab.id === activeRef.current && tab.kind === 'browser');
-      void invoke('set_browser_keymap', { generation, focused, capsTerm: (getActiveKeymap()?.term ?? 'Menu').split('+').includes('CapsLock'), bindings: browserKeymap(getActiveKeymap()) })
+      void invoke('set_browser_keymap', { generation, focused, capsTerm: (getActiveKeymap()?.term ?? 'Menu').split('+').includes('CapsLock'), bindings: browserKeymap(getActiveKeymap()), pressedModifiers: getPressedVirtualModifiers() })
         .catch((reason) => onError(`Could not update browser shortcuts: ${String(reason)}`));
     };
-    void listen<{ generation: number; sessionId: string; command: string }>('browser-command', ({ payload }) => {
+    void listen<{ generation: number; sessionId: string; command: string; pressedModifiers?: number[] }>('browser-command', ({ payload }) => {
       if (payload.generation !== generation || payload.sessionId !== activeRef.current) return;
+      if (payload.pressedModifiers) syncVirtualModifiers(payload.pressedModifiers);
       if (payload.command === 'browser.address.open') {
         const tab = tabsRef.current.find((item) => item.id === payload.sessionId && item.kind === 'browser');
         if (tab?.kind === 'browser' && tab.preset?.settings.crt.crtEmulation) setAddressTabId(payload.sessionId);
@@ -650,7 +651,7 @@ export function useTerminal({ defaultPreset, defaultPresetName = 'default', read
       generation = nextBrowserKeymapGeneration();
       unlisten?.();
       window.removeEventListener('keymap-changed', update);
-      void invoke('set_browser_keymap', { generation, focused: false, capsTerm: false, bindings: [] });
+      void invoke('set_browser_keymap', { generation, focused: false, capsTerm: false, bindings: [], pressedModifiers: [] });
     };
   }, [activeTabId, onError]);
   useEffect(() => {

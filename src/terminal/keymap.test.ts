@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, matchingCommand, nextBrowserKeymapGeneration, publishReloadKeymap, setActiveKeymap, setVirtualKeyState, shortcutHint, validateKeymap } from './keymap';
+import { browserKeymap, commandForEvent, dispatchCommand, getActiveKeymap, getPressedVirtualModifiers, matchingCommand, nextBrowserKeymapGeneration, publishReloadKeymap, setActiveKeymap, setVirtualKeyState, shortcutHint, syncVirtualModifiers, validateKeymap } from './keymap';
 
 describe('keymap', () => {
   it('uses epoch-based generations so a reloaded frontend supersedes native browser keymaps', () => {
@@ -43,6 +43,20 @@ describe('keymap', () => {
     expect(commandForEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' }))).toBe('gallery.toggle');
     window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'Unidentified' }));
     expect(commandForEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace' }))).toBeNull();
+    setActiveKeymap(null);
+  });
+
+  it('synchronizes held modifiers across the native browser handoff', () => {
+    setActiveKeymap({ term: 'Menu', bindings: {} });
+    setVirtualKeyState('ContextMenu', true);
+    expect(getPressedVirtualModifiers()).toContain(0x5d);
+    setActiveKeymap({ term: 'Menu', bindings: {} });
+    syncVirtualModifiers([0x5d]);
+    window.dispatchEvent(new Event('blur'));
+    expect(getPressedVirtualModifiers()).toContain(0x5d);
+    expect(commandForEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))).toBe('tab.next');
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ContextMenu', code: 'Unidentified' }));
+    expect(commandForEvent(new KeyboardEvent('keydown', { code: 'ArrowRight' }))).toBeNull();
     setActiveKeymap(null);
   });
 

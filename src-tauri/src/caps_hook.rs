@@ -741,7 +741,7 @@ mod windows_hook {
         UI::{
             Input::KeyboardAndMouse::{
                 INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_CAPITAL,
-                VK_F6, VK_NONAME,
+                VK_APPS, VK_F6, VK_NONAME,
             },
             WindowsAndMessaging::{
                 CallNextHookEx, DispatchMessageW, GA_ROOT, GUITHREADINFO, GetAncestor,
@@ -935,9 +935,9 @@ mod windows_hook {
             || !browser_is_focused(hwnd)
             || state.active_id().ok().flatten().as_deref() != Some(session_id.as_str())
         { return; }
-        for (queued_generation, map_generation, command) in crate::browser_keymap::take_commands() {
+        for (queued_generation, map_generation, command, pressed_modifiers) in crate::browser_keymap::take_commands() {
             if queued_generation == generation {
-                let _ = app.emit("browser-command", serde_json::json!({ "generation": map_generation, "sessionId": session_id, "command": command }));
+                let _ = app.emit("browser-command", serde_json::json!({ "generation": map_generation, "sessionId": session_id, "command": command, "pressedModifiers": pressed_modifiers }));
             }
         }
     }
@@ -1002,7 +1002,10 @@ mod windows_hook {
             if up {
                 if let Some(app) = HOOK_APP.get() {
                     if let Some(state) = app.try_state::<crate::browser_keymap::BrowserKeymapState>() {
-                        if state.take_consumed_up(vk) { return 1; }
+                        if state.take_consumed_up(vk) {
+                            let (browser_hwnd, _) = crate::browser_keymap::browser_focus_identity();
+                            if vk != VK_APPS as u32 || browser_is_focused(browser_hwnd) || !super::native_focus_is_valid() { return 1; }
+                        }
                     }
                 }
             }
@@ -1016,7 +1019,7 @@ mod windows_hook {
                                 BROWSER_F6_DOWN.store(false, Ordering::Release);
                                 return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
                             };
-                            if !crate::browser_keymap::queue_command(generation, map_generation, "browser.address.open".into()) {
+                            if !crate::browser_keymap::queue_command(generation, map_generation, "browser.address.open".into(), vec![]) {
                                 BROWSER_F6_DOWN.store(false, Ordering::Release);
                                 return unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) };
                             }
@@ -1029,7 +1032,8 @@ mod windows_hook {
                             return 1;
                         }
                         if let Some(command) = command {
-                            if crate::browser_keymap::queue_command(generation, map_generation, command) {
+                            let pressed_modifiers = state.pressed_modifiers();
+                            if crate::browser_keymap::queue_command(generation, map_generation, command, pressed_modifiers) {
                                 unsafe { PostThreadMessageW(HOOK_THREAD_ID.load(Ordering::Acquire), WM_BROWSER_COMMAND, 0, 0); }
                             } else {
                                 state.release_consumed(vk);

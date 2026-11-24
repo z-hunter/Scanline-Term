@@ -2,16 +2,16 @@
 
 use std::collections::HashSet;
 static FOCUS_IDENTITY: std::sync::Mutex<(isize, u64)> = std::sync::Mutex::new((0, 0));
-static PENDING: std::sync::Mutex<Vec<(u64, u64, String)>> = std::sync::Mutex::new(Vec::new());
+static PENDING: std::sync::Mutex<Vec<(u64, u64, String, Vec<u32>)>> = std::sync::Mutex::new(Vec::new());
 
-pub fn queue_command(focus_generation: u64, map_generation: u64, command: String) -> bool {
+pub fn queue_command(focus_generation: u64, map_generation: u64, command: String, pressed_modifiers: Vec<u32>) -> bool {
     let Ok(mut pending) = PENDING.try_lock() else { return false; };
     if pending.len() >= 32 { return false; }
-    pending.push((focus_generation, map_generation, command));
+    pending.push((focus_generation, map_generation, command, pressed_modifiers));
     true
 }
 
-pub fn take_commands() -> Vec<(u64, u64, String)> {
+pub fn take_commands() -> Vec<(u64, u64, String, Vec<u32>)> {
     PENDING.lock().map(|mut pending| std::mem::take(&mut *pending)).unwrap_or_default()
 }
 
@@ -95,6 +95,9 @@ impl BrowserKeymapState {
             state.pressed.clear();
         }
     }
+    pub fn pressed_modifiers(&self) -> Vec<u32> {
+        self.0.try_lock().map(|state| state.pressed.iter().copied().filter(|key| is_modifier(*key)).collect()).unwrap_or_default()
+    }
     pub fn take_consumed_up(&self, key: u32) -> bool {
         if !self.clear_latch(key) { return false; }
         if let Ok(mut state) = self.0.try_lock() {
@@ -115,7 +118,7 @@ impl BrowserKeymapState {
             state.pressed.remove(&key);
         }
         if state.focus_generation != focus_generation {
-            state.pressed.clear();
+            state.pressed.retain(|key| is_modifier(*key));
             state.focus_generation = focus_generation;
         }
         let generation = state.generation;
@@ -136,14 +139,17 @@ pub fn set_browser_keymap(
     focused: bool,
     caps_term: bool,
     bindings: Vec<Binding>,
+    pressed_modifiers: Vec<u32>,
 ) -> Result<(), String> {
-    if !valid_bindings(&bindings) {
+    if !valid_bindings(&bindings) || !valid_pressed_modifiers(&pressed_modifiers) {
         return Err("invalid browser keymap".into());
     }
     let mut current = state.0.lock().map_err(|_| "browser keymap is unavailable")?;
     // Invocations can complete out of order during a focus change or config reload.
     // Keep the newer snapshot and treat the superseded request as successfully ignored.
-    current.update_if_newer(generation, focused, caps_term, bindings);
+    if current.update_if_newer(generation, focused, caps_term, bindings, pressed_modifiers.clone()) {
+        for key in pressed_modifiers { state.latch(key); }
+    }
     Ok(())
 }
 
@@ -151,6 +157,14 @@ fn valid_bindings(bindings: &[Binding]) -> bool {
     bindings.len() <= 256 && bindings.iter().all(|binding|
         !binding.command.is_empty() && binding.command.len() <= 128 && binding.modifiers.len() <= 8
             && binding.modifiers.iter().all(|keys| !keys.is_empty() && keys.len() <= 3))
+}
+
+fn is_modifier(key: u32) -> bool {
+    matches!(key, 0x10..=0x12 | 0x14 | 0x5b..=0x5d | 0xa0..=0xa5)
+}
+
+fn valid_pressed_modifiers(keys: &[u32]) -> bool {
+    keys.len() <= 16 && keys.iter().all(|key| is_modifier(*key)) && keys.iter().collect::<HashSet<_>>().len() == keys.len()
 }
 
 #[derive(Default)]
@@ -176,9 +190,11 @@ fn match_modifiers(groups: &[Vec<u32>], pressed: &HashSet<u32>, used: &mut HashS
 }
 
 impl BrowserKeymap {
-    fn update_if_newer(&mut self, generation: u64, focused: bool, caps_term: bool, bindings: Vec<Binding>) -> bool {
+    fn update_if_newer(&mut self, generation: u64, focused: bool, caps_term: bool, bindings: Vec<Binding>, pressed_modifiers: Vec<u32>) -> bool {
         if generation < self.generation { return false; }
         self.reset(generation, focused, bindings);
+        self.pressed.extend(pressed_modifiers.iter().copied());
+        self.consumed.extend(pressed_modifiers);
         self.caps_term = caps_term;
         true
     }
@@ -296,14 +312,38 @@ mod tests {
     #[test]
     fn stale_snapshot_does_not_replace_the_newer_browser_keymap() {
         let mut map = BrowserKeymap::default();
-        assert!(map.update_if_newer(2, true, false, vec![Binding { command: "new".into(), key: 83, modifiers: vec![], repeat: false }]));
+        assert!(map.update_if_newer(2, true, false, vec![Binding { command: "new".into(), key: 83, modifiers: vec![], repeat: false }], vec![]));
         assert_eq!(map.key(2, 83, true), (true, Some("new")));
 
-        assert!(!map.update_if_newer(1, false, false, vec![Binding { command: "old".into(), key: 65, modifiers: vec![], repeat: false }]));
+        assert!(!map.update_if_newer(1, false, false, vec![Binding { command: "old".into(), key: 65, modifiers: vec![], repeat: false }], vec![]));
         assert_eq!(map.key(2, 65, true), (false, None));
         map.key(2, 65, false);
         map.key(2, 83, false);
         assert_eq!(map.key(2, 83, true), (true, Some("new")));
+    }
+
+    #[test]
+    fn held_term_modifier_survives_browser_keymap_transition() {
+        let mut map = BrowserKeymap::default();
+        let binding = Binding { command: "tab.next".into(), key: 0x27, modifiers: vec![vec![0x5d]], repeat: false };
+        map.reset(1, true, vec![binding.clone()]);
+        map.key(1, 0x5d, true);
+        assert!(map.update_if_newer(2, true, false, vec![binding], vec![0x5d]));
+        assert_eq!(map.key(2, 0x27, true), (true, Some("tab.next")));
+        assert_eq!(map.key(2, 0x5d, false), (true, None));
+        assert!(!valid_pressed_modifiers(&[0x5d, 0x5d]));
+        assert!(!valid_pressed_modifiers(&[0x41]));
+    }
+
+    #[test]
+    fn held_term_modifier_survives_browser_focus_generation_change() {
+        let state = BrowserKeymapState::default();
+        let binding = Binding { command: "tab.next".into(), key: 0x27, modifiers: vec![vec![0x5d]], repeat: false };
+        state.0.lock().unwrap().update_if_newer(2, true, false, vec![binding], vec![0x5d]);
+        state.latch(0x5d);
+        assert_eq!(state.key(1, 0x27, true).2.as_deref(), Some("tab.next"));
+        assert!(state.take_consumed_up(0x5d));
+        assert_eq!(state.key(1, 0x27, true).2, None);
     }
 
     #[test]

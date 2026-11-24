@@ -2,6 +2,7 @@ export type Keymap = { term: string; bindings: Record<string, string | string[] 
 
 let activeKeymap: Keymap | null = null;
 const pressedKeys = new Set<string>();
+const handedOffModifiers = new Set<string>();
 const dispatchedCommands = new WeakMap<KeyboardEvent, string>();
 // Rust retains the last browser keymap generation across WebView reloads.
 // Seed with an epoch-scale value so a refreshed frontend supersedes that snapshot.
@@ -20,12 +21,13 @@ export function dispatchCommand(command: string): void {
 
 export function setVirtualKeyState(code: string, down: boolean): void {
   if (down) pressedKeys.add(code);
-  else pressedKeys.delete(code);
+  else { pressedKeys.delete(code); handedOffModifiers.delete(code); }
 }
 
 export function setActiveKeymap(keymap: Keymap | null): void {
   activeKeymap = keymap;
   pressedKeys.clear();
+  handedOffModifiers.clear();
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('keymap-changed'));
 }
 
@@ -49,7 +51,7 @@ export function shortcutHint(command: string): string {
 export function commandForEvent(event: KeyboardEvent): string | null {
   const dispatched = dispatchedCommands.get(event);
   if (dispatched) return dispatched;
-  const pressed = new Set([...pressedKeys, event.code]);
+  const pressed = new Set([...pressedKeys, ...handedOffModifiers, event.code]);
   const altGraph = typeof event.getModifierState === 'function' && event.getModifierState('AltGraph');
   if (event.shiftKey && !pressed.has('ShiftLeft') && !pressed.has('ShiftRight')) pressed.add('ShiftLeft');
   if (altGraph) { pressed.delete('ControlLeft'); pressed.delete('ControlRight'); }
@@ -64,7 +66,7 @@ if (typeof window !== 'undefined') {
     const code = event.key === 'ContextMenu' ? 'ContextMenu' : event.code;
     if (Object.values(modifierCodes).some((codes) => codes.includes(code))) pressedKeys.add(code);
   }, true);
-  window.addEventListener('keyup', (event) => { pressedKeys.delete(event.key === 'ContextMenu' ? 'ContextMenu' : event.code); }, true);
+  window.addEventListener('keyup', (event) => { const code = event.key === 'ContextMenu' ? 'ContextMenu' : event.code; pressedKeys.delete(code); handedOffModifiers.delete(code); }, true);
   window.addEventListener('blur', () => pressedKeys.clear());
 }
 
@@ -125,6 +127,21 @@ const virtualKeys: Record<string, number> = {
   Insert: 0x2d, Delete: 0x2e, Home: 0x24, End: 0x23, PageUp: 0x21, PageDown: 0x22,
   ArrowUp: 0x26, ArrowDown: 0x28, ArrowLeft: 0x25, ArrowRight: 0x27, NumpadAdd: 0x6b, NumpadSubtract: 0x6d,
 };
+
+const virtualModifierCodes = new Set(Object.values(modifierCodes).flat());
+
+export function getPressedVirtualModifiers(): number[] {
+  return [...new Set([...pressedKeys, ...handedOffModifiers])].filter((code) => virtualModifierCodes.has(code) && virtualKeys[code] !== undefined).map((code) => virtualKeys[code]);
+}
+
+export function syncVirtualModifiers(keys: number[]): void {
+  for (const code of virtualModifierCodes) pressedKeys.delete(code);
+  handedOffModifiers.clear();
+  for (const key of keys) {
+    const code = Object.keys(virtualKeys).find((candidate) => virtualModifierCodes.has(candidate) && virtualKeys[candidate] === key);
+    if (code) { pressedKeys.add(code); handedOffModifiers.add(code); }
+  }
+}
 
 function virtualKey(code: string): number {
   if (virtualKeys[code]) return virtualKeys[code];
