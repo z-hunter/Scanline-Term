@@ -35,7 +35,7 @@ import { globalHotkeyBindings } from "./terminal/global-hotkeys";
 import { defaultScreenProfile, profileFromLegacyPreset } from "scanline-virtual-screen/core";
 import { useCRT } from "./crt/useCRT";
 import { createBrowserTextureStreamReceiver, type BrowserVideoFrame } from "./crt/browser-benchmark";
-import { browserFullscreenBounds, browserViewportPoint } from "./terminal/browser-coordinate";
+import { browserFullscreenBounds, browserViewportPoint, type BrowserViewportRect } from "./terminal/browser-coordinate";
 import { galleryBrowserSnapshotSize } from "./terminal/gallery-renderer";
 import { TERMINAL_GEOMETRY_DIAGNOSTICS, useTerminal, type BrowserTab, type ShellInfo } from "./terminal/useTerminal";
 import { useLuaAutomationStatus } from "./terminal/useLuaAutomationStatus";
@@ -129,6 +129,7 @@ export default function App() {
   const galleryToggleRef = useRef<() => void>(() => {});
   const openPresetPickerRef = useRef<() => void>(() => {});
   const browserActivationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const browserViewportRef = useRef<{ sessionId: string; viewport: BrowserViewportRect } | null>(null);
   const galleryMenuRef = useRef(false);
   const beforeTabChangeRef = useRef<(id: string) => void>(() => {});
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -980,12 +981,17 @@ export default function App() {
           ? { x: keepRendererLive ? -rect.width : rect.x, y: keepRendererLive ? -rect.height : rect.y, width: rect.width, height: rect.height }
           : undefined,
       };
+      if (!showBrowser || !activeBrowserId) browserViewportRef.current = null;
       if (import.meta.env.DEV) {
         console.info("[browser] set-active request", payload);
       }
       const activation = browserActivationQueueRef.current.catch(() => {}).then(() => {
         if (disposed || currentRevision !== revision) return;
-        return invoke("set_active_browser", payload);
+        return invoke<BrowserViewportRect | null>("set_active_browser", payload).then((viewport) => {
+          if (!disposed && currentRevision === revision) {
+            browserViewportRef.current = payload.sessionId && viewport ? { sessionId: payload.sessionId, viewport } : null;
+          }
+        });
       });
       browserActivationQueueRef.current = activation.then(() => {}, (reason) => { throw reason; });
       void browserActivationQueueRef.current.catch(() => {});
@@ -1188,7 +1194,10 @@ export default function App() {
       const source = renderer?.sourceCanvas;
       const mapped = renderer?.sourcePointAt(rect.left + x, rect.top + y, canvas, terminal.settingsRef.current);
       const frame = screenRef.current?.getBoundingClientRect();
-      const viewport = { width: frame?.width || rect.width, height: frame?.height || rect.height };
+      const nativeViewport = browserViewportRef.current;
+      const viewport = nativeViewport?.sessionId === activeBrowserId
+        ? nativeViewport.viewport
+        : { width: frame?.width || rect.width, height: frame?.height || rect.height };
       return mapped && source?.width && source.height
         ? browserViewportPoint(mapped, source, viewport)
         : browserViewportPoint({ x, y }, rect, viewport);

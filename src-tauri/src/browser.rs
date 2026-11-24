@@ -56,7 +56,7 @@ impl BrowserState {
     }
 }
 
-#[derive(Clone, serde::Deserialize)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserBounds { pub x: f64, pub y: f64, pub width: f64, pub height: f64 }
 
@@ -768,7 +768,7 @@ pub async fn capture_gallery_browser(app: tauri::AppHandle, session_id: BrowserI
 }
 
 #[tauri::command]
-pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, fullscreen_bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<(), String> {
+pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserState>, session_id: Option<BrowserId>, bounds: Option<BrowserBounds>, fullscreen_bounds: Option<BrowserBounds>, visibility_mode: Option<i32>) -> Result<Option<BrowserBounds>, String> {
     let _transition = state.1.lock().await;
     if visibility_mode.is_some_and(|mode| !(0..=2).contains(&mode)) { return Err("invalid browser visibility mode".into()); }
     trace(&app, "set-active", session_id.as_deref().unwrap_or("none"), bounds.as_ref().map(|b| (b.x, b.y, b.width, b.height)));
@@ -780,7 +780,7 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
     let window_fullscreen = app.get_webview_window("main").and_then(|window| window.is_fullscreen().ok()).unwrap_or(false);
     #[cfg(windows)]
     let native_scale = app.get_webview_window("main").and_then(|window| window.scale_factor().ok()).unwrap_or(1.0);
-    let (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops) = {
+    let (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops, active_bounds) = {
         let mut state = state.0.lock().map_err(|_| "browser state is unavailable")?;
         let return_to_terminal = state.active.is_some() && session_id.is_none();
         let became_active = state.active != session_id;
@@ -830,7 +830,7 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
         }).collect::<Vec<_>>();
         #[cfg(not(windows))]
         let native_ops: Vec<(String, i32, i32, u32, u32, i32, bool)> = Vec::new();
-        (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops)
+        (return_to_terminal, restore_fullscreen, exit_page_fullscreen, exit_webview_fullscreen, native_ops, active_bounds.cloned())
     };
     if restore_fullscreen {
         if let Some(window) = app.get_webview_window("main") { let _ = window.set_fullscreen(false); }
@@ -890,7 +890,7 @@ pub async fn set_active_browser(app: tauri::AppHandle, state: State<'_, BrowserS
     if return_to_terminal {
         let _ = app.get_webview("main").ok_or("main webview is unavailable")?.set_focus();
     }
-    Ok(())
+    Ok(active_bounds)
 }
 
 #[cfg(windows)]

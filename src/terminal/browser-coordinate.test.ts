@@ -22,4 +22,11 @@ describe('browserViewportPoint', () => {
     expect(browserViewportPoint({ x: 50, y: 40 }, { width: 100, height: 80 }, viewport)).toEqual({ x: 62, y: 52 });
     expect(browserViewportPoint({ x: -1, y: 1210 }, source, viewport)).toEqual({ x: 0, y: 104 });
   });
+
+  it('uses the fitted native fullscreen viewport rather than the visible browser frame', () => {
+    const source = { width: 800, height: 600 };
+    const fittedFullscreenViewport = { width: 1440, height: 1080 };
+
+    expect(browserViewportPoint({ x: 400, y: 300 }, source, fittedFullscreenViewport)).toEqual({ x: 720, y: 540 });
+  });
 });
