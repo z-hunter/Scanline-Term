@@ -497,6 +497,16 @@ static SUMMON_TARGET_X: AtomicI32 = AtomicI32::new(i32::MIN);
 static SUMMON_TARGET_Y: AtomicI32 = AtomicI32::new(i32::MIN);
 #[cfg(windows)]
 static SUMMON_WAS_MAXIMIZED: AtomicBool = AtomicBool::new(false);
+#[cfg(windows)]
+static SUMMON_NORMAL_PLACEMENT: std::sync::Mutex<Option<windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT>> = std::sync::Mutex::new(None);
+
+#[cfg(windows)]
+fn retain_summon_normal_placement(
+    current: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
+) -> windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT {
+    let mut saved = SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner());
+    *saved.get_or_insert(current)
+}
 
 #[cfg(all(windows, test))]
 fn summon_hotkey() -> (u32, u32) {
@@ -648,7 +658,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, GetWindowRect, SetWindowPos, WINDOWPLACEMENT, SWP_NOACTIVATE,
+        GetWindowPlacement, GetWindowRect, SetWindowPlacement, SetWindowPos, WINDOWPLACEMENT, SWP_NOACTIVATE,
         SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, ShowWindow, SW_HIDE, SW_RESTORE,
         SW_SHOWMAXIMIZED,
     };
@@ -685,6 +695,11 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     let height = rect.bottom - rect.top;
     let restore_maximized = SUMMON_WAS_MAXIMIZED.load(Ordering::SeqCst)
         || placement.showCmd == SW_SHOWMAXIMIZED as u32;
+    let original_maximized_placement = if restore_maximized {
+        Some(retain_summon_normal_placement(placement))
+    } else {
+        None
+    };
     let saved_is_visible = saved_x != i32::MIN && saved_y != i32::MIN
         && saved_x + width > monitor.rcWork.left && saved_x < monitor.rcWork.right
         && saved_y + height > monitor.rcWork.top && saved_y < monitor.rcWork.bottom;
@@ -754,8 +769,15 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
             }
         } else {
             if restore_maximized {
-                unsafe { ShowWindow(hwnd as _, SW_SHOWMAXIMIZED); }
-                SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
+                if let Some(mut placement) = original_maximized_placement {
+                    placement.showCmd = SW_SHOWMAXIMIZED as u32;
+                    if unsafe { SetWindowPlacement(hwnd as _, &placement) } != 0 {
+                        *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
+                        SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
+                    } else {
+                        unsafe { ShowWindow(hwnd as _, SW_SHOWMAXIMIZED); }
+                    }
+                }
             }
             SUMMON_SHOWING.store(false, Ordering::SeqCst);
             focus_webview(&window);
@@ -1275,7 +1297,7 @@ mod tests {
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
-    use super::{is_focus_activation, system_font_bytes};
+    use super::{is_focus_activation, retain_summon_normal_placement, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -1286,6 +1308,34 @@ mod tests {
     #[test]
     fn uses_win_backquote_for_global_summon() {
         assert_eq!(summon_hotkey(), (0x4008, 0xC0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn maximized_summon_retains_original_normal_placement_across_animation_restarts() {
+        use windows_sys::Win32::{
+            Foundation::{POINT, RECT},
+            UI::WindowsAndMessaging::WINDOWPLACEMENT,
+        };
+
+        let placement = |left, top| WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            flags: 0,
+            showCmd: 3,
+            ptMinPosition: POINT { x: 0, y: 0 },
+            ptMaxPosition: POINT { x: 0, y: 0 },
+            rcNormalPosition: RECT { left, top, right: left + 800, bottom: top + 600 },
+        };
+        *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
+
+        let original = retain_summon_normal_placement(placement(120, 80));
+        let after_restart = retain_summon_normal_placement(placement(0, 0));
+        assert_eq!(original.rcNormalPosition.left, 120);
+        assert_eq!(original.rcNormalPosition.top, 80);
+        assert_eq!(after_restart.rcNormalPosition.left, 120);
+        assert_eq!(after_restart.rcNormalPosition.top, 80);
+
+        *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
     }
 
     #[test]
