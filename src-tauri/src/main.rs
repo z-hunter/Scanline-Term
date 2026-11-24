@@ -521,6 +521,34 @@ fn screen_rect_to_workspace(rect: windows_sys::Win32::Foundation::RECT, monitor:
 }
 
 #[cfg(windows)]
+fn summon_maximized_placement(
+    mut placement: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
+    target_x: i32,
+    target_y: i32,
+    monitor: &windows_sys::Win32::Graphics::Gdi::MONITORINFO,
+) -> windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOWMAXIMIZED, WPF_RESTORETOMAXIMIZED};
+
+    let normal = placement.rcNormalPosition;
+    let width = normal.right - normal.left;
+    let height = normal.bottom - normal.top;
+    if !summon_target_is_visible(normal.left, normal.top, width, height, monitor.rcWork, true) {
+        placement.rcNormalPosition = screen_rect_to_workspace(
+            windows_sys::Win32::Foundation::RECT {
+                left: target_x,
+                top: target_y,
+                right: target_x + width,
+                bottom: target_y + height,
+            },
+            monitor,
+        );
+    }
+    placement.flags &= !WPF_RESTORETOMAXIMIZED;
+    placement.showCmd = SW_SHOWMAXIMIZED as u32;
+    placement
+}
+
+#[cfg(windows)]
 fn summon_target_is_visible(x: i32, y: i32, width: i32, height: i32, work: windows_sys::Win32::Foundation::RECT, require_origin: bool) -> bool {
     if require_origin {
         x >= work.left && x < work.right && y >= work.top && y < work.bottom
@@ -815,8 +843,14 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
             }
         } else {
             if restore_maximized {
-                if let Some(mut placement) = original_maximized_placement {
-                    placement.showCmd = SW_SHOWMAXIMIZED as u32;
+                if let Some(placement) = original_maximized_placement {
+                    let placement = if terminal_maximized {
+                        summon_maximized_placement(placement, target_x, target_y, &monitor)
+                    } else {
+                        let mut placement = placement;
+                        placement.showCmd = SW_SHOWMAXIMIZED as u32;
+                        placement
+                    };
                     if unsafe { SetWindowPlacement(hwnd as _, &placement) } != 0 {
                         *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
                         SUMMON_WAS_MAXIMIZED.store(false, Ordering::SeqCst);
@@ -1343,7 +1377,7 @@ mod tests {
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
-    use super::{is_focus_activation, retain_summon_normal_placement, screen_rect_to_workspace, summon_target_is_visible, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
+    use super::{is_focus_activation, retain_summon_normal_placement, screen_rect_to_workspace, summon_maximized_placement, summon_target_is_visible, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -1414,6 +1448,40 @@ mod tests {
         assert!(summon_target_is_visible(0, -963, 1456, 999, work, false));
         assert!(!summon_target_is_visible(0, -1058, 1936, 1066, work, true));
         assert!(summon_target_is_visible(0, -1058, 1936, 1066, work, false));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn maximized_summon_repositions_an_offscreen_normal_placement_before_restore() {
+        use windows_sys::Win32::{
+            Foundation::{POINT, RECT},
+            Graphics::Gdi::MONITORINFO,
+            UI::WindowsAndMessaging::{WINDOWPLACEMENT, SW_SHOWMAXIMIZED, WPF_RESTORETOMAXIMIZED},
+        };
+
+        let monitor = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            rcMonitor: RECT { left: 0, top: 0, right: 1920, bottom: 1080 },
+            rcWork: RECT { left: 0, top: 0, right: 1920, bottom: 1040 },
+            dwFlags: 0,
+        };
+        let placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            flags: WPF_RESTORETOMAXIMIZED,
+            showCmd: 1,
+            ptMinPosition: POINT { x: 0, y: 0 },
+            ptMaxPosition: POINT { x: 0, y: 0 },
+            rcNormalPosition: RECT { left: -8, top: -560, right: 1928, bottom: 506 },
+        };
+
+        let restored = summon_maximized_placement(placement, 32, 32, &monitor);
+
+        assert_eq!(restored.showCmd, SW_SHOWMAXIMIZED as u32);
+        assert_eq!(restored.flags & WPF_RESTORETOMAXIMIZED, 0);
+        assert_eq!(restored.rcNormalPosition.left, 32);
+        assert_eq!(restored.rcNormalPosition.top, 32);
+        assert_eq!(restored.rcNormalPosition.right, 1968);
+        assert_eq!(restored.rcNormalPosition.bottom, 1098);
     }
 
     #[test]
