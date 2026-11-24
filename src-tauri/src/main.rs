@@ -508,6 +508,27 @@ fn retain_summon_normal_placement(
     *saved.get_or_insert(current)
 }
 
+#[cfg(windows)]
+fn screen_rect_to_workspace(rect: windows_sys::Win32::Foundation::RECT, monitor: &windows_sys::Win32::Graphics::Gdi::MONITORINFO) -> windows_sys::Win32::Foundation::RECT {
+    let offset_x = monitor.rcWork.left - monitor.rcMonitor.left;
+    let offset_y = monitor.rcWork.top - monitor.rcMonitor.top;
+    windows_sys::Win32::Foundation::RECT {
+        left: rect.left - offset_x,
+        top: rect.top - offset_y,
+        right: rect.right - offset_x,
+        bottom: rect.bottom - offset_y,
+    }
+}
+
+#[cfg(windows)]
+fn summon_target_is_visible(x: i32, y: i32, width: i32, height: i32, work: windows_sys::Win32::Foundation::RECT, require_origin: bool) -> bool {
+    if require_origin {
+        x >= work.left && x < work.right && y >= work.top && y < work.bottom
+    } else {
+        x + width > work.left && x < work.right && y + height > work.top && y < work.bottom
+    }
+}
+
 #[cfg(all(windows, test))]
 fn summon_hotkey() -> (u32, u32) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_NOREPEAT, MOD_WIN, VK_OEM_3};
@@ -660,7 +681,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowPlacement, GetWindowRect, SetWindowPlacement, SetWindowPos, WINDOWPLACEMENT, SWP_NOACTIVATE,
         SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, ShowWindow, SW_HIDE, SW_RESTORE,
-        SW_SHOWMAXIMIZED,
+        SW_SHOWMAXIMIZED, SW_SHOWNORMAL, WPF_RESTORETOMAXIMIZED,
     };
 
     let Ok(hwnd) = window.hwnd() else { return; };
@@ -681,13 +702,6 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         if monitor_handle.is_null() || GetMonitorInfoW(monitor_handle, &mut monitor) == 0 { return; }
     }
 
-    let normal = placement.rcNormalPosition;
-    let normal_is_visible = normal.right > monitor.rcWork.left
-        && normal.left < monitor.rcWork.right
-        && normal.bottom > monitor.rcWork.top
-        && normal.top < monitor.rcWork.bottom;
-    let default_x = if normal_is_visible { normal.left } else { monitor.rcWork.left + 32 };
-    let default_y = if normal_is_visible { normal.top } else { monitor.rcWork.top + 32 };
     let preserve_saved_target = !showing && SUMMON_SHOWING.load(Ordering::SeqCst);
     let saved_x = SUMMON_TARGET_X.load(Ordering::SeqCst);
     let saved_y = SUMMON_TARGET_Y.load(Ordering::SeqCst);
@@ -695,14 +709,25 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     let height = rect.bottom - rect.top;
     let restore_maximized = SUMMON_WAS_MAXIMIZED.load(Ordering::SeqCst)
         || placement.showCmd == SW_SHOWMAXIMIZED as u32;
+    let terminal_maximized = restore_maximized && main_webview_is_active(window);
+    let normal = placement.rcNormalPosition;
+    let normal_is_visible = summon_target_is_visible(
+        normal.left,
+        normal.top,
+        normal.right - normal.left,
+        normal.bottom - normal.top,
+        monitor.rcWork,
+        terminal_maximized,
+    );
+    let default_x = if normal_is_visible { normal.left } else { monitor.rcWork.left + 32 };
+    let default_y = if normal_is_visible { normal.top } else { monitor.rcWork.top + 32 };
     let original_maximized_placement = if restore_maximized {
         Some(retain_summon_normal_placement(placement))
     } else {
         None
     };
     let saved_is_visible = saved_x != i32::MIN && saved_y != i32::MIN
-        && saved_x + width > monitor.rcWork.left && saved_x < monitor.rcWork.right
-        && saved_y + height > monitor.rcWork.top && saved_y < monitor.rcWork.bottom;
+        && summon_target_is_visible(saved_x, saved_y, width, height, monitor.rcWork, terminal_maximized);
     let target_x = if !showing && !preserve_saved_target {
         SUMMON_TARGET_X.store(rect.left, Ordering::SeqCst); rect.left
     } else if saved_is_visible { saved_x } else { default_x };
@@ -712,12 +737,33 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
     let hidden_y = monitor.rcMonitor.top - height + 8;
     let from = if showing { hidden_y } else { rect.top };
     let to = if showing { target_y } else { hidden_y };
+    if terminal_maximized && showing {
+        unsafe {
+            SetWindowPos(
+                hwnd as _, std::ptr::null_mut(), target_x, from, width, height,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            );
+        }
+    } else if terminal_maximized {
+        let mut animation_placement = placement;
+        animation_placement.flags &= !WPF_RESTORETOMAXIMIZED;
+        animation_placement.rcNormalPosition = screen_rect_to_workspace(
+            windows_sys::Win32::Foundation::RECT {
+                left: target_x,
+                top: from,
+                right: target_x + width,
+                bottom: from + height,
+            },
+            &monitor,
+        );
+        unsafe { SetWindowPlacement(hwnd as _, &animation_placement); }
+    }
     let generation = SUMMON_ANIMATION_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     if showing {
         SUMMON_SHOWING.store(true, Ordering::SeqCst);
         SUMMON_HIDING.store(false, Ordering::SeqCst);
         unsafe {
-            ShowWindow(hwnd as _, SW_RESTORE);
+            ShowWindow(hwnd as _, if terminal_maximized { SW_SHOWNORMAL } else { SW_RESTORE });
             SetWindowPos(
                 hwnd as _, std::ptr::null_mut(), target_x, from,
                 if restore_maximized { width } else { 0 },
@@ -733,7 +779,7 @@ fn slide_summon_window(window: &tauri::WebviewWindow, showing: bool) {
         SUMMON_HIDING.store(true, Ordering::SeqCst);
         if restore_maximized {
             unsafe {
-                ShowWindow(hwnd as _, SW_RESTORE);
+                ShowWindow(hwnd as _, if terminal_maximized { SW_SHOWNORMAL } else { SW_RESTORE });
                 SetWindowPos(
                     hwnd as _, std::ptr::null_mut(), target_x, from, width, height,
                     SWP_NOACTIVATE | SWP_NOZORDER,
@@ -1297,7 +1343,7 @@ mod tests {
         valid_working_directory, LaunchRequest,
     };
     #[cfg(windows)]
-    use super::{is_focus_activation, retain_summon_normal_placement, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
+    use super::{is_focus_activation, retain_summon_normal_placement, screen_rect_to_workspace, summon_target_is_visible, system_font_bytes, SUMMON_NORMAL_PLACEMENT};
 
     #[test]
     fn powershell_name_resolves_or_falls_back_without_hanging() {
@@ -1336,6 +1382,38 @@ mod tests {
         assert_eq!(after_restart.rcNormalPosition.top, 80);
 
         *SUMMON_NORMAL_PLACEMENT.lock().unwrap_or_else(|error| error.into_inner()) = None;
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn maximized_animation_uses_current_screen_bounds_as_restored_workspace_bounds() {
+        use windows_sys::Win32::{Foundation::RECT, Graphics::Gdi::MONITORINFO};
+
+        let monitor = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            rcMonitor: RECT { left: -1920, top: 0, right: 0, bottom: 1080 },
+            rcWork: RECT { left: -1840, top: 40, right: 0, bottom: 1080 },
+            dwFlags: 0,
+        };
+        let screen = RECT { left: -1840, top: 40, right: 0, bottom: 1080 };
+        let workspace = screen_rect_to_workspace(screen, &monitor);
+
+        assert_eq!(workspace.left, -1920);
+        assert_eq!(workspace.top, 0);
+        assert_eq!(workspace.right, -80);
+        assert_eq!(workspace.bottom, 1040);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn terminal_summon_rejects_targets_with_only_a_sliver_in_frame() {
+        use windows_sys::Win32::Foundation::RECT;
+
+        let work = RECT { left: 0, top: 0, right: 1920, bottom: 1040 };
+        assert!(!summon_target_is_visible(0, -963, 1456, 999, work, true));
+        assert!(summon_target_is_visible(0, -963, 1456, 999, work, false));
+        assert!(!summon_target_is_visible(0, -1058, 1936, 1066, work, true));
+        assert!(summon_target_is_visible(0, -1058, 1936, 1066, work, false));
     }
 
     #[test]
