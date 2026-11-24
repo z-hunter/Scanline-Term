@@ -628,6 +628,8 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
         // Legacy CDP capture. Keep input routing when changing the capture transport.
         /* | "Page.startScreencast" | "Page.stopScreencast" | "Page.screencastFrameAck" */
     ) { return Err("unsupported browser DevTools command".into()); }
+    let focus_native_browser = method == "Input.dispatchMouseEvent"
+        && params.get("type").and_then(serde_json::Value::as_str) == Some("mousePressed");
     let params = serde_json::to_string(&params).map_err(|error| error.to_string())?;
     let capture = method == "Page.startScreencast";
     let native_exists = {
@@ -671,8 +673,15 @@ pub async fn browser_devtools(app: tauri::AppHandle, state: State<'_, BrowserSta
             let state = app_for_state.state::<BrowserState>();
             let store = state.0.lock().map_err(|_| "browser state is unavailable".to_string())?;
             let native = store.native_tabs.get(&id_for_state).copied().ok_or_else(|| "native browser tab is unavailable".to_string())?;
+            let should_focus = focus_native_browser && store.active.as_deref() == Some(id_for_state.as_str()) && store.visibility_mode == 2;
             let mut core_raw = native.core as *mut std::ffi::c_void;
             let core = ICoreWebView2::from_raw_borrowed(&mut core_raw).ok_or_else(|| "native browser core is unavailable".to_string())?;
+            if should_focus {
+                use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Controller, COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC};
+                let mut controller_raw = native.controller as *mut std::ffi::c_void;
+                let controller = ICoreWebView2Controller::from_raw_borrowed(&mut controller_raw).ok_or_else(|| "native browser controller is unavailable".to_string())?;
+                controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC).map_err(|error| error.to_string())?;
+            }
             let method = HSTRING::from(method);
             let params = HSTRING::from(params);
             let callback = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |status, response| {
